@@ -1,7 +1,7 @@
 ## All-in-one Digital Design System
 
-<a href="simulator/index.html">Verilog Simulator</a>
-<a href="synthesis/index.html">Verilog Synthesis</a>
+- [Verilog Simulator](simulator/index.html)
+- [Verilog Synthesis](synthesis/index.html)
 
 
 Inspired by http://www.donny.co.kr/simplecore
