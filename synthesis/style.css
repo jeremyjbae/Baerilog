@@ -1,0 +1,158 @@
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+      background: #f2f2f7;
+      color: #1c1c1e;
+      padding: 24px;
+    }
+    h1 {
+      text-align: center;
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: #1c1c1e;
+    }
+    .subtitle {
+      text-align: center;
+      font-size: 13px;
+      color: #8e8e93;
+      margin-bottom: 24px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 20px 22px 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    }
+    .card.full { grid-column: 1 / -1; }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #1c1c1e;
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+    }
+    .card-collapse-btn {
+      cursor: pointer;
+      font-size: 8px;
+      font-weight: 600;
+      color: #1c1c1e;
+      user-select: none;
+      flex-shrink: 0;
+      margin-right: 6px;
+      width: 13px;
+      height: 13px;
+      border: 1px solid #1c1c1e;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .card-collapse-btn:hover { border-color: #3a3a3c; color: #3a3a3c; }
+    .card.collapsed > *:not(:first-child) { display: none !important; }
+    .card.collapsed { padding-bottom: 20px; }
+    .card p {
+      font-size: 12px;
+      color: #8e8e93;
+      margin-bottom: 14px;
+    }
+    canvas { width: 100% !important; }
+    .legend-row {
+      display: flex;
+      gap: 18px;
+      justify-content: center;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #3a3a3c;
+    }
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .badge-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 2px;
+    }
+    .badge {
+      background: #f2f2f7;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: #3a3a3c;
+    }
+    .badge span { font-weight: 700; color: #007aff; }
+
+    /* --- toolbar groups (zoom controls, range inputs) --- */
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #f2f2f7;
+      border-radius: 10px;
+      padding: 5px 8px;
+    }
+    .toolbar-group .btn.secondary { background: #fff; }
+    .toolbar-group .btn.secondary:hover { background: #e5e5ea; }
+    .toolbar-group .num-input { background: #fff; width: 84px; }
+    .icon-btn { padding: 6px 11px; font-weight: 700; }
+    .zoom-level {
+      font-size: 11px;
+      color: #8e8e93;
+      font-variant-numeric: tabular-nums;
+      min-width: 40px;
+      text-align: center;
+    }
+    .num-input.error { box-shadow: 0 0 0 1.5px #ff3b30 inset; }
+
+    /* --- radix picker popup for waveform value column --- */
+    .radix-popup {
+      position: fixed;
+      display: none;
+      background: #fff;
+      border-radius: 12px;
+      padding: 8px;
+      font-size: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      z-index: 1000;
+      min-width: 130px;
+    }
+    .radix-popup-title {
+      font-weight: 700;
+      font-size: 12px;
+      color: #1c1c1e;
+      padding: 4px 8px 6px;
+    }
+    .radix-opt {
+      padding: 6px 8px;
+      border-radius: 8px;
+      color: #8e8e93;
+      cursor: pointer;
+    }
+    .radix-opt:hover { background: #f2f2f7; }
+    .radix-opt.selected {
+      color: #007aff;
+      border: 1.5px solid #007aff;
+      font-weight: 600;
+    }
+  </style>
+

@@ -1,0 +1,2471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Verilog Synthesizer</title>
+<link rel="stylesheet" href="https://unpkg.com/@xyflow/react@12/dist/style.css">
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+      background: #f2f2f7;
+      color: #1c1c1e;
+      padding: 24px;
+    }
+    h1 {
+      text-align: center;
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: #1c1c1e;
+    }
+    .subtitle {
+      text-align: center;
+      font-size: 13px;
+      color: #8e8e93;
+      margin-bottom: 24px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 20px 22px 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    }
+    .card.full { grid-column: 1 / -1; }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #1c1c1e;
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+    }
+    .card-collapse-btn {
+      cursor: pointer;
+      font-size: 8px;
+      font-weight: 600;
+      color: #1c1c1e;
+      user-select: none;
+      flex-shrink: 0;
+      margin-right: 6px;
+      width: 13px;
+      height: 13px;
+      border: 1px solid #1c1c1e;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .card-collapse-btn:hover { border-color: #3a3a3c; color: #3a3a3c; }
+    .card.collapsed > *:not(:first-child) { display: none !important; }
+    .card.collapsed { padding-bottom: 20px; }
+    .card p {
+      font-size: 12px;
+      color: #8e8e93;
+      margin-bottom: 14px;
+    }
+    .legend-row {
+      display: flex;
+      gap: 18px;
+      justify-content: center;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #3a3a3c;
+    }
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .badge-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 2px;
+    }
+    .badge {
+      background: #f2f2f7;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: #3a3a3c;
+    }
+    .badge span { font-weight: 700; color: #007aff; }
+    .badge.error span { color: #ff3b30; }
+
+    /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    select, .btn, .num-input {
+      font-family: inherit;
+      font-size: 12px;
+      border: none;
+      border-radius: 8px;
+      padding: 7px 12px;
+      background: #f2f2f7;
+      color: #1c1c1e;
+      cursor: pointer;
+    }
+    select { flex: 1 1 auto; min-width: 120px; }
+    .btn {
+      background: #007aff;
+      color: #fff;
+      font-weight: 600;
+      transition: background 0.15s ease;
+    }
+    .btn:hover { background: #0066d6; }
+    .btn.secondary { background: #f2f2f7; color: #1c1c1e; }
+    .btn.secondary:hover { background: #e5e5ea; }
+    .btn:disabled { background: #c7c7cc; cursor: default; }
+
+    .editor-wrap {
+      display: flex;
+      background: #1c1c1e;
+      border-radius: 12px;
+      overflow: hidden;
+      height: 360px;
+    }
+    .gutter {
+      flex-shrink: 0;
+      width: 38px;
+      padding: 12px 6px 12px 0;
+      text-align: right;
+      font: 12px/1.55 "SF Mono", Menlo, Consolas, monospace;
+      color: #5a5a5e;
+      background: #232326;
+      overflow: hidden;
+      user-select: none;
+      white-space: pre;
+    }
+    textarea#codeInput {
+      flex: 1 1 auto;
+      resize: none;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: #e5e5ea;
+      font: 12px/1.55 "SF Mono", Menlo, Consolas, monospace;
+      padding: 12px 12px 12px 8px;
+      tab-size: 2;
+      white-space: pre;
+      overflow: auto;
+    }
+    .console-box {
+      height: 360px;
+      overflow-y: auto;
+      background: #1c1c1e;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+      color: #b6f2b6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .console-box .err { color: #ff8a80; }
+    .console-box .warn { color: #ffd60a; }
+    .console-box .info { color: #8e8e93; }
+    .console-box .ok { color: #b6f2b6; }
+
+    .code-out {
+      height: 280px;
+      overflow: auto;
+      background: #1c1c1e;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+      color: #e5e5ea;
+      white-space: pre;
+    }
+
+    /* --- netlist graph card --- */
+    .breadcrumb-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+    .breadcrumb-row .crumb {
+      color: #007aff;
+      cursor: pointer;
+      background: none;
+      border: none;
+      font: inherit;
+      padding: 2px 4px;
+    }
+    .breadcrumb-row .crumb:hover { text-decoration: underline; }
+    .breadcrumb-row .crumb:last-child { color: #1c1c1e; font-weight: 600; cursor: default; }
+    .breadcrumb-row .crumb:last-child:hover { text-decoration: none; }
+    .breadcrumb-row .sep { color: #c7c7cc; }
+    #flowRoot {
+      height: 520px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #fafafc;
+      border: 1px solid #e5e5ea;
+      position: relative;
+    }
+    .flow-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: #8e8e93;
+      text-align: center;
+      padding: 24px;
+    }
+
+    /* React Flow custom node styling */
+    .rf-node {
+      position: relative;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      border: 1.5px solid #d1d1d6;
+      font-size: 11px;
+      font-weight: 600;
+      color: #1c1c1e;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 4px 8px;
+    }
+    .rf-node-label { pointer-events: none; }
+    .rf-node-port {
+      width: 92px;
+      height: 32px;
+      background: none;
+      border: none;
+      box-shadow: none;
+      padding: 0;
+      border-radius: 0;
+    }
+    .rf-node-port svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; z-index: 0; }
+    .rf-node-port .port-stroke { stroke: #34c759; }
+    .rf-node-port.port-out .port-stroke { stroke: #ff9500; }
+    .rf-node-port .rf-node-label { font-size: 11px; font-weight: 600; position: relative; z-index: 1; padding: 0 12px; }
+    .rf-node-gate {
+      background: none;
+      border: none;
+      box-shadow: none;
+      padding: 0;
+    }
+    .rf-node-gate svg { width: 100%; height: 100%; overflow: visible; }
+    .rf-node-gate .gate-stroke { stroke: #007aff; }
+    .rf-node-gate.inverted .gate-stroke { stroke: #5856d6; }
+    .rf-node-dff {
+      background: none;
+      border: none;
+      box-shadow: none;
+      padding: 0;
+    }
+    .rf-node-dff svg { width: 100%; height: 100%; overflow: visible; }
+    .rf-node-dff .gate-stroke { stroke: #af52de; }
+    .rf-node-dff .gate-fill-stroke { fill: #af52de; }
+    .rf-node-fa {
+      background: none;
+      border: none;
+      box-shadow: none;
+      padding: 0;
+    }
+    .rf-node-fa svg { width: 100%; height: 100%; overflow: visible; }
+    .rf-node-fa .gate-stroke { stroke: #ff3b30; }
+    .rf-node-mux2 {
+      background: none;
+      border: none;
+      box-shadow: none;
+      padding: 0;
+    }
+    .rf-node-mux2 svg { width: 100%; height: 100%; overflow: visible; }
+    .rf-node-mux2 .gate-stroke { stroke: #d4a900; }
+    .rf-node-const { min-width: 56px; width: max-content; padding: 4px 10px; height: 28px; border-color: #8e8e93; color: #8e8e93; font-size: 10px; white-space: nowrap; }
+    .rf-node.is-bus { border-width: 2.5px; }
+    /* the [hi:lo] bus-width badge is an absolutely-positioned overlay, not a flex sibling —
+       otherwise flex-direction:column would grow the node's box taller than the fixed
+       width/height used to place SVG-symbol nodes' handles, throwing pins out of alignment
+       with the drawn shape (only .rf-node-port uses flow layout and needs the old column
+       behavior; SVG-based nodes set explicit width/height and must stay fixed-size). */
+    .rf-node-port.is-bus { flex-direction: column; gap: 2px; }
+    .rf-node-range {
+      position: absolute;
+      left: 50%;
+      bottom: -14px;
+      transform: translateX(-50%);
+      font-size: 9px;
+      font-weight: 600;
+      color: #8e8e93;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .rf-node-port.is-bus .rf-node-range {
+      position: static;
+      transform: none;
+      bottom: auto;
+    }
+    .rf-node-port.is-bus { width: 104px; height: 36px; }
+    .rf-node-instance {
+      width: 130px;
+      min-height: 74px;
+      border-color: #30b0c7;
+      flex-direction: column;
+      gap: 2px;
+      cursor: pointer;
+      padding: 6px 8px;
+    }
+    .rf-node-instance:hover { box-shadow: 0 2px 12px rgba(48,176,199,0.35); }
+    .rf-node-instance .rf-node-modtype { font-size: 11px; font-weight: 700; color: #1c1c1e; }
+    .rf-node-instance .rf-node-instname { font-size: 9px; font-weight: 500; color: #8e8e93; }
+    .rf-node-instance .rf-node-drill-hint { font-size: 8px; color: #30b0c7; margin-top: 2px; }
+    .react-flow__handle { width: 8px; height: 8px; background: #3a3a3c; border: 1.5px solid #fff; }
+    .react-flow__edge-path { stroke: #b0b0b8; }
+    .react-flow__edge.selected .react-flow__edge-path { stroke: #007aff; }
+    .react-flow__edge-text { font-size: 9px; }
+    .react-flow__edge-textbg { fill: #fafafc; }
+
+    @media (max-width: 760px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: #8e8e93;
+      margin-top: 24px;
+    }
+    .footer a { color: #8e8e93; text-decoration: none; }
+    .footer a:hover { color: #007aff; }
+</style>
+</head>
+<body>
+
+<h1>Verilog Synthesizer</h1>
+<div class="subtitle">gate-level synthesis of Verilog HDL, with an interactive netlist viewer</div>
+
+<div class="grid">
+
+  <div class="card">
+    <h2><span class="card-collapse-btn" data-collapse>▾</span>Verilog Source</h2>
+    <p>always@(posedge clk or negedge resetn) → dff · assign with &amp; | ^ ~ ~^ → gates · assign with + / - → adder/subtractor (fa) · always@(*) if/case/casex, ?:, ==, &amp;&amp;/||, reduction ops, {concat} → mux2 chains</p>
+    <div class="toolbar">
+      <select id="exampleSelect"></select>
+      <button class="btn" id="synthBtn">Synthesize</button>
+    </div>
+    <div class="editor-wrap">
+      <div class="gutter" id="gutter">1</div>
+      <textarea id="codeInput" spellcheck="false"></textarea>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="card-collapse-btn" data-collapse>▾</span>Synthesis Log</h2>
+    <p>parse / elaboration messages</p>
+    <div class="console-box" id="logBox"></div>
+    <div class="badge-row" id="statsBadges"></div>
+  </div>
+
+  <div class="card full">
+    <h2><span class="card-collapse-btn" data-collapse>▾</span>Structural Netlist (Verilog)</h2>
+    <p>top-level module instantiating primitive cells, followed by the behavioral definition of each cell used</p>
+    <pre class="code-out" id="codeOut"></pre>
+  </div>
+
+  <div class="card full">
+    <h2><span class="card-collapse-btn" data-collapse>▾</span>Netlist Viewer</h2>
+    <p>drag to pan, scroll/pinch to zoom, drag nodes to rearrange, double-click an instance block to drill into it — built with React Flow</p>
+    <div class="toolbar" style="margin-bottom:8px;">
+      <div class="breadcrumb-row" id="breadcrumbRow" style="flex:1 1 auto; margin-bottom:0;"></div>
+      <button class="btn secondary" id="exportJsonBtn">Export JSON</button>
+    </div>
+    <div id="flowRoot"><div class="flow-placeholder" id="flowPlaceholder">Loading netlist viewer…</div></div>
+    <div class="legend-row">
+      <div class="legend-item"><span class="dot" style="background:#34c759"></span>input port</div>
+      <div class="legend-item"><span class="dot" style="background:#ff9500"></span>output port</div>
+      <div class="legend-item"><span class="dot" style="background:#007aff"></span>gate (and/or/xor)</div>
+      <div class="legend-item"><span class="dot" style="background:#5856d6"></span>inverting gate (nand/nor/xnor/not)</div>
+      <div class="legend-item"><span class="dot" style="background:#af52de"></span>dff</div>
+      <div class="legend-item"><span class="dot" style="background:#ff3b30"></span>full adder (fa)</div>
+      <div class="legend-item"><span class="dot" style="background:#ffd60a"></span>mux (ternary/case)</div>
+      <div class="legend-item"><span class="dot" style="background:#8e8e93"></span>constant</div>
+      <div class="legend-item"><span class="dot" style="background:#30b0c7"></span>sub-module instance</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">© Jeremy Bae 2026 · <a href="https://github.com/jeremyjbae" target="_blank" rel="noopener">github.com/jeremyjbae</a></div>
+
+<script>
+
+/* =====================================================================
+ * Verilog synthesizer — behavioral subset -> gate-level netlist
+ * Sections: Lexer, Parser, Elaborator/Synthesizer, Graph+Layout,
+ * Structural-Verilog codegen, Editor/UI wiring.
+ * =================================================================== */
+
+/* ---------------- Examples ---------------- */
+const EXAMPLES = {
+  'logic gates': `module gates(a, b, y_and, y_or, y_nand, y_nor, y_xor, y_xnor, y_not);
+  input a, b;
+  output y_and, y_or, y_nand, y_nor, y_xor, y_xnor, y_not;
+  assign y_and  = a & b;
+  assign y_or   = a | b;
+  assign y_nand = ~(a & b);
+  assign y_nor  = ~(a | b);
+  assign y_xor  = a ^ b;
+  assign y_xnor = ~(a ^ b);
+  assign y_not  = ~a;
+endmodule`,
+  '4-bit register (dff)': `module dff_reg(clk, resetn, d, q);
+  input clk, resetn;
+  input [3:0] d;
+  output reg [3:0] q;
+  always @(posedge clk or negedge resetn) begin
+    if (!resetn) q <= 4'b0000;
+    else q <= d;
+  end
+endmodule`,
+  '4-bit accumulator (fa + dff)': `module accum(clk, resetn, a, q);
+  input clk, resetn;
+  input [3:0] a;
+  output reg [3:0] q;
+  wire [3:0] sum;
+  assign sum = a + q;
+  always @(posedge clk or negedge resetn) begin
+    if (!resetn) q <= 4'b0000;
+    else q <= sum;
+  end
+endmodule`,
+  'counter (add4 sub-module)': `module myadder4(a, b, sum);
+  input [3:0] a, b;
+  output [3:0] sum;
+  assign sum = a + b;
+endmodule
+
+module count(clk, resetn, q);
+  input clk, resetn;
+  output reg [3:0] q;
+  wire [3:0] q_1;
+
+  myadder4 u_add4 (.a(q), .b(4'b0001), .sum(q_1));
+
+  always @(posedge clk or negedge resetn) begin
+    if (!resetn) q <= 4'b0000;
+    else q <= q_1;
+  end
+endmodule`,
+  '16-bit ALU (casex + concat)': `module alu(clk, resetn, aluAIn, aluBIn, aluCtl, aluOut, condFlag);
+input clk;
+input resetn;
+input    [15:0]    aluAIn;   // alu input A
+input    [15:0]    aluBIn;   // alu input B
+input    [ 2:0]    aluCtl;   // alu control input
+output    [15:0]    aluOut;   // alu output
+output    [ 3:0]    condFlag; // condition flags
+
+reg    [15:0]    aluOut;
+reg        aluCarry;
+
+always @ (*)
+begin
+    casex(aluCtl)
+        3'b000: // MOVA
+            {aluCarry, aluOut} <= {1'b0, aluAIn};
+        3'b001: // MOVB
+            {aluCarry, aluOut} <= {1'b0, aluBIn};
+        3'b010: // AND
+            {aluCarry, aluOut} <= {1'b0, aluAIn & aluBIn};
+        3'b011: // OR
+            {aluCarry, aluOut} <= {1'b0, aluAIn | aluBIn};
+        3'b10?: // ADD
+            {aluCarry, aluOut} <= aluAIn + aluBIn;
+        3'b11?: // SUB
+            {aluCarry, aluOut} <= aluAIn - aluBIn;
+    endcase
+end
+
+wire    aluOverflow;
+assign    aluOverflow = (aluAIn[15] == aluBIn[15])&&(aluAIn[15] != aluOut[15]);
+
+assign    condFlag[3] = aluOut[15];            // negative flag
+assign    condFlag[2] = ~|aluOut;                // zero flag
+assign    condFlag[1] = aluCtl[2] ? aluCarry    : 1'b0;    // carry flag
+assign    condFlag[0] = aluCtl[2] ? aluOverflow : 1'b0;    // overflow flag
+
+endmodule`,
+};
+
+/* ---------------- Lexer ---------------- */
+const KEYWORDS = new Set(['module','endmodule','input','output','wire','reg','assign','always','begin','end','if','else','posedge','negedge','or','case','casex','endcase','default']);
+
+function lex(src) {
+  const toks = [];
+  let i = 0, line = 1;
+  const n = src.length;
+  const isIdStart = c => /[A-Za-z_]/.test(c);
+  const isIdChar = c => /[A-Za-z0-9_]/.test(c);
+  while (i < n) {
+    const c = src[i];
+    if (c === '\n') { line++; i++; continue; }
+    if (/\s/.test(c)) { i++; continue; }
+    if (c === '/' && src[i+1] === '/') { while (i < n && src[i] !== '\n') i++; continue; }
+    if (c === '/' && src[i+1] === '*') { i += 2; while (i < n && !(src[i]==='*'&&src[i+1]==='/')) { if (src[i]==='\n') line++; i++; } i += 2; continue; }
+    if (/[0-9]/.test(c)) {
+      let j = i;
+      while (j < n && /[0-9]/.test(src[j])) j++;
+      if (src[j] === "'") {
+        const widthStr = src.slice(i, j);
+        const base = src[j+1];
+        let k = j + 2;
+        while (k < n && /[0-9A-Fa-fxXzZ?_]/.test(src[k])) k++;
+        toks.push({ type: 'num', value: { width: parseInt(widthStr,10), base, digits: src.slice(j+2, k) }, line });
+        i = k;
+        continue;
+      }
+      toks.push({ type: 'num', value: { width: null, base: 'd', digits: src.slice(i, j) }, line });
+      i = j;
+      continue;
+    }
+    if (isIdStart(c)) {
+      let j = i + 1;
+      while (j < n && isIdChar(src[j])) j++;
+      const word = src.slice(i, j);
+      toks.push({ type: KEYWORDS.has(word) ? word : 'ident', value: word, line });
+      i = j;
+      continue;
+    }
+    const two = src.slice(i, i+2);
+    if (['==','!=','<=','~^','^~','&&','||'].includes(two)) { toks.push({ type: two, value: two, line }); i += 2; continue; }
+    if ('()[]{};,.@=&|^~!+-:*?'.includes(c)) { toks.push({ type: c, value: c, line }); i++; continue; }
+    throw new Error(`Lex error: unexpected character '${c}' at line ${line}`);
+  }
+  toks.push({ type: 'eof', value: null, line });
+  return toks;
+}
+
+/* ---------------- Parser (recursive descent) ---------------- */
+class Parser {
+  constructor(toks) { this.toks = toks; this.pos = 0; }
+  peek(o=0) { return this.toks[this.pos+o]; }
+  at(type) { return this.peek().type === type; }
+  next() { return this.toks[this.pos++]; }
+  expect(type) {
+    if (!this.at(type)) throw new Error(`Parse error: expected '${type}' but got '${this.peek().type}' (line ${this.peek().line})`);
+    return this.next();
+  }
+  parseModule() {
+    this.expect('module');
+    const name = this.expect('ident').value;
+    this.expect('(');
+    const ports = [];
+    if (!this.at(')')) {
+      ports.push(this.expect('ident').value);
+      while (this.at(',')) { this.next(); ports.push(this.expect('ident').value); }
+    }
+    this.expect(')');
+    this.expect(';');
+    const decls = [], assigns = [], always = [], instances = [];
+    while (!this.at('endmodule')) {
+      if (this.at('input') || this.at('output') || this.at('wire') || this.at('reg')) {
+        decls.push(this.parseDecl());
+      } else if (this.at('assign')) {
+        assigns.push(this.parseAssign());
+      } else if (this.at('always')) {
+        always.push(this.parseAlways());
+      } else if (this.at('ident') && this.peek(1).type === 'ident') {
+        instances.push(this.parseInstance());
+      } else {
+        throw new Error(`Parse error: unexpected token '${this.peek().type}' (line ${this.peek().line})`);
+      }
+    }
+    this.expect('endmodule');
+    return { name, ports, decls, assigns, always, instances };
+  }
+  parseInstance() {
+    const line = this.peek().line;
+    const modType = this.expect('ident').value;
+    const instName = this.expect('ident').value;
+    this.expect('(');
+    const conns = [];
+    if (!this.at(')')) {
+      conns.push(this.parsePortConn());
+      while (this.at(',')) { this.next(); conns.push(this.parsePortConn()); }
+    }
+    this.expect(')');
+    this.expect(';');
+    return { type: 'Instance', modType, instName, conns, line };
+  }
+  parsePortConn() {
+    if (!this.at('.')) throw new Error(`Parse error: module instantiation only supports named port connections like '.port(signal)', not positional (line ${this.peek().line})`);
+    this.next();
+    const port = this.expect('ident').value;
+    this.expect('(');
+    const expr = this.parseExpr();
+    this.expect(')');
+    return { port, expr };
+  }
+  parseRange() {
+    if (!this.at('[')) return null;
+    this.next();
+    const hi = parseInt(this.expect('num').value.digits, 10);
+    this.expect(':');
+    const lo = parseInt(this.expect('num').value.digits, 10);
+    this.expect(']');
+    return { hi, lo };
+  }
+  parseDecl() {
+    const kind = this.next().type;
+    let isReg = false;
+    if (kind === 'output' && this.at('reg')) { this.next(); isReg = true; }
+    const range = this.parseRange();
+    const names = [this.expect('ident').value];
+    while (this.at(',')) { this.next(); names.push(this.expect('ident').value); }
+    this.expect(';');
+    return { kind, isReg, range, names };
+  }
+  parseLvalue() {
+    if (this.at('{')) {
+      this.next();
+      const elems = [this.parseSimpleLvalue()];
+      while (this.at(',')) { this.next(); elems.push(this.parseSimpleLvalue()); }
+      this.expect('}');
+      return { type: 'ConcatLvalue', elems };
+    }
+    return this.parseSimpleLvalue();
+  }
+  parseSimpleLvalue() {
+    const name = this.expect('ident').value;
+    let bit = null;
+    if (this.at('[')) { this.next(); bit = parseInt(this.expect('num').value.digits, 10); this.expect(']'); }
+    return { type: 'Lvalue', name, bit };
+  }
+  parseAssign() {
+    this.expect('assign');
+    const lhs = this.parseLvalue();
+    this.expect('=');
+    const rhs = this.parseExpr();
+    this.expect(';');
+    return { lhs, rhs };
+  }
+  parseAlways() {
+    this.expect('always');
+    this.expect('@');
+    this.expect('(');
+    let sens;
+    if (this.at('*')) { this.next(); sens = 'star'; }
+    else {
+      sens = [this.parseEdge()];
+      while (this.at('or')) { this.next(); sens.push(this.parseEdge()); }
+    }
+    this.expect(')');
+    const body = this.parseStmtOrBlock();
+    return { sens, body };
+  }
+  parseEdge() {
+    const edge = this.next().type;
+    if (edge !== 'posedge' && edge !== 'negedge') throw new Error(`Parse error: expected posedge/negedge (line ${this.peek().line})`);
+    const sig = this.expect('ident').value;
+    return { edge, sig };
+  }
+  parseStmtOrBlock() {
+    if (this.at('begin')) {
+      this.next();
+      const stmts = [];
+      while (!this.at('end')) stmts.push(this.parseStmt());
+      this.expect('end');
+      return { type: 'Block', stmts };
+    }
+    return this.parseStmt();
+  }
+  parseStmt() {
+    if (this.at('if')) {
+      this.next();
+      this.expect('(');
+      const cond = this.parseExpr();
+      this.expect(')');
+      const thenS = this.parseStmtOrBlock();
+      let elseS = null;
+      if (this.at('else')) { this.next(); elseS = this.parseStmtOrBlock(); }
+      return { type: 'If', cond, then: thenS, else: elseS };
+    }
+    if (this.at('case') || this.at('casex')) return this.parseCase();
+    const lhs = this.parseLvalue();
+    if (this.at('<=')) this.next(); else this.expect('=');
+    const rhs = this.parseExpr();
+    this.expect(';');
+    return { type: 'NBAssign', lhs, rhs };
+  }
+  parseCase() {
+    const kind = this.next().type; // 'case' or 'casex'
+    this.expect('(');
+    const selector = this.parseExpr();
+    this.expect(')');
+    const items = [];
+    let defaultBody = null;
+    while (!this.at('endcase')) {
+      if (this.at('default')) {
+        this.next();
+        if (this.at(':')) this.next();
+        defaultBody = this.parseStmtOrBlock();
+        continue;
+      }
+      const patterns = [this.parseExpr()];
+      while (this.at(',')) { this.next(); patterns.push(this.parseExpr()); }
+      this.expect(':');
+      const body = this.parseStmtOrBlock();
+      items.push({ patterns, body });
+    }
+    this.expect('endcase');
+    return { type: 'Case', kind, selector, items, defaultBody };
+  }
+  // precedence (low->high): ?: > || > && > | > ^/~^/^~ > & > ==/!= > binary +/- > unary/reduction > primary
+  parseExpr() { return this.parseTernary(); }
+  parseTernary() {
+    const cond = this.parseLogicalOr();
+    if (this.at('?')) {
+      this.next();
+      const thenE = this.parseExpr();
+      this.expect(':');
+      const elseE = this.parseTernary();
+      return { type: 'Ternary', cond, then: thenE, else: elseE };
+    }
+    return cond;
+  }
+  parseLogicalOr() {
+    let l = this.parseLogicalAnd();
+    while (this.at('||')) { this.next(); l = { type: 'Binary', op: '||', l, r: this.parseLogicalAnd() }; }
+    return l;
+  }
+  parseLogicalAnd() {
+    let l = this.parseOr();
+    while (this.at('&&')) { this.next(); l = { type: 'Binary', op: '&&', l, r: this.parseOr() }; }
+    return l;
+  }
+  parseOr() {
+    let l = this.parseXor();
+    while (this.at('|')) { this.next(); l = { type: 'Binary', op: '|', l, r: this.parseXor() }; }
+    return l;
+  }
+  parseXor() {
+    let l = this.parseAnd();
+    while (this.at('^') || this.at('~^') || this.at('^~')) {
+      const op = this.next().type === '^' ? '^' : 'xnor';
+      l = { type: 'Binary', op, l, r: this.parseAnd() };
+    }
+    return l;
+  }
+  parseAnd() {
+    let l = this.parseEquality();
+    while (this.at('&')) { this.next(); l = { type: 'Binary', op: '&', l, r: this.parseEquality() }; }
+    return l;
+  }
+  parseEquality() {
+    let l = this.parseAdd();
+    while (this.at('==') || this.at('!=')) {
+      const op = this.next().type;
+      l = { type: 'Binary', op, l, r: this.parseAdd() };
+    }
+    return l;
+  }
+  parseAdd() {
+    let l = this.parseUnary();
+    while (this.at('+') || this.at('-')) {
+      const op = this.next().type;
+      l = { type: 'Binary', op, l, r: this.parseUnary() };
+    }
+    return l;
+  }
+  parseUnary() {
+    if (this.at('~^') || this.at('^~')) { this.next(); return { type: 'Unary', op: 'redxnor', expr: this.parseUnary() }; }
+    if (this.at('&')) { this.next(); return { type: 'Unary', op: 'redand', expr: this.parseUnary() }; }
+    if (this.at('|')) { this.next(); return { type: 'Unary', op: 'redor', expr: this.parseUnary() }; }
+    if (this.at('^')) { this.next(); return { type: 'Unary', op: 'redxor', expr: this.parseUnary() }; }
+    if (this.at('~') || this.at('!')) { this.next(); return { type: 'Unary', op: '~', expr: this.parseUnary() }; }
+    return this.parsePrimary();
+  }
+  parsePrimary() {
+    if (this.at('{')) {
+      this.next();
+      const elems = [this.parseExpr()];
+      while (this.at(',')) { this.next(); elems.push(this.parseExpr()); }
+      this.expect('}');
+      return { type: 'Concat', elems };
+    }
+    if (this.at('(')) { this.next(); const e = this.parseExpr(); this.expect(')'); return e; }
+    if (this.at('num')) { return { type: 'Num', value: this.next().value }; }
+    const name = this.expect('ident').value;
+    if (this.at('[')) { this.next(); const bit = parseInt(this.expect('num').value.digits, 10); this.expect(']'); return { type: 'Index', name, bit }; }
+    return { type: 'Ident', name };
+  }
+}
+
+function parseVerilog(src) {
+  const parser = new Parser(lex(src));
+  const modules = [];
+  while (!parser.at('eof')) modules.push(parser.parseModule());
+  if (!modules.length) throw new Error('Parse error: no module found');
+  return modules;
+}
+
+// Port directions/widths for one module, needed to validate instance connections in a
+// *different* module before that module has been (or ever gets) fully synthesized.
+function extractInterface(mod) {
+  const sig = {};
+  for (const d of mod.decls) {
+    const width = d.range ? (d.range.hi - d.range.lo + 1) : 1;
+    const lo = d.range ? d.range.lo : 0;
+    for (const name of d.names) sig[name] = { width, lo, dir: d.kind };
+  }
+  return { name: mod.name, ports: mod.ports, sig };
+}
+
+// The top module is the one no other module instantiates. Errors if that's ambiguous.
+function findTopModule(modules) {
+  const instantiated = new Set();
+  for (const m of modules) for (const inst of m.instances) instantiated.add(inst.modType);
+  const candidates = modules.filter(m => !instantiated.has(m.name));
+  if (candidates.length === 0) throw new Error('Cannot determine a top module: every module is instantiated by another (a cycle in the module hierarchy)');
+  if (candidates.length > 1) throw new Error(`Cannot determine a top module: multiple modules are never instantiated (${candidates.map(m => m.name).join(', ')}) — expected exactly one`);
+  return candidates[0];
+}
+
+function exprToStr(node) {
+  if (!node) return '';
+  const REDUCE_SYM = { redand: '&', redor: '|', redxor: '^', redxnor: '~^' };
+  switch (node.type) {
+    case 'Num': return node.value.width ? `${node.value.width}'${node.value.base}${node.value.digits}` : node.value.digits;
+    case 'Ident': return node.name;
+    case 'Index': return `${node.name}[${node.bit}]`;
+    case 'Unary': return REDUCE_SYM[node.op] ? `${REDUCE_SYM[node.op]}${exprToStr(node.expr)}` : `~${exprToStr(node.expr)}`;
+    case 'Binary': return `(${exprToStr(node.l)} ${node.op === 'xnor' ? '~^' : node.op} ${exprToStr(node.r)})`;
+    case 'Ternary': return `(${exprToStr(node.cond)} ? ${exprToStr(node.then)} : ${exprToStr(node.else)})`;
+    case 'Concat': return `{${node.elems.map(exprToStr).join(', ')}}`;
+    default: return '?';
+  }
+}
+
+function numToBits(numVal, width) {
+  let bigVal;
+  if (numVal.base === 'b') bigVal = BigInt('0b' + numVal.digits);
+  else if (numVal.base === 'h') bigVal = BigInt('0x' + numVal.digits);
+  else if (numVal.base === 'o') bigVal = BigInt('0o' + numVal.digits);
+  else bigVal = BigInt(numVal.digits);
+  const bits = [];
+  for (let i = 0; i < width; i++) bits.push(Number((bigVal >> BigInt(i)) & 1n));
+  return bits;
+}
+
+/* ---------------- Elaborator / Synthesizer ---------------- */
+class Synthesizer {
+  constructor(ast, interfaces, adderRegistry) {
+    this.ast = ast;
+    this.interfaces = interfaces || {}; // moduleName -> extractInterface(mod), for validating instance connections
+    this.adderRegistry = adderRegistry || new Map(); // shared across all modules in this run: 'add4'/'sub4' -> module result, so +/- at the same width reuse one generated module
+    this.sig = {};
+    this.cells = [];
+    this.driven = new Set();
+    this.log = [];
+    this.constNets = {};
+    this.counters = {};
+    this.clkSignals = new Set();
+    this.rstSignals = new Set();
+    this._buildSignalTable();
+  }
+  warn(msg) { this.log.push({ level: 'warn', msg }); }
+  info(msg) { this.log.push({ level: 'info', msg }); }
+  error(msg) { throw new Error(msg); }
+
+  _buildSignalTable() {
+    for (const d of this.ast.decls) {
+      const width = d.range ? (d.range.hi - d.range.lo + 1) : 1;
+      const lo = d.range ? d.range.lo : 0;
+      for (const name of d.names) {
+        const existing = this.sig[name];
+        if (existing) {
+          // legacy non-ANSI idiom: `output [hi:lo] name;` then later `reg [hi:lo] name;`
+          // redeclaring the same port as a register (or vice versa) — merge, don't error.
+          const merging = (existing.dir === 'output' && d.kind === 'reg') || (existing.dir === 'reg' && d.kind === 'output');
+          if (!merging) this.error(`Signal '${name}' declared more than once`);
+          if (existing.width !== width) this.error(`Signal '${name}' redeclared with a different width (${existing.width} vs ${width})`);
+          this.sig[name] = { width, lo, dir: existing.dir === 'output' ? 'output' : d.kind, isReg: true };
+          continue;
+        }
+        this.sig[name] = { width, lo, dir: d.kind, isReg: d.kind === 'reg' || d.isReg };
+      }
+    }
+    for (const portName of this.ast.ports) {
+      if (!this.sig[portName]) this.error(`Port '${portName}' has no input/output declaration`);
+    }
+  }
+
+  netName(sigName, bit) {
+    const s = this.sig[sigName];
+    if (!s) this.error(`Unknown signal '${sigName}'`);
+    if (s.width === 1) return sigName;
+    if (bit < 0 || bit >= s.width) this.error(`Bit index ${bit} out of range for '${sigName}' (width ${s.width})`);
+    return `${sigName}[${s.lo + bit}]`;
+  }
+
+  constNet(bitVal) {
+    const key = String(bitVal);
+    if (this.constNets[key]) return this.constNets[key];
+    const id = this.newId('const');
+    const net = `const_${key}`;
+    this.cells.push({ id, type: 'const', value: bitVal, ports: { y: net } });
+    this.constNets[key] = net;
+    return net;
+  }
+
+  newId(type) {
+    this.counters[type] = (this.counters[type] || 0) + 1;
+    return `${type}${this.counters[type] - 1}`;
+  }
+
+  markDriven(net, cellId) {
+    if (this.driven.has(net)) this.warn(`Net '${net}' has more than one driver (cell '${cellId}')`);
+    this.driven.add(net);
+  }
+
+  // self-determined width: the width an expression "naturally" has from its own
+  // declaration/shape, independent of what a surrounding context requests it be —
+  // needed for reduction-op/comparison/concat operands, which must be synthesized
+  // at their own full width before being folded down, not truncated to the caller's width.
+  naturalWidth(node) {
+    switch (node.type) {
+      case 'Num': return node.value.width || 32;
+      case 'Ident': return this._sigWidth(node.name);
+      case 'Index': return 1;
+      case 'Unary':
+        if (['redand', 'redor', 'redxor', 'redxnor'].includes(node.op)) return 1;
+        return this.naturalWidth(node.expr);
+      case 'Binary':
+        if (['==', '!=', '&&', '||'].includes(node.op)) return 1;
+        return Math.max(this.naturalWidth(node.l), this.naturalWidth(node.r));
+      case 'Ternary':
+        return Math.max(this.naturalWidth(node.then), this.naturalWidth(node.else));
+      case 'Concat':
+        return node.elems.reduce((sum, e) => sum + this.naturalWidth(e), 0);
+      default:
+        this.error(`Cannot determine natural width of expression node '${node.type}'`);
+    }
+  }
+
+  // truncate (drop high/MSB bits) or zero-extend (pad high bits) an LSB-first net array to exactly `width`
+  _fitWidth(nets, width) {
+    const out = nets.slice(0, width);
+    while (out.length < width) out.push(this.constNet(0));
+    return out;
+  }
+
+  // fold an array of bit-nets down to one net via a chain of 2-input gates of the given type
+  _reduceChain(gateOp, nets) {
+    let acc = nets[0];
+    for (let i = 1; i < nets.length; i++) {
+      const id = this.newId(gateOp);
+      const y = `w_${id}`;
+      this.cells.push({ id, type: gateOp, ports: { a: acc, b: nets[i], y } });
+      this.markDriven(y, id);
+      acc = y;
+    }
+    return acc;
+  }
+
+  // reduce an expression of any natural width down to a single boolean net (nonzero test),
+  // used for ternary/&&/|| operands per Verilog's implicit-boolean-context semantics
+  _synthToBool(node) {
+    const w = this.naturalWidth(node);
+    if (w === 1) return this.synthExpr(node, 1)[0];
+    return this._reduceChain('or', this.synthExpr(node, w));
+  }
+
+  _synthEquality(lNode, rNode, invert, srcNode) {
+    const w = Math.max(this.naturalWidth(lNode), this.naturalWidth(rNode));
+    const a = this.synthExpr(lNode, w);
+    const b = this.synthExpr(rNode, w);
+    const eqBits = a.map((aNet, i) => {
+      const id = this.newId('xnor');
+      const y = `w_${id}`;
+      this.cells.push({ id, type: 'xnor', ports: { a: aNet, b: b[i], y }, comment: i === 0 ? exprToStr(srcNode) : null });
+      this.markDriven(y, id);
+      return y;
+    });
+    const allEqual = this._reduceChain('and', eqBits);
+    if (!invert) return allEqual;
+    const id = this.newId('not');
+    const y = `w_${id}`;
+    this.cells.push({ id, type: 'not', ports: { a: allEqual, y }, comment: exprToStr(srcNode) });
+    this.markDriven(y, id);
+    return y;
+  }
+
+  _synthLogical(op, lNode, rNode) {
+    const lBit = this._synthToBool(lNode);
+    const rBit = this._synthToBool(rNode);
+    const gateOp = op === '&&' ? 'and' : 'or';
+    const id = this.newId(gateOp);
+    const y = `w_${id}`;
+    this.cells.push({ id, type: gateOp, ports: { a: lBit, b: rBit, y } });
+    this.markDriven(y, id);
+    return y;
+  }
+
+  synthExpr(node, width) {
+    switch (node.type) {
+      case 'Num':
+        return numToBits(node.value, width).map(b => this.constNet(b));
+      case 'Ident': {
+        const s = this.sig[node.name];
+        if (!s) this.error(`Unknown signal '${node.name}'`);
+        const nets = [];
+        for (let i = 0; i < width; i++) nets.push(i < s.width ? this.netName(node.name, i) : this.constNet(0));
+        return nets;
+      }
+      case 'Index': {
+        const nets = [this.netName(node.name, node.bit)];
+        for (let i = 1; i < width; i++) nets.push(this.constNet(0));
+        return nets;
+      }
+      case 'Unary': {
+        if (node.op === 'redand') return this._fitWidth([this._reduceChain('and', this.synthExpr(node.expr, this.naturalWidth(node.expr)))], width);
+        if (node.op === 'redor') return this._fitWidth([this._reduceChain('or', this.synthExpr(node.expr, this.naturalWidth(node.expr)))], width);
+        if (node.op === 'redxor') return this._fitWidth([this._reduceChain('xor', this.synthExpr(node.expr, this.naturalWidth(node.expr)))], width);
+        if (node.op === 'redxnor') {
+          const xored = this._reduceChain('xor', this.synthExpr(node.expr, this.naturalWidth(node.expr)));
+          const id = this.newId('not');
+          const y = `w_${id}`;
+          this.cells.push({ id, type: 'not', ports: { a: xored, y }, comment: exprToStr(node) });
+          this.markDriven(y, id);
+          return this._fitWidth([y], width);
+        }
+        if (node.op === '~' && node.expr.type === 'Binary' && ['&', '|', '^'].includes(node.expr.op)) {
+          const gateOp = { '&': 'nand', '|': 'nor', '^': 'xnor' }[node.expr.op];
+          return this._synthBinaryGate(gateOp, node.expr.l, node.expr.r, width, node);
+        }
+        const a = this.synthExpr(node.expr, width);
+        const out = [];
+        for (let i = 0; i < width; i++) {
+          const id = this.newId('not');
+          const y = `w_${id}`;
+          this.cells.push({ id, type: 'not', ports: { a: a[i], y }, comment: i === 0 ? exprToStr(node) : null });
+          this.markDriven(y, id);
+          out.push(y);
+        }
+        return out;
+      }
+      case 'Binary': {
+        if (node.op === '+') return this._synthAdder(node.l, node.r, width, node, false);
+        if (node.op === '-') return this._synthAdder(node.l, node.r, width, node, true);
+        if (node.op === '==' || node.op === '!=') return this._fitWidth([this._synthEquality(node.l, node.r, node.op === '!=', node)], width);
+        if (node.op === '&&' || node.op === '||') return this._fitWidth([this._synthLogical(node.op, node.l, node.r)], width);
+        const gateOp = { '&': 'and', '|': 'or', '^': 'xor', 'xnor': 'xnor' }[node.op];
+        return this._synthBinaryGate(gateOp, node.l, node.r, width, node);
+      }
+      case 'Ternary': {
+        const selBit = this._synthToBool(node.cond);
+        const aNets = this.synthExpr(node.else, width);
+        const bNets = this.synthExpr(node.then, width);
+        const out = [];
+        for (let i = 0; i < width; i++) {
+          const id = this.newId('mux2');
+          const y = `w_${id}`;
+          this.cells.push({ id, type: 'mux2', ports: { sel: selBit, a: aNets[i], b: bNets[i], y }, comment: i === 0 ? exprToStr(node) : null });
+          this.markDriven(y, id);
+          out.push(y);
+        }
+        return out;
+      }
+      case 'Concat': {
+        let nets = [];
+        for (let idx = node.elems.length - 1; idx >= 0; idx--) {
+          const elemW = this.naturalWidth(node.elems[idx]);
+          nets = nets.concat(this.synthExpr(node.elems[idx], elemW));
+        }
+        return this._fitWidth(nets, width);
+      }
+      default:
+        this.error(`Cannot synthesize expression node '${node.type}'`);
+    }
+  }
+
+  _synthBinaryGate(gateOp, lNode, rNode, width, srcNode) {
+    const a = this.synthExpr(lNode, width);
+    const b = this.synthExpr(rNode, width);
+    const out = [];
+    for (let i = 0; i < width; i++) {
+      const id = this.newId(gateOp);
+      const y = `w_${id}`;
+      this.cells.push({ id, type: gateOp, ports: { a: a[i], b: b[i], y }, comment: i === 0 ? exprToStr(srcNode) : null });
+      this.markDriven(y, id);
+      out.push(y);
+    }
+    return out;
+  }
+
+  // Lazily builds (and caches, per-run, in this.adderRegistry) a standalone `addN`/`subN`
+  // module — a, b, cout in; sum out — with its own internal per-bit fa chain, so that every
+  // +/- use at a given width shares one drillable sub-module instead of each inlining its
+  // own copy of the ripple-carry chain into the calling module's cell list.
+  _getOrBuildAdderModule(width, isSub) {
+    const modName = `FUNC_${isSub ? 'sub' : 'add'}${width}`;
+    if (this.adderRegistry.has(modName)) return this.adderRegistry.get(modName);
+    if (this.interfaces[modName] && !this.adderRegistry.has(modName)) {
+      this.error(`Cannot auto-generate the '${modName}' functional IP module — a module with that name already exists in this source. Rename it to avoid the clash.`);
+    }
+    const range = width > 1 ? { hi: width - 1, lo: 0 } : null;
+    const fakeAst = {
+      name: modName, ports: ['a', 'b', 'cout', 'sum'], assigns: [], always: [], instances: [],
+      decls: [
+        { kind: 'input', isReg: false, range, names: ['a', 'b'] },
+        { kind: 'output', isReg: false, range: null, names: ['cout'] },
+        { kind: 'output', isReg: false, range, names: ['sum'] },
+      ],
+    };
+    const sub = new Synthesizer(fakeAst, this.interfaces, this.adderRegistry);
+    let bNets = Array.from({ length: width }, (_, i) => sub.netName('b', i));
+    if (isSub) {
+      bNets = bNets.map((net, i) => {
+        const id = sub.newId('not');
+        const y = `w_${id}`;
+        sub.cells.push({ id, type: 'not', ports: { a: net, y }, comment: i === 0 ? '~b' : null });
+        sub.markDriven(y, id);
+        return y;
+      });
+    }
+    let cin = sub.constNet(isSub ? 1 : 0);
+    for (let i = 0; i < width; i++) {
+      const id = sub.newId('fa');
+      const sumBit = sub.netName('sum', i);
+      const cNet = i === width - 1 ? sub.netName('cout', 0) : `w_${id}_cout`;
+      sub.cells.push({ id, type: 'fa', op: isSub ? 'sub' : 'add', ports: { a: sub.netName('a', i), b: bNets[i], cin, sum: sumBit, cout: cNet }, comment: i === 0 ? (isSub ? 'a - b' : 'a + b') : null });
+      sub.markDriven(sumBit, id);
+      cin = cNet;
+    }
+    const result = { sig: sub.sig, cells: sub.cells, log: [], ports: fakeAst.ports, moduleName: modName, clkSignals: new Set(), rstSignals: new Set(), isAdderModule: true };
+    this.adderRegistry.set(modName, result);
+    this.interfaces[modName] = { name: modName, ports: fakeAst.ports, sig: sub.sig };
+    return result;
+  }
+
+  _synthAdder(lNode, rNode, width, srcNode, isSub) {
+    const a = this.synthExpr(lNode, width);
+    const b = this.synthExpr(rNode, width);
+    const modResult = this._getOrBuildAdderModule(width, isSub);
+    const id = this.newId(isSub ? 'sub' : 'add');
+    const ports = {};
+    for (let i = 0; i < width; i++) { ports[width === 1 ? 'a' : `a[${i}]`] = a[i]; ports[width === 1 ? 'b' : `b[${i}]`] = b[i]; }
+    const sumNets = Array.from({ length: width }, (_, i) => `w_${id}_sum${i}`);
+    sumNets.forEach((net, i) => { ports[width === 1 ? 'sum' : `sum[${i}]`] = net; });
+    const coutNet = `w_${id}_cout`;
+    ports.cout = coutNet;
+    const portWidths = { a: width, b: width, sum: width, cout: 1 };
+    const portDirs = { a: 'input', b: 'input', sum: 'output', cout: 'output' };
+    this.cells.push({
+      id, type: 'instance', modType: modResult.moduleName, isAdder: true, isSub,
+      portOrder: ['a', 'b', 'cout', 'sum'], portDirs, portWidths, ports,
+      portExprText: { a: exprToStr(lNode), b: exprToStr(rNode), sum: exprToStr(srcNode), cout: null },
+      comment: `${modResult.moduleName} ${id}`,
+    });
+    for (const net of sumNets) this.markDriven(net, id);
+    this.markDriven(coutNet, id);
+    this.info(`carry-out of the ${isSub ? 'subtractor' : 'adder'} for '${exprToStr(srcNode)}' beyond bit ${width - 1} is discarded (width truncated to the target's declared width)`);
+    return sumNets;
+  }
+
+  // --- generic Lvalue helpers: an Lvalue is either {type:'Lvalue', name, bit} or
+  // {type:'ConcatLvalue', elems:[Lvalue,...]} (elems listed MSB-first, like the source text) ---
+  _sigWidth(name) {
+    const s = this.sig[name];
+    if (!s) this.error(`Unknown signal '${name}'`);
+    return s.width;
+  }
+  _lvalueWidth(lv) {
+    if (lv.type === 'ConcatLvalue') return lv.elems.reduce((sum, e) => sum + (e.bit !== null ? 1 : this._sigWidth(e.name)), 0);
+    return lv.bit !== null ? 1 : this._sigWidth(lv.name);
+  }
+  _lvalueKey(lv) {
+    if (lv.type === 'ConcatLvalue') return '{' + lv.elems.map(e => this._lvalueKey(e)).join(',') + '}';
+    return lv.bit !== null ? `${lv.name}[${lv.bit}]` : lv.name;
+  }
+  // maps a 0-based bit index into the LSB-first flattened lvalue to the concrete net name
+  // that bit should end up driving (the last-listed concat element is the LSB-most).
+  _lvalueBitNet(lv, i) {
+    if (lv.type !== 'ConcatLvalue') return this.netName(lv.name, lv.bit !== null ? lv.bit : i);
+    let offset = 0;
+    for (let idx = lv.elems.length - 1; idx >= 0; idx--) {
+      const e = lv.elems[idx];
+      const w = e.bit !== null ? 1 : this._sigWidth(e.name);
+      if (i < offset + w) return this.netName(e.name, e.bit !== null ? e.bit : (i - offset));
+      offset += w;
+    }
+    this.error(`internal error: bit index ${i} out of range for lvalue '${this._lvalueKey(lv)}'`);
+  }
+  // rhsNets: LSB-first, length must equal _lvalueWidth(lv)
+  _driveLvalue(lv, rhsNets) {
+    for (let i = 0; i < rhsNets.length; i++) this._alias(this._lvalueBitNet(lv, i), rhsNets[i]);
+  }
+
+  synthAssign(a) {
+    const width = this._lvalueWidth(a.lhs);
+    const nets = this.synthExpr(a.rhs, width);
+    this._driveLvalue(a.lhs, nets);
+  }
+
+  // rename the just-synthesized driving net to the target signal's net name — but if
+  // sourceNet has no cell output to rename (e.g. a bare passthrough like `assign y = a;`,
+  // where 'a' is a primary input with no driving cell at all), insert an explicit buffer
+  // cell instead so the connection still shows up as a real edge in the netlist.
+  _alias(targetNet, sourceNet) {
+    if (targetNet === sourceNet) return;
+    let rewrote = false;
+    for (const c of this.cells) {
+      for (const p of Object.keys(c.ports)) {
+        if (c.ports[p] !== sourceNet) continue;
+        const base = p.split('[')[0]; // e.g. an addN/subN instance's bit-indexed 'sum[3]' output
+        if (['y', 'sum', 'cout'].includes(base)) { c.ports[p] = targetNet; rewrote = true; }
+      }
+    }
+    for (const k of Object.keys(this.constNets)) if (this.constNets[k] === sourceNet) { this.constNets[k] = targetNet; rewrote = true; }
+    if (!rewrote) {
+      const id = this.newId('buf');
+      this.cells.push({ id, type: 'buf', ports: { a: sourceNet, y: targetNet } });
+      this.markDriven(targetNet, id);
+      return;
+    }
+    this.driven.delete(sourceNet);
+    this.markDriven(targetNet, 'alias');
+  }
+
+  // --- combinational always@(*) synthesis ---
+  // Tracks, per concrete bit-net (e.g. "aluOut[3]"), the net currently driving it as we walk
+  // the statement list top-to-bottom (blocking-assignment "last write wins" semantics). if/case
+  // branches are each resolved from a snapshot of this map, then merged back via a priority
+  // mux2 chain. A branch that doesn't touch a given net simply inherits the pre-conditional
+  // value automatically (its snapshot copy still has that entry) — which is also how we refuse
+  // to infer a latch: if a net was NEVER assigned before reaching a branch that omits it, the
+  // snapshot has no entry for it either, and building the mux errors out instead of guessing.
+  synthCombAlways(blk) {
+    const stmts = blk.body.type === 'Block' ? blk.body.stmts : [blk.body];
+    const finalCv = this._synthCombSeq(stmts, new Map());
+    for (const [netKey, net] of finalCv) this._alias(netKey, net);
+  }
+
+  _synthCombSeq(stmts, cv) {
+    let cur = cv;
+    for (const stmt of stmts) cur = this._synthCombStmt(stmt, cur);
+    return cur;
+  }
+
+  _synthCombStmt(stmt, cv) {
+    if (stmt.type === 'NBAssign') {
+      const width = this._lvalueWidth(stmt.lhs);
+      const nets = this.synthExpr(stmt.rhs, width);
+      const next = new Map(cv);
+      for (let i = 0; i < width; i++) next.set(this._lvalueBitNet(stmt.lhs, i), nets[i]);
+      return next;
+    }
+    if (stmt.type === 'Block') return this._synthCombSeq(stmt.stmts, cv);
+    if (stmt.type === 'If') return this._synthCombIf(stmt, cv);
+    if (stmt.type === 'Case') return this._synthCombCase(stmt, cv);
+    this.error(`Unsupported statement '${stmt.type}' inside a combinational always@(*) block`);
+  }
+
+  // keys present in `after` whose driving net actually differs from `before`
+  _changedKeys(before, after) {
+    const keys = [];
+    for (const [k, v] of after) if (before.get(k) !== v) keys.push(k);
+    return keys;
+  }
+
+  _synthCombIf(stmt, cv) {
+    const thenCv = this._synthCombSeq(stmt.then.type === 'Block' ? stmt.then.stmts : [stmt.then], cv);
+    const elseCv = stmt.else ? this._synthCombSeq(stmt.else.type === 'Block' ? stmt.else.stmts : [stmt.else], cv) : cv;
+    const touched = new Set([...this._changedKeys(cv, thenCv), ...this._changedKeys(cv, elseCv)]);
+    const selBit = this._synthToBool(stmt.cond);
+    const result = new Map(cv);
+    for (const key of touched) {
+      const bNet = thenCv.get(key);
+      const aNet = elseCv.get(key);
+      if (bNet === undefined || aNet === undefined) this.error(`signal driving net '${key}' is not assigned on every branch of an if/else inside a combinational always block (no prior value to fall back on) — combinational blocks must fully determine every signal they touch, to avoid inferring a latch`);
+      if (bNet === aNet) { result.set(key, bNet); continue; }
+      const id = this.newId('mux2');
+      const y = `w_${id}`;
+      this.cells.push({ id, type: 'mux2', ports: { sel: selBit, a: aNet, b: bNet, y } });
+      this.markDriven(y, id);
+      result.set(key, y);
+    }
+    return result;
+  }
+
+  // enumerates every possible selector value and checks it matches at least one item's
+  // pattern (respecting don't-care bits) — capped at 16 bits (65536 values) to stay cheap;
+  // wider selectors without a default are simply rejected rather than risk a slow check.
+  _isCaseExhaustive(items, selWidth) {
+    if (selWidth > 16) return false;
+    const parsed = items.flatMap(item => item.patterns).map(p => this._patternBits(p, selWidth));
+    const total = 1 << selWidth;
+    for (let v = 0; v < total; v++) {
+      if (!parsed.some(({ mask, value }) => (v & mask) === (value & mask))) return false;
+    }
+    return true;
+  }
+
+  _patternBits(patNode, selWidth) {
+    if (patNode.type !== 'Num') this.error(`case item pattern must be a literal constant, got '${exprToStr(patNode)}'`);
+    const hasWildcard = patNode.value.base === 'b' && /[?xXzZ]/.test(patNode.value.digits);
+    if (!hasWildcard) {
+      const bits = numToBits(patNode.value, selWidth);
+      let value = 0;
+      for (let i = 0; i < selWidth; i++) if (bits[i]) value |= (1 << i);
+      return { mask: (1 << selWidth) - 1, value };
+    }
+    const digits = patNode.value.digits;
+    let mask = 0, value = 0;
+    for (let i = 0; i < selWidth; i++) {
+      const ch = digits[digits.length - 1 - i];
+      if (ch === undefined) { mask |= (1 << i); continue; }
+      if (ch === '?' || ch === 'x' || ch === 'X' || ch === 'z' || ch === 'Z') continue;
+      mask |= (1 << i);
+      if (ch === '1') value |= (1 << i);
+    }
+    return { mask, value };
+  }
+
+  _synthCombCase(stmt, cv) {
+    const selWidth = this.naturalWidth(stmt.selector);
+    const selNets = this.synthExpr(stmt.selector, selWidth);
+    const itemCvs = stmt.items.map(item => ({
+      matchNet: this._synthCasePatternMatch(item.patterns, selNets, selWidth),
+      cv: this._synthCombSeq(item.body.type === 'Block' ? item.body.stmts : [item.body], cv),
+    }));
+    if (!itemCvs.length) this.error('case statement has no items');
+    const hasDefault = !!stmt.defaultBody;
+    if (!hasDefault && !this._isCaseExhaustive(stmt.items, selWidth)) {
+      this.error(`case statement has no 'default' branch and its patterns don't cover every possible value of the ${selWidth}-bit selector — add a default branch (or cover every value) to avoid inferring a latch`);
+    }
+    const defaultCv = hasDefault ? this._synthCombSeq(stmt.defaultBody.type === 'Block' ? stmt.defaultBody.stmts : [stmt.defaultBody], cv) : null;
+
+    const touched = new Set();
+    for (const { cv: icv } of itemCvs) for (const k of this._changedKeys(cv, icv)) touched.add(k);
+    if (hasDefault) for (const k of this._changedKeys(cv, defaultCv)) touched.add(k);
+
+    const result = new Map(cv);
+    for (const key of touched) {
+      // every item must assign this key — partial coverage would mean inferring a latch
+      for (const { cv: icv } of itemCvs) {
+        if (icv.get(key) === undefined) this.error(`signal driving net '${key}' is not assigned by every case item inside a combinational always block — add a default branch or assign it in every item, to avoid inferring a latch`);
+      }
+      let acc, startIdx;
+      if (hasDefault) {
+        acc = defaultCv.get(key);
+        if (acc === undefined) this.error(`signal driving net '${key}' is not assigned by the default branch inside a combinational always block — add it there too, or remove the default and ensure every item covers this signal, to avoid inferring a latch`);
+        startIdx = itemCvs.length - 1;
+      } else {
+        // no default given: the last-listed item doubles as the implicit catch-all baseline
+        // (this assumes the item patterns are exhaustive; we don't attempt to prove that)
+        acc = itemCvs[itemCvs.length - 1].cv.get(key);
+        startIdx = itemCvs.length - 2;
+      }
+      // walk remaining items in reverse so the FIRST-listed item ends up with top priority,
+      // matching Verilog's case-statement priority (first match wins)
+      for (let idx = startIdx; idx >= 0; idx--) {
+        const itemNet = itemCvs[idx].cv.get(key);
+        if (itemNet === acc) continue;
+        const id = this.newId('mux2');
+        const y = `w_${id}`;
+        this.cells.push({ id, type: 'mux2', ports: { sel: itemCvs[idx].matchNet, a: acc, b: itemNet, y } });
+        this.markDriven(y, id);
+        acc = y;
+      }
+      result.set(key, acc);
+    }
+    return result;
+  }
+
+  _synthCasePatternMatch(patterns, selNets, selWidth) {
+    return this._reduceChain('or', patterns.map(p => this._synthOnePatternMatch(p, selNets, selWidth)));
+  }
+
+  _eqConst(net, bitVal) {
+    const litNet = this.constNet(bitVal);
+    const id = this.newId('xnor');
+    const y = `w_${id}`;
+    this.cells.push({ id, type: 'xnor', ports: { a: net, b: litNet, y } });
+    this.markDriven(y, id);
+    return y;
+  }
+
+  // a case/casex item pattern is a literal constant; '?'/x/z bits in a binary literal
+  // (casex don't-care) simply skip constraining that selector bit rather than requiring
+  // an exact match
+  _synthOnePatternMatch(patNode, selNets, selWidth) {
+    if (patNode.type !== 'Num') this.error(`case item pattern must be a literal constant, got '${exprToStr(patNode)}'`);
+    const hasWildcard = patNode.value.base === 'b' && /[?xXzZ]/.test(patNode.value.digits);
+    if (!hasWildcard) {
+      const bits = numToBits(patNode.value, selWidth);
+      const conds = bits.map((bitVal, i) => this._eqConst(selNets[i], bitVal));
+      return conds.length ? this._reduceChain('and', conds) : this.constNet(1);
+    }
+    const digits = patNode.value.digits;
+    const conds = [];
+    for (let i = 0; i < selWidth; i++) {
+      const ch = digits[digits.length - 1 - i];
+      if (ch === undefined) { conds.push(this._eqConst(selNets[i], 0)); continue; }
+      if (ch === '?' || ch === 'x' || ch === 'X' || ch === 'z' || ch === 'Z') continue;
+      conds.push(this._eqConst(selNets[i], ch === '1' ? 1 : 0));
+    }
+    return conds.length ? this._reduceChain('and', conds) : this.constNet(1);
+  }
+
+  synthAlways(blk) {
+    let clk = null, rst = null;
+    for (const e of blk.sens) {
+      if (e.edge === 'posedge' && !clk) clk = e.sig;
+      else if (e.edge === 'negedge') rst = { sig: e.sig, activeLow: true };
+      else if (e.edge === 'posedge' && clk) rst = { sig: e.sig, activeLow: false };
+    }
+    if (!clk) this.error('always block has no posedge clock in its sensitivity list');
+    this.clkSignals.add(clk);
+    if (rst) this.rstSignals.add(rst.sig);
+    const stmts = blk.body.type === 'Block' ? blk.body.stmts : [blk.body];
+    for (const stmt of stmts) this._synthFFStmt(stmt, clk, rst);
+  }
+
+  _synthFFStmt(stmt, clk, rst) {
+    if (stmt.type === 'NBAssign') { this._makeDff(stmt.lhs, stmt.rhs, clk, rst); return; }
+    if (stmt.type === 'If') {
+      const thenStmts = stmt.then.type === 'Block' ? stmt.then.stmts : [stmt.then];
+      const elseStmts = stmt.else ? (stmt.else.type === 'Block' ? stmt.else.stmts : [stmt.else]) : [];
+      for (const ts of thenStmts) {
+        if (ts.type !== 'NBAssign') this.error('only nonblocking assignments are supported inside if/else of a clocked always block');
+        this._checkResetValueIsZero(ts.rhs, this._lvalueKey(ts.lhs));
+        const matchingElse = elseStmts.find(es => es.type === 'NBAssign' && this._lvalueKey(es.lhs) === this._lvalueKey(ts.lhs));
+        this._makeDff(ts.lhs, matchingElse ? matchingElse.rhs : ts.rhs, clk, rst);
+      }
+      return;
+    }
+    this.error(`Unsupported statement '${stmt.type}' inside a clocked always block`);
+  }
+
+  _checkResetValueIsZero(node, targetLabel) {
+    if (node.type === 'Num') {
+      const bits = numToBits(node.value, node.value.width || 32);
+      if (bits.some(b => b !== 0)) this.warn(`reset value for '${targetLabel}' is nonzero; the 'dff' primitive only supports reset-to-zero, treating it as 0`);
+    }
+  }
+
+  _makeDff(lv, dNode, clk, rst) {
+    const width = this._lvalueWidth(lv);
+    const dNets = this.synthExpr(dNode, width);
+    let rstn;
+    if (!rst) {
+      rstn = this.constNet(1);
+    } else if (rst.activeLow) {
+      rstn = this.netName(rst.sig, 0);
+    } else {
+      const rawNet = this.netName(rst.sig, 0);
+      const invId = this.newId('not');
+      rstn = `w_${invId}`;
+      this.cells.push({ id: invId, type: 'not', ports: { a: rawNet, y: rstn }, comment: `~${rst.sig}` });
+      this.markDriven(rstn, invId);
+    }
+    for (let i = 0; i < width; i++) {
+      const id = this.newId('dff');
+      const qNet = this._lvalueBitNet(lv, i);
+      this.cells.push({ id, type: 'dff', ports: { clk: this.netName(clk, 0), rstn, d: dNets[i], q: qNet }, comment: i === 0 ? `${this._lvalueKey(lv)} <= ${exprToStr(dNode)}` : null });
+      this.markDriven(qNet, id);
+    }
+  }
+
+  run() {
+    for (const a of this.ast.assigns) this.synthAssign(a);
+    for (const blk of this.ast.always) {
+      if (blk.sens === 'star') this.synthCombAlways(blk);
+      else this.synthAlways(blk);
+    }
+    for (const inst of this.ast.instances) this.synthInstance(inst);
+    return { sig: this.sig, cells: this.cells, log: this.log, ports: this.ast.ports, moduleName: this.ast.name, clkSignals: this.clkSignals, rstSignals: this.rstSignals };
+  }
+
+  synthInstance(inst) {
+    const iface = this.interfaces[inst.modType];
+    if (!iface) this.error(`Unknown module type '${inst.modType}' instantiated as '${inst.instName}' (line ${inst.line})`);
+    const seenPorts = new Set();
+    const ports = {}; // flat: 'a' or 'a[2]' -> single net string, same convention as every other cell type
+    const portExprText = {};
+    const portWidths = {};
+    for (const conn of inst.conns) {
+      const portSig = iface.sig[conn.port];
+      if (!portSig) this.error(`Module '${inst.modType}' has no port '${conn.port}' (instance '${inst.instName}')`);
+      if (seenPorts.has(conn.port)) this.error(`Port '${conn.port}' connected more than once on instance '${inst.instName}'`);
+      seenPorts.add(conn.port);
+      portExprText[conn.port] = exprToStr(conn.expr);
+      portWidths[conn.port] = portSig.width;
+      let nets;
+      if (portSig.dir === 'output') {
+        // the instance drives this net, so the connection must be an assignable signal, not an expression
+        if (conn.expr.type === 'Ident') {
+          const s = this.sig[conn.expr.name];
+          if (!s) this.error(`Unknown signal '${conn.expr.name}' connected to output port '${conn.port}' of instance '${inst.instName}'`);
+          if (s.width !== portSig.width) this.error(`Width mismatch: output port '${conn.port}' of instance '${inst.instName}' is ${portSig.width}-bit but '${conn.expr.name}' is ${s.width}-bit`);
+          nets = Array.from({ length: portSig.width }, (_, i) => this.netName(conn.expr.name, i));
+        } else if (conn.expr.type === 'Index') {
+          nets = [this.netName(conn.expr.name, conn.expr.bit)];
+        } else {
+          this.error(`Output port '${conn.port}' of instance '${inst.instName}' must connect to a plain signal or bit-select, not an expression`);
+        }
+      } else {
+        nets = this.synthExpr(conn.expr, portSig.width);
+      }
+      nets.forEach((net, i) => { ports[portSig.width === 1 ? conn.port : `${conn.port}[${i}]`] = net; });
+    }
+    for (const portName of iface.ports) {
+      if (!seenPorts.has(portName)) this.error(`Port '${portName}' of instance '${inst.instName}' (type '${inst.modType}') is not connected`);
+    }
+    const id = inst.instName;
+    const portDirs = Object.fromEntries(iface.ports.map(p => [p, iface.sig[p].dir]));
+    this.cells.push({ id, type: 'instance', modType: inst.modType, portOrder: iface.ports, portDirs, portWidths, ports, portExprText, comment: `${inst.modType} ${inst.instName}` });
+    for (const [key, net] of Object.entries(ports)) {
+      const baseName = key.split('[')[0];
+      if (portDirs[baseName] === 'output') this.markDriven(net, id);
+    }
+  }
+}
+
+/* ---------------- Netlist graph + layered layout ---------------- */
+const OUT_PORTS = { and: ['y'], or: ['y'], nor: ['y'], nand: ['y'], xor: ['y'], xnor: ['y'], not: ['y'], const: ['y'], fa: ['sum', 'cout'], dff: ['q'], mux2: ['y'], buf: ['y'] };
+const IN_PORTS = { and: ['a', 'b'], or: ['a', 'b'], nor: ['a', 'b'], nand: ['a', 'b'], xor: ['a', 'b'], xnor: ['a', 'b'], not: ['a'], const: [], fa: ['a', 'b', 'cin'], dff: ['clk', 'rstn', 'd'], mux2: ['sel', 'a', 'b'], buf: ['a'] };
+
+// instance cells don't have a fixed port list — it's whatever the instantiated module declares
+function cellOutKeys(c) {
+  if (c.type !== 'instance') return OUT_PORTS[c.type] || [];
+  return Object.keys(c.ports).filter(k => c.portDirs[k.split('[')[0]] === 'output');
+}
+function cellInKeys(c) {
+  if (c.type !== 'instance') return IN_PORTS[c.type] || [];
+  return Object.keys(c.ports).filter(k => c.portDirs[k.split('[')[0]] !== 'output');
+}
+
+function buildGraph(result) {
+  const { sig, cells, ports, clkSignals, rstSignals } = result;
+  const nodes = [];
+  for (const name of ports) {
+    const s = sig[name];
+    const role = clkSignals.has(name) ? 'clk' : rstSignals.has(name) ? 'rst' : 'data';
+    for (let i = 0; i < s.width; i++) {
+      const net = s.width === 1 ? name : `${name}[${s.lo + i}]`;
+      if (s.dir === 'input') nodes.push({ id: `port_${net}`, kind: 'port-in', label: net, net, role });
+      else nodes.push({ id: `port_${net}`, kind: 'port-out', label: net, net });
+    }
+  }
+  for (const c of cells) nodes.push({ id: c.id, kind: c.type, cell: c });
+
+  const driver = {};
+  for (const n of nodes) if (n.kind === 'port-in') driver[n.net] = { nodeId: n.id, port: 'y' };
+  for (const c of cells) for (const p of cellOutKeys(c)) if (c.ports[p]) driver[c.ports[p]] = { nodeId: c.id, port: p };
+
+  const edges = [];
+  let eid = 0;
+  function addEdge(net, toId, toPort) {
+    const d = driver[net];
+    if (!d) throw new Error(`internal error: no driver found for net '${net}'`);
+    edges.push({ id: `e${eid++}`, from: d.nodeId, fromPort: d.port, to: toId, toPort, net });
+  }
+  for (const c of cells) for (const p of cellInKeys(c)) { const net = c.ports[p]; if (net) addEdge(net, c.id, p); }
+  for (const n of nodes) if (n.kind === 'port-out') addEdge(n.net, n.id, 'y');
+
+  return { nodes, edges };
+}
+
+// DFS over the netlist to find "back edges" — the wires that close a real feedback
+// loop (always through a register's D/rstn input in this subset). Excluding just
+// those from rank propagation breaks cycles while leaving every acyclic dff (a
+// plain, non-feedback register) free to rank normally alongside combinational cells.
+function findBackEdges(graph) {
+  const adj = {};
+  for (const n of graph.nodes) adj[n.id] = [];
+  for (const e of graph.edges) adj[e.from].push(e);
+  const color = {};
+  for (const n of graph.nodes) color[n.id] = 0; // 0=unvisited, 1=on stack, 2=done
+  const backEdgeIds = new Set();
+  function dfs(u) {
+    color[u] = 1;
+    for (const e of adj[u]) {
+      if (color[e.to] === 0) dfs(e.to);
+      else if (color[e.to] === 1) backEdgeIds.add(e.id);
+    }
+    color[u] = 2;
+  }
+  const hasIncoming = new Set(graph.edges.map(e => e.to));
+  for (const n of graph.nodes) if (!hasIncoming.has(n.id) && color[n.id] === 0) dfs(n.id);
+  for (const n of graph.nodes) if (color[n.id] === 0) dfs(n.id);
+  return backEdgeIds;
+}
+
+function computeRanks(graph) {
+  const backEdges = findBackEdges(graph);
+  const rank = {};
+  for (const n of graph.nodes) rank[n.id] = 0;
+  for (let iter = 0; iter < graph.nodes.length + 2; iter++) {
+    let changed = false;
+    for (const e of graph.edges) {
+      if (backEdges.has(e.id)) continue; // cycle-closing edge — excluded from rank propagation
+      const cand = rank[e.from] + 1;
+      if (cand > rank[e.to]) { rank[e.to] = cand; changed = true; }
+    }
+    if (!changed) break;
+  }
+  return rank;
+}
+
+function layoutGraph(graph) {
+  const rank = computeRanks(graph);
+  // all outputs share one strict right-edge column, regardless of how early their driver settles
+  let maxRank = 0;
+  for (const n of graph.nodes) if (rank[n.id] > maxRank) maxRank = rank[n.id];
+  for (const n of graph.nodes) if (n.kind === 'port-out') rank[n.id] = maxRank;
+
+  // clk is pulled out of the normal column packing entirely — it gets its own row
+  // beneath the whole diagram, aligned under the column of the cell(s) it drives
+  const clkNodes = graph.nodes.filter(n => n.role === 'clk');
+  const clkIds = new Set(clkNodes.map(n => n.id));
+
+  const byRank = {};
+  for (const n of graph.nodes) {
+    if (clkIds.has(n.id)) continue;
+    (byRank[rank[n.id]] ||= []).push(n);
+  }
+  // within the leftmost (primary-input) column: data inputs first, reset directly below them
+  if (byRank[0]) {
+    const ROLE_ORDER = { data: 0, rst: 1 };
+    byRank[0] = byRank[0].slice().sort((a, b) => (ROLE_ORDER[a.role] ?? 0) - (ROLE_ORDER[b.role] ?? 0));
+  }
+  const COL = 200, ROW = 84;
+  const positions = {};
+  let maxYUsed = 0;
+  for (const r of Object.keys(byRank).map(Number).sort((a, b) => a - b)) {
+    byRank[r].forEach((n, idx) => {
+      const y = idx * ROW;
+      positions[n.id] = { x: r * COL, y };
+      if (y > maxYUsed) maxYUsed = y;
+    });
+  }
+  for (const clkNode of clkNodes) {
+    const drivenRanks = graph.edges.filter(e => e.from === clkNode.id).map(e => rank[e.to]);
+    const col = drivenRanks.length ? Math.min(...drivenRanks) : 0;
+    positions[clkNode.id] = { x: col * COL, y: maxYUsed + ROW };
+  }
+  return { rank, positions };
+}
+
+/* ---------------- Bus collapsing ---------------- */
+// When every bit of a declared multi-bit signal drives (or is driven by) a full,
+// identically-shaped set of sibling cells (e.g. 4 independent dff bits, or a port),
+// collapse that fan-out into a single bus node / thick edge, matching how a schematic
+// tool groups related wires instead of drawing N parallel single-bit wires.
+const IDENTITY_PORT = { dff: 'q', and: 'y', or: 'y', nand: 'y', nor: 'y', xor: 'y', xnor: 'y', not: 'y', fa: 'sum', mux2: 'y', buf: 'y' };
+
+function parseNet(net) {
+  const m = /^(.+)\[(\d+)\]$/.exec(net);
+  return m ? { base: m[1], idx: parseInt(m[2], 10) } : { base: net, idx: null };
+}
+
+function collapseBuses(graph, sig, skipCellKinds) {
+  const cellGroups = {};
+  for (const n of graph.nodes) {
+    if (n.kind === 'port-in' || n.kind === 'port-out' || n.kind === 'const') continue;
+    if (skipCellKinds && skipCellKinds.has(n.kind)) continue;
+    const idPort = IDENTITY_PORT[n.kind];
+    const net = idPort && n.cell.ports[idPort];
+    if (!net) continue;
+    const { base, idx } = parseNet(net);
+    if (idx === null || !sig[base] || sig[base].width <= 1) continue;
+    const key = `cell::${n.kind}::${base}`;
+    (cellGroups[key] ||= { kind: n.kind, base, members: [] }).members.push({ node: n, idx });
+  }
+  const portGroups = {};
+  for (const n of graph.nodes) {
+    if (n.kind !== 'port-in' && n.kind !== 'port-out') continue;
+    const { base, idx } = parseNet(n.net);
+    if (idx === null) continue;
+    const key = `port::${n.kind}::${base}`;
+    (portGroups[key] ||= { kind: n.kind, base, members: [], role: n.role }).members.push({ node: n, idx });
+  }
+
+  const nodeToBus = {};
+  const busNodes = [];
+  function tryMakeBus(groupsMap, isPort) {
+    for (const key of Object.keys(groupsMap)) {
+      const g = groupsMap[key];
+      const s = sig[g.base];
+      if (!s || g.members.length !== s.width) continue;
+      const seen = new Set(g.members.map(m => m.idx));
+      if (seen.size !== s.width) continue;
+      g.members.sort((a, b) => a.idx - b.idx);
+      const range = `[${s.lo + s.width - 1}:${s.lo}]`;
+      const netLabel = `${g.base}${range}`;
+      const busId = `busnode_${key}`;
+      busNodes.push({
+        id: busId, kind: g.kind, isBus: true, width: s.width,
+        label: isPort ? netLabel : g.kind.toUpperCase(),
+        range: isPort ? null : range,
+        netLabel,
+        role: g.role,
+        op: g.members[0].node.cell && g.members[0].node.cell.op,
+        members: g.members,
+      });
+      for (const m of g.members) nodeToBus[m.node.id] = busId;
+    }
+  }
+  tryMakeBus(cellGroups, false);
+  tryMakeBus(portGroups, true);
+  if (!busNodes.length) return graph;
+
+  const groupedIds = new Set(Object.keys(nodeToBus));
+  const finalNodes = graph.nodes.filter(n => !groupedIds.has(n.id));
+  finalNodes.push(...busNodes);
+
+  const idxOf = {};
+  for (const bn of busNodes) for (const m of bn.members) idxOf[m.node.id] = m.idx;
+
+  const collapsedEdgeMap = new Map();
+  const finalEdges = [];
+  for (const e of graph.edges) {
+    const mappedFrom = nodeToBus[e.from] || e.from;
+    const mappedTo = nodeToBus[e.to] || e.to;
+    if (mappedFrom === e.from && mappedTo === e.to) { finalEdges.push(e); continue; }
+    if (mappedFrom === mappedTo) continue; // internal chaining absorbed into the bus node (e.g. adder carry chain)
+    const key = `${mappedFrom}|${e.fromPort}|${mappedTo}|${e.toPort}`;
+    if (!collapsedEdgeMap.has(key)) collapsedEdgeMap.set(key, { mappedFrom, mappedTo, fromPort: e.fromPort, toPort: e.toPort, pairs: [] });
+    collapsedEdgeMap.get(key).pairs.push({ fromIdx: idxOf[e.from], toIdx: idxOf[e.to], net: e.net, id: e.id });
+  }
+  let bid = 0;
+  for (const { mappedFrom, mappedTo, fromPort, toPort, pairs } of collapsedEdgeMap.values()) {
+    // scalar fan-out (e.g. clk/resetn broadcast into every dff of a bus): all pairs share one source net
+    const distinctNets = new Set(pairs.map(p => p.net));
+    if (distinctNets.size === 1) {
+      finalEdges.push({ id: `bus_e${bid++}`, from: mappedFrom, fromPort, to: mappedTo, toPort, net: pairs[0].net });
+      continue;
+    }
+    const fromBusNode = busNodes.find(b => b.id === mappedFrom);
+    const toBusNode = busNodes.find(b => b.id === mappedTo);
+    // only draw one thick bus edge when BOTH ends are bus nodes and every bit lines up 1:1 —
+    // a bus feeding/fed-by a single non-bus (1-bit) cell must stay a thin, specifically-named edge
+    const aligned = !!(fromBusNode && toBusNode && pairs.length === fromBusNode.members.length
+      && fromBusNode.members.length === toBusNode.members.length && pairs.every(p => p.fromIdx === p.toIdx));
+    if (aligned) {
+      finalEdges.push({ id: `bus_e${bid++}`, from: mappedFrom, fromPort, to: mappedTo, toPort, net: fromBusNode.netLabel });
+    } else {
+      for (const p of pairs) finalEdges.push({ id: p.id, from: mappedFrom, fromPort, to: mappedTo, toPort, net: p.net });
+    }
+  }
+
+  return { nodes: finalNodes, edges: finalEdges };
+}
+
+// A single instance cell can have several multi-bit ports (unlike a bare dff/gate,
+// which has at most one bit-blasted identity port) — collapse each such port's N
+// per-bit handles into one thick handle+edge, but only when every bit's far end is
+// the exact same node (e.g. a bus node from collapseBuses above); otherwise the
+// port's bits fan out to genuinely different places and must stay individually wired.
+function mergeInstancePins(graph) {
+  const nodeIndex = new Map(graph.nodes.map(n => [n.id, n]));
+  const groups = {}; // `${instId}|${side}|${base}` -> { node, side, base, width, items:[{edge,idx}] }
+  for (const e of graph.edges) {
+    for (const [nodeId, port, side] of [[e.from, e.fromPort, 'out'], [e.to, e.toPort, 'in']]) {
+      const node = nodeIndex.get(nodeId);
+      if (!node || node.kind !== 'instance') continue;
+      const m = /^(.+)\[(\d+)\]$/.exec(port);
+      if (!m) continue;
+      const [, base, idxStr] = m;
+      const width = node.cell.portWidths[base];
+      if (!width || width <= 1) continue;
+      const key = `${nodeId}|${side}|${base}`;
+      (groups[key] ||= { node, side, base, width, items: [] }).items.push({ edge: e, idx: parseInt(idxStr, 10) });
+    }
+  }
+  const dropEdgeIds = new Set();
+  const newEdges = [];
+  const newNodes = [];
+  const mergedPinsByNode = {};
+  let aggConstCounter = 0;
+  for (const { node, side, base, width, items } of Object.values(groups)) {
+    if (items.length !== width) continue; // not every bit present at the graph level — leave unmerged
+    const otherIds = new Set(items.map(it => (side === 'out' ? it.edge.to : it.edge.from)));
+    const otherPorts = new Set(items.map(it => (side === 'out' ? it.edge.toPort : it.edge.fromPort)));
+    if (otherIds.size === 1 && otherPorts.size === 1) {
+      for (const it of items) dropEdgeIds.add(it.edge.id);
+      const otherId = [...otherIds][0];
+      const otherPort = [...otherPorts][0];
+      const net = node.cell.portExprText[base] || items[0].edge.net;
+      newEdges.push(side === 'out'
+        ? { id: `inst_e_${node.id}_${base}`, from: node.id, fromPort: base, to: otherId, toPort: otherPort, net }
+        : { id: `inst_e_${node.id}_${base}`, from: otherId, fromPort: otherPort, to: node.id, toPort: base, net });
+      (mergedPinsByNode[node.id] ||= new Set()).add(base);
+      continue;
+    }
+    // a FUNC_addN/FUNC_subN instance's a/b/sum ports always render as one N-bit bus pin (so
+    // the block can use the fixed 3-pin chevron symbol), even when the bits don't all share
+    // a single destination (e.g. `{carry, sum} <= a + b` sends sum's top bit to 'carry' and
+    // the rest to 'sum') — split into one thick edge per distinct destination, all anchored
+    // at the same base handle, the same way a shared clk pin already fans out to many dffs.
+    if (node.cell.isAdder) {
+      const byDest = new Map();
+      for (const it of items) {
+        const otherId = side === 'out' ? it.edge.to : it.edge.from;
+        const otherPort = side === 'out' ? it.edge.toPort : it.edge.fromPort;
+        const key = `${otherId} ${otherPort}`;
+        if (!byDest.has(key)) byDest.set(key, { otherId, otherPort, items: [] });
+        byDest.get(key).items.push(it);
+      }
+      for (const it of items) dropEdgeIds.add(it.edge.id);
+      let destCounter = 0;
+      for (const { otherId, otherPort, items: group } of byDest.values()) {
+        const sorted = group.slice().sort((a, b) => a.idx - b.idx);
+        const isContiguous = sorted.every((it, i) => i === 0 || it.idx === sorted[i - 1].idx + 1);
+        const net = isContiguous && sorted.length > 1
+          ? `${base}[${sorted[sorted.length - 1].idx}:${sorted[0].idx}]`
+          : (sorted.length === 1 ? `${base}[${sorted[0].idx}]` : sorted.map(it => it.edge.net).join(','));
+        const id = `inst_e_${node.id}_${base}_${destCounter++}`;
+        newEdges.push(side === 'out'
+          ? { id, from: node.id, fromPort: base, to: otherId, toPort: otherPort, net }
+          : { id, from: otherId, fromPort: otherPort, to: node.id, toPort: base, net });
+      }
+      (mergedPinsByNode[node.id] ||= new Set()).add(base);
+      continue;
+    }
+    // an 'in' port whose every bit is driven by SOME constant (not necessarily the
+    // same one, e.g. `.b(4'b0001)` bit-blasts into distinct 1'b1/1'b0 cells) — synthesize
+    // one aggregate constant node/value instead of leaving N scattered 1-bit constants.
+    if (side === 'in' && items.every(it => nodeIndex.get(it.edge.from)?.kind === 'const')) {
+      const sorted = [...items].sort((a, b) => a.idx - b.idx);
+      let value = 0n;
+      for (const it of sorted) if (nodeIndex.get(it.edge.from).cell.value) value |= (1n << BigInt(it.idx));
+      for (const it of sorted) dropEdgeIds.add(it.edge.id);
+      const constId = `instconst_${node.id}_${base}_${aggConstCounter++}`;
+      const label = `${width}'b${value.toString(2).padStart(width, '0')}`;
+      newNodes.push({ id: constId, kind: 'const', cell: { aggregateLabel: label } });
+      newEdges.push({ id: `inst_e_${node.id}_${base}`, from: constId, fromPort: 'y', to: node.id, toPort: base, net: label });
+      (mergedPinsByNode[node.id] ||= new Set()).add(base);
+    }
+  }
+  if (!dropEdgeIds.size) return graph;
+  const finalEdges = graph.edges.filter(e => !dropEdgeIds.has(e.id)).concat(newEdges);
+  let finalNodes = graph.nodes.map(n => (mergedPinsByNode[n.id] ? { ...n, mergedPins: mergedPinsByNode[n.id] } : n)).concat(newNodes);
+  // drop original per-bit const nodes left with no remaining outgoing edge (now orphaned)
+  const stillUsed = new Set(finalEdges.map(e => e.from));
+  finalNodes = finalNodes.filter(n => n.kind !== 'const' || stillUsed.has(n.id));
+  return { nodes: finalNodes, edges: finalEdges };
+}
+
+/* ---------------- Structural Verilog codegen ---------------- */
+const CELL_MODNAME = { and: 'and_gate', or: 'or_gate', nor: 'nor_gate', nand: 'nand_gate', xor: 'xor_gate', xnor: 'xnor_gate', not: 'not_gate', fa: 'fa', dff: 'dff', mux2: 'mux2', buf: 'buf_gate' };
+const PRIMITIVE_SRC = {
+  dff: `module dff (input clk, input rstn, input d, output reg q);\n  always @(posedge clk or negedge rstn)\n    if (!rstn) q <= 1'b0;\n    else q <= d;\nendmodule`,
+  and: `module and_gate (input a, input b, output y);\n  assign y = a & b;\nendmodule`,
+  or: `module or_gate (input a, input b, output y);\n  assign y = a | b;\nendmodule`,
+  nor: `module nor_gate (input a, input b, output y);\n  assign y = ~(a | b);\nendmodule`,
+  nand: `module nand_gate (input a, input b, output y);\n  assign y = ~(a & b);\nendmodule`,
+  xor: `module xor_gate (input a, input b, output y);\n  assign y = a ^ b;\nendmodule`,
+  xnor: `module xnor_gate (input a, input b, output y);\n  assign y = ~(a ^ b);\nendmodule`,
+  not: `module not_gate (input a, output y);\n  assign y = ~a;\nendmodule`,
+  fa: `module fa (input a, input b, input cin, output sum, output cout);\n  assign sum = a ^ b ^ cin;\n  assign cout = (a & b) | (b & cin) | (a & cin);\nendmodule`,
+  mux2: `module mux2 (input sel, input a, input b, output y);\n  assign y = sel ? b : a;\nendmodule`,
+  buf: `module buf_gate (input a, output y);\n  assign y = a;\nendmodule`,
+};
+const CONST_LIT = { const_0: "1'b0", const_1: "1'b1" };
+
+function genModuleVerilog(result) {
+  const { sig, cells, ports, moduleName } = result;
+  const lines = [`module ${moduleName} (${ports.join(', ')});`];
+  for (const dir of ['input', 'output']) {
+    for (const name of ports) {
+      const s = sig[name];
+      if (s.dir !== dir) continue;
+      const rangeStr = s.width > 1 ? `[${s.lo + s.width - 1}:${s.lo}] ` : '';
+      lines.push(`  ${dir}${s.isReg && dir === 'output' ? ' reg' : ''} ${rangeStr}${name};`);
+    }
+  }
+  const portNets = new Set();
+  for (const name of ports) { const s = sig[name]; for (let i = 0; i < s.width; i++) portNets.add(s.width === 1 ? name : `${name}[${s.lo + i}]`); }
+  const declaredWires = [];
+  const knownNets = new Set(portNets);
+  for (const [name, s] of Object.entries(sig)) {
+    if (ports.includes(name)) continue;
+    const rangeStr = s.width > 1 ? `[${s.lo + s.width - 1}:${s.lo}] ` : '';
+    declaredWires.push(`${rangeStr}${name}`.trim());
+    for (let i = 0; i < s.width; i++) knownNets.add(s.width === 1 ? name : `${name}[${s.lo + i}]`);
+  }
+  if (declaredWires.length) lines.push(`  wire ${declaredWires.join(', ')};`);
+  const anonNets = new Set();
+  for (const c of cells) for (const p of Object.values(c.ports)) { if (p && !knownNets.has(p) && !CONST_LIT[p]) anonNets.add(p); }
+  if (anonNets.size) lines.push(`  wire ${[...anonNets].join(', ')};`);
+  lines.push('');
+  // reconstructs the Verilog text for an instance's OUTPUT port connection from its actual
+  // per-bit driven nets — plain signal name if they exactly match one, else a concatenation
+  const netExpr = net => CONST_LIT[net] || net;
+  function outputConnExpr(c, portName) {
+    const width = c.portWidths[portName];
+    if (width <= 1) return netExpr(c.ports[portName]);
+    const nets = Array.from({ length: width }, (_, i) => c.ports[`${portName}[${i}]`]);
+    for (const [name, s] of Object.entries(sig)) {
+      if (s.width !== width) continue;
+      if (nets.every((net, i) => net === (s.width === 1 ? name : `${name}[${s.lo + i}]`))) return name;
+    }
+    return `{${nets.slice().reverse().map(netExpr).join(', ')}}`;
+  }
+  const usedTypes = new Set();
+  for (const c of cells) {
+    if (c.type === 'const') continue; // inlined as a literal at each use site, not a real cell
+    if (c.type === 'instance') {
+      const portList = c.portOrder.map(p => `.${p}(${c.portDirs[p] === 'output' ? outputConnExpr(c, p) : c.portExprText[p]})`).join(', ');
+      lines.push(`  ${c.modType} ${c.id} (${portList});`);
+      continue;
+    }
+    usedTypes.add(c.type);
+    const portList = Object.entries(c.ports).filter(([, v]) => v).map(([p, v]) => `.${p}(${CONST_LIT[v] || v})`).join(', ');
+    const comment = c.comment ? `  // ${c.comment}` : '';
+    lines.push(`  ${CELL_MODNAME[c.type]} u_${c.id} (${portList});${comment}`);
+  }
+  lines.push('endmodule');
+  return { text: lines.join('\n'), usedTypes };
+}
+
+// results: array of per-module Synthesizer.run() outputs, ordered top-first for readability
+function genVerilog(results) {
+  const parts = [];
+  const allUsedTypes = new Set();
+  for (const result of results) {
+    const { text, usedTypes } = genModuleVerilog(result);
+    parts.push(text);
+    for (const t of usedTypes) allUsedTypes.add(t);
+  }
+  for (const t of allUsedTypes) parts.push(PRIMITIVE_SRC[t]);
+  return parts.join('\n\n');
+}
+
+function toFlowElements(graph, layout) {
+  const nodes = graph.nodes.map(n => {
+    let type, data;
+    if (n.kind === 'port-in') { type = 'port'; data = { label: n.label, dir: 'in', isBus: !!n.isBus, width: n.width }; }
+    else if (n.kind === 'port-out') { type = 'port'; data = { label: n.label, dir: 'out', isBus: !!n.isBus, width: n.width }; }
+    else if (n.kind === 'const') { type = 'const'; data = { label: n.cell.aggregateLabel || (n.cell.value ? "1'b1" : "1'b0") }; }
+    else if (n.kind === 'dff') { type = 'dff'; data = { label: 'DFF', isBus: !!n.isBus, range: n.range, width: n.width }; }
+    else if (n.kind === 'fa') { const op = n.op || (n.cell && n.cell.op) || 'add'; type = 'fa'; data = { label: op === 'sub' ? 'SUB' : 'ADD', op, isBus: !!n.isBus, range: n.range, width: n.width }; }
+    else if (n.kind === 'mux2') { type = 'mux2'; data = { label: 'MUX', isBus: !!n.isBus, range: n.range, width: n.width }; }
+    else if (n.kind === 'instance' && n.cell.isAdder) {
+      // every FUNC_addN/FUNC_subN instance always renders as the compact 3-pin chevron
+      // block (a/b/sum as N-bit bus pins), regardless of whether the bits driven/consumed
+      // happen to share one destination — mergeInstancePins guarantees a/b/sum are always
+      // present as a single base-name handle, splitting into multiple thick bus edges at
+      // that same pin when destinations differ (e.g. `{carry, sum} <= a + b`).
+      type = 'adder';
+      data = { op: n.cell.isSub ? 'sub' : 'add', modType: n.cell.modType, instName: n.cell.id, width: n.cell.portWidths.a, drillable: true };
+    }
+    else if (n.kind === 'instance') {
+      type = 'instance';
+      const merged = n.mergedPins || new Set();
+      // a port only gets ONE handle (named after the port) if it's 1-bit or every one of
+      // its bits merged into a single edge; otherwise mergeInstancePins left its per-bit
+      // edges (targeting 'p[0]', 'p[1]', ...) unmerged, so it needs one handle PER BIT or
+      // edges would target handles that don't exist and silently fail to render at all.
+      const portSlots = p => {
+        const width = n.cell.portWidths[p] || 1;
+        if (width <= 1 || merged.has(p)) return [{ id: p, label: p }];
+        return Array.from({ length: width }, (_, i) => ({ id: `${p}[${i}]`, label: `${p}[${i}]` }));
+      };
+      data = {
+        modType: n.cell.modType, instName: n.cell.id,
+        inSlots: n.cell.portOrder.filter(p => n.cell.portDirs[p] !== 'output').flatMap(portSlots),
+        outSlots: n.cell.portOrder.filter(p => n.cell.portDirs[p] === 'output').flatMap(portSlots),
+        drillable: true,
+      };
+    }
+    else { type = 'gate'; data = { kind: n.kind, label: n.kind.toUpperCase(), inverted: ['nand', 'nor', 'xnor', 'not'].includes(n.kind), unary: n.kind === 'not' || n.kind === 'buf', isBus: !!n.isBus, range: n.range, width: n.width }; }
+    return { id: n.id, type, position: layout.positions[n.id], data };
+  });
+  const edges = graph.edges.map(e => {
+    const isBusEdge = (e.id.startsWith('bus_e') && /\[\d+:\d+\]$/.test(e.net)) || e.id.startsWith('inst_e_');
+    return { id: e.id, source: e.from, sourceHandle: e.fromPort, target: e.to, targetHandle: e.toPort, label: e.net, type: 'smoothstep', style: isBusEdge ? { strokeWidth: 3 } : undefined };
+  });
+  return { nodes, edges };
+}
+
+// Top-level driver: parse -> pick top module -> synthesize every module independently
+// (so drilling into any instance can show its own diagram) -> per-module results.
+function synthesizeAll(src) {
+  const modules = parseVerilog(src);
+  const top = findTopModule(modules);
+  const interfaces = {};
+  for (const m of modules) interfaces[m.name] = extractInterface(m);
+  const results = {};
+  const allLog = [];
+  const adderRegistry = new Map(); // shared so +/- at the same width across every module reuse one addN/subN
+  for (const m of modules) {
+    const synth = new Synthesizer(m, interfaces, adderRegistry);
+    const result = synth.run();
+    results[m.name] = result;
+    for (const l of result.log) allLog.push({ ...l, msg: modules.length > 1 ? `[${m.name}] ${l.msg}` : l.msg });
+  }
+  for (const [name, result] of adderRegistry) results[name] = result;
+  return { modules, top, results, log: allLog };
+}
+
+function synthesizeModuleView(all, moduleName) {
+  const result = all.results[moduleName];
+  // when drilling into an auto-generated FUNC_addN/FUNC_subN, show the real per-bit fa
+  // chain (not re-collapsed into one composite node) — that's the whole point of drilling in
+  const skipCellKinds = result.isAdderModule ? new Set(['fa']) : null;
+  const graph = mergeInstancePins(collapseBuses(buildGraph(result), result.sig, skipCellKinds));
+  const layout = layoutGraph(graph);
+  return { result, graph, layout };
+}
+
+/* ---------------- UI wiring ---------------- */
+const codeInput = document.getElementById('codeInput');
+const gutter = document.getElementById('gutter');
+const exampleSelect = document.getElementById('exampleSelect');
+const logBox = document.getElementById('logBox');
+const statsBadges = document.getElementById('statsBadges');
+const codeOut = document.getElementById('codeOut');
+const breadcrumbRow = document.getElementById('breadcrumbRow');
+
+for (const name of Object.keys(EXAMPLES)) {
+  const opt = document.createElement('option');
+  opt.value = name;
+  opt.textContent = name;
+  exampleSelect.appendChild(opt);
+}
+function loadExample(name) {
+  codeInput.value = EXAMPLES[name];
+  updateGutter();
+}
+exampleSelect.addEventListener('change', () => loadExample(exampleSelect.value));
+
+function updateGutter() {
+  const lines = codeInput.value.split('\n').length;
+  let s = '';
+  for (let i = 1; i <= lines; i++) s += i + '\n';
+  gutter.textContent = s;
+}
+codeInput.addEventListener('input', updateGutter);
+codeInput.addEventListener('scroll', () => { gutter.scrollTop = codeInput.scrollTop; });
+codeInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const s = codeInput.selectionStart, en = codeInput.selectionEnd;
+    codeInput.value = codeInput.value.slice(0, s) + '  ' + codeInput.value.slice(en);
+    codeInput.selectionStart = codeInput.selectionEnd = s + 2;
+    updateGutter();
+  }
+});
+
+function logLine(level, msg) {
+  const div = document.createElement('div');
+  div.className = level;
+  div.textContent = msg;
+  logBox.appendChild(div);
+}
+
+function setStats(cells) {
+  statsBadges.innerHTML = '';
+  const counts = {};
+  for (const c of cells) counts[c.type] = (counts[c.type] || 0) + 1;
+  const LABELS = { and: 'AND', or: 'OR', nand: 'NAND', nor: 'NOR', xor: 'XOR', xnor: 'XNOR', not: 'NOT', fa: 'FA', dff: 'DFF', const: 'const', instance: 'sub-module' };
+  for (const [type, label] of Object.entries(LABELS)) {
+    if (!counts[type]) continue;
+    const b = document.createElement('div');
+    b.className = 'badge';
+    b.innerHTML = `${label}: <span>${counts[type]}</span>`;
+    statsBadges.appendChild(b);
+  }
+  const total = document.createElement('div');
+  total.className = 'badge';
+  total.innerHTML = `total cells: <span>${cells.length}</span>`;
+  statsBadges.appendChild(total);
+}
+
+function pushGraph(nodes, edges) {
+  window.__lastGraph = { nodes, edges };
+  if (window.__setNetlistGraph) window.__setNetlistGraph(nodes, edges);
+}
+
+let currentAll = null;    // last synthesizeAll() result (all modules' Synthesizer output)
+let viewStack = [];       // breadcrumb: module names from top down to the currently-viewed module
+
+function renderBreadcrumb() {
+  breadcrumbRow.innerHTML = '';
+  viewStack.forEach((modName, i) => {
+    if (i > 0) {
+      const sep = document.createElement('span');
+      sep.className = 'sep';
+      sep.textContent = '›';
+      breadcrumbRow.appendChild(sep);
+    }
+    const btn = document.createElement('button');
+    btn.className = 'crumb';
+    btn.textContent = modName;
+    if (i < viewStack.length - 1) btn.addEventListener('click', () => { viewStack = viewStack.slice(0, i + 1); showCurrentView(); });
+    breadcrumbRow.appendChild(btn);
+  });
+}
+
+function showCurrentView() {
+  if (!currentAll) return;
+  renderBreadcrumb();
+  const modName = viewStack[viewStack.length - 1];
+  const { result, graph, layout } = synthesizeModuleView(currentAll, modName);
+  setStats(result.cells);
+  // structural text always starts from the actual top module, regardless of which sub-module is being viewed in the graph
+  const topResult = currentAll.results[currentAll.top.name];
+  codeOut.textContent = genVerilog([topResult, ...Object.entries(currentAll.results).filter(([k]) => k !== currentAll.top.name).map(([, v]) => v)]);
+  const { nodes, edges } = toFlowElements(graph, layout);
+  pushGraph(nodes, edges);
+}
+
+function drillInto(modType) {
+  if (!currentAll || !currentAll.results[modType]) return;
+  viewStack.push(modType);
+  showCurrentView();
+}
+window.__drillInto = drillInto;
+
+function runSynthesis() {
+  logBox.innerHTML = '';
+  statsBadges.innerHTML = '';
+  codeOut.textContent = '';
+  breadcrumbRow.innerHTML = '';
+  const src = codeInput.value;
+  try {
+    currentAll = synthesizeAll(src);
+    for (const l of currentAll.log) logLine(l.level, `[${l.level}] ${l.msg}`);
+    const cellCount = Object.values(currentAll.results).reduce((n, r) => n + r.cells.length, 0);
+    logLine('ok', `synthesized top module '${currentAll.top.name}'${currentAll.modules.length > 1 ? ` (+${currentAll.modules.length - 1} sub-module${currentAll.modules.length > 2 ? 's' : ''})` : ''} — ${cellCount} cells total`);
+    viewStack = [currentAll.top.name];
+    showCurrentView();
+  } catch (e) {
+    currentAll = null;
+    logLine('err', 'error: ' + e.message);
+    pushGraph([], []);
+  }
+}
+document.getElementById('synthBtn').addEventListener('click', runSynthesis);
+
+document.getElementById('exportJsonBtn').addEventListener('click', () => {
+  const live = window.__getNetlistGraph ? window.__getNetlistGraph() : (window.__lastGraph || { nodes: [], edges: [] });
+  const modName = viewStack.length ? viewStack[viewStack.length - 1] : 'netlist';
+  const payload = {
+    module: modName,
+    nodes: live.nodes.map(n => ({ id: n.id, type: n.type, position: n.position, data: n.data })),
+    edges: live.edges.map(e => ({ id: e.id, source: e.source, sourceHandle: e.sourceHandle, target: e.target, targetHandle: e.targetHandle, label: e.label })),
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${modName}.netlist.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+loadExample(Object.keys(EXAMPLES)[0]);
+runSynthesis();
+
+/* ---- collapse buttons (generic, works for any .card-collapse-btn) ---- */
+document.querySelectorAll('[data-collapse]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const card = btn.closest('.card');
+    card.classList.toggle('collapsed');
+    btn.textContent = card.classList.contains('collapsed') ? '▸' : '▾';
+  });
+});
+</script>
+
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18",
+    "react/jsx-runtime": "https://esm.sh/react@18/jsx-runtime",
+    "react-dom": "https://esm.sh/react-dom@18",
+    "react-dom/client": "https://esm.sh/react-dom@18/client",
+    "@xyflow/react": "https://esm.sh/@xyflow/react@12?external=react,react-dom",
+    "htm": "https://esm.sh/htm"
+  }
+}
+</script>
+<script type="module">
+const flowPlaceholder = document.getElementById('flowPlaceholder');
+
+let reactMod, reactDomMod, xyflowMod, htmMod;
+try {
+  [reactMod, reactDomMod, xyflowMod, htmMod] = await Promise.all([
+    import('react'),
+    import('react-dom/client'),
+    import('@xyflow/react'),
+    import('htm'),
+  ]);
+} catch (err) {
+  console.error('Netlist viewer: failed to load a CDN module', err);
+  if (flowPlaceholder) flowPlaceholder.textContent = 'Netlist viewer failed to load: ' + (err && err.message ? err.message : String(err));
+}
+
+if (reactMod) {
+const React = reactMod.default;
+const { createRoot } = reactDomMod;
+const { ReactFlow, Background, Controls, MiniMap, Handle, Position, useNodesState, useEdgesState, useReactFlow } = xyflowMod;
+const htm = htmMod.default;
+
+const html = htm.bind(React.createElement);
+
+function PortNode({ data }) {
+  const isIn = data.dir === 'in';
+  return html`
+    <div class="rf-node rf-node-port ${isIn ? 'port-in' : 'port-out'} ${data.isBus ? 'is-bus' : ''}">
+      ${!isIn && html`<${Handle} type="target" position=${Position.Left} id="y" />`}
+      <svg viewBox="0 0 100 40" preserveAspectRatio="none">
+        <path d="M0,8 A8,8 0 0 1 8,0 L72,0 L100,20 L72,40 L8,40 A8,8 0 0 1 0,32 Z" fill="white" class="port-stroke" stroke-width="3" stroke-linejoin="round" />
+      </svg>
+      <div class="rf-node-label">${data.label}</div>
+      ${isIn && html`<${Handle} type="source" position=${Position.Right} id="y" />`}
+    </div>`;
+}
+
+// Gate body/bubble geometry lifted directly from compiler/symbol/*.svg (pin markers stripped —
+// all 7 share the same pin convention: inputs at 20%/80% height on the left edge, output at
+// 50% height on the right edge, so handles below are positioned by percentage, not per-shape).
+const GATE_BODY_D = 'M10,10 L40,10 C40,10 70,10 70,40 C70,70 40,70 40,70 L10,70 Z'; // AND/NAND "D" shape
+const GATE_SHIELD_D = 'M10,10 L40,10 C40,10 50,10 60,20 C70,30 70,40 70,40 C70,40 70,50 60,60 C50,70 40,70 40,70 L10,70 C10,70 20,60 20,40 C20,20 10,10 10,10 Z'; // OR/NOR shield
+const GATE_XSHIELD_D = 'M20,10 L50,10 C50,10 60,10 70,20 C80,30 80,40 80,40 C80,40 80,50 70,60 C60,70 50,70 50,70 L20,70 C20,70 30,60 30,40 C30,20 20,10 20,10 Z'; // XOR/XNOR shield (offset right of the extra curve)
+const GATE_XCURVE_D = 'M10,10 C10,10 20,23.0017 20,40 C20,56.9983 10,70 10,70'; // the extra curve behind XOR/XNOR
+const GATE_NOT_D = 'M10,15 L57.5,40 L10,65 Z'; // NOT triangle
+
+const GATE_DEFS = {
+  and: { viewBox: '0 0 80 80', body: GATE_BODY_D, stubs: [[0, 16, 16, 16], [0, 64, 16, 64], [70, 40, 80, 40]] },
+  nand: { viewBox: '0 0 90 80', body: GATE_BODY_D, stubs: [[0, 16, 16, 16], [0, 64, 16, 64], [82, 40, 89, 40]], bubble: { cx: 76, cy: 40 } },
+  or: { viewBox: '0 0 80 80', body: GATE_SHIELD_D, stubs: [[0, 16, 16, 16], [0, 64, 16, 64], [70, 40, 80, 40]] },
+  nor: { viewBox: '0 0 90 80', body: GATE_SHIELD_D, stubs: [[0, 16, 16, 16], [0, 64, 16, 64], [82, 40, 89, 40]], bubble: { cx: 76, cy: 40 } },
+  xor: { viewBox: '0 0 90 80', body: GATE_XSHIELD_D, extra: GATE_XCURVE_D, stubs: [[0, 16, 14, 16], [0, 64, 14, 64], [81, 40, 89, 40]] },
+  xnor: { viewBox: '0 0 100 80', body: GATE_XSHIELD_D, extra: GATE_XCURVE_D, stubs: [[0, 16, 14, 16], [0, 64, 14, 64], [92, 40, 99, 40]], bubble: { cx: 86, cy: 40 } },
+  not: { viewBox: '0 13 75 54', body: GATE_NOT_D, stubs: [[0, 40.5, 16, 40.5], [67, 40, 74, 40]], bubble: { cx: 61, cy: 40 } },
+  buf: { viewBox: '0 13 75 54', body: GATE_NOT_D, stubs: [[0, 40.5, 16, 40.5], [67, 40, 74, 40]] },
+  mux2: { viewBox: '0 0 55 65', body: 'M 20 2.5 L 40 17.5 L 40 47.5 L 20 62.5 Z', stubs: [[0, 8.808153, 20.000004, 8.808153], [0, 32.808153, 20.000004, 32.808153], [0, 56.80815, 20.000004, 56.80815], [40, 32.5, 55, 32.5]] },
+  add: {
+    viewBox: '0 0 65 80',
+    body: 'M 20 0 L 50 15 L 50 60 L 20 80 L 20 50 L 30 40 L 20 30 Z',
+    stubs: [[0, 15, 20, 15], [0, 40, 20, 40], [0, 65, 20, 65], [50, 30, 65, 30], [50, 50, 65, 50]],
+    extra: 'M 40 35 L 40 45 M 45 40 L 35 40',
+    scale: 2,
+  },
+  sub: {
+    viewBox: '0 0 65 80',
+    body: 'M 20 0 L 50 15 L 50 60 L 20 80 L 20 50 L 30 40 L 20 30 Z',
+    stubs: [[0, 15, 20, 15], [0, 40, 20, 40], [0, 65, 20, 65], [50, 30, 65, 30], [50, 50, 65, 50]],
+    extra: 'M 45 40 L 35 40',
+    scale: 2,
+  },
+  dff: {
+    viewBox: '0 0 90 90',
+    body: 'M 24 10 L 70 10 L 70 80 L 24 80 Z',
+    stubs: [[0, 30, 24, 30], [0, 60, 16, 60], [40, 80, 40, 90], [70, 30, 90, 30]],
+    bubble: { cx: 20, cy: 60, r: 4 },
+    notch: 'M 34 80 L 40 70 L 46 80 Z',
+    label: { text: 'DFF', x: 47, y: 49 },
+  },
+};
+
+// Every gate node is scaled by the SAME px-per-SVG-unit factor (derived from AND's 80x80
+// viewBox rendering at 52px tall), so relative sizes across kinds match the source files —
+// e.g. not.svg's smaller 75x54 viewBox renders smaller than and.svg's 80x80, not stretched
+// up to match it. (Deriving width from a shared fixed HEIGHT instead of a shared SCALE was
+// the earlier bug: it force-fit every symbol's height equal regardless of its native size.)
+const GATE_PX_PER_UNIT = 52 / 80;
+for (const def of Object.values(GATE_DEFS)) {
+  const [, , vbW, vbH] = def.viewBox.split(' ').map(Number);
+  const scale = def.scale || 1; // per-kind size multiplier on top of the shared px-per-unit factor
+  def.width = Math.round(vbW * GATE_PX_PER_UNIT * scale);
+  def.height = Math.round(vbH * GATE_PX_PER_UNIT * scale);
+}
+
+function GateSymbol({ kind }) {
+  const def = GATE_DEFS[kind];
+  return html`
+    <svg viewBox=${def.viewBox} preserveAspectRatio="none">
+      ${def.stubs.map((s, i) => html`<line key=${i} x1=${s[0]} y1=${s[1]} x2=${s[2]} y2=${s[3]} class="gate-stroke" stroke-width="3" stroke-linecap="butt" stroke-linejoin="round" />`)}
+      <path d=${def.body} fill="white" class="gate-stroke" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+      ${def.notch && html`<path d=${def.notch} fill="white" class="gate-stroke" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />`}
+      ${def.bubble && html`<circle cx=${def.bubble.cx} cy=${def.bubble.cy} r=${def.bubble.r || 6} fill="white" class="gate-stroke" stroke-width="3" />`}
+      ${def.extra && html`<path d=${def.extra} fill="none" class="gate-stroke" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />`}
+      ${def.label && html`<text x=${def.label.x} y=${def.label.y} font-family="Helvetica" font-size="15" font-weight="bold" class="gate-fill-stroke" text-anchor="middle">${def.label.text}</text>`}
+    </svg>`;
+}
+
+function GateNode({ data }) {
+  const unary = !!data.unary;
+  const def = GATE_DEFS[data.kind];
+  return html`
+    <div class="rf-node rf-node-gate ${data.inverted ? 'inverted' : ''} ${data.isBus ? 'is-bus' : ''}" style=${{ width: def.width + 'px', height: def.height + 'px' }} title=${data.kind.toUpperCase()}>
+      <${Handle} type="target" position=${Position.Left} id="a" style=${{ top: unary ? '50%' : '20%' }} />
+      ${!unary && html`<${Handle} type="target" position=${Position.Left} id="b" style=${{ top: '80%' }} />`}
+      <${GateSymbol} kind=${data.kind} />
+      ${data.isBus && html`<div class="rf-node-range">${data.range}</div>`}
+      <${Handle} type="source" position=${Position.Right} id="y" style=${{ top: '50%' }} />
+    </div>`;
+}
+
+function DffNode({ data }) {
+  const def = GATE_DEFS.dff;
+  return html`
+    <div class="rf-node rf-node-dff ${data.isBus ? 'is-bus' : ''}" style=${{ width: def.width + 'px', height: def.height + 'px' }} title="DFF">
+      <${Handle} type="target" position=${Position.Left} id="d" style=${{ top: '33.33%' }} />
+      <${Handle} type="target" position=${Position.Left} id="rstn" style=${{ top: '66.67%' }} />
+      <${Handle} type="target" position=${Position.Bottom} id="clk" style=${{ left: '44.44%' }} />
+      <${GateSymbol} kind="dff" />
+      ${data.isBus && html`<div class="rf-node-range">${data.range}</div>`}
+      <${Handle} type="source" position=${Position.Right} id="q" style=${{ top: '33.33%' }} />
+    </div>`;
+}
+
+function FaNode({ data }) {
+  const kind = data.op === 'sub' ? 'sub' : 'add';
+  const def = GATE_DEFS[kind];
+  return html`
+    <div class="rf-node rf-node-fa ${data.isBus ? 'is-bus' : ''}" style=${{ width: def.width + 'px', height: def.height + 'px' }} title=${data.label}>
+      <${Handle} type="target" position=${Position.Left} id="a" style=${{ top: '18.75%' }} />
+      <${Handle} type="target" position=${Position.Left} id="cin" style=${{ top: '50%' }} />
+      <${Handle} type="target" position=${Position.Left} id="b" style=${{ top: '81.25%' }} />
+      <${GateSymbol} kind=${kind} />
+      ${data.isBus && html`<div class="rf-node-range">${data.range}</div>`}
+      <${Handle} type="source" position=${Position.Right} id="sum" style=${{ top: '37.5%' }} />
+      <${Handle} type="source" position=${Position.Right} id="cout" style=${{ top: '62.5%' }} />
+    </div>`;
+}
+
+// The compact black-box view of an auto-generated addN/subN sub-module: only a/b/sum are
+// exposed (cin/cout are internal-only, tied to 0/1 and discarded inside the generated
+// module), plus double-click drill-down like any other sub-module instance.
+function AdderNode({ data }) {
+  const kind = data.op === 'sub' ? 'sub' : 'add';
+  const def = GATE_DEFS[kind];
+  return html`
+    <div class="rf-node rf-node-fa" style=${{ width: def.width + 'px', height: def.height + 'px', cursor: 'pointer' }} onDoubleClick=${() => window.__drillInto && window.__drillInto(data.modType)} title="${data.modType} (${data.width}-bit) — double-click to view internals">
+      <${Handle} type="target" position=${Position.Left} id="a" style=${{ top: '18.75%' }} />
+      <${Handle} type="target" position=${Position.Left} id="b" style=${{ top: '81.25%' }} />
+      <${GateSymbol} kind=${kind} />
+      <div class="rf-node-range">[${data.width - 1}:0]</div>
+      <${Handle} type="source" position=${Position.Right} id="sum" style=${{ top: '37.5%' }} />
+    </div>`;
+}
+
+function ConstNode({ data }) {
+  return html`
+    <div class="rf-node rf-node-const">
+      <div class="rf-node-label">${data.label}</div>
+      <${Handle} type="source" position=${Position.Right} id="y" />
+    </div>`;
+}
+
+function MuxNode({ data }) {
+  const def = GATE_DEFS.mux2;
+  return html`
+    <div class="rf-node rf-node-mux2 ${data.isBus ? 'is-bus' : ''}" style=${{ width: def.width + 'px', height: def.height + 'px' }} title="MUX2">
+      <${Handle} type="target" position=${Position.Left} id="sel" style=${{ top: '13.08%' }} />
+      <${Handle} type="target" position=${Position.Left} id="a" style=${{ top: '50%' }} />
+      <${Handle} type="target" position=${Position.Left} id="b" style=${{ top: '86.92%' }} />
+      <${GateSymbol} kind="mux2" />
+      ${data.isBus && html`<div class="rf-node-range">${data.range}</div>`}
+      <${Handle} type="source" position=${Position.Right} id="y" style=${{ top: '50%' }} />
+    </div>`;
+}
+
+function InstanceNode({ data }) {
+  const pct = (i, n) => `${((i + 1) / (n + 1)) * 100}%`;
+  const maxSlots = Math.max(data.inSlots.length, data.outSlots.length, 1);
+  const height = Math.max(74, maxSlots * 20 + 40);
+  return html`
+    <div class="rf-node rf-node-instance" style=${{ height: height + 'px' }} onDoubleClick=${() => window.__drillInto && window.__drillInto(data.modType)} title="double-click to view ${data.modType}'s netlist">
+      ${data.inSlots.map((s, i) => html`<${Handle} key=${'in' + s.id} type="target" position=${Position.Left} id=${s.id} style=${{ top: pct(i, data.inSlots.length) }} title=${s.label} />`)}
+      ${data.outSlots.map((s, i) => html`<${Handle} key=${'out' + s.id} type="source" position=${Position.Right} id=${s.id} style=${{ top: pct(i, data.outSlots.length) }} title=${s.label} />`)}
+      <div class="rf-node-modtype">${data.modType}</div>
+      <div class="rf-node-instname">${data.instName}</div>
+      <div class="rf-node-drill-hint">⤢ double-click</div>
+    </div>`;
+}
+
+const nodeTypes = { port: PortNode, gate: GateNode, dff: DffNode, fa: FaNode, const: ConstNode, mux2: MuxNode, instance: InstanceNode, adder: AdderNode };
+
+// useReactFlow() only works inside the <ReactFlow> tree, so this is rendered as a child
+// alongside Background/Controls/MiniMap — it re-fits the view whenever `revision` changes
+// (a genuine new graph from re-synthesis or drill-down navigation), but NOT on every
+// node/edge state update, since dragging a node also goes through setNodes and shouldn't
+// yank the viewport back to fit.
+function FitViewOnChange({ revision }) {
+  const { fitView } = useReactFlow();
+  React.useEffect(() => {
+    if (revision > 0) fitView({ duration: 300 });
+  }, [revision]);
+  return null;
+}
+
+function FlowApp() {
+  const initial = window.__lastGraph || { nodes: [], edges: [] };
+  const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
+  const [revision, setRevision] = React.useState(0);
+  const nodesRef = React.useRef(nodes);
+  const edgesRef = React.useRef(edges);
+  nodesRef.current = nodes;
+  edgesRef.current = edges;
+  React.useEffect(() => {
+    window.__setNetlistGraph = (n, e) => { setNodes(n); setEdges(e); setRevision(r => r + 1); };
+    window.__getNetlistGraph = () => ({ nodes: nodesRef.current, edges: edgesRef.current });
+    return () => { delete window.__setNetlistGraph; delete window.__getNetlistGraph; };
+  }, [setNodes, setEdges]);
+  return html`
+    <${ReactFlow}
+      nodes=${nodes}
+      edges=${edges}
+      onNodesChange=${onNodesChange}
+      onEdgesChange=${onEdgesChange}
+      nodeTypes=${nodeTypes}
+      fitView
+      minZoom=${0.02}
+      maxZoom=${4}
+    >
+      <${FitViewOnChange} revision=${revision} />
+      <${Background} variant="dots" gap=${16} size=${1} />
+      <${Controls} />
+      <${MiniMap} pannable zoomable />
+    <//>`;
+}
+
+const placeholder = document.getElementById('flowPlaceholder');
+if (placeholder) placeholder.remove();
+const root = createRoot(document.getElementById('flowRoot'));
+root.render(html`<${FlowApp} />`);
+} // end if (reactMod)
+</script>
+
+</body>
+</html>

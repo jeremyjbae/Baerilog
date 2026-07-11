@@ -1,0 +1,2030 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Verilog Simulator</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+      background: #f2f2f7;
+      color: #1c1c1e;
+      padding: 24px;
+    }
+    h1 {
+      text-align: center;
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: #1c1c1e;
+    }
+    .subtitle {
+      text-align: center;
+      font-size: 13px;
+      color: #8e8e93;
+      margin-bottom: 24px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 20px 22px 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    }
+    .card.full { grid-column: 1 / -1; }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #1c1c1e;
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+    }
+    .card-collapse-btn {
+      cursor: pointer;
+      font-size: 8px;
+      font-weight: 600;
+      color: #1c1c1e;
+      user-select: none;
+      flex-shrink: 0;
+      margin-right: 6px;
+      width: 13px;
+      height: 13px;
+      border: 1px solid #1c1c1e;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .card-collapse-btn:hover { border-color: #3a3a3c; color: #3a3a3c; }
+    .card.collapsed > *:not(:first-child) { display: none !important; }
+    .card.collapsed { padding-bottom: 20px; }
+    .card p {
+      font-size: 12px;
+      color: #8e8e93;
+      margin-bottom: 14px;
+    }
+    canvas { width: 100% !important; }
+    .legend-row {
+      display: flex;
+      gap: 18px;
+      justify-content: center;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #3a3a3c;
+      cursor: pointer;
+      user-select: none;
+    }
+    .legend-item.off { color: #c7c7cc; }
+    .legend-item.off .dot { opacity: 0.3; }
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .badge-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 2px;
+    }
+    .badge {
+      background: #f2f2f7;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: #3a3a3c;
+    }
+    .badge span { font-weight: 700; color: #007aff; }
+    .badge.error span { color: #ff3b30; }
+
+    /* --- additions for editor / console / waveform, same visual language --- */
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    select, .btn, .num-input {
+      font-family: inherit;
+      font-size: 12px;
+      border: none;
+      border-radius: 8px;
+      padding: 7px 12px;
+      background: #f2f2f7;
+      color: #1c1c1e;
+      cursor: pointer;
+    }
+    select { flex: 1 1 auto; min-width: 120px; }
+    .num-input { width: 64px; cursor: text; text-align: center; }
+    .btn {
+      background: #007aff;
+      color: #fff;
+      font-weight: 600;
+      transition: background 0.15s ease;
+    }
+    .btn:hover { background: #0066d6; }
+    .btn.secondary { background: #f2f2f7; color: #1c1c1e; }
+    .btn.secondary:hover { background: #e5e5ea; }
+    .btn:disabled { background: #c7c7cc; cursor: default; }
+    .time-label { font-size: 12px; color: #8e8e93; margin-right: -2px; }
+
+    .editor-wrap {
+      display: flex;
+      background: #1c1c1e;
+      border-radius: 12px;
+      overflow: hidden;
+      height: 360px;
+    }
+    .gutter {
+      flex-shrink: 0;
+      width: 38px;
+      padding: 12px 6px 12px 0;
+      text-align: right;
+      font: 12px/1.55 "SF Mono", Menlo, Consolas, monospace;
+      color: #5a5a5e;
+      background: #232326;
+      overflow: hidden;
+      user-select: none;
+      white-space: pre;
+    }
+    textarea#codeInput {
+      flex: 1 1 auto;
+      resize: none;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: #e5e5ea;
+      font: 12px/1.55 "SF Mono", Menlo, Consolas, monospace;
+      padding: 12px 12px 12px 8px;
+      tab-size: 2;
+      white-space: pre;
+      overflow: auto;
+    }
+    .console-box {
+      height: 360px;
+      overflow-y: auto;
+      background: #1c1c1e;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+      color: #b6f2b6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .console-box .err { color: #ff8a80; }
+    .console-box .info { color: #8e8e93; }
+    .console-box .time-tag { color: #5ac8fa; }
+
+    #waveScroll { overflow-x: auto; border-radius: 12px; }
+    canvas#waveCanvas { display: block; background: #fff; }
+    .wave-empty {
+      font-size: 12px;
+      color: #8e8e93;
+      text-align: center;
+      padding: 40px 0;
+    }
+
+    /* --- toolbar groups (zoom controls, range inputs) --- */
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #f2f2f7;
+      border-radius: 10px;
+      padding: 5px 8px;
+    }
+    .toolbar-group .btn.secondary { background: #fff; }
+    .toolbar-group .btn.secondary:hover { background: #e5e5ea; }
+    .toolbar-group .num-input { background: #fff; width: 84px; }
+    .icon-btn { padding: 6px 11px; font-weight: 700; }
+    .zoom-level {
+      font-size: 11px;
+      color: #8e8e93;
+      font-variant-numeric: tabular-nums;
+      min-width: 40px;
+      text-align: center;
+    }
+    .num-input.error { box-shadow: 0 0 0 1.5px #ff3b30 inset; }
+
+    /* --- radix picker popup for waveform value column --- */
+    .radix-popup {
+      position: fixed;
+      display: none;
+      background: #fff;
+      border-radius: 12px;
+      padding: 8px;
+      font-size: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      z-index: 1000;
+      min-width: 130px;
+    }
+    .radix-popup-title {
+      font-weight: 700;
+      font-size: 12px;
+      color: #1c1c1e;
+      padding: 4px 8px 6px;
+    }
+    .radix-opt {
+      padding: 6px 8px;
+      border-radius: 8px;
+      color: #8e8e93;
+      cursor: pointer;
+    }
+    .radix-opt:hover { background: #f2f2f7; }
+    .radix-opt.selected {
+      color: #007aff;
+      border: 1.5px solid #007aff;
+      font-weight: 600;
+    }
+
+    @media (max-width: 760px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: #8e8e93;
+      margin-top: 24px;
+    }
+    .footer a { color: #8e8e93; text-decoration: none; }
+    .footer a:hover { color: #007aff; }
+</style>
+</head>
+<body>
+
+  <h1>Verilog Simulator</h1>
+  <div class="subtitle">Write · Simulate · Watch the waveform — all in the browser</div>
+
+  <div class="grid">
+
+    <div class="card" id="card-editor">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Verilog Editor</h2>
+      <p>Behavioral subset: module/reg/wire, assign, always @(posedge/negedge/*), initial, if/else, #delay, $display, $finish</p>
+      <div class="toolbar">
+        <select id="exampleSelect"></select>
+        <button class="btn secondary" id="openBtn">Open…</button>
+        <button class="btn secondary" id="saveBtn">Save</button>
+        <input type="file" id="fileOpenInput" accept=".v,.sv,.vh,.txt" style="display:none">
+      </div>
+      <div class="editor-wrap">
+        <div class="gutter" id="gutter">1</div>
+        <textarea id="codeInput" spellcheck="false"></textarea>
+      </div>
+      <div class="toolbar" style="margin-top:12px; margin-bottom:0;">
+        <button class="btn" id="runBtn">▶ Run</button>
+        <button class="btn secondary" id="resetBtn">Reset</button>
+        <span class="time-label">run for</span>
+        <input class="num-input" id="maxTimeInput" type="number" min="10" step="10" value="300">
+        <span class="time-label">time units</span>
+      </div>
+    </div>
+
+    <div class="card" id="card-console">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Console</h2>
+      <p>$display output and simulator status</p>
+      <div class="console-box" id="consoleBox"><span class="info">Click Run to simulate…</span></div>
+    </div>
+
+    <div class="card full" id="card-wave">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Waveform Viewer</h2>
+      <p>Click a signal name to show/hide its row · hover a value to change its radix · click the chart to move the cursor, drag to zoom a range, double-click to zoom in</p>
+      <div class="toolbar" style="margin-bottom:14px;">
+        <div class="toolbar-group">
+          <span class="time-label">Zoom</span>
+          <button class="btn secondary icon-btn" id="waveZoomIn" title="Zoom in">+</button>
+          <span class="zoom-level" id="waveZoomLevel">1.0×</span>
+          <button class="btn secondary icon-btn" id="waveZoomOut" title="Zoom out">−</button>
+          <button class="btn secondary" id="waveZoomReset">Reset</button>
+        </div>
+        <div class="toolbar-group">
+          <span class="time-label">Start</span>
+          <input class="num-input" id="waveStartInput" type="text">
+          <span class="time-label">End</span>
+          <input class="num-input" id="waveEndInput" type="text">
+          <button class="btn" id="waveApplyBtn">Apply</button>
+        </div>
+      </div>
+      <div id="waveScroll">
+        <canvas id="waveCanvas" height="120"></canvas>
+      </div>
+      <div class="wave-empty" id="waveEmpty">No simulation data yet — run a design to see waveforms.</div>
+      <div class="legend-row" id="legendRow"></div>
+      <div class="badge-row" id="badgeRow"></div>
+    </div>
+
+  </div>
+
+  <div class="footer">© Jeremy Bae 2026 · <a href="https://github.com/jeremyjbae" target="_blank" rel="noopener">github.com/jeremyjbae</a></div>
+
+<script>
+'use strict';
+
+/* =========================================================================
+   LEXER
+   ========================================================================= */
+const KEYWORDS = new Set(['module','endmodule','input','output','reg','wire','assign',
+  'always','initial','begin','end','if','else','posedge','negedge','or']);
+
+function lex(src) {
+  const toks = [];
+  let i = 0, line = 1;
+  const n = src.length;
+  const peekCh = (o=0) => src[i+o];
+  while (i < n) {
+    const c = src[i];
+    if (c === '\n') { line++; i++; continue; }
+    if (/\s/.test(c)) { i++; continue; }
+    if (c === '/' && peekCh(1) === '/') { while (i < n && src[i] !== '\n') i++; continue; }
+    if (c === '/' && peekCh(1) === '*') {
+      i += 2;
+      while (i < n && !(src[i] === '*' && peekCh(1) === '/')) { if (src[i] === '\n') line++; i++; }
+      i += 2; continue;
+    }
+    if (c === '"') {
+      let j = i + 1, s = '';
+      while (j < n && src[j] !== '"') {
+        if (src[j] === '\\') { s += src[j+1]; j += 2; }
+        else { s += src[j]; j++; }
+      }
+      toks.push({ type: 'STRING', value: s, line });
+      i = j + 1; continue;
+    }
+    if (/[0-9]/.test(c)) {
+      let j = i;
+      while (j < n && /[0-9]/.test(src[j])) j++;
+      if (src[j] === "'") {
+        const sizeStr = src.slice(i, j);
+        let k = j + 1, base = 'd';
+        if (/[bBoOdDhH]/.test(src[k])) { base = src[k].toLowerCase(); k++; }
+        const ds = k;
+        while (k < n && /[0-9a-fA-FxXzZ_]/.test(src[k])) k++;
+        const digits = src.slice(ds, k).replace(/_/g, '');
+        toks.push({ type: 'NUMBER', value: { size: sizeStr ? parseInt(sizeStr, 10) : null, base, digits }, line });
+        i = k; continue;
+      }
+      toks.push({ type: 'NUMBER', value: { size: null, base: 'd', digits: src.slice(i, j) }, line });
+      i = j; continue;
+    }
+    if (c === "'") {
+      let k = i + 1, base = 'd';
+      if (/[bBoOdDhH]/.test(src[k])) { base = src[k].toLowerCase(); k++; }
+      const ds = k;
+      while (k < n && /[0-9a-fA-FxXzZ_]/.test(src[k])) k++;
+      const digits = src.slice(ds, k).replace(/_/g, '');
+      toks.push({ type: 'NUMBER', value: { size: null, base, digits }, line });
+      i = k; continue;
+    }
+    if (/[A-Za-z_]/.test(c)) {
+      let j = i;
+      while (j < n && /[A-Za-z0-9_$]/.test(src[j])) j++;
+      const word = src.slice(i, j);
+      toks.push({ type: KEYWORDS.has(word) ? 'KW' : 'IDENT', value: word, line });
+      i = j; continue;
+    }
+    const two = src.slice(i, i + 2);
+    if (['<=','>=','==','!=','&&','||','<<','>>'].includes(two)) {
+      toks.push({ type: 'OP', value: two, line }); i += 2; continue;
+    }
+    if ('+-*/%&|^~!<>=?:,;()[]{}@#.$'.includes(c)) {
+      toks.push({ type: 'OP', value: c, line }); i++; continue;
+    }
+    throw new Error(`Lex error: unexpected character '${c}' at line ${line}`);
+  }
+  toks.push({ type: 'EOF', value: null, line });
+  return toks;
+}
+
+/* =========================================================================
+   PARSER  (recursive descent -> AST)
+   ========================================================================= */
+class Parser {
+  constructor(toks) { this.toks = toks; this.p = 0; }
+  peek(o=0) { return this.toks[this.p + o]; }
+  at(type, value) {
+    const t = this.peek();
+    if (t.type !== type) return false;
+    if (value !== undefined && t.value !== value) return false;
+    return true;
+  }
+  atOp(v) { return this.at('OP', v); }
+  atKw(v) { return this.at('KW', v); }
+  next() { return this.toks[this.p++]; }
+  expectOp(v) { if (!this.atOp(v)) this.err(`expected '${v}'`); return this.next(); }
+  expectKw(v) { if (!this.atKw(v)) this.err(`expected '${v}'`); return this.next(); }
+  expectIdent() { if (!this.at('IDENT')) this.err('expected identifier'); return this.next().value; }
+  err(msg) {
+    const t = this.peek();
+    throw new Error(`Parse error at line ${t.line}: ${msg}, got ${t.type} '${t.value}'`);
+  }
+
+  parseModule() {
+    this.expectKw('module');
+    const name = this.expectIdent();
+    const ports = [];
+    const decls = [];
+    if (this.atOp('(')) {
+      this.next();
+      if (!this.atOp(')')) {
+        this.parsePortListItem(ports, decls);
+        while (this.atOp(',')) { this.next(); this.parsePortListItem(ports, decls); }
+      }
+      this.expectOp(')');
+    }
+    this.expectOp(';');
+    const items = [];
+    while (!this.atKw('endmodule')) {
+      if (this.atKw('input') || this.atKw('output') || this.atKw('reg') || this.atKw('wire')) {
+        decls.push(...this.parseDecl());
+      } else if (this.atKw('assign')) {
+        items.push(this.parseAssign());
+      } else if (this.atKw('always')) {
+        items.push(this.parseAlways());
+      } else if (this.atKw('initial')) {
+        items.push(this.parseInitial());
+      } else if (this.at('IDENT')) {
+        items.push(this.parseInstance());
+      } else {
+        this.err('expected declaration or module item');
+      }
+    }
+    this.expectKw('endmodule');
+    return { type: 'Module', name, ports, decls, items };
+  }
+
+  // A port-list item is either the old style, a bare name whose input/output/
+  // reg/wire declaration appears later in the module body (`module m(a, b);`),
+  // or ANSI style, where the declaration is written inline in the port list
+  // itself (`module m(input a, output reg [3:0] b);`).
+  parsePortListItem(ports, decls) {
+    if (this.atKw('input') || this.atKw('output')) {
+      const ioKind = this.next().value;
+      let kind = ioKind;
+      if (this.atKw('reg') || this.atKw('wire')) kind = this.next().value;
+      const width = this.parseRange();
+      const name = this.expectIdent();
+      ports.push(name);
+      decls.push({ kind, ioKind, name, width });
+      return;
+    }
+    ports.push(this.expectIdent());
+  }
+
+  parseInstance() {
+    const module = this.expectIdent();
+    const name = this.expectIdent();
+    this.expectOp('(');
+    const conns = [];
+    if (!this.atOp(')')) {
+      conns.push(this.parsePortConn());
+      while (this.atOp(',')) { this.next(); conns.push(this.parsePortConn()); }
+    }
+    this.expectOp(')');
+    this.expectOp(';');
+    const named = conns.length > 0 && conns[0].port !== null;
+    if (conns.some(c => (c.port !== null) !== named)) {
+      this.err('cannot mix named (.port(...)) and positional port connections');
+    }
+    return { type: 'Instance', module, name, conns, named };
+  }
+
+  parsePortConn() {
+    if (this.atOp('.')) {
+      this.next();
+      const port = this.expectIdent();
+      this.expectOp('(');
+      const expr = this.parseExpr();
+      this.expectOp(')');
+      return { port, expr };
+    }
+    return { port: null, expr: this.parseExpr() };
+  }
+
+  parseRange() {
+    if (this.atOp('[')) {
+      this.next();
+      const hi = this.parseExpr();
+      this.expectOp(':');
+      const lo = this.parseExpr();
+      this.expectOp(']');
+      return Math.abs(evalConstExpr(hi) - evalConstExpr(lo)) + 1;
+    }
+    return 1;
+  }
+
+  parseDecl() {
+    const kind = this.next().value;
+    let kind2 = null;
+    if (this.atKw('reg') || this.atKw('wire')) kind2 = this.next().value;
+    const width = this.parseRange();
+    const names = [this.expectIdent()];
+    while (this.atOp(',')) { this.next(); names.push(this.expectIdent()); }
+    this.expectOp(';');
+    return names.map(name => ({
+      kind: kind2 || kind,
+      ioKind: (kind === 'input' || kind === 'output') ? kind : null,
+      name, width
+    }));
+  }
+
+  parseAssign() {
+    this.expectKw('assign');
+    const lhs = this.parseLValue();
+    this.expectOp('=');
+    const rhs = this.parseExpr();
+    this.expectOp(';');
+    return { type: 'Assign', lhs, rhs };
+  }
+
+  parseSensItem() {
+    let edge = null;
+    if (this.atKw('posedge')) { this.next(); edge = 'posedge'; }
+    else if (this.atKw('negedge')) { this.next(); edge = 'negedge'; }
+    const signal = this.expectIdent();
+    return { edge, signal };
+  }
+
+  parseAlways() {
+    this.expectKw('always');
+    if (!this.atOp('@')) {
+      const body = this.parseStmt();
+      return { type: 'Always', sensitivity: 'none', body };
+    }
+    this.expectOp('@');
+    let sensitivity = 'star';
+    if (this.atOp('(')) {
+      this.next();
+      if (this.atOp('*')) { this.next(); sensitivity = 'star'; }
+      else {
+        const items = [this.parseSensItem()];
+        while (this.atKw('or') || this.atOp(',')) { this.next(); items.push(this.parseSensItem()); }
+        sensitivity = items;
+      }
+      this.expectOp(')');
+    } else if (this.atOp('*')) { this.next(); sensitivity = 'star'; }
+    const body = this.parseStmt();
+    return { type: 'Always', sensitivity, body };
+  }
+
+  parseInitial() {
+    this.expectKw('initial');
+    const body = this.parseStmt();
+    return { type: 'Initial', body };
+  }
+
+  parseLValue() {
+    let name = this.expectIdent();
+    while (this.atOp('.') && this.peek(1).type === 'IDENT') { this.next(); name += '.' + this.expectIdent(); }
+    if (this.atOp('[')) {
+      this.next();
+      const hi = this.parseExpr();
+      if (this.atOp(':')) {
+        this.next();
+        const lo = this.parseExpr();
+        this.expectOp(']');
+        return { type: 'PartSelect', name, hi, lo };
+      }
+      this.expectOp(']');
+      return { type: 'BitSelect', name, index: hi };
+    }
+    return { type: 'Ident', name };
+  }
+
+  parseStmt() {
+    if (this.atKw('begin')) {
+      this.next();
+      const stmts = [];
+      while (!this.atKw('end')) stmts.push(this.parseStmt());
+      this.next();
+      return { type: 'Block', stmts };
+    }
+    if (this.atKw('if')) {
+      this.next();
+      this.expectOp('(');
+      const cond = this.parseExpr();
+      this.expectOp(')');
+      const then = this.parseStmt();
+      let els = null;
+      if (this.atKw('else')) { this.next(); els = this.parseStmt(); }
+      return { type: 'If', cond, then, els };
+    }
+    if (this.atOp('#')) {
+      this.next();
+      const amount = this.parsePrimary();
+      const rest = this.atOp(';') ? (this.next(), null) : this.parseStmt();
+      return { type: 'Timing', control: { kind: 'delay', amount }, stmt: rest };
+    }
+    if (this.atOp('@')) {
+      this.next();
+      this.expectOp('(');
+      const items = [this.parseSensItem()];
+      while (this.atKw('or') || this.atOp(',')) { this.next(); items.push(this.parseSensItem()); }
+      this.expectOp(')');
+      const rest = this.atOp(';') ? (this.next(), null) : this.parseStmt();
+      return { type: 'Timing', control: { kind: 'event', edges: items }, stmt: rest };
+    }
+    if (this.atOp('$')) {
+      this.next();
+      const name = this.expectIdent();
+      let args = [];
+      if (this.atOp('(')) {
+        this.next();
+        if (!this.atOp(')')) {
+          args.push(this.parseExpr());
+          while (this.atOp(',')) { this.next(); args.push(this.parseExpr()); }
+        }
+        this.expectOp(')');
+      }
+      this.expectOp(';');
+      if (name === 'finish') return { type: 'Finish' };
+      return { type: 'SysCall', name, args };
+    }
+    if (this.atOp(';')) { this.next(); return { type: 'Empty' }; }
+    const lhs = this.parseLValue();
+    let blocking;
+    if (this.atOp('=')) { this.next(); blocking = true; }
+    else if (this.atOp('<=')) { this.next(); blocking = false; }
+    else this.err("expected '=' or '<='");
+    const rhs = this.parseExpr();
+    this.expectOp(';');
+    return { type: 'AssignStmt', lhs, rhs, blocking };
+  }
+
+  parseExpr() { return this.parseTernary(); }
+  parseTernary() {
+    let c = this.parseLogicalOr();
+    if (this.atOp('?')) {
+      this.next();
+      const t = this.parseExpr();
+      this.expectOp(':');
+      const e = this.parseExpr();
+      return { type: 'Ternary', cond: c, then: t, els: e };
+    }
+    return c;
+  }
+  binLevel(nextFn, ops) {
+    let left = nextFn.call(this);
+    while (true) {
+      const t = this.peek();
+      if (t.type === 'OP' && ops.includes(t.value)) {
+        this.next();
+        left = { type: 'Binary', op: t.value, left, right: nextFn.call(this) };
+      } else break;
+    }
+    return left;
+  }
+  parseLogicalOr() { return this.binLevel(this.parseLogicalAnd, ['||']); }
+  parseLogicalAnd() { return this.binLevel(this.parseBitOr, ['&&']); }
+  parseBitOr() { return this.binLevel(this.parseBitXor, ['|']); }
+  parseBitXor() { return this.binLevel(this.parseBitAnd, ['^']); }
+  parseBitAnd() { return this.binLevel(this.parseEquality, ['&']); }
+  parseEquality() { return this.binLevel(this.parseRelational, ['==','!=']); }
+  parseRelational() { return this.binLevel(this.parseShift, ['<','>','<=','>=']); }
+  parseShift() { return this.binLevel(this.parseAdditive, ['<<','>>']); }
+  parseAdditive() { return this.binLevel(this.parseMultiplicative, ['+','-']); }
+  parseMultiplicative() { return this.binLevel(this.parseUnary, ['*','/','%']); }
+  parseUnary() {
+    const t = this.peek();
+    if (t.type === 'OP' && ['~','!','-','+'].includes(t.value)) {
+      this.next();
+      return { type: 'Unary', op: t.value, expr: this.parseUnary() };
+    }
+    return this.parsePostfix();
+  }
+  parsePostfix() {
+    let e = this.parsePrimary();
+    if (e.type === 'Ident' && this.atOp('[')) {
+      this.next();
+      const hi = this.parseExpr();
+      if (this.atOp(':')) {
+        this.next();
+        const lo = this.parseExpr();
+        this.expectOp(']');
+        return { type: 'PartSelect', name: e.name, hi, lo };
+      }
+      this.expectOp(']');
+      return { type: 'BitSelect', name: e.name, index: hi };
+    }
+    return e;
+  }
+  parsePrimary() {
+    const t = this.peek();
+    if (t.type === 'STRING') { this.next(); return { type: 'StringLit', value: t.value }; }
+    if (t.type === 'NUMBER') { this.next(); return { type: 'Number', raw: t.value }; }
+    if (this.atOp('$')) { this.next(); const name = this.expectIdent(); return { type: 'SysFunc', name }; }
+    if (t.type === 'IDENT') {
+      this.next();
+      let name = t.value;
+      // hierarchical reference (e.g. `u0.q`) - lets $display/expressions
+      // probe a submodule instance's internal signal from an ancestor scope
+      while (this.atOp('.') && this.peek(1).type === 'IDENT') {
+        this.next();
+        name += '.' + this.expectIdent();
+      }
+      return { type: 'Ident', name };
+    }
+    if (this.atOp('(')) {
+      this.next();
+      const e = this.parseExpr();
+      this.expectOp(')');
+      return e;
+    }
+    this.err('expected expression');
+  }
+}
+
+function evalConstExpr(node) {
+  if (node.type === 'Number') return parseNumberLiteral(node.raw).value;
+  if (node.type === 'Binary') {
+    const l = evalConstExpr(node.left), r = evalConstExpr(node.right);
+    if (node.op === '+') return l + r;
+    if (node.op === '-') return l - r;
+    if (node.op === '*') return l * r;
+  }
+  throw new Error('non-constant expression in range');
+}
+
+function parseNumberLiteral(raw) {
+  const { size, base, digits } = raw;
+  const d = digits.replace(/[xXzZ]/g, '0');
+  let value;
+  switch (base) {
+    case 'b': value = parseInt(d, 2); break;
+    case 'o': value = parseInt(d, 8); break;
+    case 'h': value = parseInt(d, 16); break;
+    default: value = parseInt(d, 10); break;
+  }
+  if (Number.isNaN(value)) value = 0;
+  return { value, width: size || 32 };
+}
+
+function parseVerilog(src) {
+  const p = new Parser(lex(src));
+  const modules = new Map();
+  while (!p.at('EOF')) {
+    const mod = p.parseModule();
+    if (modules.has(mod.name)) throw new Error(`Parse error: module '${mod.name}' declared more than once`);
+    modules.set(mod.name, mod);
+  }
+  if (modules.size === 0) throw new Error('Parse error: no module found');
+  return elaborate(modules);
+}
+
+/* =========================================================================
+   ELABORATION  (flattens module instances into one flat Module AST so the
+   Simulator, which only understands a single flat decls/items list, needs
+   no changes at all to support hierarchy)
+
+   Every declared signal in every instance gets a hierarchical dotted name
+   (e.g. `u0.q`), and each port connection becomes a synthesized continuous
+   `assign` in the correct direction (parent -> child for inputs, child ->
+   parent for outputs) - exactly what a port connection *is* in Verilog.
+   That means nested/chained hierarchy, and probing a submodule's internal
+   signal as `u0.q` in $display or the waveform view, both fall out for
+   free with no extra machinery.
+   ========================================================================= */
+function elaborate(modules) {
+  const instantiated = new Set();
+  for (const mod of modules.values()) {
+    for (const item of mod.items) if (item.type === 'Instance') instantiated.add(item.module);
+  }
+  const topCandidates = [...modules.keys()].filter(n => !instantiated.has(n));
+  if (topCandidates.length !== 1) {
+    throw new Error(`Parse error: expected exactly one top-level module, found [${topCandidates.join(', ') || 'none'}]` +
+      (topCandidates.length === 0 ? ' (instantiation cycle?)' : ''));
+  }
+  const top = modules.get(topCandidates[0]);
+
+  const decls = [], items = [];
+  const stack = [top.name];
+  const declaredNames = new Set();
+
+  function qualify(prefix, name) { return prefix ? prefix + '.' + name : name; }
+  function renameLValue(lv, prefix) {
+    if (lv.type === 'Ident') return { type: 'Ident', name: qualify(prefix, lv.name) };
+    if (lv.type === 'BitSelect') return { type: 'BitSelect', name: qualify(prefix, lv.name), index: renameExpr(lv.index, prefix) };
+    if (lv.type === 'PartSelect') return { type: 'PartSelect', name: qualify(prefix, lv.name), hi: renameExpr(lv.hi, prefix), lo: renameExpr(lv.lo, prefix) };
+    throw new Error('unsupported lvalue');
+  }
+  function renameExpr(node, prefix) {
+    switch (node.type) {
+      case 'Number': case 'StringLit': case 'SysFunc': return node;
+      case 'Ident': return { type: 'Ident', name: qualify(prefix, node.name) };
+      case 'BitSelect': return { type: 'BitSelect', name: qualify(prefix, node.name), index: renameExpr(node.index, prefix) };
+      case 'PartSelect': return { type: 'PartSelect', name: qualify(prefix, node.name), hi: renameExpr(node.hi, prefix), lo: renameExpr(node.lo, prefix) };
+      case 'Unary': return { type: 'Unary', op: node.op, expr: renameExpr(node.expr, prefix) };
+      case 'Binary': return { type: 'Binary', op: node.op, left: renameExpr(node.left, prefix), right: renameExpr(node.right, prefix) };
+      case 'Ternary': return { type: 'Ternary', cond: renameExpr(node.cond, prefix), then: renameExpr(node.then, prefix), els: renameExpr(node.els, prefix) };
+      default: throw new Error('cannot elaborate expression node ' + node.type);
+    }
+  }
+  function renameSensItem(item, prefix) {
+    return { edge: item.edge, signal: qualify(prefix, item.signal) };
+  }
+  function renameStmt(stmt, prefix) {
+    switch (stmt.type) {
+      case 'Block': return { type: 'Block', stmts: stmt.stmts.map(s => renameStmt(s, prefix)) };
+      case 'If': return { type: 'If', cond: renameExpr(stmt.cond, prefix), then: renameStmt(stmt.then, prefix), els: stmt.els ? renameStmt(stmt.els, prefix) : null };
+      case 'AssignStmt': return { type: 'AssignStmt', lhs: renameLValue(stmt.lhs, prefix), rhs: renameExpr(stmt.rhs, prefix), blocking: stmt.blocking };
+      case 'Timing': {
+        const control = stmt.control.kind === 'delay'
+          ? { kind: 'delay', amount: renameExpr(stmt.control.amount, prefix) }
+          : { kind: 'event', edges: stmt.control.edges.map(e => renameSensItem(e, prefix)) };
+        return { type: 'Timing', control, stmt: stmt.stmt ? renameStmt(stmt.stmt, prefix) : null };
+      }
+      case 'SysCall': return { type: 'SysCall', name: stmt.name, args: stmt.args.map(a => renameExpr(a, prefix)) };
+      case 'Finish': case 'Empty': return stmt;
+      default: throw new Error('cannot elaborate statement ' + stmt.type);
+    }
+  }
+  // Only an OUTPUT port's connection needs this: it's the assignment target,
+  // so it must be an addressable place to write to, not an arbitrary expression.
+  function renameConnExpr(expr, prefix) {
+    const node = renameExpr(expr, prefix);
+    if (node.type !== 'Ident' && node.type !== 'BitSelect' && node.type !== 'PartSelect') {
+      throw new Error('Parse error: an output port connection must be a plain signal name, bit-select, or part-select');
+    }
+    return node;
+  }
+
+  function elaborateModule(mod, prefix) {
+    const localSeen = new Set();
+    for (const d of mod.decls) {
+      const fullName = qualify(prefix, d.name);
+      if (!localSeen.has(fullName)) {
+        // A signal name repeated within one module body (e.g. the common
+        // `output q; reg q;` idiom) is normal and handled downstream by
+        // Simulator.declareSignal; the same name reappearing from a
+        // DIFFERENT instance means two instances share an instance name.
+        if (declaredNames.has(fullName)) {
+          throw new Error(`Parse error: duplicate hierarchical signal name '${fullName}' - check for a reused instance name`);
+        }
+        declaredNames.add(fullName);
+        localSeen.add(fullName);
+      }
+      decls.push({ kind: d.kind, ioKind: d.ioKind, name: fullName, width: d.width });
+    }
+    for (const item of mod.items) {
+      if (item.type === 'Assign') {
+        items.push({ type: 'Assign', lhs: renameLValue(item.lhs, prefix), rhs: renameExpr(item.rhs, prefix) });
+      } else if (item.type === 'Always') {
+        const sensitivity = Array.isArray(item.sensitivity) ? item.sensitivity.map(s => renameSensItem(s, prefix)) : item.sensitivity;
+        items.push({ type: 'Always', sensitivity, body: renameStmt(item.body, prefix) });
+      } else if (item.type === 'Initial') {
+        items.push({ type: 'Initial', body: renameStmt(item.body, prefix) });
+      } else if (item.type === 'Instance') {
+        const child = modules.get(item.module);
+        if (!child) throw new Error(`Parse error: module '${item.module}' is not defined (instantiated as '${item.name}')`);
+        if (stack.includes(item.module)) {
+          throw new Error(`Parse error: instantiation cycle detected: ${[...stack, item.module].join(' -> ')}`);
+        }
+        let conns;
+        if (item.named) {
+          for (const c of item.conns) {
+            if (!child.ports.includes(c.port)) throw new Error(`Parse error: module '${item.module}' has no port '${c.port}'`);
+          }
+          conns = item.conns;
+        } else {
+          if (item.conns.length !== child.ports.length) {
+            throw new Error(`Parse error: '${item.module}' expects ${child.ports.length} port connections, got ${item.conns.length}`);
+          }
+          conns = item.conns.map((c, i) => ({ port: child.ports[i], expr: c.expr }));
+        }
+        const childPrefix = qualify(prefix, item.name);
+        stack.push(item.module);
+        elaborateModule(child, childPrefix);
+        stack.pop();
+
+        const childIoKind = new Map(child.decls.filter(d => d.ioKind).map(d => [d.name, d.ioKind]));
+        for (const c of conns) {
+          const ioKind = childIoKind.get(c.port);
+          if (!ioKind) throw new Error(`Parse error: port '${c.port}' of module '${item.module}' has no input/output declaration`);
+          const childPortNode = { type: 'Ident', name: qualify(childPrefix, c.port) };
+          if (ioKind === 'input') {
+            // an input port connection is the SOURCE of an assign, so any
+            // expression is fine (a constant, `a & b`, another port, ...)
+            items.push({ type: 'Assign', lhs: childPortNode, rhs: renameExpr(c.expr, prefix) });
+          } else {
+            // an output port connection is the TARGET of an assign, so it must
+            // be an addressable place to write to - a plain signal/bit-select/
+            // part-select, not an arbitrary expression like `a & b`.
+            items.push({ type: 'Assign', lhs: renameConnExpr(c.expr, prefix), rhs: childPortNode });
+          }
+        }
+      }
+    }
+  }
+
+  elaborateModule(top, '');
+  return { type: 'Module', name: top.name, ports: [], decls, items };
+}
+
+/* =========================================================================
+   SIMULATOR  (discrete-event, generator-based coroutines)
+   ========================================================================= */
+function mask(value, width) {
+  if (width >= 32) return value >>> 0;
+  return value & ((1 << width) - 1);
+}
+
+function edgeMatches(edge, oldV, newV) {
+  const oldBit = oldV & 1, newBit = newV & 1;
+  if (edge === 'posedge') return oldBit === 0 && newBit === 1;
+  if (edge === 'negedge') return oldBit === 1 && newBit === 0;
+  return oldV !== newV;
+}
+
+class Simulator {
+  constructor(ast, opts = {}) {
+    this.ast = ast;
+    this.signals = {};
+    this.log = [];
+    this.time = 0;
+    this.finished = false;
+    this.maxTime = opts.maxTime ?? 300;
+    this.maxDeltaIters = opts.maxDeltaIters ?? 2000;
+    this.nbaQueue = [];
+    this.combProcs = [];
+    this.seqProcs = [];
+    this.error = null;
+    this._build();
+  }
+
+  declareSignal(name, width) {
+    if (!this.signals[name]) {
+      this.signals[name] = { value: 0, width: width || 1, history: [[0, 0]], edgeWaiters: [] };
+    } else if (width) {
+      this.signals[name].width = Math.max(this.signals[name].width, width);
+    }
+  }
+
+  _build() {
+    for (const d of this.ast.decls) this.declareSignal(d.name, d.width);
+    const ctx = this._makeCtx();
+    for (const item of this.ast.items) {
+      if (item.type === 'Assign') {
+        this.combProcs.push(() => { writeLValue(this, item.lhs, evalExpr(item.rhs, ctx)); });
+      } else if (item.type === 'Always') {
+        const isEdgeDriven = Array.isArray(item.sensitivity) && item.sensitivity.some(s => s.edge);
+        if (item.sensitivity === 'none') {
+          this.seqProcs.push(this._makeSeqProc(function* () {
+            while (true) yield* execStmt(item.body, ctx);
+          }));
+        } else if (item.sensitivity === 'star' || (Array.isArray(item.sensitivity) && !isEdgeDriven)) {
+          this.combProcs.push(() => { runSync(item.body, ctx); });
+        } else {
+          this.seqProcs.push(this._makeSeqProc(function* () {
+            while (true) {
+              yield { kind: 'edge', edges: item.sensitivity };
+              yield* execStmt(item.body, ctx);
+            }
+          }));
+        }
+      } else if (item.type === 'Initial') {
+        this.seqProcs.push(this._makeSeqProc(function* () { yield* execStmt(item.body, ctx); }));
+      }
+    }
+  }
+
+  _makeSeqProc(genFn) { return { gen: genFn(), state: 'ready', resumeAt: 0, edges: null, done: false }; }
+
+  _makeCtx() {
+    const sim = this;
+    return {
+      read(name) { sim.declareSignal(name); return sim.signals[name].value; },
+      write(lhs, value) { writeLValue(sim, lhs, value); },
+      queueNBA(lhs, value) { sim.nbaQueue.push({ lhs, value }); },
+      sysCall(name, args) { sim._sysCall(name, args); },
+      time() { return sim.time; },
+    };
+  }
+
+  _sysCall(name, args) {
+    if (name === 'display' || name === 'write' || name === 'monitor') {
+      this.log.push({ time: this.time, text: formatDisplay(args) });
+    }
+  }
+
+  run() {
+    this._changedThisDelta = new Set();
+    this._settle();
+    let steps = 0;
+    while (!this.finished && steps < this.maxDeltaIters * 4) {
+      steps++;
+      const waiting = this.seqProcs.filter(p => !p.done && p.state === 'delay');
+      if (waiting.length === 0) break;
+      const nextTime = Math.min(...waiting.map(p => p.resumeAt));
+      if (nextTime > this.maxTime) break;
+      this.time = nextTime;
+      for (const p of waiting) if (p.resumeAt === this.time) p.state = 'ready';
+      this._settle();
+    }
+    return { signals: this.signals, log: this.log, finished: this.finished, time: this.time, error: this.error };
+  }
+
+  _settle() {
+    let iter = 0;
+    while (iter++ < this.maxDeltaIters) {
+      this._changedThisDelta = new Set();
+      let didWork = false;
+
+      let combIter = 0, combChanged = true;
+      while (combChanged && combIter++ < this.maxDeltaIters) {
+        combChanged = false;
+        const before = this._changedThisDelta.size;
+        for (const cp of this.combProcs) {
+          try { cp(); } catch (e) { this.error = e.message; this.finished = true; return; }
+        }
+        if (this._changedThisDelta.size > before) { combChanged = true; didWork = true; }
+      }
+
+      let ranAny = false;
+      for (const p of this.seqProcs) {
+        if (p.done || p.state !== 'ready') continue;
+        ranAny = true; didWork = true;
+        this._stepProc(p, undefined);
+        if (this.finished) return;
+      }
+
+      if (!didWork && !ranAny) break;
+
+      if (this.nbaQueue.length) {
+        const q = this.nbaQueue;
+        this.nbaQueue = [];
+        for (const { lhs, value } of q) writeLValue(this, lhs, value);
+      } else if (!ranAny) {
+        break;
+      }
+    }
+  }
+
+  _stepProc(p, sendValue) {
+    let result;
+    try { result = p.gen.next(sendValue); }
+    catch (e) { this.error = e.message; this.finished = true; return; }
+    if (result.done) { p.done = true; return; }
+    const y = result.value;
+    if (y.kind === 'delay') {
+      p.state = 'delay';
+      p.resumeAt = this.time + y.amount;
+    } else if (y.kind === 'edge') {
+      p.state = 'edge';
+      p.edges = y.edges;
+      for (const e of y.edges) {
+        this.declareSignal(e.signal);
+        this.signals[e.signal].edgeWaiters.push(p);
+      }
+    } else if (y.kind === 'finish') {
+      this.finished = true;
+      p.done = true;
+    }
+  }
+
+  _notifyChange(name, oldValue, newValue) {
+    this._changedThisDelta.add(name);
+    const sig = this.signals[name];
+    const waiters = sig.edgeWaiters;
+    if (!waiters.length) return;
+    sig.edgeWaiters = [];
+    for (const p of waiters) {
+      if (p.done) continue;
+      const matched = p.edges.find(e => e.signal === name && edgeMatches(e.edge, oldValue, newValue));
+      if (matched) { p.state = 'ready'; this._stepProc(p, undefined); }
+      else sig.edgeWaiters.push(p);
+    }
+  }
+}
+
+function writeLValue(sim, lhs, value) {
+  if (lhs.type === 'Ident') {
+    sim.declareSignal(lhs.name);
+    const sig = sim.signals[lhs.name];
+    const v = mask(value, sig.width);
+    if (v !== sig.value) {
+      const old = sig.value;
+      sig.value = v;
+      sig.history.push([sim.time, v]);
+      sim._notifyChange(lhs.name, old, v);
+    }
+    return;
+  }
+  if (lhs.type === 'BitSelect' || lhs.type === 'PartSelect') {
+    sim.declareSignal(lhs.name);
+    const sig = sim.signals[lhs.name];
+    const ctx = sim._makeCtx();
+    let hi, lo;
+    if (lhs.type === 'BitSelect') { hi = lo = evalExpr(lhs.index, ctx); }
+    else { hi = evalExpr(lhs.hi, ctx); lo = evalExpr(lhs.lo, ctx); }
+    if (hi < lo) [hi, lo] = [lo, hi];
+    const width = hi - lo + 1;
+    const fieldMask = ((width >= 32) ? 0xFFFFFFFF : ((1 << width) - 1)) << lo;
+    const merged = (sig.value & ~fieldMask) | ((mask(value, width) << lo) & fieldMask);
+    const v = mask(merged, sig.width);
+    if (v !== sig.value) {
+      const old = sig.value;
+      sig.value = v;
+      sig.history.push([sim.time, v]);
+      sim._notifyChange(lhs.name, old, v);
+    }
+    return;
+  }
+  throw new Error('unsupported lvalue');
+}
+
+function runSync(stmt, ctx) {
+  const it = execStmt(stmt, ctx);
+  let r = it.next();
+  while (!r.done) {
+    if (r.value && (r.value.kind === 'delay' || r.value.kind === 'edge')) {
+      throw new Error('timing control not allowed in combinational (always @*) block');
+    }
+    r = it.next();
+  }
+}
+
+function* execStmt(stmt, ctx) {
+  switch (stmt.type) {
+    case 'Block':
+      for (const s of stmt.stmts) yield* execStmt(s, ctx);
+      return;
+    case 'If': {
+      if (evalExpr(stmt.cond, ctx)) yield* execStmt(stmt.then, ctx);
+      else if (stmt.els) yield* execStmt(stmt.els, ctx);
+      return;
+    }
+    case 'AssignStmt': {
+      const v = evalExpr(stmt.rhs, ctx);
+      if (stmt.blocking) ctx.write(stmt.lhs, v);
+      else ctx.queueNBA(stmt.lhs, v);
+      return;
+    }
+    case 'Timing': {
+      if (stmt.control.kind === 'delay') yield { kind: 'delay', amount: evalExpr(stmt.control.amount, ctx) };
+      else yield { kind: 'edge', edges: stmt.control.edges };
+      if (stmt.stmt) yield* execStmt(stmt.stmt, ctx);
+      return;
+    }
+    case 'SysCall':
+      ctx.sysCall(stmt.name, stmt.args.map(a => evalArgForDisplay(a, ctx)));
+      return;
+    case 'Finish':
+      yield { kind: 'finish' };
+      return;
+    case 'Empty':
+      return;
+    default:
+      throw new Error('unknown stmt ' + stmt.type);
+  }
+}
+
+function evalArgForDisplay(node, ctx) {
+  if (node.type === 'StringLit') return node.value;
+  return evalExpr(node, ctx);
+}
+
+function evalExpr(node, ctx) {
+  switch (node.type) {
+    case 'Number': return parseNumberLiteral(node.raw).value;
+    case 'StringLit': {
+      let v = 0;
+      for (let i = 0; i < node.value.length; i++) v = v * 256 + node.value.charCodeAt(i);
+      return v;
+    }
+    case 'Ident': return ctx.read(node.name);
+    case 'SysFunc': return (node.name === 'time' || node.name === 'realtime') ? ctx.time() : 0;
+    case 'BitSelect': {
+      const v = ctx.read(node.name);
+      return (v >>> evalExpr(node.index, ctx)) & 1;
+    }
+    case 'PartSelect': {
+      const v = ctx.read(node.name);
+      let hi = evalExpr(node.hi, ctx), lo = evalExpr(node.lo, ctx);
+      if (hi < lo) [hi, lo] = [lo, hi];
+      const width = hi - lo + 1;
+      const m = width >= 32 ? 0xFFFFFFFF : (1 << width) - 1;
+      return (v >>> lo) & m;
+    }
+    case 'Unary': {
+      const v = evalExpr(node.expr, ctx);
+      switch (node.op) {
+        case '-': return -v;
+        case '+': return v;
+        case '!': return v ? 0 : 1;
+        case '~': return ~v;
+      }
+      break;
+    }
+    case 'Binary': {
+      const l = evalExpr(node.left, ctx), r = evalExpr(node.right, ctx);
+      switch (node.op) {
+        case '+': return l + r;
+        case '-': return l - r;
+        case '*': return l * r;
+        case '/': return r === 0 ? 0 : Math.trunc(l / r);
+        case '%': return r === 0 ? 0 : l % r;
+        case '&': return l & r;
+        case '|': return l | r;
+        case '^': return l ^ r;
+        case '&&': return (l && r) ? 1 : 0;
+        case '||': return (l || r) ? 1 : 0;
+        case '==': return l === r ? 1 : 0;
+        case '!=': return l !== r ? 1 : 0;
+        case '<': return l < r ? 1 : 0;
+        case '>': return l > r ? 1 : 0;
+        case '<=': return l <= r ? 1 : 0;
+        case '>=': return l >= r ? 1 : 0;
+        case '<<': return l << r;
+        case '>>': return l >>> r;
+      }
+      break;
+    }
+    case 'Ternary':
+      return evalExpr(node.cond, ctx) ? evalExpr(node.then, ctx) : evalExpr(node.els, ctx);
+  }
+  throw new Error('cannot eval node ' + node.type);
+}
+
+function formatDisplay(args) {
+  if (typeof args[0] !== 'string') return args.join(' ');
+  const fmt = args[0];
+  let ai = 1, out = '';
+  for (let i = 0; i < fmt.length; i++) {
+    if (fmt[i] === '%' && i + 1 < fmt.length) {
+      let j = i + 1;
+      while (j < fmt.length && /[0-9]/.test(fmt[j])) j++;
+      const spec = fmt[j];
+      const val = args[ai++];
+      switch (spec) {
+        case 'd': out += String(val); break;
+        case 'b': out += (val >>> 0).toString(2); break;
+        case 'h': out += (val >>> 0).toString(16); break;
+        case 'o': out += (val >>> 0).toString(8); break;
+        case 'c': out += String.fromCharCode(val); break;
+        case 's': out += String(val); break;
+        case 't': out += String(val); break;
+        case '%': out += '%'; ai--; break;
+        default: out += '%' + spec;
+      }
+      i = j;
+    } else out += fmt[i];
+  }
+  return out;
+}
+
+/* =========================================================================
+   EXAMPLES
+   ========================================================================= */
+const EXAMPLES = {
+  'D Flip-Flop': `module dff_tb;
+  reg clk;
+  reg d;
+  reg q;
+
+  // clock generator: toggles every 5 time units
+  always #5 clk = ~clk;
+
+  // D flip-flop: q follows d on the rising edge of clk
+  always @(posedge clk)
+    q <= d;
+
+  initial begin
+    clk = 0;
+    d = 0;
+    #12 d = 1;
+    #10 d = 0;
+    #10 d = 1;
+    #15 d = 0;
+    #20 $finish;
+  end
+endmodule`,
+
+  '4-bit Counter (sync reset)': `module counter_tb;
+  reg clk;
+  reg rst;
+  reg [3:0] count;
+
+  always #5 clk = ~clk;
+
+  always @(posedge clk) begin
+    if (rst)
+      count <= 0;
+    else
+      count <= count + 1;
+  end
+
+  initial begin
+    clk = 0;
+    rst = 1;
+    count = 0;
+    #12 rst = 0;
+    #180 $finish;
+  end
+endmodule`,
+
+  '4-bit ALU (mux-based)': `module alu_tb;
+  reg [3:0] a;
+  reg [3:0] b;
+  reg [1:0] sel;
+  reg [3:0] y;
+
+  // continuous assignment: y updates immediately whenever inputs change
+  assign y = (sel == 2'd0) ? (a + b) :
+             (sel == 2'd1) ? (a - b) :
+             (sel == 2'd2) ? (a & b) :
+                             (a | b);
+
+  initial begin
+    a = 4'd5; b = 4'd3; sel = 2'd0;
+    #10 sel = 2'd1;
+    #10 sel = 2'd2;
+    #10 sel = 2'd3;
+    #10 a = 4'd9; b = 4'd6;
+    #10 $display("final: a=%d b=%d sel=%d y=%d", a, b, sel, y);
+    #5 $finish;
+  end
+endmodule`,
+
+  '4-bit Shift Register (hierarchical)': `// top module instantiates 4 copies of dff below - each bit
+// shifts into the next on the clock edge, LSB fed from serial_in
+module dff(clk, d, q);
+  input clk;
+  input d;
+  output q;
+  reg q;
+  always @(posedge clk)
+    q <= d;
+endmodule
+
+module shiftreg_tb;
+  reg clk;
+  reg serial_in;
+  wire [3:0] q;
+
+  // instance port order matches dff's (clk, d, q) header
+  dff bit0 (clk, serial_in, q[0]);
+  dff bit1 (clk, q[0],      q[1]);
+  dff bit2 (clk, q[1],      q[2]);
+  dff bit3 (clk, q[2],      q[3]);
+
+  always #5 clk = ~clk;
+
+  initial begin
+    clk = 0;
+    serial_in = 1;
+    #10 serial_in = 0;
+    #10 serial_in = 1;
+    #10 serial_in = 1;
+    #10 serial_in = 0;
+    #50 $display("q=%b (bit0.q=%d)", q, bit0.q);
+    #5 $finish;
+  end
+endmodule`,
+};
+
+/* =========================================================================
+   UI WIRING
+   ========================================================================= */
+const codeInput = document.getElementById('codeInput');
+const gutter = document.getElementById('gutter');
+const exampleSelect = document.getElementById('exampleSelect');
+const openBtn = document.getElementById('openBtn');
+const saveBtn = document.getElementById('saveBtn');
+const fileOpenInput = document.getElementById('fileOpenInput');
+const runBtn = document.getElementById('runBtn');
+const resetBtn = document.getElementById('resetBtn');
+const maxTimeInput = document.getElementById('maxTimeInput');
+const consoleBox = document.getElementById('consoleBox');
+const waveCanvas = document.getElementById('waveCanvas');
+const waveEmpty = document.getElementById('waveEmpty');
+const legendRow = document.getElementById('legendRow');
+const badgeRow = document.getElementById('badgeRow');
+const waveZoomInBtn = document.getElementById('waveZoomIn');
+const waveZoomOutBtn = document.getElementById('waveZoomOut');
+const waveZoomResetBtn = document.getElementById('waveZoomReset');
+const waveZoomLevelEl = document.getElementById('waveZoomLevel');
+const waveStartInput = document.getElementById('waveStartInput');
+const waveEndInput = document.getElementById('waveEndInput');
+const waveApplyBtn = document.getElementById('waveApplyBtn');
+
+const PALETTE = ['#007aff', '#34c759', '#ff9500', '#ff2d55', '#af52de', '#5ac8fa', '#ffcc00', '#a2845e'];
+let lastResult = null;
+let hiddenSignals = new Set();
+let radixMap = new Map();      // signal name -> 'bin' | 'dec' | 'hex' | 'str'
+let cursorTime = 0;            // scrub position; drives the value column
+let viewStart = 0, viewEnd = 1; // current zoom/pan window over sim time
+let hoverValueSignal = null;   // signal whose value cell is currently hovered
+let waveLayout = null;         // layout info from the last draw, used by mouse handlers
+let dragActive = false;        // mouse button down, originating inside the plot area
+let dragMoved = false;         // drag exceeded the click-vs-drag pixel threshold
+let dragStartX = 0;            // mousedown x, in canvas CSS px
+let dragBandPx = null;         // {x0,x1} selection band while dragging, or null
+
+/* ---- radix formatting for the waveform value column ---- */
+const RADIX_OPTIONS = [['bin', 'Binary'], ['dec', 'Decimal'], ['hex', 'Hexadecimal'], ['str', 'String']];
+function getRadix(name, width) {
+  return radixMap.get(name) || (width === 1 ? 'bin' : 'hex');
+}
+function formatValue(value, width, radix) {
+  const effWidth = Math.min(width, 32);
+  const uv = value >>> 0;
+  switch (radix) {
+    case 'bin': return uv.toString(2).padStart(effWidth, '0');
+    case 'dec': return String(uv);
+    case 'str': {
+      const byteCount = Math.ceil(effWidth / 8);
+      let s = '';
+      for (let i = byteCount - 1; i >= 0; i--) {
+        const b = (uv >>> (i * 8)) & 0xFF;
+        if (b === 0) continue;
+        s += (b >= 0x20 && b <= 0x7e) ? String.fromCharCode(b) : '.';
+      }
+      return s || '–';
+    }
+    default: return uv.toString(16).padStart(Math.ceil(effWidth / 4), '0');
+  }
+}
+function valueAtTime(sig, t) {
+  const hist = sig.history;
+  let v = hist[0][1];
+  for (let i = 0; i < hist.length && hist[i][0] <= t; i++) v = hist[i][1];
+  return v;
+}
+
+/* ---- radix picker popup ---- */
+const radixPopup = document.createElement('div');
+radixPopup.className = 'radix-popup';
+document.body.appendChild(radixPopup);
+let radixHideTimer = null;
+function showRadixPopup(name, width, x, y) {
+  clearTimeout(radixHideTimer);
+  const radix = getRadix(name, width);
+  radixPopup.innerHTML = '<div class="radix-popup-title">Radix</div>' +
+    RADIX_OPTIONS.map(([key, label]) =>
+      '<div class="radix-opt' + (key === radix ? ' selected' : '') + '" data-radix="' + key + '">' + label + '</div>'
+    ).join('');
+  radixPopup.style.left = x + 'px';
+  radixPopup.style.top = y + 'px';
+  radixPopup.style.display = 'block';
+  radixPopup.querySelectorAll('.radix-opt').forEach(el => {
+    el.addEventListener('click', () => {
+      radixMap.set(name, el.dataset.radix);
+      hideRadixPopup();
+      if (lastResult) drawWaveform(lastResult);
+    });
+  });
+}
+function hideRadixPopup() {
+  radixPopup.style.display = 'none';
+  hoverValueSignal = null;
+}
+function scheduleHideRadixPopup() {
+  clearTimeout(radixHideTimer);
+  radixHideTimer = setTimeout(hideRadixPopup, 200);
+}
+radixPopup.addEventListener('mouseenter', () => clearTimeout(radixHideTimer));
+radixPopup.addEventListener('mouseleave', scheduleHideRadixPopup);
+
+/* ---- waveform zoom / pan controls ---- */
+const WAVE_ZOOM_FACTOR = 1.6;
+function waveFullRange() { return [0, lastResult ? Math.max(lastResult.time, 1) : 1]; }
+function waveZoomAt(centerTime) {
+  if (!lastResult) return;
+  const [fullMin, fullMax] = waveFullRange();
+  const half = (viewEnd - viewStart) / (2 * WAVE_ZOOM_FACTOR);
+  viewStart = Math.max(fullMin, centerTime - half);
+  viewEnd = Math.min(fullMax, centerTime + half);
+  if (viewEnd - viewStart < 1) { viewStart = centerTime - 0.5; viewEnd = centerTime + 0.5; }
+  drawWaveform(lastResult);
+}
+function waveZoomIn() { if (lastResult) waveZoomAt((viewStart + viewEnd) / 2); }
+function waveZoomOut() {
+  if (!lastResult) return;
+  const [fullMin, fullMax] = waveFullRange();
+  const center = (viewStart + viewEnd) / 2;
+  const half = (viewEnd - viewStart) * WAVE_ZOOM_FACTOR / 2;
+  viewStart = Math.max(fullMin, center - half);
+  viewEnd = Math.min(fullMax, center + half);
+  drawWaveform(lastResult);
+}
+function waveZoomReset() {
+  if (!lastResult) return;
+  [viewStart, viewEnd] = waveFullRange();
+  drawWaveform(lastResult);
+}
+function waveApplyRange() {
+  if (!lastResult) return;
+  const s = parseFloat(waveStartInput.value);
+  const e = parseFloat(waveEndInput.value);
+  waveStartInput.classList.remove('error');
+  waveEndInput.classList.remove('error');
+  let ok = true;
+  if (isNaN(s)) { waveStartInput.classList.add('error'); ok = false; }
+  if (isNaN(e)) { waveEndInput.classList.add('error'); ok = false; }
+  if (ok && e <= s) { waveStartInput.classList.add('error'); waveEndInput.classList.add('error'); ok = false; }
+  if (!ok) return;
+  viewStart = s; viewEnd = e;
+  drawWaveform(lastResult);
+}
+waveZoomInBtn.addEventListener('click', waveZoomIn);
+waveZoomOutBtn.addEventListener('click', waveZoomOut);
+waveZoomResetBtn.addEventListener('click', waveZoomReset);
+waveApplyBtn.addEventListener('click', waveApplyRange);
+waveStartInput.addEventListener('keydown', e => { if (e.key === 'Enter') waveApplyRange(); });
+waveEndInput.addEventListener('keydown', e => { if (e.key === 'Enter') waveApplyRange(); });
+
+/* ---- example dropdown ---- */
+let currentFileName = 'design.v';
+for (const name of Object.keys(EXAMPLES)) {
+  const opt = document.createElement('option');
+  opt.value = name; opt.textContent = name;
+  exampleSelect.appendChild(opt);
+}
+function loadExample(name) {
+  codeInput.value = EXAMPLES[name];
+  currentFileName = name.replace(/[^A-Za-z0-9_-]+/g, '_') + '.v';
+  updateGutter();
+}
+exampleSelect.addEventListener('change', () => loadExample(exampleSelect.value));
+loadExample(Object.keys(EXAMPLES)[0]);
+
+/* ---- open / save ---- */
+openBtn.addEventListener('click', () => fileOpenInput.click());
+fileOpenInput.addEventListener('change', () => {
+  const file = fileOpenInput.files[0];
+  fileOpenInput.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    codeInput.value = reader.result;
+    currentFileName = file.name;
+    exampleSelect.selectedIndex = -1;
+    updateGutter();
+  };
+  reader.readAsText(file);
+});
+saveBtn.addEventListener('click', () => {
+  const blob = new Blob([codeInput.value], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = currentFileName;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+/* ---- editor: line-number gutter + tab handling ---- */
+function updateGutter() {
+  const lines = codeInput.value.split('\n').length;
+  let s = '';
+  for (let i = 1; i <= lines; i++) s += i + '\n';
+  gutter.textContent = s;
+}
+codeInput.addEventListener('input', updateGutter);
+codeInput.addEventListener('scroll', () => { gutter.scrollTop = codeInput.scrollTop; });
+codeInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const s = codeInput.selectionStart, en = codeInput.selectionEnd;
+    codeInput.value = codeInput.value.slice(0, s) + '  ' + codeInput.value.slice(en);
+    codeInput.selectionStart = codeInput.selectionEnd = s + 2;
+    updateGutter();
+  }
+});
+
+/* ---- collapse buttons (generic, works for any .card-collapse-btn) ---- */
+document.querySelectorAll('[data-collapse]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const card = btn.closest('.card');
+    card.classList.toggle('collapsed');
+    btn.textContent = card.classList.contains('collapsed') ? '▸' : '▾';
+  });
+});
+
+/* ---- console helpers ---- */
+function clearConsole() { consoleBox.innerHTML = ''; }
+function logLine(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  consoleBox.appendChild(div);
+  consoleBox.scrollTop = consoleBox.scrollHeight;
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+/* ---- run / reset ---- */
+resetBtn.addEventListener('click', () => {
+  clearConsole();
+  logLine('<span class="info">Click Run to simulate…</span>');
+  lastResult = null;
+  hiddenSignals = new Set();
+  radixMap = new Map();
+  viewStart = 0; viewEnd = 1; cursorTime = 0;
+  hideRadixPopup();
+  legendRow.innerHTML = '';
+  badgeRow.innerHTML = '';
+  waveEmpty.style.display = 'block';
+  waveCanvas.style.display = 'none';
+});
+
+runBtn.addEventListener('click', runSimulation);
+
+function runSimulation() {
+  clearConsole();
+  const src = codeInput.value;
+  const maxTime = Math.max(10, parseInt(maxTimeInput.value, 10) || 300);
+
+  let ast;
+  try {
+    ast = parseVerilog(src);
+  } catch (e) {
+    logLine('<span class="err">' + escapeHtml(e.message) + '</span>');
+    renderBadges(null);
+    return;
+  }
+
+  let result;
+  try {
+    const sim = new Simulator(ast, { maxTime });
+    result = sim.run();
+  } catch (e) {
+    logLine('<span class="err">Simulator crashed: ' + escapeHtml(e.message) + '</span>');
+    renderBadges(null);
+    return;
+  }
+
+  lastResult = result;
+  viewStart = 0;
+  viewEnd = Math.max(result.time, 1);
+  cursorTime = viewEnd;
+  hideRadixPopup();
+
+  if (result.error) {
+    logLine('<span class="err">Runtime error: ' + escapeHtml(result.error) + '</span>');
+  }
+  if (result.log.length === 0 && !result.error) {
+    logLine('<span class="info">(no $display output — see the waveform below)</span>');
+  }
+  for (const entry of result.log) {
+    logLine('<span class="time-tag">[t=' + entry.time + ']</span> ' + escapeHtml(entry.text));
+  }
+  if (!result.finished && !result.error) {
+    logLine('<span class="info">Stopped: reached run length of ' + maxTime + ' time units without $finish.</span>');
+  } else if (result.finished && !result.error) {
+    logLine('<span class="info">Simulation finished at t=' + result.time + '.</span>');
+  }
+
+  renderBadges(result);
+  renderLegend(result);
+  drawWaveform(result);
+}
+
+/* ---- badges ---- */
+function renderBadges(result) {
+  badgeRow.innerHTML = '';
+  if (!result) {
+    const b = document.createElement('div');
+    b.className = 'badge error';
+    b.innerHTML = '<span>✕</span> parse error';
+    badgeRow.appendChild(b);
+    return;
+  }
+  const stats = [
+    ['sim time', result.time],
+    ['signals', Object.keys(result.signals).length],
+    ['status', result.error ? 'error' : (result.finished ? 'finished' : 'stopped')],
+  ];
+  for (const [label, value] of stats) {
+    const b = document.createElement('div');
+    b.className = 'badge' + (label === 'status' && (value === 'error') ? ' error' : '');
+    b.innerHTML = label + ': <span>' + value + '</span>';
+    badgeRow.appendChild(b);
+  }
+}
+
+/* ---- legend ---- */
+function renderLegend(result) {
+  legendRow.innerHTML = '';
+  const names = Object.keys(result.signals);
+  names.forEach((name, idx) => {
+    const item = document.createElement('div');
+    item.className = 'legend-item' + (hiddenSignals.has(name) ? ' off' : '');
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = PALETTE[idx % PALETTE.length];
+    item.appendChild(dot);
+    item.appendChild(document.createTextNode(name));
+    item.addEventListener('click', () => {
+      if (hiddenSignals.has(name)) hiddenSignals.delete(name); else hiddenSignals.add(name);
+      item.classList.toggle('off');
+      if (lastResult) drawWaveform(lastResult);
+    });
+    legendRow.appendChild(item);
+  });
+}
+
+/* ---- waveform rendering ---- */
+const ROW_H = 34;
+const NAME_W = 60;
+const VALUE_W = 64;
+const LABEL_W = NAME_W + VALUE_W + 14;
+const PAD_TOP = 40;
+const PAD_BOTTOM = 10;
+
+function drawWaveform(result) {
+  const names = Object.keys(result.signals).filter(n => !hiddenSignals.has(n));
+  if (names.length === 0) {
+    waveEmpty.style.display = 'block';
+    waveCanvas.style.display = 'none';
+    waveLayout = null;
+    return;
+  }
+  waveEmpty.style.display = 'none';
+  waveCanvas.style.display = 'block';
+
+  const fullEnd = Math.max(result.time, 1);
+  cursorTime = Math.max(viewStart, Math.min(viewEnd, cursorTime));
+  const viewSpan = Math.max(viewEnd - viewStart, 1e-6);
+  const histEnd = Math.max(viewEnd, fullEnd);
+
+  const wrapWidth = waveCanvas.parentElement.clientWidth || 800;
+  const cssWidth = Math.max(wrapWidth, 600);
+  const cssHeight = PAD_TOP + names.length * ROW_H + PAD_BOTTOM;
+  const dpr = window.devicePixelRatio || 1;
+
+  waveCanvas.style.width = cssWidth + 'px';
+  waveCanvas.style.height = cssHeight + 'px';
+  waveCanvas.width = Math.round(cssWidth * dpr);
+  waveCanvas.height = Math.round(cssHeight * dpr);
+
+  const ctx = waveCanvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+  const plotX0 = LABEL_W;
+  const plotW = cssWidth - LABEL_W - 10;
+  const pxPerT = plotW / viewSpan;
+  const toX = t => plotX0 + (t - viewStart) * pxPerT;
+
+  waveLayout = { plotX0, plotW, names };
+
+  // time axis ticks
+  ctx.strokeStyle = '#e5e5ea';
+  ctx.fillStyle = '#8e8e93';
+  ctx.font = '10px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  const tickStep = niceTickStep(viewSpan);
+  const t0 = Math.ceil(viewStart / tickStep) * tickStep;
+  for (let t = t0; t <= viewEnd + 1e-9; t += tickStep) {
+    const x = toX(t);
+    ctx.beginPath();
+    ctx.moveTo(x, PAD_TOP - 6);
+    ctx.lineTo(x, cssHeight - PAD_BOTTOM);
+    ctx.stroke();
+    ctx.fillText(t.toFixed(tickStep < 1 ? 2 : 0), x, PAD_TOP - 10);
+  }
+
+  // rows: name, value column, waveform (clipped to the plot area)
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(plotX0, PAD_TOP - 6, plotW, names.length * ROW_H + 6);
+  ctx.clip();
+
+  names.forEach((name, idx) => {
+    const rowTop = PAD_TOP + idx * ROW_H;
+    const sig = result.signals[name];
+    const color = PALETTE[Object.keys(result.signals).indexOf(name) % PALETTE.length];
+    const hist = sig.history.concat([[histEnd, sig.history[sig.history.length - 1][1]]]);
+
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1.6;
+
+    if (sig.width === 1) {
+      const yLo = rowTop + ROW_H - 9;
+      const yHi = rowTop + 9;
+      ctx.beginPath();
+      let prevX = toX(viewStart), prevY = valueAtTime(sig, viewStart) ? yHi : yLo;
+      ctx.moveTo(prevX, prevY);
+      for (const [t, v] of hist) {
+        if (t < viewStart) continue;
+        const x = toX(t);
+        const y = v ? yHi : yLo;
+        ctx.lineTo(x, prevY);
+        ctx.lineTo(x, y);
+        prevX = x; prevY = y;
+      }
+      ctx.stroke();
+    } else {
+      const yTop = rowTop + 6, yBot = rowTop + ROW_H - 6;
+      const radix = getRadix(name, sig.width);
+      for (let i = 0; i < hist.length - 1; i++) {
+        const [t, v] = hist[i];
+        const [tNext] = hist[i + 1];
+        if (tNext < viewStart || t > viewEnd) continue;
+        const x0 = toX(t);
+        const x1 = toX(tNext);
+        ctx.strokeRect(x0 + 1, yTop, Math.max(x1 - x0 - 2, 1), yBot - yTop);
+        if (x1 - x0 > 22) {
+          ctx.fillStyle = '#1c1c1e';
+          ctx.font = '10px "SF Mono", Menlo, monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(formatValue(v, sig.width, radix), (x0 + x1) / 2, (yTop + yBot) / 2 + 3);
+          ctx.fillStyle = color;
+        }
+        if (i > 0) {
+          ctx.beginPath();
+          ctx.moveTo(x0, yTop); ctx.lineTo(x0 + 4, (yTop + yBot) / 2); ctx.lineTo(x0, yBot);
+          ctx.stroke();
+        }
+      }
+    }
+  });
+
+  // drag-to-zoom selection band
+  if (dragBandPx) {
+    ctx.fillStyle = 'rgba(0, 122, 255, 0.15)';
+    ctx.fillRect(dragBandPx.x0, PAD_TOP - 6, dragBandPx.x1 - dragBandPx.x0, names.length * ROW_H + 6);
+  }
+
+  // cursor bar (scrub position) + time label
+  const cx = toX(cursorTime);
+  ctx.setLineDash([4, 3]);
+  ctx.strokeStyle = '#007aff';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(cx, PAD_TOP - 6);
+  ctx.lineTo(cx, PAD_TOP + names.length * ROW_H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.restore();
+
+  // cursor time label + row separators (drawn outside the plot clip)
+  ctx.fillStyle = '#007aff';
+  ctx.font = '600 11px "SF Mono", Menlo, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(Number.isInteger(cursorTime) ? String(cursorTime) : cursorTime.toFixed(1), cx, 14);
+
+  names.forEach((name, idx) => {
+    const rowTop = PAD_TOP + idx * ROW_H;
+    const rowMid = rowTop + ROW_H / 2;
+    const sig = result.signals[name];
+    const color = PALETTE[Object.keys(result.signals).indexOf(name) % PALETTE.length];
+    const radix = getRadix(name, sig.width);
+    const value = valueAtTime(sig, cursorTime);
+
+    ctx.fillStyle = '#1c1c1e';
+    ctx.font = '600 11px "SF Mono", Menlo, monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(name, NAME_W - 8, rowMid + 4);
+
+    ctx.fillStyle = color;
+    ctx.font = '600 11px "SF Mono", Menlo, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(formatValue(value, sig.width, radix), NAME_W + 8, rowMid + 4);
+
+    if (idx < names.length - 1) {
+      ctx.strokeStyle = '#f2f2f7';
+      ctx.beginPath();
+      ctx.moveTo(0, rowTop + ROW_H);
+      ctx.lineTo(cssWidth, rowTop + ROW_H);
+      ctx.stroke();
+    }
+  });
+
+  // sync zoom controls
+  const [fullMin, fullMax] = waveFullRange();
+  const zoomFactor = (fullMax - fullMin) / viewSpan;
+  waveZoomLevelEl.textContent = (zoomFactor >= 10 ? zoomFactor.toFixed(0) : zoomFactor.toFixed(1)) + '×';
+  waveStartInput.value = viewStart.toFixed(2);
+  waveEndInput.value = viewEnd.toFixed(2);
+}
+
+/* ---- waveform mouse interaction ----
+   single click: set the cursor (drives the value column)
+   click + drag + release: select a range, zooms the view to it
+   double-click: zoom in centered on that time
+   hovering a value cell: pop up the radix picker (cursor does not follow hover) */
+const DRAG_THRESHOLD = 4;
+function pxToTime(mx) {
+  const { plotX0, plotW } = waveLayout;
+  const t = viewStart + ((mx - plotX0) / plotW) * (viewEnd - viewStart);
+  return Math.max(viewStart, Math.min(viewEnd, t));
+}
+
+waveCanvas.addEventListener('mousedown', (e) => {
+  if (!lastResult || !waveLayout) return;
+  const rect = waveCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const { plotX0, plotW } = waveLayout;
+  if (mx < plotX0 || mx > plotX0 + plotW) return;
+  dragActive = true;
+  dragMoved = false;
+  dragStartX = mx;
+  dragBandPx = null;
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!dragActive || !lastResult || !waveLayout) return;
+  const rect = waveCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const { plotX0, plotW } = waveLayout;
+  if (Math.abs(mx - dragStartX) > DRAG_THRESHOLD) dragMoved = true;
+  if (dragMoved) {
+    const clamped = Math.max(plotX0, Math.min(plotX0 + plotW, mx));
+    dragBandPx = { x0: Math.min(dragStartX, clamped), x1: Math.max(dragStartX, clamped) };
+    drawWaveform(lastResult);
+  }
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (!dragActive) return;
+  dragActive = false;
+  if (!lastResult || !waveLayout) { dragMoved = false; dragBandPx = null; return; }
+  const rect = waveCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  if (dragMoved && dragBandPx && dragBandPx.x1 - dragBandPx.x0 > DRAG_THRESHOLD) {
+    const t0 = pxToTime(dragBandPx.x0);
+    const t1 = pxToTime(dragBandPx.x1);
+    if (t1 - t0 >= 0.001) { viewStart = t0; viewEnd = t1; }
+  } else {
+    cursorTime = pxToTime(mx);
+  }
+  dragMoved = false;
+  dragBandPx = null;
+  drawWaveform(lastResult);
+});
+
+waveCanvas.addEventListener('dblclick', (e) => {
+  if (!lastResult || !waveLayout) return;
+  const rect = waveCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const { plotX0, plotW } = waveLayout;
+  if (mx < plotX0 || mx > plotX0 + plotW) return;
+  waveZoomAt(pxToTime(mx));
+});
+
+waveCanvas.addEventListener('mousemove', (e) => {
+  if (dragActive) return; // drag is handled by the window-level listener above
+  if (!lastResult || !waveLayout) return;
+  const rect = waveCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const { plotX0, plotW, names } = waveLayout;
+
+  const rowIdx = Math.floor((my - PAD_TOP) / ROW_H);
+  if (my >= PAD_TOP && rowIdx >= 0 && rowIdx < names.length && mx >= NAME_W && mx < NAME_W + VALUE_W) {
+    const name = names[rowIdx];
+    if (hoverValueSignal !== name) {
+      hoverValueSignal = name;
+      showRadixPopup(name, lastResult.signals[name].width, rect.left + NAME_W, rect.top + PAD_TOP + (rowIdx + 1) * ROW_H);
+    }
+    waveCanvas.style.cursor = 'pointer';
+    return;
+  }
+  if (hoverValueSignal) { hoverValueSignal = null; scheduleHideRadixPopup(); }
+
+  waveCanvas.style.cursor = (mx >= plotX0 && mx <= plotX0 + plotW) ? 'crosshair' : 'default';
+});
+waveCanvas.addEventListener('mouseleave', () => {
+  if (dragActive) return; // let the drag finish via the window-level mouseup even if the pointer left the canvas
+  waveCanvas.style.cursor = 'default';
+  if (hoverValueSignal) { hoverValueSignal = null; scheduleHideRadixPopup(); }
+});
+
+function niceTickStep(totalTime) {
+  const target = totalTime / 10;
+  const pow = Math.pow(10, Math.floor(Math.log10(Math.max(target, 1))));
+  const n = target / pow;
+  let step;
+  if (n < 1.5) step = 1;
+  else if (n < 3.5) step = 2;
+  else if (n < 7.5) step = 5;
+  else step = 10;
+  return Math.max(1, step * pow);
+}
+
+window.addEventListener('resize', () => { if (lastResult) drawWaveform(lastResult); });
+
+/* run the first example automatically so the tool isn't empty on load */
+runSimulation();
+</script>
+</body>
+</html>
