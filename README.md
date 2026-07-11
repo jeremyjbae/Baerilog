@@ -1,9 +1,6 @@
 ## All-in-one Digital Design System
 
-- [Verilog Simulator](simulator/index.html)
-- [Verilog Synthesis](synthesis/index.html)
+- [Verilog Simulator](https://jeremyjbae.github.io/Baerilog/simulator/index.html)
+- [Verilog Synthesis](https://jeremyjbae.github.io/Baerilog/synthesis/index.html)
 
-
-Inspired by http://www.donny.co.kr/simplecore
-
-© Jeremy Bae  2026 (jeremyjbae@gmail.com)
+© Jeremy Bae  2026 (jeremyjbae@gmail.com) Inspired by [simplecore](http://www.donny.co.kr/simplecore)
