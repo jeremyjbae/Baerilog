@@ -750,7 +750,7 @@ class Parser {
 }
 
 function evalConstExpr(node) {
-  if (node.type === 'Number') return parseNumberLiteral(node.raw).value;
+  if (node.type === 'Number') return parseNumberLiteral(node.raw).value.v;
   if (node.type === 'Binary') {
     const l = evalConstExpr(node.left), r = evalConstExpr(node.right);
     if (node.op === '+') return l + r;
@@ -760,18 +760,56 @@ function evalConstExpr(node) {
   throw new Error('non-constant expression in range');
 }
 
+/* =========================================================================
+   4-STATE (0/1/X/Z) VALUE REPRESENTATION
+   Every signal value and expression result is {v, x, z}: three 32-bit masks -
+   v = known-bit pattern (garbage wherever x|z is set), x = "unknown" bits,
+   z = "high-impedance" bits. Invariant maintained by mkVal(), enforced at every
+   construction site: v is always pre-masked to v & ~(x|z), so plain field-by-field
+   equality of two {v,x,z} triples is always a correct value comparison.
+   ========================================================================= */
+function mkVal(v, x = 0, z = 0) {
+  x = x >>> 0; z = z >>> 0;
+  return { v: (v & ~(x | z)) >>> 0, x, z };
+}
+function fullMask(width) { return width >= 32 ? 0xFFFFFFFF : (1 << width) - 1; }
+function maskVal(val, width) {
+  const m = fullMask(width);
+  return mkVal(val.v & m, val.x & m, val.z & m);
+}
+function valuesEqual(a, b) { return a.v === b.v && a.x === b.x && a.z === b.z; }
+function isFullyKnown(val) { return (val.x | val.z) === 0; }
+// Reduces a value to a scalar truth value: 1 (definitely nonzero), 0 (definitely
+// zero), or 'x' (ambiguous). Any known-1 bit makes the whole value true regardless
+// of what other unknown bits could resolve to - that's what if/while/&&/||/! use.
+function truthValue(val) {
+  if (val.v !== 0) return 1;
+  if ((val.x | val.z) === 0) return 0;
+  return 'x';
+}
+function boolVal(b) { return b ? mkVal(1) : mkVal(0); }
+const X1 = mkVal(0, 1, 0); // a single ambiguous/unknown scalar result
+
 function parseNumberLiteral(raw) {
   const { size, base, digits } = raw;
-  const d = digits.replace(/[xXzZ]/g, '0');
-  let value;
-  switch (base) {
-    case 'b': value = parseInt(d, 2); break;
-    case 'o': value = parseInt(d, 8); break;
-    case 'h': value = parseInt(d, 16); break;
-    default: value = parseInt(d, 10); break;
+  const width = size || 32;
+  if (base === 'd') {
+    if (/^[xX]+$/.test(digits)) return { value: mkVal(0, fullMask(width)), width };
+    if (/^[zZ]+$/.test(digits)) return { value: mkVal(0, 0, fullMask(width)), width };
+    let value = parseInt(digits, 10);
+    if (Number.isNaN(value)) value = 0;
+    return { value: mkVal(value), width };
   }
-  if (Number.isNaN(value)) value = 0;
-  return { value, width: size || 32 };
+  const bitsPerDigit = { b: 1, o: 3, h: 4 }[base];
+  const groupMask = (1 << bitsPerDigit) - 1;
+  let v = 0, x = 0, z = 0, shift = 0;
+  for (const ch of digits.split('').reverse()) {
+    if (ch === 'x' || ch === 'X') x |= groupMask << shift;
+    else if (ch === 'z' || ch === 'Z' || ch === '?') z |= groupMask << shift;
+    else v |= (parseInt(ch, 16) & groupMask) << shift;
+    shift += bitsPerDigit;
+  }
+  return { value: mkVal(v, x, z), width };
 }
 
 function parseVerilog(src) {
@@ -938,16 +976,12 @@ function elaborate(modules) {
 /* =========================================================================
    SIMULATOR  (discrete-event, generator-based coroutines)
    ========================================================================= */
-function mask(value, width) {
-  if (width >= 32) return value >>> 0;
-  return value & ((1 << width) - 1);
-}
-
 function edgeMatches(edge, oldV, newV) {
-  const oldBit = oldV & 1, newBit = newV & 1;
-  if (edge === 'posedge') return oldBit === 0 && newBit === 1;
-  if (edge === 'negedge') return oldBit === 1 && newBit === 0;
-  return oldV !== newV;
+  const bit = (val) => ((val.x | val.z) & 1) ? 'x' : (val.v & 1) ? '1' : '0';
+  const o = bit(oldV), n = bit(newV);
+  if (edge === 'posedge') return (o === '0' && n === '1') || (o === '0' && n === 'x') || (o === 'x' && n === '1');
+  if (edge === 'negedge') return (o === '1' && n === '0') || (o === '1' && n === 'x') || (o === 'x' && n === '0');
+  return !valuesEqual(oldV, newV);
 }
 
 class Simulator {
@@ -968,7 +1002,11 @@ class Simulator {
 
   declareSignal(name, width) {
     if (!this.signals[name]) {
-      this.signals[name] = { value: 0, width: width || 1, history: [[0, 0]], edgeWaiters: [] };
+      const w = width || 1;
+      // uninitialized regs/wires start as X (all bits unknown), matching real
+      // hardware power-on state - not the previous (incorrect) default of 0.
+      const initial = mkVal(0, fullMask(w));
+      this.signals[name] = { value: initial, width: w, history: [[0, initial]], edgeWaiters: [] };
     } else if (width) {
       this.signals[name].width = Math.max(this.signals[name].width, width);
     }
@@ -1115,8 +1153,8 @@ function writeLValue(sim, lhs, value) {
   if (lhs.type === 'Ident') {
     sim.declareSignal(lhs.name);
     const sig = sim.signals[lhs.name];
-    const v = mask(value, sig.width);
-    if (v !== sig.value) {
+    const v = maskVal(value, sig.width);
+    if (!valuesEqual(v, sig.value)) {
       const old = sig.value;
       sig.value = v;
       sig.history.push([sim.time, v]);
@@ -1129,14 +1167,16 @@ function writeLValue(sim, lhs, value) {
     const sig = sim.signals[lhs.name];
     const ctx = sim._makeCtx();
     let hi, lo;
-    if (lhs.type === 'BitSelect') { hi = lo = evalExpr(lhs.index, ctx); }
-    else { hi = evalExpr(lhs.hi, ctx); lo = evalExpr(lhs.lo, ctx); }
+    if (lhs.type === 'BitSelect') { hi = lo = evalExpr(lhs.index, ctx).v; }
+    else { hi = evalExpr(lhs.hi, ctx).v; lo = evalExpr(lhs.lo, ctx).v; }
     if (hi < lo) [hi, lo] = [lo, hi];
     const width = hi - lo + 1;
-    const fieldMask = ((width >= 32) ? 0xFFFFFFFF : ((1 << width) - 1)) << lo;
-    const merged = (sig.value & ~fieldMask) | ((mask(value, width) << lo) & fieldMask);
-    const v = mask(merged, sig.width);
-    if (v !== sig.value) {
+    const fieldMask = (fullMask(width) << lo) >>> 0;
+    const masked = maskVal(value, width);
+    const mergeField = (plane) => ((sig.value[plane] & ~fieldMask) | ((masked[plane] << lo) & fieldMask)) >>> 0;
+    const merged = mkVal(mergeField('v'), mergeField('x'), mergeField('z'));
+    const v = maskVal(merged, sig.width);
+    if (!valuesEqual(v, sig.value)) {
       const old = sig.value;
       sig.value = v;
       sig.history.push([sim.time, v]);
@@ -1164,7 +1204,7 @@ function* execStmt(stmt, ctx) {
       for (const s of stmt.stmts) yield* execStmt(s, ctx);
       return;
     case 'If': {
-      if (evalExpr(stmt.cond, ctx)) yield* execStmt(stmt.then, ctx);
+      if (truthValue(evalExpr(stmt.cond, ctx)) === 1) yield* execStmt(stmt.then, ctx);
       else if (stmt.els) yield* execStmt(stmt.els, ctx);
       return;
     }
@@ -1175,7 +1215,7 @@ function* execStmt(stmt, ctx) {
       return;
     }
     case 'Timing': {
-      if (stmt.control.kind === 'delay') yield { kind: 'delay', amount: evalExpr(stmt.control.amount, ctx) };
+      if (stmt.control.kind === 'delay') yield { kind: 'delay', amount: evalExpr(stmt.control.amount, ctx).v };
       else yield { kind: 'edge', edges: stmt.control.edges };
       if (stmt.stmt) yield* execStmt(stmt.stmt, ctx);
       return;
@@ -1204,64 +1244,125 @@ function evalExpr(node, ctx) {
     case 'StringLit': {
       let v = 0;
       for (let i = 0; i < node.value.length; i++) v = v * 256 + node.value.charCodeAt(i);
-      return v;
+      return mkVal(v);
     }
     case 'Ident': return ctx.read(node.name);
-    case 'SysFunc': return (node.name === 'time' || node.name === 'realtime') ? ctx.time() : 0;
+    case 'SysFunc': return mkVal((node.name === 'time' || node.name === 'realtime') ? ctx.time() : 0);
     case 'BitSelect': {
-      const v = ctx.read(node.name);
-      return (v >>> evalExpr(node.index, ctx)) & 1;
+      const sv = ctx.read(node.name);
+      const idx = evalExpr(node.index, ctx).v;
+      return { v: (sv.v >>> idx) & 1, x: (sv.x >>> idx) & 1, z: (sv.z >>> idx) & 1 };
     }
     case 'PartSelect': {
-      const v = ctx.read(node.name);
-      let hi = evalExpr(node.hi, ctx), lo = evalExpr(node.lo, ctx);
+      const sv = ctx.read(node.name);
+      let hi = evalExpr(node.hi, ctx).v, lo = evalExpr(node.lo, ctx).v;
       if (hi < lo) [hi, lo] = [lo, hi];
       const width = hi - lo + 1;
-      const m = width >= 32 ? 0xFFFFFFFF : (1 << width) - 1;
-      return (v >>> lo) & m;
+      const m = fullMask(width);
+      return { v: (sv.v >>> lo) & m, x: (sv.x >>> lo) & m, z: (sv.z >>> lo) & m };
     }
     case 'Unary': {
-      const v = evalExpr(node.expr, ctx);
+      const a = evalExpr(node.expr, ctx);
       switch (node.op) {
-        case '-': return -v;
-        case '+': return v;
-        case '!': return v ? 0 : 1;
-        case '~': return ~v;
+        case '-': return isFullyKnown(a) ? mkVal(-a.v) : mkVal(0, 0xFFFFFFFF);
+        case '+': return a;
+        case '!': { const t = truthValue(a); return t === 'x' ? X1 : boolVal(t === 0); }
+        case '~': return mkVal(~a.v, a.x | a.z);
       }
       break;
     }
     case 'Binary': {
       const l = evalExpr(node.left, ctx), r = evalExpr(node.right, ctx);
+      const bothKnown = isFullyKnown(l) && isFullyKnown(r);
       switch (node.op) {
-        case '+': return l + r;
-        case '-': return l - r;
-        case '*': return l * r;
-        case '/': return r === 0 ? 0 : Math.trunc(l / r);
-        case '%': return r === 0 ? 0 : l % r;
-        case '&': return l & r;
-        case '|': return l | r;
-        case '^': return l ^ r;
-        case '&&': return (l && r) ? 1 : 0;
-        case '||': return (l || r) ? 1 : 0;
-        case '==': return l === r ? 1 : 0;
-        case '!=': return l !== r ? 1 : 0;
-        case '<': return l < r ? 1 : 0;
-        case '>': return l > r ? 1 : 0;
-        case '<=': return l <= r ? 1 : 0;
-        case '>=': return l >= r ? 1 : 0;
-        case '<<': return l << r;
-        case '>>': return l >>> r;
+        case '+': return bothKnown ? mkVal(l.v + r.v) : mkVal(0, 0xFFFFFFFF);
+        case '-': return bothKnown ? mkVal(l.v - r.v) : mkVal(0, 0xFFFFFFFF);
+        case '*': return bothKnown ? mkVal(l.v * r.v) : mkVal(0, 0xFFFFFFFF);
+        case '/': return bothKnown ? mkVal(r.v === 0 ? 0 : Math.trunc(l.v / r.v)) : mkVal(0, 0xFFFFFFFF);
+        case '%': return bothKnown ? mkVal(r.v === 0 ? 0 : l.v % r.v) : mkVal(0, 0xFFFFFFFF);
+        case '&': {
+          // 4-state AND: a known-0 on EITHER side forces a known-0 result on that bit,
+          // regardless of the other side's state; only both-known-1 gives a known-1.
+          const lKnown1 = l.v, lKnown0 = ~l.v & ~(l.x | l.z);
+          const rKnown1 = r.v, rKnown0 = ~r.v & ~(r.x | r.z);
+          const known0 = (lKnown0 | rKnown0) >>> 0, known1 = (lKnown1 & rKnown1) >>> 0;
+          return mkVal(known1, ~(known0 | known1));
+        }
+        case '|': {
+          const lKnown1 = l.v, lKnown0 = ~l.v & ~(l.x | l.z);
+          const rKnown1 = r.v, rKnown0 = ~r.v & ~(r.x | r.z);
+          const known1 = (lKnown1 | rKnown1) >>> 0, known0 = (lKnown0 & rKnown0) >>> 0;
+          return mkVal(known1, ~(known0 | known1));
+        }
+        case '^': {
+          const known = ~(l.x | l.z) & ~(r.x | r.z);
+          return mkVal((l.v ^ r.v) & known, ~known);
+        }
+        case '&&': {
+          const a = truthValue(l), b = truthValue(r);
+          if (a === 0 || b === 0) return mkVal(0);
+          return (a === 1 && b === 1) ? mkVal(1) : X1;
+        }
+        case '||': {
+          const a = truthValue(l), b = truthValue(r);
+          if (a === 1 || b === 1) return mkVal(1);
+          return (a === 0 && b === 0) ? mkVal(0) : X1;
+        }
+        case '==': return bothKnown ? boolVal(l.v === r.v) : X1;
+        case '!=': return bothKnown ? boolVal(l.v !== r.v) : X1;
+        case '<': return bothKnown ? boolVal(l.v < r.v) : X1;
+        case '>': return bothKnown ? boolVal(l.v > r.v) : X1;
+        case '<=': return bothKnown ? boolVal(l.v <= r.v) : X1;
+        case '>=': return bothKnown ? boolVal(l.v >= r.v) : X1;
+        case '<<': return isFullyKnown(r) ? mkVal(l.v << r.v, (l.x | l.z) << r.v) : mkVal(0, 0xFFFFFFFF);
+        case '>>': return isFullyKnown(r) ? mkVal(l.v >>> r.v, (l.x | l.z) >>> r.v) : mkVal(0, 0xFFFFFFFF);
       }
       break;
     }
-    case 'Ternary':
-      return evalExpr(node.cond, ctx) ? evalExpr(node.then, ctx) : evalExpr(node.els, ctx);
+    case 'Ternary': {
+      const t = truthValue(evalExpr(node.cond, ctx));
+      if (t === 1) return evalExpr(node.then, ctx);
+      if (t === 0) return evalExpr(node.els, ctx);
+      // ambiguous condition: per bit, use the branches' value where they agree, else x
+      const a = evalExpr(node.then, ctx), b = evalExpr(node.els, ctx);
+      const aKnown1 = a.v, aKnown0 = ~a.v & ~(a.x | a.z);
+      const bKnown1 = b.v, bKnown0 = ~b.v & ~(b.x | b.z);
+      const agree1 = aKnown1 & bKnown1, agree0 = aKnown0 & bKnown0;
+      return mkVal(agree1, ~(agree0 | agree1));
+    }
   }
   throw new Error('cannot eval node ' + node.type);
 }
 
+// Groups a {v,x,z} value into digits of `bitsPerDigit` bits (1=bin, 3=oct, 4=hex),
+// merging each group per IEEE 1364: an all-z group prints z, any x (or a mix of
+// x/z/known bits) prints x, otherwise the group's known hex/oct/bin digit.
+function formatDigitGroups(val, bitsPerDigit, nDigits, upper) {
+  const m = (1 << bitsPerDigit) - 1;
+  const xCh = upper ? 'X' : 'x', zCh = upper ? 'Z' : 'z';
+  let out = '';
+  for (let i = nDigits - 1; i >= 0; i--) {
+    const shift = i * bitsPerDigit;
+    const vG = (val.v >>> shift) & m, xG = (val.x >>> shift) & m, zG = (val.z >>> shift) & m;
+    if (zG === m && xG === 0) out += zCh;
+    else if (xG || zG) out += xCh;
+    else out += vG.toString(16);
+  }
+  return out;
+}
+// Width auto-detected from the highest set bit across all three planes, matching
+// the natural (no leading zeros) style plain Number#toString already produced here.
+function formatUnknownDigits(val, bitsPerDigit) {
+  const combined = (val.v | val.x | val.z) >>> 0;
+  const hi = combined === 0 ? 0 : (31 - Math.clz32(combined));
+  const nDigits = Math.floor(hi / bitsPerDigit) + 1;
+  return formatDigitGroups(val, bitsPerDigit, nDigits, false);
+}
 function formatDisplay(args) {
-  if (typeof args[0] !== 'string') return args.join(' ');
+  const fmtScalar = (a) => (a && typeof a === 'object' && 'v' in a)
+    ? (isFullyKnown(a) ? String(a.v >>> 0) : 'x')
+    : String(a);
+  if (typeof args[0] !== 'string') return args.map(fmtScalar).join(' ');
   const fmt = args[0];
   let ai = 1, out = '';
   for (let i = 0; i < fmt.length; i++) {
@@ -1271,13 +1372,13 @@ function formatDisplay(args) {
       const spec = fmt[j];
       const val = args[ai++];
       switch (spec) {
-        case 'd': out += String(val); break;
-        case 'b': out += (val >>> 0).toString(2); break;
-        case 'h': out += (val >>> 0).toString(16); break;
-        case 'o': out += (val >>> 0).toString(8); break;
-        case 'c': out += String.fromCharCode(val); break;
-        case 's': out += String(val); break;
-        case 't': out += String(val); break;
+        case 'd': out += fmtScalar(val); break;
+        case 'b': out += formatUnknownDigits(val, 1); break;
+        case 'h': out += formatUnknownDigits(val, 4); break;
+        case 'o': out += formatUnknownDigits(val, 3); break;
+        case 'c': out += isFullyKnown(val) ? String.fromCharCode(val.v) : '?'; break;
+        case 's': out += typeof val === 'string' ? val : fmtScalar(val); break;
+        case 't': out += String(val.v); break;
         case '%': out += '%'; ai--; break;
         default: out += '%' + spec;
       }
@@ -1395,6 +1496,30 @@ module shiftreg_tb;
     #5 $finish;
   end
 endmodule`,
+
+  'Tri-State Bus (X/Z demo)': `module tristate_tb;
+  reg enable;
+  reg [3:0] data;
+  wire [3:0] bus;
+
+  // classic tri-state driver: the bus only carries data while enabled,
+  // and floats to Z (high-impedance/disconnected) the rest of the time
+  assign bus = enable ? data : 4'bzzzz;
+
+  initial begin
+    data = 4'hA;
+    enable = 0;
+    #10 $display("disabled: bus=%h", bus);
+    #10 enable = 1;
+    #10 $display("enabled:  bus=%h", bus);
+    #10 enable = 0;
+    #10 $display("disabled again: bus=%h (floats back to z)", bus);
+    data = 4'bxxxx;   // driver corrupted/uninitialized
+    #5 enable = 1;
+    #10 $display("driven by unknown data: bus=%h", bus);
+    #5 $finish;
+  end
+endmodule`,
 };
 
 /* =========================================================================
@@ -1440,9 +1565,32 @@ const RADIX_OPTIONS = [['bin', 'Binary'], ['dec', 'Decimal'], ['hex', 'Hexadecim
 function getRadix(name, width) {
   return radixMap.get(name) || (width === 1 ? 'bin' : 'hex');
 }
+function bitState1(val) {
+  if (val.x & 1) return 'x';
+  if (val.z & 1) return 'z';
+  return (val.v & 1) ? '1' : '0';
+}
 function formatValue(value, width, radix) {
   const effWidth = Math.min(width, 32);
-  const uv = value >>> 0;
+  if (!isFullyKnown(value)) {
+    switch (radix) {
+      case 'bin': return formatDigitGroups(value, 1, effWidth, true);
+      case 'dec': return isFullyKnown(value) ? String(value.v >>> 0) : 'X';
+      case 'str': {
+        const byteCount = Math.ceil(effWidth / 8);
+        let s = '';
+        for (let i = byteCount - 1; i >= 0; i--) {
+          const shift = i * 8;
+          const vB = (value.v >>> shift) & 0xFF, xB = (value.x >>> shift) & 0xFF, zB = (value.z >>> shift) & 0xFF;
+          if (vB === 0 && xB === 0 && zB === 0) continue;
+          s += (xB || zB) ? '?' : ((vB >= 0x20 && vB <= 0x7e) ? String.fromCharCode(vB) : '.');
+        }
+        return s || '–';
+      }
+      default: return formatDigitGroups(value, 4, Math.ceil(effWidth / 4), true);
+    }
+  }
+  const uv = value.v >>> 0;
   switch (radix) {
     case 'bin': return uv.toString(2).padStart(effWidth, '0');
     case 'dec': return String(uv);
@@ -1819,18 +1967,30 @@ function drawWaveform(result) {
     if (sig.width === 1) {
       const yLo = rowTop + ROW_H - 9;
       const yHi = rowTop + 9;
-      ctx.beginPath();
-      let prevX = toX(viewStart), prevY = valueAtTime(sig, viewStart) ? yHi : yLo;
-      ctx.moveTo(prevX, prevY);
+      const yMid = rowTop + ROW_H / 2;
+      const yFor = (state) => state === '1' ? yHi : state === '0' ? yLo : yMid;
+      const colorFor = (state) => state === 'x' ? '#ff3b30' : state === 'z' ? '#8e8e93' : color;
+      let prevX = toX(viewStart);
+      let prevState = bitState1(valueAtTime(sig, viewStart));
       for (const [t, v] of hist) {
         if (t < viewStart) continue;
         const x = toX(t);
-        const y = v ? yHi : yLo;
-        ctx.lineTo(x, prevY);
-        ctx.lineTo(x, y);
-        prevX = x; prevY = y;
+        const state = bitState1(v);
+        ctx.strokeStyle = colorFor(prevState);
+        ctx.setLineDash(prevState === 'z' ? [3, 2] : []);
+        ctx.beginPath();
+        ctx.moveTo(prevX, yFor(prevState));
+        ctx.lineTo(x, yFor(prevState));
+        ctx.stroke();
+        ctx.strokeStyle = colorFor(state);
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(x, yFor(prevState));
+        ctx.lineTo(x, yFor(state));
+        ctx.stroke();
+        prevX = x; prevState = state;
       }
-      ctx.stroke();
+      ctx.setLineDash([]);
     } else {
       const yTop = rowTop + 6, yBot = rowTop + ROW_H - 6;
       const radix = getRadix(name, sig.width);
@@ -1840,15 +2000,18 @@ function drawWaveform(result) {
         if (tNext < viewStart || t > viewEnd) continue;
         const x0 = toX(t);
         const x1 = toX(tNext);
+        const known = isFullyKnown(v);
+        ctx.strokeStyle = known ? color : '#ff3b30';
         ctx.strokeRect(x0 + 1, yTop, Math.max(x1 - x0 - 2, 1), yBot - yTop);
         if (x1 - x0 > 22) {
-          ctx.fillStyle = '#1c1c1e';
+          ctx.fillStyle = known ? '#1c1c1e' : '#ff3b30';
           ctx.font = '10px "SF Mono", Menlo, monospace';
           ctx.textAlign = 'center';
           ctx.fillText(formatValue(v, sig.width, radix), (x0 + x1) / 2, (yTop + yBot) / 2 + 3);
           ctx.fillStyle = color;
         }
         if (i > 0) {
+          ctx.strokeStyle = color;
           ctx.beginPath();
           ctx.moveTo(x0, yTop); ctx.lineTo(x0 + 4, (yTop + yBot) / 2); ctx.lineTo(x0, yBot);
           ctx.stroke();
@@ -1895,7 +2058,7 @@ function drawWaveform(result) {
     ctx.textAlign = 'right';
     ctx.fillText(name, NAME_W - 8, rowMid + 4);
 
-    ctx.fillStyle = color;
+    ctx.fillStyle = isFullyKnown(value) ? color : '#ff3b30';
     ctx.font = '600 11px "SF Mono", Menlo, monospace';
     ctx.textAlign = 'left';
     ctx.fillText(formatValue(value, sig.width, radix), NAME_W + 8, rowMid + 4);
