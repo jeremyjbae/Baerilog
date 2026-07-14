@@ -363,7 +363,7 @@
 <body>
 
 <h1>Verilog Synthesizer</h1>
-<div class="subtitle">gate-level synthesis of Verilog HDL, with an interactive netlist viewer</div>
+<div class="subtitle">gate-level synthesis of a small behavioral Verilog subset, with an interactive netlist viewer</div>
 
 <div class="grid">
 
@@ -416,7 +416,7 @@
 
 </div>
 
-<div class="footer">© Jeremy Bae 2026 · <a href="https://github.com/jeremyjbae" target="_blank" rel="noopener">github.com/jeremyjbae</a></div>
+  <div class="footer">© Jeremy Bae 2026 · <a href="https://github.com/jeremyjbae" target="_blank" rel="noopener">github.com/jeremyjbae</a></div>
 
 <script>
 
@@ -579,15 +579,18 @@ class Parser {
   parseModule() {
     this.expect('module');
     const name = this.expect('ident').value;
-    this.expect('(');
     const ports = [];
-    if (!this.at(')')) {
-      ports.push(this.expect('ident').value);
-      while (this.at(',')) { this.next(); ports.push(this.expect('ident').value); }
+    const decls = [];
+    if (this.at('(')) {
+      this.next();
+      if (!this.at(')')) {
+        this.parsePortListItem(ports, decls);
+        while (this.at(',')) { this.next(); this.parsePortListItem(ports, decls); }
+      }
+      this.expect(')');
     }
-    this.expect(')');
     this.expect(';');
-    const decls = [], assigns = [], always = [], instances = [];
+    const assigns = [], always = [], instances = [];
     while (!this.at('endmodule')) {
       if (this.at('input') || this.at('output') || this.at('wire') || this.at('reg')) {
         decls.push(this.parseDecl());
@@ -603,6 +606,23 @@ class Parser {
     }
     this.expect('endmodule');
     return { name, ports, decls, assigns, always, instances };
+  }
+  // A port-list item is either the old style, a bare name whose input/output/wire/reg
+  // declaration appears later in the module body (`module m(a, b);`), or ANSI style,
+  // where the declaration is written inline in the port list itself
+  // (`module m(input a, output reg [3:0] b);`).
+  parsePortListItem(ports, decls) {
+    if (this.at('input') || this.at('output')) {
+      const kind = this.next().type;
+      let isReg = false;
+      if (kind === 'output' && this.at('reg')) { this.next(); isReg = true; }
+      const range = this.parseRange();
+      const name = this.expect('ident').value;
+      ports.push(name);
+      decls.push({ kind, isReg, range, names: [name] });
+      return;
+    }
+    ports.push(this.expect('ident').value);
   }
   parseInstance() {
     const line = this.peek().line;
@@ -1897,6 +1917,19 @@ const PRIMITIVE_SRC = {
 };
 const CONST_LIT = { const_0: "1'b0", const_1: "1'b1" };
 
+// Drilling into an 'fa' node in the netlist viewer shows the full adder's own gate-level
+// implementation — built by parsing the same Verilog text used for its structural-codegen
+// primitive definition (PRIMITIVE_SRC.fa), so the two representations can't drift apart.
+// Memoized since it's a fixed, source-independent structure computed at most once per session.
+let _faPrimitiveResult = null;
+function getFaPrimitiveResult() {
+  if (_faPrimitiveResult) return _faPrimitiveResult;
+  const mod = parseVerilog(PRIMITIVE_SRC.fa)[0];
+  mod.name = 'FA_PRIMITIVE';
+  _faPrimitiveResult = new Synthesizer(mod, {}, new Map()).run();
+  return _faPrimitiveResult;
+}
+
 function genModuleVerilog(result) {
   const { sig, cells, ports, moduleName } = result;
   const lines = [`module ${moduleName} (${ports.join(', ')});`];
@@ -2034,7 +2067,7 @@ function synthesizeAll(src) {
 }
 
 function synthesizeModuleView(all, moduleName) {
-  const result = all.results[moduleName];
+  const result = moduleName === 'FA_PRIMITIVE' ? getFaPrimitiveResult() : all.results[moduleName];
   // when drilling into an auto-generated FUNC_addN/FUNC_subN, show the real per-bit fa
   // chain (not re-collapsed into one composite node) — that's the whole point of drilling in
   const skipCellKinds = result.isAdderModule ? new Set(['fa']) : null;
@@ -2134,19 +2167,29 @@ function renderBreadcrumb() {
 
 function showCurrentView() {
   if (!currentAll) return;
-  renderBreadcrumb();
   const modName = viewStack[viewStack.length - 1];
-  const { result, graph, layout } = synthesizeModuleView(currentAll, modName);
-  setStats(result.cells);
-  // structural text always starts from the actual top module, regardless of which sub-module is being viewed in the graph
-  const topResult = currentAll.results[currentAll.top.name];
-  codeOut.textContent = genVerilog([topResult, ...Object.entries(currentAll.results).filter(([k]) => k !== currentAll.top.name).map(([, v]) => v)]);
-  const { nodes, edges } = toFlowElements(graph, layout);
-  pushGraph(nodes, edges);
+  try {
+    const { result, graph, layout } = synthesizeModuleView(currentAll, modName);
+    setStats(result.cells);
+    // structural text always starts from the actual top module, regardless of which sub-module is being viewed in the graph
+    const topResult = currentAll.results[currentAll.top.name];
+    codeOut.textContent = genVerilog([topResult, ...Object.entries(currentAll.results).filter(([k]) => k !== currentAll.top.name).map(([, v]) => v)]);
+    const { nodes, edges } = toFlowElements(graph, layout);
+    pushGraph(nodes, edges);
+  } catch (e) {
+    // don't leave the breadcrumb pointing at a level whose graph failed to render -
+    // roll it back so the UI doesn't silently get stuck showing the PREVIOUS view
+    // while claiming (via the breadcrumb) that navigation succeeded. Never pop the
+    // last remaining level though - an unrenderable top view should stay named
+    // rather than leave the breadcrumb (and viewStack) empty.
+    if (viewStack.length > 1) viewStack.pop();
+    logLine('err', `error showing '${modName}': ${e.message}`);
+  }
+  renderBreadcrumb();
 }
 
 function drillInto(modType) {
-  if (!currentAll || !currentAll.results[modType]) return;
+  if (!currentAll || (modType !== 'FA_PRIMITIVE' && !currentAll.results[modType])) return;
   viewStack.push(modType);
   showCurrentView();
 }
@@ -2201,6 +2244,28 @@ document.querySelectorAll('[data-collapse]').forEach(btn => {
     btn.textContent = card.classList.contains('collapsed') ? '▸' : '▾';
   });
 });
+</script>
+
+<script>
+// Browser-compatibility fallback for the netlist viewer below: a module script that fails
+// to parse (e.g. no top-level `await` support) or an unsupported <script type="importmap">
+// never gets a chance to run its own try/catch, so the "Loading netlist viewer…" placeholder
+// would otherwise sit there forever with no explanation. This plain (non-module) script always
+// parses/runs regardless of browser, so it can catch both cases: an immediate check for
+// import-map support, and a timeout that fires only if nothing removed/replaced the placeholder.
+(function () {
+  var FALLBACK_MSG = 'Netlist viewer needs a browser with ES module import-map + top-level "await" support (recent Chrome, Edge, or Firefox) — please open this page in one of those.';
+  var placeholder = document.getElementById('flowPlaceholder');
+  if (!placeholder) return;
+  if (!window.HTMLScriptElement || typeof HTMLScriptElement.supports !== 'function' || !HTMLScriptElement.supports('importmap')) {
+    placeholder.textContent = FALLBACK_MSG;
+    return;
+  }
+  setTimeout(function () {
+    var p = document.getElementById('flowPlaceholder');
+    if (p) p.textContent = FALLBACK_MSG;
+  }, 10000);
+})();
 </script>
 
 <script type="importmap">
@@ -2351,7 +2416,7 @@ function FaNode({ data }) {
   const kind = data.op === 'sub' ? 'sub' : 'add';
   const def = GATE_DEFS[kind];
   return html`
-    <div class="rf-node rf-node-fa ${data.isBus ? 'is-bus' : ''}" style=${{ width: def.width + 'px', height: def.height + 'px' }} title=${data.label}>
+    <div class="rf-node rf-node-fa ${data.isBus ? 'is-bus' : ''}" style=${{ width: def.width + 'px', height: def.height + 'px', cursor: 'pointer' }} title="${data.label} — double-click to view gate-level internals" onDoubleClick=${() => window.__drillInto && window.__drillInto('FA_PRIMITIVE')}>
       <${Handle} type="target" position=${Position.Left} id="a" style=${{ top: '18.75%' }} />
       <${Handle} type="target" position=${Position.Left} id="cin" style=${{ top: '50%' }} />
       <${Handle} type="target" position=${Position.Left} id="b" style=${{ top: '81.25%' }} />
