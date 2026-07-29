@@ -214,18 +214,17 @@
     .hierarchy-node-row:hover { background: #f2f2f7; }
     .hierarchy-node-row.active { background: #e8f1ff; color: #007aff; font-weight: 600; }
     .hierarchy-node-type { color: #8e8e93; font-size: 10px; }
-    .hierarchy-children { margin-left: 12px; border-left: 1px solid #e5e5ea; padding-left: 6px; }
-
-    /* --- additions for editor / console / waveform, same visual language --- */
-    .legend-item { cursor: pointer; user-select: none; }
-    .legend-item.off { color: #c7c7cc; }
-    .legend-item.off .dot { opacity: 0.3; }
     .hierarchy-node-icon {
       width: 13px;
       height: 13px;
       color: #8e8e93;
       flex-shrink: 0;
     }
+    .hierarchy-children { margin-left: 12px; border-left: 1px solid #e5e5ea; padding-left: 6px; }
+
+    /* --- additions for editor / console / waveform, same visual language --- */
+    .hierarchy-node-row.off { color: #c7c7cc; }
+    .hierarchy-node-row.off .hierarchy-node-icon { color: #c7c7cc; }
     .hierarchy-signal-list { margin-left: 15px; padding: 2px 0 4px; }
     .hierarchy-signal-item {
       display: flex;
@@ -459,7 +458,6 @@
           <canvas id="waveCanvas" height="120"></canvas>
         </div>
         <div class="wave-empty" id="waveEmpty">No simulation data yet — run a design to see waveforms.</div>
-        <div class="legend-row" id="legendRow"></div>
         <div class="badge-row" id="badgeRow"></div>
       </div>
     </div>
@@ -1269,7 +1267,7 @@ class Simulator {
   }
 
   run() {
-    this._changedThisDelta = new Set();
+    this._changedThisDelta = 0;
     this._settle();
     let steps = 0;
     while (!this.finished && steps < this.maxDeltaIters * 4) {
@@ -1288,17 +1286,24 @@ class Simulator {
   _settle() {
     let iter = 0;
     while (iter++ < this.maxDeltaIters) {
-      this._changedThisDelta = new Set();
       let didWork = false;
 
+      // _changedThisDelta counts actual value changes made *this pass* - reset every
+      // pass (not just every outer iter), since it's a per-pass "did anything move"
+      // signal, not a cumulative log. Comparing cumulative totals across passes would
+      // miss a signal that changes on pass 1 and changes AGAIN (to its final value) on
+      // pass 2+: re-writing the same signal name doesn't grow a running total, so a
+      // long combinational chain could look "settled" one pass before it actually
+      // converges, leaving a stale value until the next unrelated event happens to
+      // re-run comb procs from scratch.
       let combIter = 0, combChanged = true;
       while (combChanged && combIter++ < this.maxDeltaIters) {
-        combChanged = false;
-        const before = this._changedThisDelta.size;
+        this._changedThisDelta = 0;
         for (const cp of this.combProcs) {
           try { cp(); } catch (e) { this.error = e.message; this.finished = true; return; }
         }
-        if (this._changedThisDelta.size > before) { combChanged = true; didWork = true; }
+        combChanged = this._changedThisDelta > 0;
+        if (combChanged) didWork = true;
       }
 
       let ranAny = false;
@@ -1344,7 +1349,7 @@ class Simulator {
   }
 
   _notifyChange(name, oldValue, newValue) {
-    this._changedThisDelta.add(name);
+    this._changedThisDelta++;
     const sig = this.signals[name];
     const waiters = sig.edgeWaiters;
     if (!waiters.length) return;
@@ -1817,6 +1822,35 @@ endmodule`,
     #5 $finish;
   end
 endmodule`,
+
+  '4-bit Adder': `module adder4(a, b, sum, cout);
+  input [3:0] a, b;
+  output [3:0] sum;
+  output cout;
+
+  // carry-out via concatenation: {cout, sum} is 5 bits wide, so this widens
+  // the addition itself and reads the extra top bit back off as the carry
+  assign {cout, sum} = a + b;
+endmodule
+
+module adder4_tb;
+  reg [3:0] a, b;
+  wire [3:0] sum;
+  wire cout;
+
+  // instance port order matches adder4's (a, b, sum, cout) header
+  adder4 dut (a, b, sum, cout);
+
+  initial begin
+    a = 4'd5;  b = 4'd3;
+    #10 $display("a=%d b=%d -> sum=%d cout=%b", a, b, sum, cout);
+    a = 4'd9;  b = 4'd9;
+    #10 $display("a=%d b=%d -> sum=%d cout=%b", a, b, sum, cout);
+    a = 4'd15; b = 4'd1;
+    #10 $display("a=%d b=%d -> sum=%d cout=%b", a, b, sum, cout);
+    #5 $finish;
+  end
+endmodule`,
 };
 
 /* =========================================================================
@@ -1834,7 +1868,6 @@ const maxTimeInput = document.getElementById('maxTimeInput');
 const consoleBox = document.getElementById('consoleBox');
 const waveCanvas = document.getElementById('waveCanvas');
 const waveEmpty = document.getElementById('waveEmpty');
-const legendRow = document.getElementById('legendRow');
 const badgeRow = document.getElementById('badgeRow');
 const hierarchyTree = document.getElementById('hierarchyTree');
 const waveZoomInBtn = document.getElementById('waveZoomIn');
@@ -1848,6 +1881,8 @@ const waveApplyBtn = document.getElementById('waveApplyBtn');
 const PALETTE = ['#007aff', '#34c759', '#ff9500', '#ff2d55', '#af52de', '#5ac8fa', '#ffcc00', '#a2845e'];
 let lastResult = null;
 let hiddenSignals = new Set();
+let hiddenInstances = new Set(); // instance paths hidden as a whole subtree (single-click toggle) - layered on top of hiddenSignals, so per-signal choices survive show/hide of an ancestor instance
+let lastTopModuleName = null; // top module's modType from the last run - a change means a new design, so visibility resets to top-only-visible
 let expandedHierarchyPaths = new Set(); // module-instance paths whose own-signal checklist is open
 let declKindMap = new Map();   // fullName -> {kind, ioKind}, from the last successful parse's decls
 let clockSignalNames = new Set(); // fullNames used with posedge/negedge anywhere - drawn with the clock icon
@@ -2159,11 +2194,12 @@ resetBtn.addEventListener('click', () => {
   logLine('<span class="info">Click Run to simulate…</span>');
   lastResult = null;
   hiddenSignals = new Set();
+  hiddenInstances = new Set();
+  lastTopModuleName = null;
   expandedHierarchyPaths = new Set();
   radixMap = new Map();
   viewStart = 0; viewEnd = 1; cursorTime = 0;
   hideRadixPopup();
-  legendRow.innerHTML = '';
   badgeRow.innerHTML = '';
   waveEmpty.style.display = 'block';
   waveCanvas.style.display = 'none';
@@ -2187,6 +2223,16 @@ function runSimulation() {
     return;
   }
   computeDeclMeta(ast);
+  if (ast.tree.modType !== lastTopModuleName) {
+    // first run against this top-level module (a fresh design, or Reset was
+    // clicked): show only the top module's own signals, collapse every
+    // direct child instance - hiding a child transitively hides everything
+    // nested inside it, so nothing deeper needs listing - and drop any
+    // leftover per-signal overrides from whatever was run before.
+    hiddenInstances = new Set(ast.tree.children.map(c => c.path));
+    hiddenSignals = new Set();
+    lastTopModuleName = ast.tree.modType;
+  }
 
   let result;
   try {
@@ -2222,7 +2268,6 @@ function runSimulation() {
   }
 
   renderBadges(result);
-  renderLegend(result);
   drawWaveform(result);
 }
 
@@ -2250,6 +2295,26 @@ function renderBadges(result) {
 }
 
 /* ---- module hierarchy tree ---- */
+// True if `path` (an instance path or a signal's fullName) is inside a
+// hidden instance subtree - either it *is* one of the hidden paths, or it's
+// nested under one. Root path '' has prefix '', so hiding the root ('') hides
+// every signal in the design, same as hiding any other instance hides
+// everything nested inside it.
+function isPathHidden(path) {
+  for (const p of hiddenInstances) {
+    if (path === p) return true;
+    if (path.startsWith(p ? p + '.' : '')) return true;
+  }
+  return false;
+}
+// A signal is hidden if it was individually toggled off (hiddenSignals) or
+// if it lives inside a subtree hidden via the instance-row toggle
+// (hiddenInstances) - the two are independent, so toggling an instance off
+// and back on never disturbs the individual per-signal choices underneath.
+function isSignalHidden(fullName) {
+  return hiddenSignals.has(fullName) || isPathHidden(fullName);
+}
+
 // Signals declared directly in the instance at `path` - excludes signals
 // belonging to a nested child instance (those get their own checklist under
 // their own tree node, one level down).
@@ -2278,19 +2343,20 @@ function computeDeclMeta(ast) {
   }
 }
 
-// Small filled port/net-kind glyphs (viewBox 0 0 22 14), keyed to match a
-// signal's declaration - not the app's usual thin-stroke icon style, but a
-// filled schematic-symbol look reads better at this size (~16x10 css px).
+// Filled port/net-kind glyphs, keyed to match a signal's declaration - traced
+// from clock.svg/input.svg/output.svg/inout.svg/reg.svg/wire.svg (fill="black"
+// swapped for currentColor so hover/off styling still applies).
 const SIGNAL_ICONS = {
-  clock: '<path d="M1 10 L1 4 L6 4 L6 10 L11 10 L11 4 L16 4 L16 10 L21 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
-  input: '<polygon points="1,2 14,2 19,7 14,12 1,12" fill="currentColor"/>',
-  output: '<polygon points="2,3 12,3 12,1 21,7 12,13 12,11 2,11" fill="currentColor"/>',
-  inout: '<polygon points="11,1 20,7 11,13 2,7" fill="currentColor"/>',
-  wire: '<rect x="2" y="6" width="18" height="2" fill="currentColor"/>',
-  reg: '<rect x="2" y="4" width="18" height="6" fill="currentColor"/><rect x="9" y="1" width="4" height="3" fill="currentColor"/>',
+  clock: { viewBox: '0 0 55 25', markup: '<rect x="5" y="5" width="5" height="15" fill="currentColor"/><rect x="15" y="5" width="5" height="15" fill="currentColor"/><rect x="25" y="5" width="5" height="15" fill="currentColor"/><rect x="5" y="5" width="15" height="5" fill="currentColor"/><rect x="35" y="5" width="5" height="15" fill="currentColor"/><rect x="25" y="5" width="15" height="5" fill="currentColor"/><rect x="15" y="15" width="15" height="5" fill="currentColor"/><rect x="35" y="15" width="15" height="5" fill="currentColor"/>' },
+  input: { viewBox: '0 0 45 25', markup: '<path d="M 5 5 L 25 5 L 30 10 L 30 15 L 25 20 L 5 20 Z" fill="currentColor"/><rect x="25" y="10" width="15" height="5" fill="currentColor"/>' },
+  output: { viewBox: '0 0 45 25', markup: '<path d="M 12.5 5 L 32.5 5 L 40 12.5 L 32.5 20 L 12.5 20 Z" fill="currentColor"/><rect x="5" y="10" width="15" height="5" fill="currentColor"/>' },
+  inout: { viewBox: '0 0 45 25', markup: '<path d="M 12.5 5 L 32.5 5 L 40 12.5 L 32.5 20 L 12.5 20 L 5 12.5 Z" fill="currentColor"/>' },
+  wire: { viewBox: '0 0 45 25', markup: '<circle cx="22.5" cy="12.5" r="7.5" fill="currentColor"/><rect x="5" y="10" width="35" height="5" fill="currentColor"/>' },
+  reg: { viewBox: '0 0 45 25', markup: '<rect x="12.5" y="5" width="20" height="15" fill="currentColor"/><rect x="5" y="10" width="35" height="5" fill="currentColor"/>' },
 };
 function signalIconSvg(kind) {
-  return '<svg class="hierarchy-signal-icon" viewBox="0 0 22 14">' + SIGNAL_ICONS[kind] + '</svg>';
+  const icon = SIGNAL_ICONS[kind];
+  return '<svg class="hierarchy-signal-icon" viewBox="' + icon.viewBox + '">' + icon.markup + '</svg>';
 }
 // inout is wired up but unreachable today - this simulator doesn't parse `inout` ports at all.
 function classifySignalKind(fullName) {
@@ -2327,15 +2393,18 @@ function renderHierarchyTree(tree) {
       typeSpan.textContent = '(' + node.modType + ')';
       row.appendChild(typeSpan);
     }
-    // single-click opens the checklist (idempotent); double-click is the
-    // dedicated fold/unfold gesture - by the time dblclick fires, the two
-    // preceding clicks in the sequence have already forced it open, so
-    // toggling here always nets out to "close" (fold), while a plain single
-    // click nets out to "open" (unfold).
+    row.classList.toggle('off', isPathHidden(node.path));
+    // single-click toggles this instance's whole subtree (own signals plus
+    // every nested sub-instance) on/off in the waveform/legend. Double-click
+    // is the dedicated fold/unfold gesture for the own-signal checklist - a
+    // real double-click fires click, click, dblclick, so the two preceding
+    // clicks flip the subtree visibility twice (net no-op) before dblclick
+    // toggles the checklist, leaving this exactly as it behaved before.
     row.addEventListener('click', () => {
-      if (!own.length) return;
-      expandedHierarchyPaths.add(node.path);
+      if (hiddenInstances.has(node.path)) hiddenInstances.delete(node.path);
+      else hiddenInstances.add(node.path);
       renderHierarchyTree(tree);
+      if (lastResult) drawWaveform(lastResult);
     });
     row.addEventListener('dblclick', () => {
       if (!own.length) return;
@@ -2352,14 +2421,14 @@ function renderHierarchyTree(tree) {
       own.forEach(localName => {
         const fullName = prefix + localName;
         const item = document.createElement('div');
-        item.className = 'hierarchy-signal-item' + (hiddenSignals.has(fullName) ? ' off' : '');
+        item.className = 'hierarchy-signal-item' + (isSignalHidden(fullName) ? ' off' : '');
         item.insertAdjacentHTML('beforeend', signalIconSvg(classifySignalKind(fullName)));
         item.appendChild(document.createTextNode(localName));
 
         function paint(visible) {
           if (visible) hiddenSignals.delete(fullName); else hiddenSignals.add(fullName);
-          item.classList.toggle('off', !visible);
-          if (lastResult) { renderLegend(lastResult); drawWaveform(lastResult); }
+          item.classList.toggle('off', isSignalHidden(fullName));
+          if (lastResult) drawWaveform(lastResult);
         }
         // mousedown flips this row and becomes the drag's "paint" state; dragging
         // (mouseenter while the button is still down, scoped to this same list)
@@ -2390,27 +2459,6 @@ function renderHierarchyTree(tree) {
   hierarchyTree.appendChild(buildNode(tree));
 }
 
-/* ---- legend ---- */
-function renderLegend(result) {
-  legendRow.innerHTML = '';
-  const names = Object.keys(result.signals);
-  names.forEach((name, idx) => {
-    const item = document.createElement('div');
-    item.className = 'legend-item' + (hiddenSignals.has(name) ? ' off' : '');
-    const dot = document.createElement('span');
-    dot.className = 'dot';
-    dot.style.background = PALETTE[idx % PALETTE.length];
-    item.appendChild(dot);
-    item.appendChild(document.createTextNode(name));
-    item.addEventListener('click', () => {
-      if (hiddenSignals.has(name)) hiddenSignals.delete(name); else hiddenSignals.add(name);
-      item.classList.toggle('off');
-      if (lastResult) drawWaveform(lastResult);
-    });
-    legendRow.appendChild(item);
-  });
-}
-
 /* ---- waveform rendering ---- */
 const ROW_H = 34;
 const NAME_W_MIN = 40, NAME_W_MAX = 200;
@@ -2420,7 +2468,7 @@ const PAD_TOP = 40;
 const PAD_BOTTOM = 10;
 
 function drawWaveform(result) {
-  const names = Object.keys(result.signals).filter(n => !hiddenSignals.has(n));
+  const names = Object.keys(result.signals).filter(n => !isSignalHidden(n));
   if (names.length === 0) {
     waveEmpty.style.display = 'block';
     waveCanvas.style.display = 'none';

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xl="http://www.w3.org/1999/xlink" version="1.1" xmlns:dc="http://purl.org/dc/elements/1.1/" viewBox="0 0 55 25" width="55" height="25">
+  <defs/>
+  <g id="clock" fill-opacity="1" stroke-opacity="1" stroke-dasharray="none" stroke="none" fill="none">
+    <title>clock</title>
+    <g id="clock_Layer_1">
+      <title>Layer 1</title>
+      <g id="Graphic_31">
+        <rect x="5" y="5" width="5" height="15" fill="black"/>
+      </g>
+      <g id="Graphic_32">
+        <rect x="15" y="5" width="5" height="15" fill="black"/>
+      </g>
+      <g id="Graphic_33">
+        <rect x="25" y="5" width="5" height="15" fill="black"/>
+      </g>
+      <g id="Graphic_34">
+        <rect x="5" y="5" width="15" height="5" fill="black"/>
+      </g>
+      <g id="Graphic_35">
+        <rect x="35" y="5" width="5" height="15" fill="black"/>
+      </g>
+      <g id="Graphic_36">
+        <rect x="25" y="5" width="15" height="5" fill="black"/>
+      </g>
+      <g id="Graphic_37">
+        <rect x="15" y="15" width="15" height="5" fill="black"/>
+      </g>
+      <g id="Graphic_38">
+        <rect x="35" y="15" width="15" height="5" fill="black"/>
+      </g>
+    </g>
+  </g>
+</svg>

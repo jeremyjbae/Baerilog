@@ -215,6 +215,12 @@
     .hierarchy-node-row:hover { background: #f2f2f7; }
     .hierarchy-node-row.active { background: #e8f1ff; color: #007aff; font-weight: 600; }
     .hierarchy-node-type { color: #8e8e93; font-size: 10px; }
+    .hierarchy-node-icon {
+      width: 13px;
+      height: 13px;
+      color: #8e8e93;
+      flex-shrink: 0;
+    }
     .hierarchy-children { margin-left: 12px; border-left: 1px solid #e5e5ea; padding-left: 6px; }
 
     /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
@@ -637,6 +643,15 @@ module count(clk, resetn, q);
     if (!resetn) q <= 4'b0000;
     else q <= q_1;
   end
+endmodule`,
+  '4-bit adder (with carry)': `module adder4(a, b, sum, cout);
+  input [3:0] a, b;
+  output [3:0] sum;
+  output cout;
+
+  // carry-out via concatenation: {cout, sum} is 5 bits wide, so this widens
+  // the addition itself and reads the extra top bit back off as the carry
+  assign {cout, sum} = a + b;
 endmodule`,
   '16-bit ALU (casex + concat)': `module alu(clk, resetn, aluAIn, aluBIn, aluCtl, aluOut, condFlag);
 input clk;
@@ -2072,7 +2087,7 @@ const PRIMITIVE_SRC = {
   xor: `module xor_gate (input a, input b, output y);\n  assign y = a ^ b;\nendmodule`,
   xnor: `module xnor_gate (input a, input b, output y);\n  assign y = ~(a ^ b);\nendmodule`,
   not: `module not_gate (input a, output y);\n  assign y = ~a;\nendmodule`,
-  fa: `module fa (input a, input b, input cin, output sum, output cout);\n  assign sum = a ^ b ^ cin;\n  assign cout = (a & b) | (b & cin) | (a & cin);\nendmodule`,
+  fa: `module fa (input a, input b, input cin, output sum, output cout);\n  wire a_xor_b;\n  assign a_xor_b = a ^ b;\n  assign sum = a_xor_b ^ cin;\n  assign cout = ((a_xor_b) & cin) | (a & b);\nendmodule`,
   mux2: `module mux2 (input sel, input a, input b, output y);\n  assign y = sel ? b : a;\nendmodule`,
   buf: `module buf_gate (input a, output y);\n  assign y = a;\nendmodule`,
 };
@@ -2337,6 +2352,11 @@ function renderHierarchyTree() {
     const row = document.createElement('div');
     row.className = 'hierarchy-node-row';
     row.dataset.modtype = node.modType;
+    row.insertAdjacentHTML('beforeend', '<svg class="hierarchy-node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+      '<rect x="7" y="3" width="10" height="18"/>' +
+      '<line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="12" x2="7" y2="12"/><line x1="2" y1="17" x2="7" y2="17"/>' +
+      '<line x1="17" y1="7" x2="22" y2="7"/><line x1="17" y1="12" x2="22" y2="12"/><line x1="17" y1="17" x2="22" y2="17"/>' +
+      '</svg>');
     row.appendChild(document.createTextNode(node.instName || node.modType));
     if (node.instName) {
       const typeSpan = document.createElement('span');
