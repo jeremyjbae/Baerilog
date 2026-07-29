@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:xl="http://www.w3.org/1999/xlink" viewBox="0 0 55 65" width="55" height="65">
+  <defs/>
+  <g id="Canvas_1" fill-opacity="1" stroke="none" stroke-opacity="1" stroke-dasharray="none" fill="none">
+    <title>mux2</title>
+    <rect fill="white" x="0" y="0" width="55" height="65"/>
+    <g id="Canvas_1_Layer_1">
+      <title>Layer 1</title>
+      <g id="Group_27">
+        <g id="Line_26">
+          <line x1="40" y1="32.5" x2="55" y2="32.5" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+        </g>
+        <g id="Group_21">
+          <title>Line_sel</title>
+          <g id="Line_22">
+            <line x1="38968556e-13" y1="8.808153" x2="20.000004" y2="8.808153" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+          </g>
+        </g>
+        <g id="Group_19">
+          <title>Line_a</title>
+          <g id="Line_20">
+            <line x1="38968556e-13" y1="32.808153" x2="20.000004" y2="32.808153" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+          </g>
+        </g>
+        <g id="Group_17">
+          <title>Line_b</title>
+          <g id="Line_18">
+            <line x1="38968556e-13" y1="56.80815" x2="20.000004" y2="56.80815" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+          </g>
+        </g>
+        <g id="Group_13">
+          <title>Graphic_pin_sel</title>
+          <g id="Graphic_14">
+            <circle cx="-7956081e-29" cy="8.5" r="3.00001108742383" fill="red"/>
+          </g>
+        </g>
+        <g id="Group_11">
+          <title>Graphic_pin_a</title>
+          <g id="Graphic_12">
+            <circle cx="-7956081e-29" cy="32.5" r="3.00001108742383" fill="red"/>
+          </g>
+        </g>
+        <g id="Group_9">
+          <title>Graphic_pin_b</title>
+          <g id="Graphic_10">
+            <circle cx="-7956081e-29" cy="56.5" r="3.00001108742384" fill="red"/>
+          </g>
+        </g>
+        <g id="Group_7">
+          <title>Graphic_pin_y</title>
+          <g id="Graphic_8">
+            <circle cx="55.00001" cy="32.5" r="3.00001108742384" fill="red"/>
+          </g>
+        </g>
+        <g id="Group_4">
+          <title>Graphic_body</title>
+          <g id="Graphic_6">
+            <path d="M 20 2.5 L 40 17.5 L 40 47.5 L 20 62.5 Z" fill="white"/>
+          </g>
+          <g id="Graphic_5">
+            <path d="M 20 2.5 L 40 17.5 L 40 47.5 L 20 62.5 Z" stroke="#5856d6" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+          </g>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

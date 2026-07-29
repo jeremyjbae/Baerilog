@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:xl="http://www.w3.org/1999/xlink" viewBox="0 13 75 54" width="75" height="54">
+  <defs/>
+  <g id="not" fill-opacity="1" stroke="none" stroke-opacity="1" stroke-dasharray="none" fill="none">
+    <title>not</title>
+    <rect fill="white" x="0" y="13" width="75" height="54"/>
+    <g id="not_Layer_1">
+      <title>Layer 1</title>
+      <g id="Line_4">
+        <line x1="0" y1="40.5" x2="16" y2="40.5" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Line_6">
+        <line x1="67" y1="40" x2="74" y2="40" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Graphic_7">
+        <circle cx="-7680967e-29" cy="40.5" r="3.00000479370569" fill="red"/>
+      </g>
+      <g id="Graphic_9">
+        <circle cx="75" cy="40" r="3.00000479370569" fill="red"/>
+      </g>
+      <g id="Graphic_10">
+        <path d="M 10 15 L 57.5 40 L 10 65 Z" fill="white"/>
+        <path d="M 10 15 L 57.5 40 L 10 65 Z" stroke="#5856d6" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Graphic_3">
+        <circle cx="61" cy="40" r="6.00000958741138" fill="white"/>
+        <circle cx="61" cy="40" r="6.00000958741138" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:xl="http://www.w3.org/1999/xlink" viewBox="0 0 65 80" width="65" height="80">
+  <!--
+    add (full adder, one bit) — same convention as the other files in this folder.
+    Extended from the original 2-in/1-out draft to the 3-in/2-out shape the app's `fa`
+    primitive needs (a, b, cin -> sum, cout). Edit freely, just keep the 5 red pin-marker
+    circles at (or move them to) their wire-entry points.
+
+    Pin roles:
+      a    : (0, 15)  - operand A, upper-left
+      cin  : (0, 40)  - carry-in, routed through the existing left-edge notch, mid-left
+      b    : (0, 65)  - operand B, lower-left
+      sum  : (65, 30) - sum output, upper-right
+      cout : (65, 50) - carry-out output, lower-right
+  -->
+  <defs/>
+  <g id="add" fill-opacity="1" stroke="none" stroke-opacity="1" stroke-dasharray="none" fill="none">
+    <title>add</title>
+    <rect fill="white" x="0" y="0" width="65" height="80"/>
+    <g id="add_Layer_1">
+      <title>Layer 1</title>
+      <g id="Line_a">
+        <line x1="0" y1="15" x2="20" y2="15" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Line_cin">
+        <line x1="0" y1="40" x2="20" y2="40" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Line_b">
+        <line x1="0" y1="65" x2="20" y2="65" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Line_sum">
+        <line x1="50" y1="30" x2="65" y2="30" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Line_cout">
+        <line x1="50" y1="50" x2="65" y2="50" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+
+      <g id="Graphic_pin_a">
+        <circle cx="0" cy="15" r="3" fill="red"/>
+      </g>
+      <g id="Graphic_pin_cin">
+        <circle cx="0" cy="40" r="3" fill="red"/>
+      </g>
+      <g id="Graphic_pin_b">
+        <circle cx="0" cy="65" r="3" fill="red"/>
+      </g>
+      <g id="Graphic_pin_sum">
+        <circle cx="65" cy="30" r="3" fill="red"/>
+      </g>
+      <g id="Graphic_pin_cout">
+        <circle cx="65" cy="50" r="3" fill="red"/>
+      </g>
+
+      <g id="Graphic_5">
+        <path d="M 20 0 L 50 15 L 50 60 L 20 80 L 20 50 L 30 40 L 20 30 Z" fill="white"/>
+        <path d="M 20 0 L 50 15 L 50 60 L 20 80 L 20 50 L 30 40 L 20 30 Z" stroke="#5856d6" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Line_29">
+        <line x1="40" y1="35" x2="40" y2="45" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Line_30">
+        <line x1="45" y1="40" x2="35" y2="40" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+    </g>
+  </g>
+</svg>

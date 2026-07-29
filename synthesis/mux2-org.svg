@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:xl="http://www.w3.org/1999/xlink" viewBox="0 0 90 80" width="90" height="80">
+  <!--
+    mux2 (2-to-1 multiplexer) template — same convention as and.svg/or.svg/etc in this folder:
+    edit the body/stub geometry freely, but keep the four small red <circle> "pin markers"
+    at (or move them to) the coordinates where a wire should connect. The app reads these
+    circles' (cx, cy) against this viewBox to position React Flow's handles.
+
+    Pin roles (top to bottom on the input edge, matching mux2's port order sel/a/b -> y):
+      sel : (0, 16)  - select input, top-left
+      a   : (0, 40)  - data input 0 (chosen when sel = 0), mid-left
+      b   : (0, 64)  - data input 1 (chosen when sel = 1), bottom-left
+      y   : (90, 40) - output, right edge
+  -->
+  <defs/>
+  <g id="mux2" fill-opacity="1" stroke="none" stroke-opacity="1" stroke-dasharray="none" fill="none">
+    <title>mux2</title>
+    <rect fill="white" x="0" y="0" width="90" height="80"/>
+    <g id="mux2_Layer_1">
+      <title>Layer 1</title>
+      <g id="Line_sel">
+        <line x1="0" y1="16" x2="20" y2="16" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Line_a">
+        <line x1="0" y1="40" x2="20" y2="40" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Line_b">
+        <line x1="0" y1="64" x2="20" y2="64" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Line_y">
+        <line x1="70" y1="40" x2="82" y2="40" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Graphic_pin_sel">
+        <circle cx="0" cy="16" r="3.00000479370569" fill="red"/>
+      </g>
+      <g id="Graphic_pin_a">
+        <circle cx="0" cy="40" r="3.00000479370569" fill="red"/>
+      </g>
+      <g id="Graphic_pin_b">
+        <circle cx="0" cy="64" r="3.00000479370569" fill="red"/>
+      </g>
+      <g id="Graphic_pin_y">
+        <circle cx="90" cy="40" r="3.00000479370569" fill="red"/>
+      </g>
+      <g id="Graphic_body">
+        <path d="M 20 10 L 70 25 L 70 55 L 20 70 Z" fill="white"/>
+        <path d="M 20 10 L 70 25 L 70 55 L 20 70 Z" stroke="#5856d6" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+    </g>
+  </g>
+</svg>

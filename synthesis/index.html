@@ -69,11 +69,38 @@
     .card-collapse-btn:hover { border-color: #3a3a3c; color: #3a3a3c; }
     .card.collapsed > *:not(:first-child) { display: none !important; }
     .card.collapsed { padding-bottom: 20px; }
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+    .layout-toggle {
+      display: flex;
+      gap: 4px;
+    }
+    .layout-btn {
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 18px;
+      border: 1px solid #c7c7cc;
+      border-radius: 5px;
+      color: #8e8e93;
+      background: #fff;
+    }
+    .layout-btn:hover { border-color: #8e8e93; color: #3a3a3c; }
+    .layout-btn.active { border-color: #007aff; color: #007aff; }
+    .layout-btn svg { width: 13px; height: 13px; display: block; }
+    .grid.stack-editor-console .layout-pair { grid-column: 1 / -1; }
     .card p {
       font-size: 12px;
       color: #8e8e93;
       margin-bottom: 14px;
     }
+    canvas { width: 100% !important; }
     .legend-row {
       display: flex;
       gap: 18px;
@@ -108,6 +135,87 @@
     }
     .badge span { font-weight: 700; color: #007aff; }
     .badge.error span { color: #ff3b30; }
+
+    /* --- toolbar groups (zoom controls, range inputs) --- */
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #f2f2f7;
+      border-radius: 10px;
+      padding: 5px 8px;
+    }
+    .toolbar-group .btn.secondary { background: #fff; }
+    .toolbar-group .btn.secondary:hover { background: #e5e5ea; }
+    .toolbar-group .num-input { background: #fff; width: 84px; }
+    .icon-btn { padding: 6px 11px; font-weight: 700; }
+    .zoom-level {
+      font-size: 11px;
+      color: #8e8e93;
+      font-variant-numeric: tabular-nums;
+      min-width: 40px;
+      text-align: center;
+    }
+    .num-input.error { box-shadow: 0 0 0 1.5px #ff3b30 inset; }
+
+    /* --- radix picker popup for waveform value column --- */
+    .radix-popup {
+      position: fixed;
+      display: none;
+      background: #fff;
+      border-radius: 12px;
+      padding: 8px;
+      font-size: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      z-index: 1000;
+      min-width: 130px;
+    }
+    .radix-popup-title {
+      font-weight: 700;
+      font-size: 12px;
+      color: #1c1c1e;
+      padding: 4px 8px 6px;
+    }
+    .radix-opt {
+      padding: 6px 8px;
+      border-radius: 8px;
+      color: #8e8e93;
+      cursor: pointer;
+    }
+    .radix-opt:hover { background: #f2f2f7; }
+    .radix-opt.selected {
+      color: #007aff;
+      border: 1.5px solid #007aff;
+      font-weight: 600;
+    }
+
+    /* --- module hierarchy browser card (sits left of the waveform/netlist viewer) --- */
+    .split-row {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 18px;
+      align-items: flex-start;
+    }
+    .split-row > .card:first-child { flex: 0 0 220px; width: 220px; }
+    .split-row > .card:last-child { flex: 1 1 auto; min-width: 0; }
+    .split-row.hierarchy-collapsed > .card:first-child { display: none; }
+    .hierarchy-tree { font-size: 12px; }
+    .hierarchy-node-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 6px;
+      border-radius: 6px;
+      cursor: pointer;
+      color: #3a3a3c;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .hierarchy-node-row:hover { background: #f2f2f7; }
+    .hierarchy-node-row.active { background: #e8f1ff; color: #007aff; font-weight: 600; }
+    .hierarchy-node-type { color: #8e8e93; font-size: 10px; }
+    .hierarchy-children { margin-left: 12px; border-left: 1px solid #e5e5ea; padding-left: 6px; }
 
     /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
     .toolbar {
@@ -367,50 +475,103 @@
 
 <div class="grid">
 
-  <div class="card">
-    <h2><span class="card-collapse-btn" data-collapse>▾</span>Verilog Source</h2>
+  <div class="card layout-pair" id="card-source">
+    <h2><span class="card-collapse-btn" data-collapse>▾</span>Verilog Source
+      <span class="header-controls">
+        <span class="layout-toggle">
+          <span class="layout-btn" id="sourceHeightDec" title="Decrease height">−</span>
+          <span class="layout-btn" id="sourceHeightInc" title="Increase height">+</span>
+        </span>
+        <span class="layout-toggle">
+          <span class="layout-btn" data-layout-btn="side" title="Side by side">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="6.6" height="10.6" rx="1.3"/><rect x="8.7" y="0.7" width="6.6" height="10.6" rx="1.3"/></svg>
+          </span>
+          <span class="layout-btn" data-layout-btn="stack" title="Stacked">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
+          </span>
+        </span>
+      </span>
+    </h2>
     <p>always@(posedge clk or negedge resetn) → dff · assign with &amp; | ^ ~ ~^ → gates · assign with + / - → adder/subtractor (fa) · always@(*) if/case/casex, ?:, ==, &amp;&amp;/||, reduction ops, {concat} → mux2 chains</p>
     <div class="toolbar">
       <select id="exampleSelect"></select>
       <button class="btn" id="synthBtn">Synthesize</button>
     </div>
-    <div class="editor-wrap">
+    <div class="editor-wrap" id="editorWrap">
       <div class="gutter" id="gutter">1</div>
       <textarea id="codeInput" spellcheck="false"></textarea>
     </div>
   </div>
 
-  <div class="card">
-    <h2><span class="card-collapse-btn" data-collapse>▾</span>Synthesis Log</h2>
+  <div class="card layout-pair" id="card-log">
+    <h2><span class="card-collapse-btn" data-collapse>▾</span>Synthesis Log
+      <span class="header-controls">
+        <span class="layout-toggle">
+          <span class="layout-btn" id="logHeightDec" title="Decrease height">−</span>
+          <span class="layout-btn" id="logHeightInc" title="Increase height">+</span>
+        </span>
+        <span class="layout-toggle">
+          <span class="layout-btn" data-layout-btn="side" title="Side by side">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="6.6" height="10.6" rx="1.3"/><rect x="8.7" y="0.7" width="6.6" height="10.6" rx="1.3"/></svg>
+          </span>
+          <span class="layout-btn" data-layout-btn="stack" title="Stacked">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
+          </span>
+        </span>
+      </span>
+    </h2>
     <p>parse / elaboration messages</p>
     <div class="console-box" id="logBox"></div>
     <div class="badge-row" id="statsBadges"></div>
   </div>
 
   <div class="card full">
-    <h2><span class="card-collapse-btn" data-collapse>▾</span>Structural Netlist (Verilog)</h2>
+    <h2><span class="card-collapse-btn" data-collapse>▾</span>Structural Netlist (Verilog)
+      <span class="header-controls">
+        <span class="layout-toggle">
+          <span class="layout-btn" id="netlistHeightDec" title="Decrease height">−</span>
+          <span class="layout-btn" id="netlistHeightInc" title="Increase height">+</span>
+        </span>
+      </span>
+    </h2>
     <p>top-level module instantiating primitive cells, followed by the behavioral definition of each cell used</p>
     <pre class="code-out" id="codeOut"></pre>
   </div>
 
-  <div class="card full">
-    <h2><span class="card-collapse-btn" data-collapse>▾</span>Netlist Viewer</h2>
-    <p>drag to pan, scroll/pinch to zoom, drag nodes to rearrange, double-click an instance block to drill into it — built with React Flow</p>
-    <div class="toolbar" style="margin-bottom:8px;">
-      <div class="breadcrumb-row" id="breadcrumbRow" style="flex:1 1 auto; margin-bottom:0;"></div>
-      <button class="btn secondary" id="exportJsonBtn">Export JSON</button>
+  <div class="split-row hierarchy-collapsed" id="netlistSplitRow">
+    <div class="card" id="card-hierarchy">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Module Hierarchy</h2>
+      <p>Click a module instance to jump the netlist viewer to its internals</p>
+      <div class="hierarchy-tree" id="hierarchyTree"></div>
     </div>
-    <div id="flowRoot"><div class="flow-placeholder" id="flowPlaceholder">Loading netlist viewer…</div></div>
-    <div class="legend-row">
-      <div class="legend-item"><span class="dot" style="background:#34c759"></span>input port</div>
-      <div class="legend-item"><span class="dot" style="background:#ff9500"></span>output port</div>
-      <div class="legend-item"><span class="dot" style="background:#007aff"></span>gate (and/or/xor)</div>
-      <div class="legend-item"><span class="dot" style="background:#5856d6"></span>inverting gate (nand/nor/xnor/not)</div>
-      <div class="legend-item"><span class="dot" style="background:#af52de"></span>dff</div>
-      <div class="legend-item"><span class="dot" style="background:#ff3b30"></span>full adder (fa)</div>
-      <div class="legend-item"><span class="dot" style="background:#ffd60a"></span>mux (ternary/case)</div>
-      <div class="legend-item"><span class="dot" style="background:#8e8e93"></span>constant</div>
-      <div class="legend-item"><span class="dot" style="background:#30b0c7"></span>sub-module instance</div>
+
+    <div class="card">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Netlist Viewer
+        <span class="header-controls">
+          <span class="layout-toggle">
+            <span class="layout-btn" id="hierarchyToggleBtn" title="Show/hide module hierarchy">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 2 H10 M4 6 H10 M2 10 H10" stroke-linecap="round"/><rect x="10.5" y="0.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="10.5" y="4.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="10.5" y="8.5" width="3" height="3" fill="currentColor" stroke="none"/><path d="M2 2 V10" stroke-linecap="round"/></svg>
+            </span>
+          </span>
+        </span>
+      </h2>
+      <p>drag to pan, scroll/pinch to zoom, drag nodes to rearrange, double-click an instance block to drill into it — built with React Flow</p>
+      <div class="toolbar" style="margin-bottom:8px;">
+        <div class="breadcrumb-row" id="breadcrumbRow" style="flex:1 1 auto; margin-bottom:0;"></div>
+        <button class="btn secondary" id="exportJsonBtn">Export JSON</button>
+      </div>
+      <div id="flowRoot"><div class="flow-placeholder" id="flowPlaceholder">Loading netlist viewer…</div></div>
+      <div class="legend-row">
+        <div class="legend-item"><span class="dot" style="background:#34c759"></span>input port</div>
+        <div class="legend-item"><span class="dot" style="background:#ff9500"></span>output port</div>
+        <div class="legend-item"><span class="dot" style="background:#007aff"></span>gate (and/or/xor)</div>
+        <div class="legend-item"><span class="dot" style="background:#5856d6"></span>inverting gate (nand/nor/xnor/not)</div>
+        <div class="legend-item"><span class="dot" style="background:#af52de"></span>dff</div>
+        <div class="legend-item"><span class="dot" style="background:#ff3b30"></span>full adder (fa)</div>
+        <div class="legend-item"><span class="dot" style="background:#ffd60a"></span>mux (ternary/case)</div>
+        <div class="legend-item"><span class="dot" style="background:#8e8e93"></span>constant</div>
+        <div class="legend-item"><span class="dot" style="background:#30b0c7"></span>sub-module instance</div>
+      </div>
     </div>
   </div>
 
@@ -2084,6 +2245,7 @@ const logBox = document.getElementById('logBox');
 const statsBadges = document.getElementById('statsBadges');
 const codeOut = document.getElementById('codeOut');
 const breadcrumbRow = document.getElementById('breadcrumbRow');
+const hierarchyTree = document.getElementById('hierarchyTree');
 
 for (const name of Object.keys(EXAMPLES)) {
   const opt = document.createElement('option');
@@ -2148,6 +2310,58 @@ function pushGraph(nodes, edges) {
 let currentAll = null;    // last synthesizeAll() result (all modules' Synthesizer output)
 let viewStack = [];       // breadcrumb: module names from top down to the currently-viewed module
 
+/* ---- module hierarchy tree (mirrors the same module-type-based navigation as the breadcrumb) ---- */
+function buildHierarchyTree() {
+  if (!currentAll) return null;
+  function buildNode(modType, path, instName) {
+    const node = { instName, modType, path, children: [] };
+    const result = currentAll.results[modType];
+    if (result) {
+      for (const cell of result.cells) {
+        if (cell.type === 'instance') {
+          node.children.push(buildNode(cell.modType, [...path, cell.modType], cell.id));
+        }
+      }
+    }
+    return node;
+  }
+  return buildNode(currentAll.top.name, [currentAll.top.name], null);
+}
+
+function renderHierarchyTree() {
+  hierarchyTree.innerHTML = '';
+  const tree = buildHierarchyTree();
+  if (!tree) return;
+  function buildRow(node) {
+    const wrap = document.createElement('div');
+    const row = document.createElement('div');
+    row.className = 'hierarchy-node-row';
+    row.dataset.modtype = node.modType;
+    row.appendChild(document.createTextNode(node.instName || node.modType));
+    if (node.instName) {
+      const typeSpan = document.createElement('span');
+      typeSpan.className = 'hierarchy-node-type';
+      typeSpan.textContent = '(' + node.modType + ')';
+      row.appendChild(typeSpan);
+    }
+    row.addEventListener('click', () => { viewStack = node.path; showCurrentView(); });
+    wrap.appendChild(row);
+    if (node.children.length) {
+      const kids = document.createElement('div');
+      kids.className = 'hierarchy-children';
+      node.children.forEach(c => kids.appendChild(buildRow(c)));
+      wrap.appendChild(kids);
+    }
+    return wrap;
+  }
+  hierarchyTree.appendChild(buildRow(tree));
+}
+
+function highlightHierarchyNode(modName) {
+  hierarchyTree.querySelectorAll('.hierarchy-node-row.active').forEach(r => r.classList.remove('active'));
+  hierarchyTree.querySelectorAll('.hierarchy-node-row[data-modtype="' + modName + '"]').forEach(r => r.classList.add('active'));
+}
+
 function renderBreadcrumb() {
   breadcrumbRow.innerHTML = '';
   viewStack.forEach((modName, i) => {
@@ -2186,6 +2400,7 @@ function showCurrentView() {
     logLine('err', `error showing '${modName}': ${e.message}`);
   }
   renderBreadcrumb();
+  highlightHierarchyNode(viewStack[viewStack.length - 1]);
 }
 
 function drillInto(modType) {
@@ -2207,11 +2422,13 @@ function runSynthesis() {
     const cellCount = Object.values(currentAll.results).reduce((n, r) => n + r.cells.length, 0);
     logLine('ok', `synthesized top module '${currentAll.top.name}'${currentAll.modules.length > 1 ? ` (+${currentAll.modules.length - 1} sub-module${currentAll.modules.length > 2 ? 's' : ''})` : ''} — ${cellCount} cells total`);
     viewStack = [currentAll.top.name];
+    renderHierarchyTree();
     showCurrentView();
   } catch (e) {
     currentAll = null;
     logLine('err', 'error: ' + e.message);
     pushGraph([], []);
+    renderHierarchyTree();
   }
 }
 document.getElementById('synthBtn').addEventListener('click', runSynthesis);
@@ -2244,6 +2461,62 @@ document.querySelectorAll('[data-collapse]').forEach(btn => {
     btn.textContent = card.classList.contains('collapsed') ? '▸' : '▾';
   });
 });
+
+/* ---- source/log layout toggle (side-by-side vs stacked) ---- */
+(() => {
+  const grid = document.querySelector('.grid');
+  const sideBtns = document.querySelectorAll('[data-layout-btn="side"]');
+  const stackBtns = document.querySelectorAll('[data-layout-btn="stack"]');
+  function applyLayout(mode) {
+    grid.classList.toggle('stack-editor-console', mode === 'stack');
+    sideBtns.forEach(b => b.classList.toggle('active', mode !== 'stack'));
+    stackBtns.forEach(b => b.classList.toggle('active', mode === 'stack'));
+  }
+  sideBtns.forEach(b => b.addEventListener('click', () => {
+    localStorage.setItem('synthesisLayout', 'side');
+    applyLayout('side');
+  }));
+  stackBtns.forEach(b => b.addEventListener('click', () => {
+    localStorage.setItem('synthesisLayout', 'stack');
+    applyLayout('stack');
+  }));
+  applyLayout(localStorage.getItem('synthesisLayout') === 'stack' ? 'stack' : 'side');
+})();
+
+/* ---- per-card resizable height (+/- buttons, persisted independently) ---- */
+(() => {
+  const MIN_HEIGHT = 200, MAX_HEIGHT = 1000, STEP = 80;
+  function wireHeight(storageKey, el, decBtn, incBtn) {
+    const saved = parseInt(localStorage.getItem(storageKey), 10);
+    if (!isNaN(saved)) el.style.height = saved + 'px';
+    function adjust(delta) {
+      const next = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, el.getBoundingClientRect().height + delta));
+      el.style.height = next + 'px';
+      localStorage.setItem(storageKey, next);
+    }
+    decBtn.addEventListener('click', () => adjust(-STEP));
+    incBtn.addEventListener('click', () => adjust(STEP));
+  }
+  wireHeight('sourceHeight', document.getElementById('editorWrap'), document.getElementById('sourceHeightDec'), document.getElementById('sourceHeightInc'));
+  wireHeight('logHeight', document.getElementById('logBox'), document.getElementById('logHeightDec'), document.getElementById('logHeightInc'));
+  wireHeight('netlistHeight', document.getElementById('codeOut'), document.getElementById('netlistHeightDec'), document.getElementById('netlistHeightInc'));
+})();
+
+/* ---- module hierarchy panel toggle ---- */
+(() => {
+  const splitRow = document.getElementById('netlistSplitRow');
+  const btn = document.getElementById('hierarchyToggleBtn');
+  function apply(visible) {
+    splitRow.classList.toggle('hierarchy-collapsed', !visible);
+    btn.classList.toggle('active', visible);
+  }
+  btn.addEventListener('click', () => {
+    const visible = splitRow.classList.contains('hierarchy-collapsed');
+    localStorage.setItem('netlistHierarchyVisible', visible ? '1' : '0');
+    apply(visible);
+  });
+  apply(localStorage.getItem('netlistHierarchyVisible') === '1');
+})();
 </script>
 
 <script>
@@ -2317,7 +2590,7 @@ function PortNode({ data }) {
     </div>`;
 }
 
-// Gate body/bubble geometry lifted directly from compiler/symbol/*.svg (pin markers stripped —
+// Gate body/bubble geometry lifted directly from synthesis/symbol/*.svg (pin markers stripped —
 // all 7 share the same pin convention: inputs at 20%/80% height on the left edge, output at
 // 50% height on the right edge, so handles below are positioned by percentage, not per-shape).
 const GATE_BODY_D = 'M10,10 L40,10 C40,10 70,10 70,40 C70,70 40,70 40,70 L10,70 Z'; // AND/NAND "D" shape

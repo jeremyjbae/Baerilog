@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:xl="http://www.w3.org/1999/xlink" viewBox="0 0 90 80" width="90" height="80">
+  <defs/>
+  <g id="nand" fill-opacity="1" stroke="none" stroke-opacity="1" stroke-dasharray="none" fill="none">
+    <title>nand</title>
+    <rect fill="white" x="0" y="0" width="90" height="80"/>
+    <g id="nand_Layer_1">
+      <title>Layer 1</title>
+      <g id="Graphic_3">
+        <circle cx="76" cy="40" r="6.00000958741138" fill="white"/>
+        <circle cx="76" cy="40" r="6.00000958741138" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Line_4">
+        <line x1="0" y1="16" x2="16" y2="16" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Line_5">
+        <line x1="0" y1="64" x2="16" y2="64" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Line_6">
+        <line x1="82" y1="40" x2="89" y2="40" stroke="#5856d6" stroke-linecap="butt" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Graphic_7">
+        <circle cx="-7680967e-29" cy="16" r="3.00000479370569" fill="red"/>
+      </g>
+      <g id="Graphic_8">
+        <circle cx="-7680967e-29" cy="64" r="3.00000479370569" fill="red"/>
+      </g>
+      <g id="Graphic_9">
+        <circle cx="90.5" cy="40" r="3.00000479370569" fill="red"/>
+      </g>
+      <g id="Graphic_10">
+        <path d="M 10 10 L 40 10 C 40 10 70 10 70 40 C 70 70 40 70 40 70 L 10 70 Z" fill="white"/>
+        <path d="M 10 10 L 40 10 C 40 10 70 10 70 40 C 70 70 40 70 40 70 L 10 70 Z" stroke="#5856d6" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+    </g>
+  </g>
+</svg>

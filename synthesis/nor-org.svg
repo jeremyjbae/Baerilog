@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80">
+  <!--
+    NOR gate template — edit the shape freely, but keep the three <circle class="pin-marker">
+    elements at their exact (cx, cy) coordinates (or move them to match your edited artwork).
+
+    Pin convention read by the app:
+      - each pin marker is a <circle class="pin-marker" data-pin="...">
+      - data-pin values expected for a 2-input gate: "a" (input), "b" (input), "y" (output)
+      - (cx, cy) are read directly against this SVG's viewBox and converted to
+        percentage offsets, which is how React Flow's <Handle> gets positioned
+      - pin markers are invisible at runtime (opacity:0 below) — they're position
+        metadata, not artwork. Set opacity:1 locally while editing if you want to see them.
+      - keep input pins on the left edge and the output pin on the right edge;
+        the app assumes "a" is the top input and "b" is the bottom input.
+  -->
+  <style>
+    .pin-marker { opacity: 0; }
+  </style>
+
+  <!-- gate body: ANSI/IEEE "shield" shape shared by OR/NOR/XOR/XNOR, plus the NOR bubble -->
+  <path
+    d="M14,16
+       C50,16 82,26 96,40
+       C82,54 50,64 14,64
+       Q28,40 14,16
+       Z"
+    fill="#ffffff"
+    stroke="#5856d6"
+    stroke-width="3"
+  />
+
+  <!-- inversion bubble (this circle is what makes it NOR instead of OR — remove it for a plain OR) -->
+  <circle cx="102" cy="40" r="6" fill="#ffffff" stroke="#5856d6" stroke-width="3" />
+
+  <!-- input wire stubs -->
+  <line x1="0" y1="16" x2="16" y2="16" stroke="#5856d6" stroke-width="3" />
+  <line x1="0" y1="64" x2="16" y2="64" stroke="#5856d6" stroke-width="3" />
+  <!-- output wire stub (starts after the bubble) -->
+  <line x1="108" y1="40" x2="120" y2="40" stroke="#5856d6" stroke-width="3" />
+
+  <!-- pin markers: position metadata only, invisible at runtime -->
+  <circle class="pin-marker" data-pin="a" cx="0" cy="16" r="3" fill="red" />
+  <circle class="pin-marker" data-pin="b" cx="0" cy="64" r="3" fill="red" />
+  <circle class="pin-marker" data-pin="y" cx="120" cy="40" r="3" fill="red" />
+</svg>

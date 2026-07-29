@@ -68,6 +68,32 @@
     .card-collapse-btn:hover { border-color: #3a3a3c; color: #3a3a3c; }
     .card.collapsed > *:not(:first-child) { display: none !important; }
     .card.collapsed { padding-bottom: 20px; }
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+    .layout-toggle {
+      display: flex;
+      gap: 4px;
+    }
+    .layout-btn {
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 18px;
+      border: 1px solid #c7c7cc;
+      border-radius: 5px;
+      color: #8e8e93;
+      background: #fff;
+    }
+    .layout-btn:hover { border-color: #8e8e93; color: #3a3a3c; }
+    .layout-btn.active { border-color: #007aff; color: #007aff; }
+    .layout-btn svg { width: 13px; height: 13px; display: block; }
+    .grid.stack-editor-console .layout-pair { grid-column: 1 / -1; }
     .card p {
       font-size: 12px;
       color: #8e8e93;
@@ -87,11 +113,7 @@
       gap: 6px;
       font-size: 12px;
       color: #3a3a3c;
-      cursor: pointer;
-      user-select: none;
     }
-    .legend-item.off { color: #c7c7cc; }
-    .legend-item.off .dot { opacity: 0.3; }
     .dot {
       width: 10px; height: 10px;
       border-radius: 3px;
@@ -113,7 +135,113 @@
     .badge span { font-weight: 700; color: #007aff; }
     .badge.error span { color: #ff3b30; }
 
+    /* --- toolbar groups (zoom controls, range inputs) --- */
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #f2f2f7;
+      border-radius: 10px;
+      padding: 5px 8px;
+    }
+    .toolbar-group .btn.secondary { background: #fff; }
+    .toolbar-group .btn.secondary:hover { background: #e5e5ea; }
+    .toolbar-group .num-input { background: #fff; width: 84px; }
+    .icon-btn { padding: 6px 11px; font-weight: 700; }
+    .zoom-level {
+      font-size: 11px;
+      color: #8e8e93;
+      font-variant-numeric: tabular-nums;
+      min-width: 40px;
+      text-align: center;
+    }
+    .num-input.error { box-shadow: 0 0 0 1.5px #ff3b30 inset; }
+
+    /* --- radix picker popup for waveform value column --- */
+    .radix-popup {
+      position: fixed;
+      display: none;
+      background: #fff;
+      border-radius: 12px;
+      padding: 8px;
+      font-size: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      z-index: 1000;
+      min-width: 130px;
+    }
+    .radix-popup-title {
+      font-weight: 700;
+      font-size: 12px;
+      color: #1c1c1e;
+      padding: 4px 8px 6px;
+    }
+    .radix-opt {
+      padding: 6px 8px;
+      border-radius: 8px;
+      color: #8e8e93;
+      cursor: pointer;
+    }
+    .radix-opt:hover { background: #f2f2f7; }
+    .radix-opt.selected {
+      color: #007aff;
+      border: 1.5px solid #007aff;
+      font-weight: 600;
+    }
+
+    /* --- module hierarchy browser card (sits left of the waveform/netlist viewer) --- */
+    .split-row {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 18px;
+      align-items: flex-start;
+    }
+    .split-row > .card:first-child { flex: 0 0 220px; width: 220px; }
+    .split-row > .card:last-child { flex: 1 1 auto; min-width: 0; }
+    .split-row.hierarchy-collapsed > .card:first-child { display: none; }
+    .hierarchy-tree { font-size: 12px; }
+    .hierarchy-node-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 6px;
+      border-radius: 6px;
+      cursor: pointer;
+      color: #3a3a3c;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .hierarchy-node-row:hover { background: #f2f2f7; }
+    .hierarchy-node-row.active { background: #e8f1ff; color: #007aff; font-weight: 600; }
+    .hierarchy-node-type { color: #8e8e93; font-size: 10px; }
+    .hierarchy-children { margin-left: 12px; border-left: 1px solid #e5e5ea; padding-left: 6px; }
+
     /* --- additions for editor / console / waveform, same visual language --- */
+    .legend-item { cursor: pointer; user-select: none; }
+    .legend-item.off { color: #c7c7cc; }
+    .legend-item.off .dot { opacity: 0.3; }
+    .hierarchy-node-icon {
+      width: 13px;
+      height: 13px;
+      color: #8e8e93;
+      flex-shrink: 0;
+    }
+    .hierarchy-signal-list { margin-left: 15px; padding: 2px 0 4px; }
+    .hierarchy-signal-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: #3a3a3c;
+      cursor: pointer;
+      user-select: none;
+    }
+    .hierarchy-signal-item:hover { background: #f2f2f7; }
+    .hierarchy-signal-item.off { color: #c7c7cc; }
+    .hierarchy-signal-icon { width: 16px; height: 10px; flex-shrink: 0; color: #3a3a3c; }
+    .hierarchy-signal-item.off .hierarchy-signal-icon { color: #c7c7cc; opacity: 0.4; }
     .toolbar {
       display: flex;
       gap: 8px;
@@ -200,58 +328,19 @@
       text-align: center;
       padding: 40px 0;
     }
-
-    /* --- toolbar groups (zoom controls, range inputs) --- */
-    .toolbar-group {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      background: #f2f2f7;
-      border-radius: 10px;
-      padding: 5px 8px;
-    }
-    .toolbar-group .btn.secondary { background: #fff; }
-    .toolbar-group .btn.secondary:hover { background: #e5e5ea; }
-    .toolbar-group .num-input { background: #fff; width: 84px; }
-    .icon-btn { padding: 6px 11px; font-weight: 700; }
-    .zoom-level {
-      font-size: 11px;
-      color: #8e8e93;
-      font-variant-numeric: tabular-nums;
-      min-width: 40px;
-      text-align: center;
-    }
-    .num-input.error { box-shadow: 0 0 0 1.5px #ff3b30 inset; }
-
-    /* --- radix picker popup for waveform value column --- */
-    .radix-popup {
+    .wave-tooltip {
       position: fixed;
       display: none;
-      background: #fff;
-      border-radius: 12px;
-      padding: 8px;
-      font-size: 12px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-      z-index: 1000;
-      min-width: 130px;
-    }
-    .radix-popup-title {
-      font-weight: 700;
-      font-size: 12px;
-      color: #1c1c1e;
-      padding: 4px 8px 6px;
-    }
-    .radix-opt {
-      padding: 6px 8px;
-      border-radius: 8px;
-      color: #8e8e93;
-      cursor: pointer;
-    }
-    .radix-opt:hover { background: #f2f2f7; }
-    .radix-opt.selected {
-      color: #007aff;
-      border: 1.5px solid #007aff;
-      font-weight: 600;
+      background: #1c1c1e;
+      color: #fff;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      z-index: 1001;
+      pointer-events: none;
+      white-space: nowrap;
     }
 
     @media (max-width: 760px) {
@@ -274,8 +363,23 @@
 
   <div class="grid">
 
-    <div class="card" id="card-editor">
-      <h2><span class="card-collapse-btn" data-collapse>▾</span>Verilog Editor</h2>
+    <div class="card layout-pair" id="card-editor">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Verilog Editor
+        <span class="header-controls">
+          <span class="layout-toggle">
+            <span class="layout-btn" id="editorHeightDec" title="Decrease height">−</span>
+            <span class="layout-btn" id="editorHeightInc" title="Increase height">+</span>
+          </span>
+          <span class="layout-toggle">
+            <span class="layout-btn" data-layout-btn="side" title="Side by side">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="6.6" height="10.6" rx="1.3"/><rect x="8.7" y="0.7" width="6.6" height="10.6" rx="1.3"/></svg>
+            </span>
+            <span class="layout-btn" data-layout-btn="stack" title="Stacked">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
+            </span>
+          </span>
+        </span>
+      </h2>
       <p>Behavioral subset: module/reg/wire, assign, always @(posedge/negedge/*), initial, if/else, #delay, $display, $finish</p>
       <div class="toolbar">
         <select id="exampleSelect"></select>
@@ -283,7 +387,7 @@
         <button class="btn secondary" id="saveBtn">Save</button>
         <input type="file" id="fileOpenInput" accept=".v,.sv,.vh,.txt" style="display:none">
       </div>
-      <div class="editor-wrap">
+      <div class="editor-wrap" id="editorWrap">
         <div class="gutter" id="gutter">1</div>
         <textarea id="codeInput" spellcheck="false"></textarea>
       </div>
@@ -296,37 +400,68 @@
       </div>
     </div>
 
-    <div class="card" id="card-console">
-      <h2><span class="card-collapse-btn" data-collapse>▾</span>Console</h2>
+    <div class="card layout-pair" id="card-console">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Console
+        <span class="header-controls">
+          <span class="layout-toggle">
+            <span class="layout-btn" id="consoleHeightDec" title="Decrease height">−</span>
+            <span class="layout-btn" id="consoleHeightInc" title="Increase height">+</span>
+          </span>
+          <span class="layout-toggle">
+            <span class="layout-btn" data-layout-btn="side" title="Side by side">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="6.6" height="10.6" rx="1.3"/><rect x="8.7" y="0.7" width="6.6" height="10.6" rx="1.3"/></svg>
+            </span>
+            <span class="layout-btn" data-layout-btn="stack" title="Stacked">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
+            </span>
+          </span>
+        </span>
+      </h2>
       <p>$display output and simulator status</p>
       <div class="console-box" id="consoleBox"><span class="info">Click Run to simulate…</span></div>
     </div>
 
-    <div class="card full" id="card-wave">
-      <h2><span class="card-collapse-btn" data-collapse>▾</span>Waveform Viewer</h2>
-      <p>Click a signal name to show/hide its row · hover a value to change its radix · click the chart to move the cursor, drag to zoom a range, double-click to zoom in</p>
-      <div class="toolbar" style="margin-bottom:14px;">
-        <div class="toolbar-group">
-          <span class="time-label">Zoom</span>
-          <button class="btn secondary icon-btn" id="waveZoomIn" title="Zoom in">+</button>
-          <span class="zoom-level" id="waveZoomLevel">1.0×</span>
-          <button class="btn secondary icon-btn" id="waveZoomOut" title="Zoom out">−</button>
-          <button class="btn secondary" id="waveZoomReset">Reset</button>
-        </div>
-        <div class="toolbar-group">
-          <span class="time-label">Start</span>
-          <input class="num-input" id="waveStartInput" type="text">
-          <span class="time-label">End</span>
-          <input class="num-input" id="waveEndInput" type="text">
-          <button class="btn" id="waveApplyBtn">Apply</button>
-        </div>
+    <div class="split-row hierarchy-collapsed" id="waveSplitRow">
+      <div class="card" id="card-hierarchy">
+        <h2><span class="card-collapse-btn" data-collapse>▾</span>Module Hierarchy</h2>
+        <p>Click a module/instance to focus its signals below</p>
+        <div class="hierarchy-tree" id="hierarchyTree"></div>
       </div>
-      <div id="waveScroll">
-        <canvas id="waveCanvas" height="120"></canvas>
+
+      <div class="card" id="card-wave">
+        <h2><span class="card-collapse-btn" data-collapse>▾</span>Waveform Viewer
+          <span class="header-controls">
+            <span class="layout-toggle">
+              <span class="layout-btn" id="hierarchyToggleBtn" title="Show/hide module hierarchy">
+                <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 2 H10 M4 6 H10 M2 10 H10" stroke-linecap="round"/><rect x="10.5" y="0.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="10.5" y="4.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="10.5" y="8.5" width="3" height="3" fill="currentColor" stroke="none"/><path d="M2 2 V10" stroke-linecap="round"/></svg>
+              </span>
+            </span>
+          </span>
+        </h2>
+        <p>Click a signal name to show/hide its row · hover a value to change its radix · click the chart to move the cursor, drag to zoom a range, double-click to zoom in</p>
+        <div class="toolbar" style="margin-bottom:14px;">
+          <div class="toolbar-group">
+            <span class="time-label">Zoom</span>
+            <button class="btn secondary icon-btn" id="waveZoomIn" title="Zoom in">+</button>
+            <span class="zoom-level" id="waveZoomLevel">1.0×</span>
+            <button class="btn secondary icon-btn" id="waveZoomOut" title="Zoom out">−</button>
+            <button class="btn secondary" id="waveZoomReset">Reset</button>
+          </div>
+          <div class="toolbar-group">
+            <span class="time-label">Start</span>
+            <input class="num-input" id="waveStartInput" type="text">
+            <span class="time-label">End</span>
+            <input class="num-input" id="waveEndInput" type="text">
+            <button class="btn" id="waveApplyBtn">Apply</button>
+          </div>
+        </div>
+        <div id="waveScroll">
+          <canvas id="waveCanvas" height="120"></canvas>
+        </div>
+        <div class="wave-empty" id="waveEmpty">No simulation data yet — run a design to see waveforms.</div>
+        <div class="legend-row" id="legendRow"></div>
+        <div class="badge-row" id="badgeRow"></div>
       </div>
-      <div class="wave-empty" id="waveEmpty">No simulation data yet — run a design to see waveforms.</div>
-      <div class="legend-row" id="legendRow"></div>
-      <div class="badge-row" id="badgeRow"></div>
     </div>
 
   </div>
@@ -340,7 +475,8 @@
    LEXER
    ========================================================================= */
 const KEYWORDS = new Set(['module','endmodule','input','output','reg','wire','assign',
-  'always','initial','begin','end','if','else','posedge','negedge','or']);
+  'always','initial','begin','end','if','else','posedge','negedge','or',
+  'case','casex','casez','endcase','default']);
 
 function lex(src) {
   const toks = [];
@@ -374,7 +510,7 @@ function lex(src) {
         let k = j + 1, base = 'd';
         if (/[bBoOdDhH]/.test(src[k])) { base = src[k].toLowerCase(); k++; }
         const ds = k;
-        while (k < n && /[0-9a-fA-FxXzZ_]/.test(src[k])) k++;
+        while (k < n && /[0-9a-fA-FxXzZ?_]/.test(src[k])) k++;
         const digits = src.slice(ds, k).replace(/_/g, '');
         toks.push({ type: 'NUMBER', value: { size: sizeStr ? parseInt(sizeStr, 10) : null, base, digits }, line });
         i = k; continue;
@@ -386,7 +522,7 @@ function lex(src) {
       let k = i + 1, base = 'd';
       if (/[bBoOdDhH]/.test(src[k])) { base = src[k].toLowerCase(); k++; }
       const ds = k;
-      while (k < n && /[0-9a-fA-FxXzZ_]/.test(src[k])) k++;
+      while (k < n && /[0-9a-fA-FxXzZ?_]/.test(src[k])) k++;
       const digits = src.slice(ds, k).replace(/_/g, '');
       toks.push({ type: 'NUMBER', value: { size: null, base, digits }, line });
       i = k; continue;
@@ -399,7 +535,7 @@ function lex(src) {
       i = j; continue;
     }
     const two = src.slice(i, i + 2);
-    if (['<=','>=','==','!=','&&','||','<<','>>'].includes(two)) {
+    if (['<=','>=','==','!=','&&','||','<<','>>','~&','~|','~^','^~'].includes(two)) {
       toks.push({ type: 'OP', value: two, line }); i += 2; continue;
     }
     if ('+-*/%&|^~!<>=?:,;()[]{}@#.$'.includes(c)) {
@@ -589,6 +725,13 @@ class Parser {
   }
 
   parseLValue() {
+    if (this.atOp('{')) {
+      this.next();
+      const items = [this.parseLValue()];
+      while (this.atOp(',')) { this.next(); items.push(this.parseLValue()); }
+      this.expectOp('}');
+      return { type: 'Concat', items };
+    }
     let name = this.expectIdent();
     while (this.atOp('.') && this.peek(1).type === 'IDENT') { this.next(); name += '.' + this.expectIdent(); }
     if (this.atOp('[')) {
@@ -614,6 +757,7 @@ class Parser {
       this.next();
       return { type: 'Block', stmts };
     }
+    if (this.atKw('case') || this.atKw('casex') || this.atKw('casez')) return this.parseCase();
     if (this.atKw('if')) {
       this.next();
       this.expectOp('(');
@@ -666,6 +810,31 @@ class Parser {
     return { type: 'AssignStmt', lhs, rhs, blocking };
   }
 
+  // `case`/`casex`/`casez` (...) item, item: stmt ... [default: stmt] endcase.
+  // Item-matching semantics live in execStmt/caseMatch, not here - the parser
+  // just captures each item's comma-separated label list (null for default).
+  parseCase() {
+    const kind = this.next().value;
+    this.expectOp('(');
+    const expr = this.parseExpr();
+    this.expectOp(')');
+    const items = [];
+    while (!this.atKw('endcase')) {
+      if (this.atKw('default')) {
+        this.next();
+        if (this.atOp(':')) this.next();
+        items.push({ labels: null, body: this.parseStmt() });
+      } else {
+        const labels = [this.parseExpr()];
+        while (this.atOp(',')) { this.next(); labels.push(this.parseExpr()); }
+        this.expectOp(':');
+        items.push({ labels, body: this.parseStmt() });
+      }
+    }
+    this.expectKw('endcase');
+    return { type: 'Case', kind, expr, items };
+  }
+
   parseExpr() { return this.parseTernary(); }
   parseTernary() {
     let c = this.parseLogicalOr();
@@ -701,7 +870,11 @@ class Parser {
   parseMultiplicative() { return this.binLevel(this.parseUnary, ['*','/','%']); }
   parseUnary() {
     const t = this.peek();
-    if (t.type === 'OP' && ['~','!','-','+'].includes(t.value)) {
+    // '&'/'|'/'^' are unmistakably reduction operators here (not their binary
+    // forms) - parseUnary only ever runs at the start of a fresh operand, and
+    // a binary use is always consumed later by binLevel() after a left operand
+    // already exists.
+    if (t.type === 'OP' && ['~','!','-','+','&','|','^','~&','~|','~^','^~'].includes(t.value)) {
       this.next();
       return { type: 'Unary', op: t.value, expr: this.parseUnary() };
     }
@@ -745,7 +918,30 @@ class Parser {
       this.expectOp(')');
       return e;
     }
+    if (this.atOp('{')) {
+      this.next();
+      let items = this.parseConcatItem();
+      while (this.atOp(',')) { this.next(); items = items.concat(this.parseConcatItem()); }
+      this.expectOp('}');
+      return { type: 'Concat', items };
+    }
     this.err('expected expression');
+  }
+  // One comma-separated slot inside {...}: a plain expression (1 item), or
+  // Verilog's replication form {N{expr}} - N must be a constant (no
+  // parameter support here to make it anything else) - which expands to N
+  // copies of expr right here so evalExpr/writeLValue/widthOfExpr never need
+  // to know replication exists, only plain Concat.
+  parseConcatItem() {
+    const first = this.parseExpr();
+    if (this.atOp('{')) {
+      this.next();
+      const inner = this.parseExpr();
+      this.expectOp('}');
+      const n = evalConstExpr(first);
+      return Array(Math.max(0, n)).fill(inner);
+    }
+    return [first];
   }
 }
 
@@ -789,6 +985,7 @@ function truthValue(val) {
 }
 function boolVal(b) { return b ? mkVal(1) : mkVal(0); }
 const X1 = mkVal(0, 1, 0); // a single ambiguous/unknown scalar result
+function popcount32(x) { let c = 0; x = x >>> 0; while (x) { c += x & 1; x >>>= 1; } return c; }
 
 function parseNumberLiteral(raw) {
   const { size, base, digits } = raw;
@@ -858,6 +1055,7 @@ function elaborate(modules) {
     if (lv.type === 'Ident') return { type: 'Ident', name: qualify(prefix, lv.name) };
     if (lv.type === 'BitSelect') return { type: 'BitSelect', name: qualify(prefix, lv.name), index: renameExpr(lv.index, prefix) };
     if (lv.type === 'PartSelect') return { type: 'PartSelect', name: qualify(prefix, lv.name), hi: renameExpr(lv.hi, prefix), lo: renameExpr(lv.lo, prefix) };
+    if (lv.type === 'Concat') return { type: 'Concat', items: lv.items.map(it => renameLValue(it, prefix)) };
     throw new Error('unsupported lvalue');
   }
   function renameExpr(node, prefix) {
@@ -866,6 +1064,7 @@ function elaborate(modules) {
       case 'Ident': return { type: 'Ident', name: qualify(prefix, node.name) };
       case 'BitSelect': return { type: 'BitSelect', name: qualify(prefix, node.name), index: renameExpr(node.index, prefix) };
       case 'PartSelect': return { type: 'PartSelect', name: qualify(prefix, node.name), hi: renameExpr(node.hi, prefix), lo: renameExpr(node.lo, prefix) };
+      case 'Concat': return { type: 'Concat', items: node.items.map(it => renameExpr(it, prefix)) };
       case 'Unary': return { type: 'Unary', op: node.op, expr: renameExpr(node.expr, prefix) };
       case 'Binary': return { type: 'Binary', op: node.op, left: renameExpr(node.left, prefix), right: renameExpr(node.right, prefix) };
       case 'Ternary': return { type: 'Ternary', cond: renameExpr(node.cond, prefix), then: renameExpr(node.then, prefix), els: renameExpr(node.els, prefix) };
@@ -879,6 +1078,13 @@ function elaborate(modules) {
     switch (stmt.type) {
       case 'Block': return { type: 'Block', stmts: stmt.stmts.map(s => renameStmt(s, prefix)) };
       case 'If': return { type: 'If', cond: renameExpr(stmt.cond, prefix), then: renameStmt(stmt.then, prefix), els: stmt.els ? renameStmt(stmt.els, prefix) : null };
+      case 'Case': return {
+        type: 'Case', kind: stmt.kind, expr: renameExpr(stmt.expr, prefix),
+        items: stmt.items.map(it => ({
+          labels: it.labels ? it.labels.map(l => renameExpr(l, prefix)) : null,
+          body: renameStmt(it.body, prefix),
+        })),
+      };
       case 'AssignStmt': return { type: 'AssignStmt', lhs: renameLValue(stmt.lhs, prefix), rhs: renameExpr(stmt.rhs, prefix), blocking: stmt.blocking };
       case 'Timing': {
         const control = stmt.control.kind === 'delay'
@@ -895,13 +1101,14 @@ function elaborate(modules) {
   // so it must be an addressable place to write to, not an arbitrary expression.
   function renameConnExpr(expr, prefix) {
     const node = renameExpr(expr, prefix);
-    if (node.type !== 'Ident' && node.type !== 'BitSelect' && node.type !== 'PartSelect') {
-      throw new Error('Parse error: an output port connection must be a plain signal name, bit-select, or part-select');
+    if (node.type !== 'Ident' && node.type !== 'BitSelect' && node.type !== 'PartSelect' && node.type !== 'Concat') {
+      throw new Error('Parse error: an output port connection must be a plain signal name, bit-select, part-select, or concatenation');
     }
     return node;
   }
 
   function elaborateModule(mod, prefix) {
+    const node = { modType: mod.name, path: prefix, children: [] };
     const localSeen = new Set();
     for (const d of mod.decls) {
       const fullName = qualify(prefix, d.name);
@@ -946,7 +1153,7 @@ function elaborate(modules) {
         }
         const childPrefix = qualify(prefix, item.name);
         stack.push(item.module);
-        elaborateModule(child, childPrefix);
+        node.children.push(elaborateModule(child, childPrefix));
         stack.pop();
 
         const childIoKind = new Map(child.decls.filter(d => d.ioKind).map(d => [d.name, d.ioKind]));
@@ -967,10 +1174,11 @@ function elaborate(modules) {
         }
       }
     }
+    return node;
   }
 
-  elaborateModule(top, '');
-  return { type: 'Module', name: top.name, ports: [], decls, items };
+  const tree = elaborateModule(top, '');
+  return { type: 'Module', name: top.name, ports: [], decls, items, tree };
 }
 
 /* =========================================================================
@@ -1046,6 +1254,7 @@ class Simulator {
     const sim = this;
     return {
       read(name) { sim.declareSignal(name); return sim.signals[name].value; },
+      widthOf(name) { sim.declareSignal(name); return sim.signals[name].width; },
       write(lhs, value) { writeLValue(sim, lhs, value); },
       queueNBA(lhs, value) { sim.nbaQueue.push({ lhs, value }); },
       sysCall(name, args) { sim._sysCall(name, args); },
@@ -1184,7 +1393,42 @@ function writeLValue(sim, lhs, value) {
     }
     return;
   }
+  if (lhs.type === 'Concat') {
+    const ctx = sim._makeCtx();
+    let shift = lhs.items.reduce((sum, it) => sum + widthOfExpr(it, ctx), 0);
+    for (const it of lhs.items) {
+      const w = widthOfExpr(it, ctx);
+      shift -= w;
+      const m = fullMask(w);
+      writeLValue(sim, it, mkVal((value.v >>> shift) & m, (value.x >>> shift) & m, (value.z >>> shift) & m));
+    }
+    return;
+  }
   throw new Error('unsupported lvalue');
+}
+
+// Self-determined bit width of an expression, needed only to pack/unpack
+// concatenation members (evalExpr/writeLValue otherwise never need widths -
+// every value is carried as a plain {v,x,z} 32-bit triple).
+function widthOfExpr(node, ctx) {
+  switch (node.type) {
+    case 'Number': return parseNumberLiteral(node.raw).width;
+    case 'StringLit': return node.value.length * 8;
+    case 'SysFunc': return 32;
+    case 'Ident': return ctx.widthOf(node.name);
+    case 'BitSelect': return 1;
+    case 'PartSelect': {
+      const hi = evalExpr(node.hi, ctx).v, lo = evalExpr(node.lo, ctx).v;
+      return Math.abs(hi - lo) + 1;
+    }
+    case 'Concat': return node.items.reduce((sum, it) => sum + widthOfExpr(it, ctx), 0);
+    case 'Unary': return ['!','&','|','^','~&','~|','~^','^~'].includes(node.op) ? 1 : widthOfExpr(node.expr, ctx);
+    case 'Binary':
+      if (['&&','||','==','!=','<','>','<=','>='].includes(node.op)) return 1;
+      return Math.max(widthOfExpr(node.left, ctx), widthOfExpr(node.right, ctx));
+    case 'Ternary': return Math.max(widthOfExpr(node.then, ctx), widthOfExpr(node.els, ctx));
+  }
+  throw new Error('cannot determine width of expression ' + node.type);
 }
 
 function runSync(stmt, ctx) {
@@ -1198,6 +1442,18 @@ function runSync(stmt, ctx) {
   }
 }
 
+// Per-bit case-item match. Plain `case` requires an exact 4-state match
+// (mirrors valuesEqual, since mkVal's invariant makes bit-plane equality
+// correct); `casex`/`casez` wildcard a bit wherever EITHER side is
+// unknown - casex treats both x and z as wildcards, casez only z - and
+// require an exact match on every remaining (non-wildcard) bit.
+function caseMatch(kind, e, item) {
+  if (kind === 'case') return valuesEqual(e, item);
+  const wild = (kind === 'casex' ? ((e.x | e.z | item.x | item.z)) : ((e.z | item.z))) >>> 0;
+  const keep = ~wild;
+  return (((e.v ^ item.v) & keep) === 0) && (((e.x ^ item.x) & keep) === 0) && (((e.z ^ item.z) & keep) === 0);
+}
+
 function* execStmt(stmt, ctx) {
   switch (stmt.type) {
     case 'Block':
@@ -1206,6 +1462,16 @@ function* execStmt(stmt, ctx) {
     case 'If': {
       if (truthValue(evalExpr(stmt.cond, ctx)) === 1) yield* execStmt(stmt.then, ctx);
       else if (stmt.els) yield* execStmt(stmt.els, ctx);
+      return;
+    }
+    case 'Case': {
+      const e = evalExpr(stmt.expr, ctx);
+      let matched = null;
+      for (const item of stmt.items) {
+        if (item.labels && item.labels.some(l => caseMatch(stmt.kind, e, evalExpr(l, ctx)))) { matched = item; break; }
+      }
+      if (!matched) matched = stmt.items.find(item => item.labels === null);
+      if (matched) yield* execStmt(matched.body, ctx);
       return;
     }
     case 'AssignStmt': {
@@ -1268,6 +1534,23 @@ function evalExpr(node, ctx) {
         case '+': return a;
         case '!': { const t = truthValue(a); return t === 'x' ? X1 : boolVal(t === 0); }
         case '~': return mkVal(~a.v, a.x | a.z);
+        case '&': case '|': case '^': case '~&': case '~|': case '~^': case '^~': {
+          // reduction operators: fold every bit of the OPERAND'S OWN width (not
+          // all 32 stored bits - a narrower signal's padding bits above its
+          // declared width are always known-0, which would wrongly force
+          // reduction-AND to 0 and corrupt reduction-XOR's parity if included)
+          // down to a single scalar bit, then invert for the ~&/~|/~^/^~ forms.
+          const mask = fullMask(widthOfExpr(node.expr, ctx));
+          const known1 = a.v & mask;
+          const known0 = (~a.v & ~(a.x | a.z)) & mask;
+          const unknown = (a.x | a.z) & mask;
+          let bit;
+          if (node.op === '&' || node.op === '~&') bit = known0 ? 0 : (unknown ? 'x' : 1);
+          else if (node.op === '|' || node.op === '~|') bit = known1 ? 1 : (unknown ? 'x' : 0);
+          else bit = unknown ? 'x' : (popcount32(known1) & 1);
+          if (bit !== 'x' && node.op.length === 2) bit = bit ? 0 : 1; // ~&, ~|, ~^, ^~
+          return bit === 'x' ? X1 : boolVal(!!bit);
+        }
       }
       break;
     }
@@ -1329,6 +1612,20 @@ function evalExpr(node, ctx) {
       const bKnown1 = b.v, bKnown0 = ~b.v & ~(b.x | b.z);
       const agree1 = aKnown1 & bKnown1, agree0 = aKnown0 & bKnown0;
       return mkVal(agree1, ~(agree0 | agree1));
+    }
+    case 'Concat': {
+      let shift = node.items.reduce((sum, it) => sum + widthOfExpr(it, ctx), 0);
+      let v = 0, x = 0, z = 0;
+      for (const it of node.items) {
+        const w = widthOfExpr(it, ctx);
+        shift -= w;
+        const m = fullMask(w);
+        const val = evalExpr(it, ctx);
+        v |= (val.v & m) << shift;
+        x |= (val.x & m) << shift;
+        z |= (val.z & m) << shift;
+      }
+      return mkVal(v >>> 0, x >>> 0, z >>> 0);
     }
   }
   throw new Error('cannot eval node ' + node.type);
@@ -1539,6 +1836,7 @@ const waveCanvas = document.getElementById('waveCanvas');
 const waveEmpty = document.getElementById('waveEmpty');
 const legendRow = document.getElementById('legendRow');
 const badgeRow = document.getElementById('badgeRow');
+const hierarchyTree = document.getElementById('hierarchyTree');
 const waveZoomInBtn = document.getElementById('waveZoomIn');
 const waveZoomOutBtn = document.getElementById('waveZoomOut');
 const waveZoomResetBtn = document.getElementById('waveZoomReset');
@@ -1550,10 +1848,20 @@ const waveApplyBtn = document.getElementById('waveApplyBtn');
 const PALETTE = ['#007aff', '#34c759', '#ff9500', '#ff2d55', '#af52de', '#5ac8fa', '#ffcc00', '#a2845e'];
 let lastResult = null;
 let hiddenSignals = new Set();
+let expandedHierarchyPaths = new Set(); // module-instance paths whose own-signal checklist is open
+let declKindMap = new Map();   // fullName -> {kind, ioKind}, from the last successful parse's decls
+let clockSignalNames = new Set(); // fullNames used with posedge/negedge anywhere - drawn with the clock icon
+let hierarchyDragState = null; // { listEl, paintVisible } while a signal-list drag-to-toggle is in progress
+window.addEventListener('mouseup', () => { hierarchyDragState = null; });
 let radixMap = new Map();      // signal name -> 'bin' | 'dec' | 'hex' | 'str'
 let cursorTime = 0;            // scrub position; drives the value column
 let viewStart = 0, viewEnd = 1; // current zoom/pan window over sim time
 let hoverValueSignal = null;   // signal whose value cell is currently hovered
+let hoverNameSignal = null;    // signal whose (canvas-drawn) name label is currently hovered
+let hoverNameDivider = false;  // pointer is within the name/value divider's drag hit-zone
+let resizingNameCol = false;   // divider drag in progress
+let resizeStartMx = 0;         // mousedown x when the resize drag started, in canvas CSS px
+let resizeStartWidth = 0;      // NAME_W at the moment the resize drag started
 let waveLayout = null;         // layout info from the last draw, used by mouse handlers
 let dragActive = false;        // mouse button down, originating inside the plot area
 let dragMoved = false;         // drag exceeded the click-vs-drag pixel threshold
@@ -1647,6 +1955,20 @@ function scheduleHideRadixPopup() {
 }
 radixPopup.addEventListener('mouseenter', () => clearTimeout(radixHideTimer));
 radixPopup.addEventListener('mouseleave', scheduleHideRadixPopup);
+
+/* ---- signal name tooltip (row labels are drawn in a fixed-width canvas
+   column, so a long hierarchical name like u0.sub.bit1.clk can run past it
+   with no wrap/ellipsis - this surfaces the untruncated name on hover) ---- */
+const nameTooltip = document.createElement('div');
+nameTooltip.className = 'wave-tooltip';
+document.body.appendChild(nameTooltip);
+function showNameTooltip(name, x, y) {
+  nameTooltip.textContent = name;
+  nameTooltip.style.left = x + 'px';
+  nameTooltip.style.top = y + 'px';
+  nameTooltip.style.display = 'block';
+}
+function hideNameTooltip() { nameTooltip.style.display = 'none'; }
 
 /* ---- waveform zoom / pan controls ---- */
 const WAVE_ZOOM_FACTOR = 1.6;
@@ -1764,6 +2086,61 @@ document.querySelectorAll('[data-collapse]').forEach(btn => {
   });
 });
 
+/* ---- editor/console layout toggle (side-by-side vs stacked) ---- */
+(() => {
+  const grid = document.querySelector('.grid');
+  const sideBtns = document.querySelectorAll('[data-layout-btn="side"]');
+  const stackBtns = document.querySelectorAll('[data-layout-btn="stack"]');
+  function applyLayout(mode) {
+    grid.classList.toggle('stack-editor-console', mode === 'stack');
+    sideBtns.forEach(b => b.classList.toggle('active', mode !== 'stack'));
+    stackBtns.forEach(b => b.classList.toggle('active', mode === 'stack'));
+  }
+  sideBtns.forEach(b => b.addEventListener('click', () => {
+    localStorage.setItem('editorConsoleLayout', 'side');
+    applyLayout('side');
+  }));
+  stackBtns.forEach(b => b.addEventListener('click', () => {
+    localStorage.setItem('editorConsoleLayout', 'stack');
+    applyLayout('stack');
+  }));
+  applyLayout(localStorage.getItem('editorConsoleLayout') === 'stack' ? 'stack' : 'side');
+})();
+
+/* ---- per-card resizable height (+/- buttons, persisted independently) ---- */
+(() => {
+  const MIN_HEIGHT = 200, MAX_HEIGHT = 1000, STEP = 80;
+  function wireHeight(storageKey, el, decBtn, incBtn) {
+    const saved = parseInt(localStorage.getItem(storageKey), 10);
+    if (!isNaN(saved)) el.style.height = saved + 'px';
+    function adjust(delta) {
+      const next = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, el.getBoundingClientRect().height + delta));
+      el.style.height = next + 'px';
+      localStorage.setItem(storageKey, next);
+    }
+    decBtn.addEventListener('click', () => adjust(-STEP));
+    incBtn.addEventListener('click', () => adjust(STEP));
+  }
+  wireHeight('editorHeight', document.getElementById('editorWrap'), document.getElementById('editorHeightDec'), document.getElementById('editorHeightInc'));
+  wireHeight('consoleHeight', document.getElementById('consoleBox'), document.getElementById('consoleHeightDec'), document.getElementById('consoleHeightInc'));
+})();
+
+/* ---- module hierarchy panel toggle ---- */
+(() => {
+  const splitRow = document.getElementById('waveSplitRow');
+  const btn = document.getElementById('hierarchyToggleBtn');
+  function apply(visible) {
+    splitRow.classList.toggle('hierarchy-collapsed', !visible);
+    btn.classList.toggle('active', visible);
+  }
+  btn.addEventListener('click', () => {
+    const visible = splitRow.classList.contains('hierarchy-collapsed');
+    localStorage.setItem('waveHierarchyVisible', visible ? '1' : '0');
+    apply(visible);
+  });
+  apply(localStorage.getItem('waveHierarchyVisible') === '1');
+})();
+
 /* ---- console helpers ---- */
 function clearConsole() { consoleBox.innerHTML = ''; }
 function logLine(html) {
@@ -1782,6 +2159,7 @@ resetBtn.addEventListener('click', () => {
   logLine('<span class="info">Click Run to simulate…</span>');
   lastResult = null;
   hiddenSignals = new Set();
+  expandedHierarchyPaths = new Set();
   radixMap = new Map();
   viewStart = 0; viewEnd = 1; cursorTime = 0;
   hideRadixPopup();
@@ -1789,6 +2167,7 @@ resetBtn.addEventListener('click', () => {
   badgeRow.innerHTML = '';
   waveEmpty.style.display = 'block';
   waveCanvas.style.display = 'none';
+  renderHierarchyTree(null);
 });
 
 runBtn.addEventListener('click', runSimulation);
@@ -1804,8 +2183,10 @@ function runSimulation() {
   } catch (e) {
     logLine('<span class="err">' + escapeHtml(e.message) + '</span>');
     renderBadges(null);
+    renderHierarchyTree(null);
     return;
   }
+  computeDeclMeta(ast);
 
   let result;
   try {
@@ -1814,6 +2195,7 @@ function runSimulation() {
   } catch (e) {
     logLine('<span class="err">Simulator crashed: ' + escapeHtml(e.message) + '</span>');
     renderBadges(null);
+    renderHierarchyTree(ast.tree); // tree structure is still valid even though the run itself crashed
     return;
   }
 
@@ -1822,6 +2204,7 @@ function runSimulation() {
   viewEnd = Math.max(result.time, 1);
   cursorTime = viewEnd;
   hideRadixPopup();
+  renderHierarchyTree(ast.tree); // re-render now that lastResult/hiddenSignals reflect this run
 
   if (result.error) {
     logLine('<span class="err">Runtime error: ' + escapeHtml(result.error) + '</span>');
@@ -1866,6 +2249,147 @@ function renderBadges(result) {
   }
 }
 
+/* ---- module hierarchy tree ---- */
+// Signals declared directly in the instance at `path` - excludes signals
+// belonging to a nested child instance (those get their own checklist under
+// their own tree node, one level down).
+function ownSignalsOf(path) {
+  if (!lastResult) return [];
+  const prefix = path ? path + '.' : '';
+  return Object.keys(lastResult.signals)
+    .filter(name => name.startsWith(prefix))
+    .map(name => name.slice(prefix.length))
+    .filter(rest => rest.length > 0 && !rest.includes('.'));
+}
+
+// Populates declKindMap/clockSignalNames from a freshly-elaborated ast, so the
+// hierarchy checklist can pick each signal's icon (clock/input/output/wire/reg).
+// There's no dedicated "this is a clock" declaration in Verilog, so it's a
+// heuristic: any signal ever used as a posedge/negedge sensitivity target,
+// anywhere in the design, is treated as a clock.
+function computeDeclMeta(ast) {
+  declKindMap = new Map();
+  for (const d of ast.decls) declKindMap.set(d.name, { kind: d.kind, ioKind: d.ioKind });
+  clockSignalNames = new Set();
+  for (const item of ast.items) {
+    if (item.type === 'Always' && Array.isArray(item.sensitivity)) {
+      for (const s of item.sensitivity) if (s.edge) clockSignalNames.add(s.signal);
+    }
+  }
+}
+
+// Small filled port/net-kind glyphs (viewBox 0 0 22 14), keyed to match a
+// signal's declaration - not the app's usual thin-stroke icon style, but a
+// filled schematic-symbol look reads better at this size (~16x10 css px).
+const SIGNAL_ICONS = {
+  clock: '<path d="M1 10 L1 4 L6 4 L6 10 L11 10 L11 4 L16 4 L16 10 L21 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
+  input: '<polygon points="1,2 14,2 19,7 14,12 1,12" fill="currentColor"/>',
+  output: '<polygon points="2,3 12,3 12,1 21,7 12,13 12,11 2,11" fill="currentColor"/>',
+  inout: '<polygon points="11,1 20,7 11,13 2,7" fill="currentColor"/>',
+  wire: '<rect x="2" y="6" width="18" height="2" fill="currentColor"/>',
+  reg: '<rect x="2" y="4" width="18" height="6" fill="currentColor"/><rect x="9" y="1" width="4" height="3" fill="currentColor"/>',
+};
+function signalIconSvg(kind) {
+  return '<svg class="hierarchy-signal-icon" viewBox="0 0 22 14">' + SIGNAL_ICONS[kind] + '</svg>';
+}
+// inout is wired up but unreachable today - this simulator doesn't parse `inout` ports at all.
+function classifySignalKind(fullName) {
+  if (clockSignalNames.has(fullName)) return 'clock';
+  const meta = declKindMap.get(fullName);
+  if (!meta) return 'wire';
+  if (meta.ioKind === 'input') return 'input';
+  if (meta.ioKind === 'output') return 'output';
+  return meta.kind === 'reg' ? 'reg' : 'wire';
+}
+
+function renderHierarchyTree(tree) {
+  hierarchyTree.innerHTML = '';
+  if (!tree) return;
+  function buildNode(node) {
+    const own = ownSignalsOf(node.path);
+    const expanded = expandedHierarchyPaths.has(node.path);
+
+    const wrap = document.createElement('div');
+    const row = document.createElement('div');
+    row.className = 'hierarchy-node-row';
+
+    row.insertAdjacentHTML('beforeend', '<svg class="hierarchy-node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+      '<rect x="7" y="3" width="10" height="18"/>' +
+      '<line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="12" x2="7" y2="12"/><line x1="2" y1="17" x2="7" y2="17"/>' +
+      '<line x1="17" y1="7" x2="22" y2="7"/><line x1="17" y1="12" x2="22" y2="12"/><line x1="17" y1="17" x2="22" y2="17"/>' +
+      '</svg>');
+
+    const isRoot = node.path === '';
+    row.appendChild(document.createTextNode(isRoot ? node.modType : node.path.split('.').pop()));
+    if (!isRoot) {
+      const typeSpan = document.createElement('span');
+      typeSpan.className = 'hierarchy-node-type';
+      typeSpan.textContent = '(' + node.modType + ')';
+      row.appendChild(typeSpan);
+    }
+    // single-click opens the checklist (idempotent); double-click is the
+    // dedicated fold/unfold gesture - by the time dblclick fires, the two
+    // preceding clicks in the sequence have already forced it open, so
+    // toggling here always nets out to "close" (fold), while a plain single
+    // click nets out to "open" (unfold).
+    row.addEventListener('click', () => {
+      if (!own.length) return;
+      expandedHierarchyPaths.add(node.path);
+      renderHierarchyTree(tree);
+    });
+    row.addEventListener('dblclick', () => {
+      if (!own.length) return;
+      if (expandedHierarchyPaths.has(node.path)) expandedHierarchyPaths.delete(node.path);
+      else expandedHierarchyPaths.add(node.path);
+      renderHierarchyTree(tree);
+    });
+    wrap.appendChild(row);
+
+    if (expanded && own.length) {
+      const list = document.createElement('div');
+      list.className = 'hierarchy-signal-list';
+      const prefix = node.path ? node.path + '.' : '';
+      own.forEach(localName => {
+        const fullName = prefix + localName;
+        const item = document.createElement('div');
+        item.className = 'hierarchy-signal-item' + (hiddenSignals.has(fullName) ? ' off' : '');
+        item.insertAdjacentHTML('beforeend', signalIconSvg(classifySignalKind(fullName)));
+        item.appendChild(document.createTextNode(localName));
+
+        function paint(visible) {
+          if (visible) hiddenSignals.delete(fullName); else hiddenSignals.add(fullName);
+          item.classList.toggle('off', !visible);
+          if (lastResult) { renderLegend(lastResult); drawWaveform(lastResult); }
+        }
+        // mousedown flips this row and becomes the drag's "paint" state; dragging
+        // (mouseenter while the button is still down, scoped to this same list)
+        // applies that same state to every other row the pointer passes over, so
+        // re-entering a row doesn't flicker it back and forth.
+        item.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          const nextVisible = hiddenSignals.has(fullName);
+          paint(nextVisible);
+          hierarchyDragState = { listEl: list, paintVisible: nextVisible };
+        });
+        item.addEventListener('mouseenter', () => {
+          if (hierarchyDragState && hierarchyDragState.listEl === list) paint(hierarchyDragState.paintVisible);
+        });
+        list.appendChild(item);
+      });
+      wrap.appendChild(list);
+    }
+
+    if (node.children.length) {
+      const kids = document.createElement('div');
+      kids.className = 'hierarchy-children';
+      node.children.forEach(c => kids.appendChild(buildNode(c)));
+      wrap.appendChild(kids);
+    }
+    return wrap;
+  }
+  hierarchyTree.appendChild(buildNode(tree));
+}
+
 /* ---- legend ---- */
 function renderLegend(result) {
   legendRow.innerHTML = '';
@@ -1889,9 +2413,9 @@ function renderLegend(result) {
 
 /* ---- waveform rendering ---- */
 const ROW_H = 34;
-const NAME_W = 60;
+const NAME_W_MIN = 40, NAME_W_MAX = 200;
+let NAME_W = Math.max(NAME_W_MIN, Math.min(NAME_W_MAX, parseInt(localStorage.getItem('waveNameColWidth'), 10) || 60));
 const VALUE_W = 64;
-const LABEL_W = NAME_W + VALUE_W + 14;
 const PAD_TOP = 40;
 const PAD_BOTTOM = 10;
 
@@ -1925,8 +2449,9 @@ function drawWaveform(result) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssWidth, cssHeight);
 
-  const plotX0 = LABEL_W;
-  const plotW = cssWidth - LABEL_W - 10;
+  const labelW = NAME_W + VALUE_W + 14;
+  const plotX0 = labelW;
+  const plotW = cssWidth - labelW - 10;
   const pxPerT = plotW / viewSpan;
   const toX = t => plotX0 + (t - viewStart) * pxPerT;
 
@@ -2072,6 +2597,16 @@ function drawWaveform(result) {
     }
   });
 
+  // name/value column divider - draggable to resize NAME_W; always visible,
+  // highlighted (thicker + blue) while hovered or actively being dragged
+  ctx.strokeStyle = (hoverNameDivider || resizingNameCol) ? '#007aff' : '#e5e5ea';
+  ctx.lineWidth = (hoverNameDivider || resizingNameCol) ? 2 : 1;
+  ctx.beginPath();
+  ctx.moveTo(NAME_W, PAD_TOP - 6);
+  ctx.lineTo(NAME_W, PAD_TOP + names.length * ROW_H);
+  ctx.stroke();
+  ctx.lineWidth = 1;
+
   // sync zoom controls
   const [fullMin, fullMax] = waveFullRange();
   const zoomFactor = (fullMax - fullMin) / viewSpan;
@@ -2135,6 +2670,33 @@ window.addEventListener('mouseup', (e) => {
   drawWaveform(lastResult);
 });
 
+/* ---- name/value column divider drag (resizes NAME_W) ---- */
+const NAME_DIVIDER_HIT = 4; // px on either side of the divider that counts as "on" it
+waveCanvas.addEventListener('mousedown', (e) => {
+  if (!lastResult || !waveLayout) return;
+  const rect = waveCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  if (Math.abs(mx - NAME_W) > NAME_DIVIDER_HIT) return;
+  resizingNameCol = true;
+  resizeStartMx = mx;
+  resizeStartWidth = NAME_W;
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!resizingNameCol || !lastResult || !waveLayout) return;
+  const rect = waveCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  NAME_W = Math.max(NAME_W_MIN, Math.min(NAME_W_MAX, resizeStartWidth + (mx - resizeStartMx)));
+  drawWaveform(lastResult);
+});
+
+window.addEventListener('mouseup', () => {
+  if (!resizingNameCol) return;
+  resizingNameCol = false;
+  localStorage.setItem('waveNameColWidth', NAME_W);
+  if (lastResult) drawWaveform(lastResult);
+});
+
 waveCanvas.addEventListener('dblclick', (e) => {
   if (!lastResult || !waveLayout) return;
   const rect = waveCanvas.getBoundingClientRect();
@@ -2145,15 +2707,35 @@ waveCanvas.addEventListener('dblclick', (e) => {
 });
 
 waveCanvas.addEventListener('mousemove', (e) => {
-  if (dragActive) return; // drag is handled by the window-level listener above
+  if (dragActive || resizingNameCol) return; // both handled by window-level listeners above
   if (!lastResult || !waveLayout) return;
   const rect = waveCanvas.getBoundingClientRect();
   const mx = e.clientX - rect.left;
   const my = e.clientY - rect.top;
   const { plotX0, plotW, names } = waveLayout;
 
+  if (Math.abs(mx - NAME_W) <= NAME_DIVIDER_HIT) {
+    if (!hoverNameDivider) { hoverNameDivider = true; drawWaveform(lastResult); }
+    if (hoverNameSignal) { hoverNameSignal = null; hideNameTooltip(); }
+    if (hoverValueSignal) { hoverValueSignal = null; hideRadixPopup(); }
+    waveCanvas.style.cursor = 'col-resize';
+    return;
+  }
+  if (hoverNameDivider) { hoverNameDivider = false; drawWaveform(lastResult); }
+
   const rowIdx = Math.floor((my - PAD_TOP) / ROW_H);
-  if (my >= PAD_TOP && rowIdx >= 0 && rowIdx < names.length && mx >= NAME_W && mx < NAME_W + VALUE_W) {
+  const inRow = my >= PAD_TOP && rowIdx >= 0 && rowIdx < names.length;
+
+  if (inRow && mx >= 0 && mx < NAME_W) {
+    hoverNameSignal = names[rowIdx];
+    showNameTooltip(hoverNameSignal, e.clientX + 12, e.clientY - 28);
+    if (hoverValueSignal) { hoverValueSignal = null; hideRadixPopup(); }
+    waveCanvas.style.cursor = 'default';
+    return;
+  }
+  if (hoverNameSignal) { hoverNameSignal = null; hideNameTooltip(); }
+
+  if (inRow && mx >= NAME_W && mx < NAME_W + VALUE_W) {
     const name = names[rowIdx];
     if (hoverValueSignal !== name) {
       hoverValueSignal = name;
@@ -2167,9 +2749,11 @@ waveCanvas.addEventListener('mousemove', (e) => {
   waveCanvas.style.cursor = (mx >= plotX0 && mx <= plotX0 + plotW) ? 'crosshair' : 'default';
 });
 waveCanvas.addEventListener('mouseleave', () => {
-  if (dragActive) return; // let the drag finish via the window-level mouseup even if the pointer left the canvas
+  if (dragActive || resizingNameCol) return; // let the drag finish via the window-level mouseup even if the pointer left the canvas
   waveCanvas.style.cursor = 'default';
   if (hoverValueSignal) { hoverValueSignal = null; scheduleHideRadixPopup(); }
+  if (hoverNameSignal) { hoverNameSignal = null; hideNameTooltip(); }
+  if (hoverNameDivider) { hoverNameDivider = false; if (lastResult) drawWaveform(lastResult); }
 });
 
 function niceTickStep(totalTime) {
