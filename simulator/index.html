@@ -1107,6 +1107,77 @@ function elaborate(modules) {
     return node;
   }
 
+  // Collects every (already-qualified) signal name referenced by an
+  // elaborated expr/lvalue/stmt, so undeclared-signal use can be caught as a
+  // single pass over the finished `items` list - after the whole hierarchy is
+  // elaborated, so a hierarchical ref to a sibling instance's signal that's
+  // declared later in source order isn't a false positive.
+  function collectIdentsInExpr(node, out) {
+    switch (node.type) {
+      case 'Number': case 'StringLit': case 'SysFunc': return;
+      case 'Ident': out.add(node.name); return;
+      case 'BitSelect': out.add(node.name); collectIdentsInExpr(node.index, out); return;
+      case 'PartSelect': out.add(node.name); collectIdentsInExpr(node.hi, out); collectIdentsInExpr(node.lo, out); return;
+      case 'Concat': node.items.forEach(it => collectIdentsInExpr(it, out)); return;
+      case 'Unary': collectIdentsInExpr(node.expr, out); return;
+      case 'Binary': collectIdentsInExpr(node.left, out); collectIdentsInExpr(node.right, out); return;
+      case 'Ternary': collectIdentsInExpr(node.cond, out); collectIdentsInExpr(node.then, out); collectIdentsInExpr(node.els, out); return;
+      default: throw new Error('cannot check expression node ' + node.type);
+    }
+  }
+  function collectIdentsInLValue(lv, out) {
+    if (lv.type === 'Ident') { out.add(lv.name); return; }
+    if (lv.type === 'BitSelect') { out.add(lv.name); collectIdentsInExpr(lv.index, out); return; }
+    if (lv.type === 'PartSelect') { out.add(lv.name); collectIdentsInExpr(lv.hi, out); collectIdentsInExpr(lv.lo, out); return; }
+    if (lv.type === 'Concat') { lv.items.forEach(it => collectIdentsInLValue(it, out)); return; }
+    throw new Error('cannot check lvalue node ' + lv.type);
+  }
+  function collectIdentsInStmt(stmt, out) {
+    switch (stmt.type) {
+      case 'Block': stmt.stmts.forEach(s => collectIdentsInStmt(s, out)); return;
+      case 'If':
+        collectIdentsInExpr(stmt.cond, out);
+        collectIdentsInStmt(stmt.then, out);
+        if (stmt.els) collectIdentsInStmt(stmt.els, out);
+        return;
+      case 'Case':
+        collectIdentsInExpr(stmt.expr, out);
+        stmt.items.forEach(it => {
+          if (it.labels) it.labels.forEach(l => collectIdentsInExpr(l, out));
+          collectIdentsInStmt(it.body, out);
+        });
+        return;
+      case 'AssignStmt': collectIdentsInLValue(stmt.lhs, out); collectIdentsInExpr(stmt.rhs, out); return;
+      case 'Timing':
+        if (stmt.control.kind === 'delay') collectIdentsInExpr(stmt.control.amount, out);
+        else stmt.control.edges.forEach(e => out.add(e.signal));
+        if (stmt.stmt) collectIdentsInStmt(stmt.stmt, out);
+        return;
+      case 'SysCall': stmt.args.forEach(a => collectIdentsInExpr(a, out)); return;
+      case 'Finish': case 'Empty': return;
+      default: throw new Error('cannot check statement ' + stmt.type);
+    }
+  }
+  function checkUndeclaredSignals(items) {
+    for (const item of items) {
+      const used = new Set();
+      if (item.type === 'Assign') {
+        collectIdentsInLValue(item.lhs, used);
+        collectIdentsInExpr(item.rhs, used);
+      } else if (item.type === 'Always') {
+        if (Array.isArray(item.sensitivity)) item.sensitivity.forEach(s => used.add(s.signal));
+        collectIdentsInStmt(item.body, used);
+      } else if (item.type === 'Initial') {
+        collectIdentsInStmt(item.body, used);
+      }
+      for (const name of used) {
+        if (!declaredNames.has(name)) {
+          throw new Error(`Parse error: use of undeclared signal '${name}'`);
+        }
+      }
+    }
+  }
+
   function elaborateModule(mod, prefix) {
     const node = { modType: mod.name, path: prefix, children: [] };
     const localSeen = new Set();
@@ -1178,6 +1249,7 @@ function elaborate(modules) {
   }
 
   const tree = elaborateModule(top, '');
+  checkUndeclaredSignals(items);
   return { type: 'Module', name: top.name, ports: [], decls, items, tree };
 }
 
