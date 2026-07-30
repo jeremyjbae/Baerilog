@@ -1431,7 +1431,22 @@ class Simulator {
     for (const p of waiters) {
       if (p.done) continue;
       const matched = p.edges.find(e => e.signal === name && edgeMatches(e.edge, oldValue, newValue));
-      if (matched) { p.state = 'ready'; this._stepProc(p, undefined); }
+      if (matched) {
+        // a multi-edge sensitivity list (e.g. `posedge clk or negedge rst`) registers
+        // this same process on every listed signal's edgeWaiters - deregister the
+        // others here, or a process woken by one edge can still be sitting in another
+        // signal's waiter list when it re-registers on re-entering its edge-wait yield,
+        // letting the same logical clock edge deliver a second spurious wakeup.
+        for (const e of p.edges) {
+          if (e.signal === name) continue;
+          const other = this.signals[e.signal];
+          if (!other) continue;
+          const idx = other.edgeWaiters.indexOf(p);
+          if (idx !== -1) other.edgeWaiters.splice(idx, 1);
+        }
+        p.state = 'ready';
+        this._stepProc(p, undefined);
+      }
       else sig.edgeWaiters.push(p);
     }
   }
@@ -1962,7 +1977,7 @@ let declKindMap = new Map();   // fullName -> {kind, ioKind}, from the last succ
 let clockSignalNames = new Set(); // fullNames used with posedge/negedge anywhere - drawn with the clock icon
 let hierarchyDragState = null; // { listEl, paintVisible } while a signal-list drag-to-toggle is in progress
 window.addEventListener('mouseup', () => { hierarchyDragState = null; });
-let radixMap = new Map();      // signal name -> 'bin' | 'dec' | 'hex' | 'str'
+let radixMap = new Map();      // signal name -> 'bin' | 'dec' | 'sdec' | 'hex' | 'str'
 let cursorTime = 0;            // scrub position; drives the value column
 let viewStart = 0, viewEnd = 1; // current zoom/pan window over sim time
 let hoverValueSignal = null;   // signal whose value cell is currently hovered
@@ -1978,7 +1993,7 @@ let dragStartX = 0;            // mousedown x, in canvas CSS px
 let dragBandPx = null;         // {x0,x1} selection band while dragging, or null
 
 /* ---- radix formatting for the waveform value column ---- */
-const RADIX_OPTIONS = [['bin', 'Binary'], ['dec', 'Decimal'], ['hex', 'Hexadecimal'], ['str', 'String']];
+const RADIX_OPTIONS = [['bin', 'Binary'], ['dec', 'Decimal'], ['sdec', 'Signed Decimal'], ['hex', 'Hexadecimal'], ['str', 'String']];
 function getRadix(name, width) {
   return radixMap.get(name) || (width === 1 ? 'bin' : 'hex');
 }
@@ -1987,12 +2002,17 @@ function bitState1(val) {
   if (val.z & 1) return 'z';
   return (val.v & 1) ? '1' : '0';
 }
+function toSigned(uv, width) {
+  if (width >= 32) return uv | 0;
+  const signBit = 1 << (width - 1);
+  return (uv & signBit) ? uv - (1 << width) : uv;
+}
 function formatValue(value, width, radix) {
   const effWidth = Math.min(width, 32);
   if (!isFullyKnown(value)) {
     switch (radix) {
       case 'bin': return formatDigitGroups(value, 1, effWidth, true);
-      case 'dec': return isFullyKnown(value) ? String(value.v >>> 0) : 'X';
+      case 'dec': case 'sdec': return isFullyKnown(value) ? String(value.v >>> 0) : 'X';
       case 'str': {
         const byteCount = Math.ceil(effWidth / 8);
         let s = '';
@@ -2011,6 +2031,7 @@ function formatValue(value, width, radix) {
   switch (radix) {
     case 'bin': return uv.toString(2).padStart(effWidth, '0');
     case 'dec': return String(uv);
+    case 'sdec': return String(toSigned(uv, effWidth));
     case 'str': {
       const byteCount = Math.ceil(effWidth / 8);
       let s = '';
