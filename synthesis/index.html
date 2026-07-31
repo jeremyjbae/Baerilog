@@ -2439,13 +2439,45 @@ function updateGutter() {
 codeInput.addEventListener('input', updateGutter);
 codeInput.addEventListener('scroll', () => { gutter.scrollTop = codeInput.scrollTop; });
 codeInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    const s = codeInput.selectionStart, en = codeInput.selectionEnd;
-    codeInput.value = codeInput.value.slice(0, s) + '  ' + codeInput.value.slice(en);
-    codeInput.selectionStart = codeInput.selectionEnd = s + 2;
+  if (e.key !== 'Tab') return;
+  e.preventDefault();
+  const v = codeInput.value;
+  const s = codeInput.selectionStart, en = codeInput.selectionEnd;
+  if (e.shiftKey) {
+    const lineStart = v.lastIndexOf('\n', s - 1) + 1;
+    let lineEnd = v.indexOf('\n', en);
+    if (lineEnd === -1) lineEnd = v.length;
+    const lines = v.slice(lineStart, lineEnd).split('\n');
+    let startRemoved = 0, totalRemoved = 0;
+    const outdented = lines.map((l, i) => {
+      const m = l.match(/^ {1,2}|^\t/);
+      const removed = m ? m[0].length : 0;
+      if (i === 0) startRemoved = removed;
+      totalRemoved += removed;
+      return l.slice(removed);
+    }).join('\n');
+    codeInput.setSelectionRange(lineStart, lineEnd);
+    document.execCommand('insertText', false, outdented);
+    const newStart = Math.max(lineStart, s - startRemoved);
+    const newEnd = Math.max(newStart, en - totalRemoved);
+    codeInput.setSelectionRange(newStart, newEnd);
     updateGutter();
+    return;
   }
+  if (s === en) {
+    document.execCommand('insertText', false, '  ');
+    updateGutter();
+    return;
+  }
+  const lineStart = v.lastIndexOf('\n', s - 1) + 1;
+  let lineEnd = v.indexOf('\n', en);
+  if (lineEnd === -1) lineEnd = v.length;
+  const lines = v.slice(lineStart, lineEnd).split('\n');
+  const indented = lines.map(l => '  ' + l).join('\n');
+  codeInput.setSelectionRange(lineStart, lineEnd);
+  document.execCommand('insertText', false, indented);
+  codeInput.setSelectionRange(s + 2, en + lines.length * 2);
+  updateGutter();
 });
 
 function logLine(level, msg) {

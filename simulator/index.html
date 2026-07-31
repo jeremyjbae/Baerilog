@@ -344,6 +344,56 @@
       white-space: nowrap;
     }
 
+    /* --- memory viewer card --- */
+    .mem-file-list {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .mem-file-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #f2f2f7;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: #3a3a3c;
+    }
+    .mem-file-chip .mem-file-remove {
+      cursor: pointer;
+      color: #8e8e93;
+      font-weight: 700;
+    }
+    .mem-file-chip .mem-file-remove:hover { color: #ff3b30; }
+    .memory-table-wrap {
+      max-height: 320px;
+      overflow-y: auto;
+      border-radius: 12px;
+      background: #1c1c1e;
+    }
+    table.memory-table {
+      width: 100%;
+      border-collapse: collapse;
+      font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+      color: #e5e5ea;
+    }
+    table.memory-table th {
+      position: sticky;
+      top: 0;
+      background: #232326;
+      text-align: left;
+      padding: 6px 12px;
+      color: #8e8e93;
+      font-weight: 600;
+    }
+    table.memory-table td {
+      padding: 4px 12px;
+      border-top: 1px solid #2c2c2e;
+    }
+    table.memory-table td.mem-addr { color: #5ac8fa; }
+
     @media (max-width: 760px) {
       .grid { grid-template-columns: 1fr; }
     }
@@ -464,6 +514,21 @@
       </div>
     </div>
 
+    <div class="card full" id="card-memory">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Memory Viewer</h2>
+      <p>2D memory arrays (<code>reg [w:0] name[hi:lo];</code>) declared in the design · attach a hex/bin file so <code>$readmemh</code>/<code>$readmemb</code> can load it</p>
+      <div class="toolbar">
+        <select id="memorySelect"><option value="">(no memories declared)</option></select>
+        <button class="btn secondary" id="memAttachBtn">Attach file(s)…</button>
+        <input type="file" id="memFileInput" accept=".hex,.mem,.bin,.txt" multiple style="display:none">
+      </div>
+      <div class="mem-file-list" id="memFileList"></div>
+      <div class="memory-table-wrap" id="memoryTableWrap">
+        <table class="memory-table" id="memoryTable"></table>
+      </div>
+      <div class="wave-empty" id="memoryEmpty">No memories declared in this design.</div>
+    </div>
+
   </div>
 
   <div class="footer">© Jeremy Bae 2026 · <a href="https://github.com/jeremyjbae" target="_blank" rel="noopener">github.com/jeremyjbae</a></div>
@@ -551,7 +616,7 @@ function lex(src) {
    PARSER  (recursive descent -> AST)
    ========================================================================= */
 class Parser {
-  constructor(toks) { this.toks = toks; this.p = 0; }
+  constructor(toks) { this.toks = toks; this.p = 0; this.curModule = null; this.arrayDecls = new Set(); }
   peek(o=0) { return this.toks[this.p + o]; }
   at(type, value) {
     const t = this.peek();
@@ -573,6 +638,7 @@ class Parser {
   parseModule() {
     this.expectKw('module');
     const name = this.expectIdent();
+    this.curModule = name;
     const ports = [];
     const decls = [];
     if (this.atOp('(')) {
@@ -616,7 +682,7 @@ class Parser {
       const width = this.parseRange();
       const name = this.expectIdent();
       ports.push(name);
-      decls.push({ kind, ioKind, name, width });
+      decls.push({ kind, ioKind, name, width, array: null });
       return;
     }
     ports.push(this.expectIdent());
@@ -664,20 +730,42 @@ class Parser {
     return 1;
   }
 
+  // A second `[first:second]` following a declared name makes it a memory
+  // (`reg [7:0] mem[0:15];`) - kept in DECLARATION order (not normalized to
+  // hi/lo) since $readmemh's default fill address/direction is defined in
+  // terms of the first index as written, not numeric magnitude.
+  parseArrayRange() {
+    if (!this.atOp('[')) return null;
+    this.next();
+    const firstExpr = this.parseExpr();
+    this.expectOp(':');
+    const secondExpr = this.parseExpr();
+    this.expectOp(']');
+    return { first: evalConstExpr(firstExpr), second: evalConstExpr(secondExpr) };
+  }
+
   parseDecl() {
     const kind = this.next().value;
     let kind2 = null;
     if (this.atKw('reg') || this.atKw('wire')) kind2 = this.next().value;
     const width = this.parseRange();
-    const names = [this.expectIdent()];
-    while (this.atOp(',')) { this.next(); names.push(this.expectIdent()); }
+    const entries = [this.parseDeclName()];
+    while (this.atOp(',')) { this.next(); entries.push(this.parseDeclName()); }
     this.expectOp(';');
-    return names.map(name => ({
+    return entries.map(({ name, array }) => ({
       kind: kind2 || kind,
       ioKind: (kind === 'input' || kind === 'output') ? kind : null,
-      name, width
+      name, width, array
     }));
   }
+
+  parseDeclName() {
+    const name = this.expectIdent();
+    const array = this.parseArrayRange();
+    if (array) this.arrayDecls.add(this.curModule + '::' + name);
+    return { name, array };
+  }
+
 
   parseAssign() {
     this.expectKw('assign');
@@ -744,6 +832,7 @@ class Parser {
         return { type: 'PartSelect', name, hi, lo };
       }
       this.expectOp(']');
+      if (this.arrayDecls.has(this.curModule + '::' + name)) return { type: 'MemWrite', name, index: hi };
       return { type: 'BitSelect', name, index: hi };
     }
     return { type: 'Ident', name };
@@ -797,6 +886,14 @@ class Parser {
       }
       this.expectOp(';');
       if (name === 'finish') return { type: 'Finish' };
+      if (name === 'readmemh' || name === 'readmemb') {
+        if (!args[1] || args[1].type !== 'Ident') this.err(`${name} requires a memory name as its second argument`);
+        return {
+          type: 'Readmem', radix: name === 'readmemh' ? 'h' : 'b',
+          file: args[0], memName: args[1].name,
+          startAddr: args[2] || null, finishAddr: args[3] || null,
+        };
+      }
       return { type: 'SysCall', name, args };
     }
     if (this.atOp(';')) { this.next(); return { type: 'Empty' }; }
@@ -892,6 +989,7 @@ class Parser {
         return { type: 'PartSelect', name: e.name, hi, lo };
       }
       this.expectOp(']');
+      if (this.arrayDecls.has(this.curModule + '::' + e.name)) return { type: 'MemRead', name: e.name, index: hi };
       return { type: 'BitSelect', name: e.name, index: hi };
     }
     return e;
@@ -1049,12 +1147,14 @@ function elaborate(modules) {
   const decls = [], items = [];
   const stack = [top.name];
   const declaredNames = new Set();
+  const declaredMemoryNames = new Set();
 
   function qualify(prefix, name) { return prefix ? prefix + '.' + name : name; }
   function renameLValue(lv, prefix) {
     if (lv.type === 'Ident') return { type: 'Ident', name: qualify(prefix, lv.name) };
     if (lv.type === 'BitSelect') return { type: 'BitSelect', name: qualify(prefix, lv.name), index: renameExpr(lv.index, prefix) };
     if (lv.type === 'PartSelect') return { type: 'PartSelect', name: qualify(prefix, lv.name), hi: renameExpr(lv.hi, prefix), lo: renameExpr(lv.lo, prefix) };
+    if (lv.type === 'MemWrite') return { type: 'MemWrite', name: qualify(prefix, lv.name), index: renameExpr(lv.index, prefix) };
     if (lv.type === 'Concat') return { type: 'Concat', items: lv.items.map(it => renameLValue(it, prefix)) };
     throw new Error('unsupported lvalue');
   }
@@ -1064,6 +1164,7 @@ function elaborate(modules) {
       case 'Ident': return { type: 'Ident', name: qualify(prefix, node.name) };
       case 'BitSelect': return { type: 'BitSelect', name: qualify(prefix, node.name), index: renameExpr(node.index, prefix) };
       case 'PartSelect': return { type: 'PartSelect', name: qualify(prefix, node.name), hi: renameExpr(node.hi, prefix), lo: renameExpr(node.lo, prefix) };
+      case 'MemRead': return { type: 'MemRead', name: qualify(prefix, node.name), index: renameExpr(node.index, prefix) };
       case 'Concat': return { type: 'Concat', items: node.items.map(it => renameExpr(it, prefix)) };
       case 'Unary': return { type: 'Unary', op: node.op, expr: renameExpr(node.expr, prefix) };
       case 'Binary': return { type: 'Binary', op: node.op, left: renameExpr(node.left, prefix), right: renameExpr(node.right, prefix) };
@@ -1093,6 +1194,12 @@ function elaborate(modules) {
         return { type: 'Timing', control, stmt: stmt.stmt ? renameStmt(stmt.stmt, prefix) : null };
       }
       case 'SysCall': return { type: 'SysCall', name: stmt.name, args: stmt.args.map(a => renameExpr(a, prefix)) };
+      case 'Readmem': return {
+        type: 'Readmem', radix: stmt.radix,
+        file: renameExpr(stmt.file, prefix), memName: qualify(prefix, stmt.memName),
+        startAddr: stmt.startAddr ? renameExpr(stmt.startAddr, prefix) : null,
+        finishAddr: stmt.finishAddr ? renameExpr(stmt.finishAddr, prefix) : null,
+      };
       case 'Finish': case 'Empty': return stmt;
       default: throw new Error('cannot elaborate statement ' + stmt.type);
     }
@@ -1111,68 +1218,86 @@ function elaborate(modules) {
   // elaborated expr/lvalue/stmt, so undeclared-signal use can be caught as a
   // single pass over the finished `items` list - after the whole hierarchy is
   // elaborated, so a hierarchical ref to a sibling instance's signal that's
-  // declared later in source order isn't a false positive.
-  function collectIdentsInExpr(node, out) {
+  // declared later in source order isn't a false positive. Memory names are
+  // collected separately into `outMem` since they're validated against a
+  // different declared-name set (declaredMemoryNames, not declaredNames).
+  function collectIdentsInExpr(node, out, outMem) {
     switch (node.type) {
       case 'Number': case 'StringLit': case 'SysFunc': return;
       case 'Ident': out.add(node.name); return;
-      case 'BitSelect': out.add(node.name); collectIdentsInExpr(node.index, out); return;
-      case 'PartSelect': out.add(node.name); collectIdentsInExpr(node.hi, out); collectIdentsInExpr(node.lo, out); return;
-      case 'Concat': node.items.forEach(it => collectIdentsInExpr(it, out)); return;
-      case 'Unary': collectIdentsInExpr(node.expr, out); return;
-      case 'Binary': collectIdentsInExpr(node.left, out); collectIdentsInExpr(node.right, out); return;
-      case 'Ternary': collectIdentsInExpr(node.cond, out); collectIdentsInExpr(node.then, out); collectIdentsInExpr(node.els, out); return;
+      case 'BitSelect': out.add(node.name); collectIdentsInExpr(node.index, out, outMem); return;
+      case 'PartSelect': out.add(node.name); collectIdentsInExpr(node.hi, out, outMem); collectIdentsInExpr(node.lo, out, outMem); return;
+      case 'MemRead': outMem.add(node.name); collectIdentsInExpr(node.index, out, outMem); return;
+      case 'Concat': node.items.forEach(it => collectIdentsInExpr(it, out, outMem)); return;
+      case 'Unary': collectIdentsInExpr(node.expr, out, outMem); return;
+      case 'Binary': collectIdentsInExpr(node.left, out, outMem); collectIdentsInExpr(node.right, out, outMem); return;
+      case 'Ternary': collectIdentsInExpr(node.cond, out, outMem); collectIdentsInExpr(node.then, out, outMem); collectIdentsInExpr(node.els, out, outMem); return;
       default: throw new Error('cannot check expression node ' + node.type);
     }
   }
-  function collectIdentsInLValue(lv, out) {
+  function collectIdentsInLValue(lv, out, outMem) {
     if (lv.type === 'Ident') { out.add(lv.name); return; }
-    if (lv.type === 'BitSelect') { out.add(lv.name); collectIdentsInExpr(lv.index, out); return; }
-    if (lv.type === 'PartSelect') { out.add(lv.name); collectIdentsInExpr(lv.hi, out); collectIdentsInExpr(lv.lo, out); return; }
-    if (lv.type === 'Concat') { lv.items.forEach(it => collectIdentsInLValue(it, out)); return; }
+    if (lv.type === 'BitSelect') { out.add(lv.name); collectIdentsInExpr(lv.index, out, outMem); return; }
+    if (lv.type === 'PartSelect') { out.add(lv.name); collectIdentsInExpr(lv.hi, out, outMem); collectIdentsInExpr(lv.lo, out, outMem); return; }
+    if (lv.type === 'MemWrite') { outMem.add(lv.name); collectIdentsInExpr(lv.index, out, outMem); return; }
+    if (lv.type === 'Concat') { lv.items.forEach(it => collectIdentsInLValue(it, out, outMem)); return; }
     throw new Error('cannot check lvalue node ' + lv.type);
   }
-  function collectIdentsInStmt(stmt, out) {
+  function collectIdentsInStmt(stmt, out, outMem) {
     switch (stmt.type) {
-      case 'Block': stmt.stmts.forEach(s => collectIdentsInStmt(s, out)); return;
+      case 'Block': stmt.stmts.forEach(s => collectIdentsInStmt(s, out, outMem)); return;
       case 'If':
-        collectIdentsInExpr(stmt.cond, out);
-        collectIdentsInStmt(stmt.then, out);
-        if (stmt.els) collectIdentsInStmt(stmt.els, out);
+        collectIdentsInExpr(stmt.cond, out, outMem);
+        collectIdentsInStmt(stmt.then, out, outMem);
+        if (stmt.els) collectIdentsInStmt(stmt.els, out, outMem);
         return;
       case 'Case':
-        collectIdentsInExpr(stmt.expr, out);
+        collectIdentsInExpr(stmt.expr, out, outMem);
         stmt.items.forEach(it => {
-          if (it.labels) it.labels.forEach(l => collectIdentsInExpr(l, out));
-          collectIdentsInStmt(it.body, out);
+          if (it.labels) it.labels.forEach(l => collectIdentsInExpr(l, out, outMem));
+          collectIdentsInStmt(it.body, out, outMem);
         });
         return;
-      case 'AssignStmt': collectIdentsInLValue(stmt.lhs, out); collectIdentsInExpr(stmt.rhs, out); return;
+      case 'AssignStmt': collectIdentsInLValue(stmt.lhs, out, outMem); collectIdentsInExpr(stmt.rhs, out, outMem); return;
       case 'Timing':
-        if (stmt.control.kind === 'delay') collectIdentsInExpr(stmt.control.amount, out);
+        if (stmt.control.kind === 'delay') collectIdentsInExpr(stmt.control.amount, out, outMem);
         else stmt.control.edges.forEach(e => out.add(e.signal));
-        if (stmt.stmt) collectIdentsInStmt(stmt.stmt, out);
+        if (stmt.stmt) collectIdentsInStmt(stmt.stmt, out, outMem);
         return;
-      case 'SysCall': stmt.args.forEach(a => collectIdentsInExpr(a, out)); return;
+      case 'SysCall': stmt.args.forEach(a => collectIdentsInExpr(a, out, outMem)); return;
+      case 'Readmem':
+        collectIdentsInExpr(stmt.file, out, outMem);
+        outMem.add(stmt.memName);
+        if (stmt.startAddr) collectIdentsInExpr(stmt.startAddr, out, outMem);
+        if (stmt.finishAddr) collectIdentsInExpr(stmt.finishAddr, out, outMem);
+        return;
       case 'Finish': case 'Empty': return;
       default: throw new Error('cannot check statement ' + stmt.type);
     }
   }
   function checkUndeclaredSignals(items) {
     for (const item of items) {
-      const used = new Set();
+      const used = new Set(), usedMem = new Set();
       if (item.type === 'Assign') {
-        collectIdentsInLValue(item.lhs, used);
-        collectIdentsInExpr(item.rhs, used);
+        collectIdentsInLValue(item.lhs, used, usedMem);
+        collectIdentsInExpr(item.rhs, used, usedMem);
       } else if (item.type === 'Always') {
         if (Array.isArray(item.sensitivity)) item.sensitivity.forEach(s => used.add(s.signal));
-        collectIdentsInStmt(item.body, used);
+        collectIdentsInStmt(item.body, used, usedMem);
       } else if (item.type === 'Initial') {
-        collectIdentsInStmt(item.body, used);
+        collectIdentsInStmt(item.body, used, usedMem);
       }
       for (const name of used) {
         if (!declaredNames.has(name)) {
           throw new Error(`Parse error: use of undeclared signal '${name}'`);
+        }
+        if (declaredMemoryNames.has(name)) {
+          throw new Error(`Parse error: '${name}' is a memory - variable-indexed access (mem[addr]) is only supported within the module that declares it; a cross-module reference must name a specific memory element some other way, or use $readmemh/$readmemb`);
+        }
+      }
+      for (const name of usedMem) {
+        if (!declaredMemoryNames.has(name)) {
+          throw new Error(`Parse error: use of undeclared memory '${name}'`);
         }
       }
     }
@@ -1194,7 +1319,8 @@ function elaborate(modules) {
         declaredNames.add(fullName);
         localSeen.add(fullName);
       }
-      decls.push({ kind: d.kind, ioKind: d.ioKind, name: fullName, width: d.width });
+      if (d.array) declaredMemoryNames.add(fullName);
+      decls.push({ kind: d.kind, ioKind: d.ioKind, name: fullName, width: d.width, array: d.array });
     }
     for (const item of mod.items) {
       if (item.type === 'Assign') {
@@ -1268,6 +1394,8 @@ class Simulator {
   constructor(ast, opts = {}) {
     this.ast = ast;
     this.signals = {};
+    this.memories = {};
+    this.memFiles = opts.memFiles || {};
     this.log = [];
     this.time = 0;
     this.finished = false;
@@ -1292,8 +1420,25 @@ class Simulator {
     }
   }
 
+  // A memory is NOT a signal: it has no `history` (excluded from waveform
+  // data by design - a per-cell timeline for a whole array isn't useful in
+  // a step/box waveform view) and no edge-wait plumbing, since nothing can
+  // sensitivity-list on a memory cell.
+  declareMemory(name, elemWidth, array) {
+    if (this.memories[name]) return;
+    const lo = Math.min(array.first, array.second);
+    const hi = Math.max(array.first, array.second);
+    const depth = hi - lo + 1;
+    const cells = new Array(depth);
+    for (let i = 0; i < depth; i++) cells[i] = mkVal(0, fullMask(elemWidth));
+    this.memories[name] = { elemWidth, first: array.first, second: array.second, lo, hi, depth, cells };
+  }
+
   _build() {
-    for (const d of this.ast.decls) this.declareSignal(d.name, d.width);
+    for (const d of this.ast.decls) {
+      if (d.array) this.declareMemory(d.name, d.width, d.array);
+      else this.declareSignal(d.name, d.width);
+    }
     const ctx = this._makeCtx();
     for (const item of this.ast.items) {
       if (item.type === 'Assign') {
@@ -1324,14 +1469,59 @@ class Simulator {
 
   _makeCtx() {
     const sim = this;
-    return {
+    const ctx = {
       read(name) { sim.declareSignal(name); return sim.signals[name].value; },
       widthOf(name) { sim.declareSignal(name); return sim.signals[name].width; },
       write(lhs, value) { writeLValue(sim, lhs, value); },
       queueNBA(lhs, value) { sim.nbaQueue.push({ lhs, value }); },
       sysCall(name, args) { sim._sysCall(name, args); },
       time() { return sim.time; },
+      readMem(name, addr) {
+        const mem = sim.memories[name];
+        if (addr < mem.lo || addr > mem.hi) return mkVal(0, fullMask(mem.elemWidth));
+        return mem.cells[addr - mem.lo];
+      },
+      widthOfMem(name) { return sim.memories[name].elemWidth; },
+      doReadmem(stmt) {
+        const filename = stmt.file.type === 'StringLit' ? stmt.file.value : String(evalExpr(stmt.file, ctx).v >>> 0);
+        const start = stmt.startAddr ? evalExpr(stmt.startAddr, ctx).v : undefined;
+        const finish = stmt.finishAddr ? evalExpr(stmt.finishAddr, ctx).v : undefined;
+        sim._readmem(stmt.radix, filename, stmt.memName, start, finish);
+      },
     };
+    return ctx;
+  }
+
+  // Loads a memory's contents from a previously-attached file's text (see
+  // memFiles, populated by the UI's Memory Viewer "attach" control - this app
+  // has no real filesystem access over file://, so $readmemh/$readmemb can
+  // only ever resolve a name the user has already handed in through the UI).
+  _readmem(radix, filename, memName, start, finish) {
+    const mem = this.memories[memName];
+    if (!mem) throw new Error(`$readmem${radix}: unknown memory '${memName}'`);
+    const text = this.memFiles[filename];
+    if (text === undefined) {
+      throw new Error(`$readmem${radix}: file '${filename}' was not attached (use the Memory Viewer to attach it before running)`);
+    }
+    const cleaned = text.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const tokens = cleaned.split(/\s+/).filter(Boolean);
+    const step = mem.second >= mem.first ? 1 : -1;
+    let addr = start !== undefined ? start : mem.first;
+    const bitsPerDigit = radix === 'h' ? 4 : 1;
+    const digitMask = (1 << bitsPerDigit) - 1;
+    for (const tok of tokens) {
+      if (tok[0] === '@') { addr = parseInt(tok.slice(1), 16); continue; }
+      let v = 0, x = 0, z = 0, shift = 0;
+      for (const ch of tok.split('').reverse()) {
+        if (ch === 'x' || ch === 'X') x |= digitMask << shift;
+        else if (ch === 'z' || ch === 'Z' || ch === '?') z |= digitMask << shift;
+        else v |= (parseInt(ch, 16) & digitMask) << shift;
+        shift += bitsPerDigit;
+      }
+      if (addr >= mem.lo && addr <= mem.hi) mem.cells[addr - mem.lo] = maskVal(mkVal(v, x, z), mem.elemWidth);
+      if (finish !== undefined && addr === finish) break;
+      addr += step;
+    }
   }
 
   _sysCall(name, args) {
@@ -1354,7 +1544,7 @@ class Simulator {
       for (const p of waiting) if (p.resumeAt === this.time) p.state = 'ready';
       this._settle();
     }
-    return { signals: this.signals, log: this.log, finished: this.finished, time: this.time, error: this.error };
+    return { signals: this.signals, memories: this.memories, log: this.log, finished: this.finished, time: this.time, error: this.error };
   }
 
   _settle() {
@@ -1487,6 +1677,16 @@ function writeLValue(sim, lhs, value) {
     }
     return;
   }
+  if (lhs.type === 'MemWrite') {
+    const mem = sim.memories[lhs.name];
+    const ctx = sim._makeCtx();
+    const idxVal = evalExpr(lhs.index, ctx);
+    if (!isFullyKnown(idxVal)) return; // unknown address: indeterminate write target, drop it
+    const addr = idxVal.v;
+    if (addr < mem.lo || addr > mem.hi) return; // out of bounds: silently ignored, like real hardware
+    mem.cells[addr - mem.lo] = maskVal(value, mem.elemWidth);
+    return;
+  }
   if (lhs.type === 'Concat') {
     const ctx = sim._makeCtx();
     let shift = lhs.items.reduce((sum, it) => sum + widthOfExpr(it, ctx), 0);
@@ -1511,6 +1711,7 @@ function widthOfExpr(node, ctx) {
     case 'SysFunc': return 32;
     case 'Ident': return ctx.widthOf(node.name);
     case 'BitSelect': return 1;
+    case 'MemRead': return ctx.widthOfMem(node.name);
     case 'PartSelect': {
       const hi = evalExpr(node.hi, ctx).v, lo = evalExpr(node.lo, ctx).v;
       return Math.abs(hi - lo) + 1;
@@ -1583,6 +1784,9 @@ function* execStmt(stmt, ctx) {
     case 'SysCall':
       ctx.sysCall(stmt.name, stmt.args.map(a => evalArgForDisplay(a, ctx)));
       return;
+    case 'Readmem':
+      ctx.doReadmem(stmt);
+      return;
     case 'Finish':
       yield { kind: 'finish' };
       return;
@@ -1612,6 +1816,12 @@ function evalExpr(node, ctx) {
       const sv = ctx.read(node.name);
       const idx = evalExpr(node.index, ctx).v;
       return { v: (sv.v >>> idx) & 1, x: (sv.x >>> idx) & 1, z: (sv.z >>> idx) & 1 };
+    }
+    case 'MemRead': {
+      const idxVal = evalExpr(node.index, ctx);
+      const width = ctx.widthOfMem(node.name);
+      if (!isFullyKnown(idxVal)) return mkVal(0, fullMask(width));
+      return ctx.readMem(node.name, idxVal.v);
     }
     case 'PartSelect': {
       const sv = ctx.read(node.name);
@@ -1940,6 +2150,35 @@ module adder4_tb;
     #5 $finish;
   end
 endmodule`,
+
+  '8-bit ROM': `module rom (input [7:0] addr, output [7:0] data);
+  reg [7:0] mem [0:'hff];
+
+  assign data = mem[addr];
+
+  // loads mem[] from a file attached via the Memory Viewer card below -
+  // this app has no real filesystem access over file://, so $readmemh can
+  // only resolve a filename the user has already attached there
+  initial $readmemh("test.txt", mem, 0);
+endmodule
+
+module rom_tb;
+  reg  [7:0] addr;
+  wire [7:0] data;
+
+  rom u0 (addr, data);
+
+  always #10
+    addr = addr + 1;
+
+  initial begin
+    addr = 0;
+    #15 $display("addr=%d data=%h", addr, data);
+    #10 $display("addr=%d data=%h", addr, data);
+    #10 $display("addr=%d data=%h", addr, data);
+    #100 $finish;
+  end
+endmodule`,
 };
 
 /* =========================================================================
@@ -1966,9 +2205,19 @@ const waveZoomLevelEl = document.getElementById('waveZoomLevel');
 const waveStartInput = document.getElementById('waveStartInput');
 const waveEndInput = document.getElementById('waveEndInput');
 const waveApplyBtn = document.getElementById('waveApplyBtn');
+const memorySelect = document.getElementById('memorySelect');
+const memAttachBtn = document.getElementById('memAttachBtn');
+const memFileInput = document.getElementById('memFileInput');
+const memFileList = document.getElementById('memFileList');
+const memoryTable = document.getElementById('memoryTable');
+const memoryTableWrap = document.getElementById('memoryTableWrap');
+const memoryEmpty = document.getElementById('memoryEmpty');
 
 const PALETTE = ['#007aff', '#34c759', '#ff9500', '#ff2d55', '#af52de', '#5ac8fa', '#ffcc00', '#a2845e'];
 let lastResult = null;
+let lastMemoryDecls = []; // array-type decls from the last successful parse, for the Memory Viewer's dropdown
+let attachedMemFiles = {}; // filename -> file text, for $readmemh/$readmemb to resolve - persists across Run/Reset like currentFileName does
+let selectedMemory = '';   // fully-qualified memory name currently shown in the Memory Viewer table
 let hiddenSignals = new Set();
 let hiddenInstances = new Set(); // instance paths hidden as a whole subtree (single-click toggle) - layered on top of hiddenSignals, so per-signal choices survive show/hide of an ancestor instance
 let lastTopModuleName = null; // top module's modType from the last run - a change means a new design, so visibility resets to top-only-visible
@@ -2162,6 +2411,7 @@ function loadExample(name) {
 }
 exampleSelect.addEventListener('change', () => loadExample(exampleSelect.value));
 loadExample(Object.keys(EXAMPLES)[0]);
+renderMemorySelect();
 
 /* ---- open / save ---- */
 openBtn.addEventListener('click', () => fileOpenInput.click());
@@ -2188,6 +2438,75 @@ saveBtn.addEventListener('click', () => {
   URL.revokeObjectURL(url);
 });
 
+/* ---- memory viewer: attach files for $readmemh/$readmemb, browse loaded memories ---- */
+memAttachBtn.addEventListener('click', () => memFileInput.click());
+memFileInput.addEventListener('change', () => {
+  const files = [...memFileInput.files];
+  memFileInput.value = '';
+  let pending = files.length;
+  if (!pending) return;
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      attachedMemFiles[file.name] = reader.result;
+      if (--pending === 0) renderMemFileList();
+    };
+    reader.readAsText(file);
+  });
+});
+function renderMemFileList() {
+  memFileList.innerHTML = '';
+  for (const name of Object.keys(attachedMemFiles)) {
+    const chip = document.createElement('div');
+    chip.className = 'mem-file-chip';
+    chip.appendChild(document.createTextNode(name));
+    const remove = document.createElement('span');
+    remove.className = 'mem-file-remove';
+    remove.textContent = '✕';
+    remove.addEventListener('click', () => { delete attachedMemFiles[name]; renderMemFileList(); });
+    chip.appendChild(remove);
+    memFileList.appendChild(chip);
+  }
+}
+memorySelect.addEventListener('change', () => { selectedMemory = memorySelect.value; renderMemoryTable(); });
+function renderMemorySelect() {
+  memorySelect.innerHTML = '';
+  if (lastMemoryDecls.length === 0) {
+    memorySelect.innerHTML = '<option value="">(no memories declared)</option>';
+    selectedMemory = '';
+  } else {
+    for (const d of lastMemoryDecls) {
+      const opt = document.createElement('option');
+      opt.value = d.name;
+      opt.textContent = d.name;
+      memorySelect.appendChild(opt);
+    }
+    if (!lastMemoryDecls.some(d => d.name === selectedMemory)) selectedMemory = lastMemoryDecls[0].name;
+    memorySelect.value = selectedMemory;
+  }
+  renderMemoryTable();
+}
+function renderMemoryTable() {
+  const mem = selectedMemory && lastResult ? lastResult.memories[selectedMemory] : null;
+  if (!mem) {
+    memoryTableWrap.style.display = 'none';
+    memoryEmpty.style.display = 'block';
+    memoryEmpty.textContent = lastMemoryDecls.length === 0
+      ? 'No memories declared in this design.'
+      : 'Run the simulation to see this memory’s contents.';
+    memoryTable.innerHTML = '';
+    return;
+  }
+  memoryTableWrap.style.display = 'block';
+  memoryEmpty.style.display = 'none';
+  let html = '<thead><tr><th>Address</th><th>Value (hex)</th></tr></thead><tbody>';
+  for (let i = 0; i < mem.depth; i++) {
+    const addr = mem.lo + i;
+    html += '<tr><td class="mem-addr">' + addr + '</td><td>' + formatValue(mem.cells[i], mem.elemWidth, 'hex') + '</td></tr>';
+  }
+  memoryTable.innerHTML = html + '</tbody>';
+}
+
 /* ---- editor: line-number gutter + tab handling ---- */
 function updateGutter() {
   const lines = codeInput.value.split('\n').length;
@@ -2198,13 +2517,45 @@ function updateGutter() {
 codeInput.addEventListener('input', updateGutter);
 codeInput.addEventListener('scroll', () => { gutter.scrollTop = codeInput.scrollTop; });
 codeInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    const s = codeInput.selectionStart, en = codeInput.selectionEnd;
-    codeInput.value = codeInput.value.slice(0, s) + '  ' + codeInput.value.slice(en);
-    codeInput.selectionStart = codeInput.selectionEnd = s + 2;
+  if (e.key !== 'Tab') return;
+  e.preventDefault();
+  const v = codeInput.value;
+  const s = codeInput.selectionStart, en = codeInput.selectionEnd;
+  if (e.shiftKey) {
+    const lineStart = v.lastIndexOf('\n', s - 1) + 1;
+    let lineEnd = v.indexOf('\n', en);
+    if (lineEnd === -1) lineEnd = v.length;
+    const lines = v.slice(lineStart, lineEnd).split('\n');
+    let startRemoved = 0, totalRemoved = 0;
+    const outdented = lines.map((l, i) => {
+      const m = l.match(/^ {1,2}|^\t/);
+      const removed = m ? m[0].length : 0;
+      if (i === 0) startRemoved = removed;
+      totalRemoved += removed;
+      return l.slice(removed);
+    }).join('\n');
+    codeInput.setSelectionRange(lineStart, lineEnd);
+    document.execCommand('insertText', false, outdented);
+    const newStart = Math.max(lineStart, s - startRemoved);
+    const newEnd = Math.max(newStart, en - totalRemoved);
+    codeInput.setSelectionRange(newStart, newEnd);
     updateGutter();
+    return;
   }
+  if (s === en) {
+    document.execCommand('insertText', false, '  ');
+    updateGutter();
+    return;
+  }
+  const lineStart = v.lastIndexOf('\n', s - 1) + 1;
+  let lineEnd = v.indexOf('\n', en);
+  if (lineEnd === -1) lineEnd = v.length;
+  const lines = v.slice(lineStart, lineEnd).split('\n');
+  const indented = lines.map(l => '  ' + l).join('\n');
+  codeInput.setSelectionRange(lineStart, lineEnd);
+  document.execCommand('insertText', false, indented);
+  codeInput.setSelectionRange(s + 2, en + lines.length * 2);
+  updateGutter();
 });
 
 /* ---- collapse buttons (generic, works for any .card-collapse-btn) ---- */
@@ -2299,6 +2650,8 @@ resetBtn.addEventListener('click', () => {
   waveEmpty.style.display = 'block';
   waveCanvas.style.display = 'none';
   renderHierarchyTree(null);
+  lastMemoryDecls = [];
+  renderMemorySelect();
 });
 
 runBtn.addEventListener('click', runSimulation);
@@ -2315,9 +2668,13 @@ function runSimulation() {
     logLine('<span class="err">' + escapeHtml(e.message) + '</span>');
     renderBadges(null);
     renderHierarchyTree(null);
+    lastMemoryDecls = [];
+    renderMemorySelect();
     return;
   }
   computeDeclMeta(ast);
+  lastMemoryDecls = ast.decls.filter(d => d.array);
+  renderMemorySelect();
   if (ast.tree.modType !== lastTopModuleName) {
     // first run against this top-level module (a fresh design, or Reset was
     // clicked): show only the top module's own signals, collapse every
@@ -2331,7 +2688,7 @@ function runSimulation() {
 
   let result;
   try {
-    const sim = new Simulator(ast, { maxTime });
+    const sim = new Simulator(ast, { maxTime, memFiles: attachedMemFiles });
     result = sim.run();
   } catch (e) {
     logLine('<span class="err">Simulator crashed: ' + escapeHtml(e.message) + '</span>');
@@ -2346,6 +2703,7 @@ function runSimulation() {
   cursorTime = viewEnd;
   hideRadixPopup();
   renderHierarchyTree(ast.tree); // re-render now that lastResult/hiddenSignals reflect this run
+  renderMemoryTable();
 
   if (result.error) {
     logLine('<span class="err">Runtime error: ' + escapeHtml(result.error) + '</span>');
@@ -2412,11 +2770,14 @@ function isSignalHidden(fullName) {
 
 // Signals declared directly in the instance at `path` - excludes signals
 // belonging to a nested child instance (those get their own checklist under
-// their own tree node, one level down).
+// their own tree node, one level down). Memories live in a separate
+// `lastResult.memories` map (not `signals`, since they have no history/
+// waveform row), so their names are folded in here too.
 function ownSignalsOf(path) {
   if (!lastResult) return [];
   const prefix = path ? path + '.' : '';
-  return Object.keys(lastResult.signals)
+  const names = [...Object.keys(lastResult.signals), ...Object.keys(lastResult.memories)];
+  return names
     .filter(name => name.startsWith(prefix))
     .map(name => name.slice(prefix.length))
     .filter(rest => rest.length > 0 && !rest.includes('.'));
@@ -2429,7 +2790,7 @@ function ownSignalsOf(path) {
 // anywhere in the design, is treated as a clock.
 function computeDeclMeta(ast) {
   declKindMap = new Map();
-  for (const d of ast.decls) declKindMap.set(d.name, { kind: d.kind, ioKind: d.ioKind });
+  for (const d of ast.decls) declKindMap.set(d.name, { kind: d.kind, ioKind: d.ioKind, array: d.array });
   clockSignalNames = new Set();
   for (const item of ast.items) {
     if (item.type === 'Always' && Array.isArray(item.sensitivity)) {
@@ -2448,6 +2809,7 @@ const SIGNAL_ICONS = {
   inout: { viewBox: '0 0 45 25', markup: '<path d="M 12.5 5 L 32.5 5 L 40 12.5 L 32.5 20 L 12.5 20 L 5 12.5 Z" fill="currentColor"/>' },
   wire: { viewBox: '0 0 45 25', markup: '<circle cx="22.5" cy="12.5" r="7.5" fill="currentColor"/><rect x="5" y="10" width="35" height="5" fill="currentColor"/>' },
   reg: { viewBox: '0 0 45 25', markup: '<rect x="12.5" y="5" width="20" height="15" fill="currentColor"/><rect x="5" y="10" width="35" height="5" fill="currentColor"/>' },
+  mem: { viewBox: '0 0 45 25', markup: '<rect x="5" y="2.5" width="5" height="20" fill="currentColor"/><rect x="5" y="10" width="35" height="5" fill="currentColor"/><rect x="5" y="0" width="35" height="5" fill="currentColor"/><rect x="5" y="20" width="35" height="5" fill="currentColor"/><rect x="15" y="2.5" width="5" height="20" fill="currentColor"/><rect x="25" y="2.5" width="5" height="20" fill="currentColor"/><rect x="35" y="2.5" width="5" height="20" fill="currentColor"/>' },
 };
 function signalIconSvg(kind) {
   const icon = SIGNAL_ICONS[kind];
@@ -2458,6 +2820,7 @@ function classifySignalKind(fullName) {
   if (clockSignalNames.has(fullName)) return 'clock';
   const meta = declKindMap.get(fullName);
   if (!meta) return 'wire';
+  if (meta.array) return 'mem';
   if (meta.ioKind === 'input') return 'input';
   if (meta.ioKind === 'output') return 'output';
   return meta.kind === 'reg' ? 'reg' : 'wire';
@@ -2516,8 +2879,18 @@ function renderHierarchyTree(tree) {
       own.forEach(localName => {
         const fullName = prefix + localName;
         const item = document.createElement('div');
+        const kind = classifySignalKind(fullName);
+        // memories never appear in result.signals/the waveform, so their row is
+        // purely informational: always shown dimmed/"off", no click-to-toggle.
+        if (kind === 'mem') {
+          item.className = 'hierarchy-signal-item off';
+          item.insertAdjacentHTML('beforeend', signalIconSvg(kind));
+          item.appendChild(document.createTextNode(localName));
+          list.appendChild(item);
+          return;
+        }
         item.className = 'hierarchy-signal-item' + (isSignalHidden(fullName) ? ' off' : '');
-        item.insertAdjacentHTML('beforeend', signalIconSvg(classifySignalKind(fullName)));
+        item.insertAdjacentHTML('beforeend', signalIconSvg(kind));
         item.appendChild(document.createTextNode(localName));
 
         function paint(visible) {
