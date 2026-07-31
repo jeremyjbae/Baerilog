@@ -254,6 +254,17 @@
     .btn.secondary { background: #f2f2f7; color: #1c1c1e; }
     .btn.secondary:hover { background: #e5e5ea; }
     .btn:disabled { background: #c7c7cc; cursor: default; }
+    .bundle-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #3a3a3c;
+      cursor: pointer;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .bundle-toggle input { cursor: pointer; }
 
     .editor-wrap {
       display: flex;
@@ -566,6 +577,10 @@
       <p>drag to pan, scroll/pinch to zoom, drag nodes to rearrange, double-click an instance block to drill into it — built with React Flow</p>
       <div class="toolbar" style="margin-bottom:8px;">
         <div class="breadcrumb-row" id="breadcrumbRow" style="flex:1 1 auto; margin-bottom:0;"></div>
+        <label class="bundle-toggle" title="Bundle same-width mux/dff/gate chains into one N-bit box, or show every individual 1-bit cell">
+          <input type="checkbox" id="bundleMultibitCheckbox" checked />
+          Bundle multi-bit logic
+        </label>
         <button class="btn secondary" id="exportJsonBtn">Export JSON</button>
       </div>
       <div id="flowRoot"><div class="flow-placeholder" id="flowPlaceholder">Loading netlist viewer…</div></div>
@@ -1203,10 +1218,11 @@ class Synthesizer {
     const w = Math.max(this.naturalWidth(lNode), this.naturalWidth(rNode));
     const a = this.synthExpr(lNode, w);
     const b = this.synthExpr(rNode, w);
+    const busGroup = w > 1 ? this.newId('busg') : null;
     const eqBits = a.map((aNet, i) => {
       const id = this.newId('xnor');
       const y = `w_${id}`;
-      this.cells.push({ id, type: 'xnor', ports: { a: aNet, b: b[i], y }, comment: i === 0 ? exprToStr(srcNode) : null });
+      this.cells.push({ id, type: 'xnor', ports: { a: aNet, b: b[i], y }, comment: i === 0 ? exprToStr(srcNode) : null, busGroup, busBit: i, busWidth: w });
       this.markDriven(y, id);
       return y;
     });
@@ -1264,10 +1280,11 @@ class Synthesizer {
         }
         const a = this.synthExpr(node.expr, width);
         const out = [];
+        const busGroup = width > 1 ? this.newId('busg') : null;
         for (let i = 0; i < width; i++) {
           const id = this.newId('not');
           const y = `w_${id}`;
-          this.cells.push({ id, type: 'not', ports: { a: a[i], y }, comment: i === 0 ? exprToStr(node) : null });
+          this.cells.push({ id, type: 'not', ports: { a: a[i], y }, comment: i === 0 ? exprToStr(node) : null, busGroup, busBit: i, busWidth: width });
           this.markDriven(y, id);
           out.push(y);
         }
@@ -1286,10 +1303,11 @@ class Synthesizer {
         const aNets = this.synthExpr(node.else, width);
         const bNets = this.synthExpr(node.then, width);
         const out = [];
+        const busGroup = width > 1 ? this.newId('busg') : null;
         for (let i = 0; i < width; i++) {
           const id = this.newId('mux2');
           const y = `w_${id}`;
-          this.cells.push({ id, type: 'mux2', ports: { sel: selBit, a: aNets[i], b: bNets[i], y }, comment: i === 0 ? exprToStr(node) : null });
+          this.cells.push({ id, type: 'mux2', ports: { sel: selBit, a: aNets[i], b: bNets[i], y }, comment: i === 0 ? exprToStr(node) : null, busGroup, busBit: i, busWidth: width });
           this.markDriven(y, id);
           out.push(y);
         }
@@ -1312,10 +1330,11 @@ class Synthesizer {
     const a = this.synthExpr(lNode, width);
     const b = this.synthExpr(rNode, width);
     const out = [];
+    const busGroup = width > 1 ? this.newId('busg') : null;
     for (let i = 0; i < width; i++) {
       const id = this.newId(gateOp);
       const y = `w_${id}`;
-      this.cells.push({ id, type: gateOp, ports: { a: a[i], b: b[i], y }, comment: i === 0 ? exprToStr(srcNode) : null });
+      this.cells.push({ id, type: gateOp, ports: { a: a[i], b: b[i], y }, comment: i === 0 ? exprToStr(srcNode) : null, busGroup, busBit: i, busWidth: width });
       this.markDriven(y, id);
       out.push(y);
     }
@@ -1497,20 +1516,33 @@ class Synthesizer {
     return keys;
   }
 
+  // lazily assigns one shared bus-group id per distinct `key` within a single cache Map,
+  // so callers that emit several independent per-signal mux/gate chains in one pass (e.g.
+  // an if/else touching two unrelated output signals) tag each signal's bits with its own
+  // group instead of merging unrelated signals into one bus node downstream.
+  _busGroupId(cache, key) {
+    if (!cache.has(key)) cache.set(key, this.newId('busg'));
+    return cache.get(key);
+  }
+
   _synthCombIf(stmt, cv) {
     const thenCv = this._synthCombSeq(stmt.then.type === 'Block' ? stmt.then.stmts : [stmt.then], cv);
     const elseCv = stmt.else ? this._synthCombSeq(stmt.else.type === 'Block' ? stmt.else.stmts : [stmt.else], cv) : cv;
     const touched = new Set([...this._changedKeys(cv, thenCv), ...this._changedKeys(cv, elseCv)]);
     const selBit = this._synthToBool(stmt.cond);
     const result = new Map(cv);
+    const busGroups = new Map();
     for (const key of touched) {
       const bNet = thenCv.get(key);
       const aNet = elseCv.get(key);
       if (bNet === undefined || aNet === undefined) this.error(`signal driving net '${key}' is not assigned on every branch of an if/else inside a combinational always block (no prior value to fall back on) — combinational blocks must fully determine every signal they touch, to avoid inferring a latch`);
       if (bNet === aNet) { result.set(key, bNet); continue; }
+      const { base, idx } = parseNet(key);
+      const s = this.sig[base];
+      const busGroup = idx !== null && s && s.width > 1 ? this._busGroupId(busGroups, base) : null;
       const id = this.newId('mux2');
       const y = `w_${id}`;
-      this.cells.push({ id, type: 'mux2', ports: { sel: selBit, a: aNet, b: bNet, y } });
+      this.cells.push({ id, type: 'mux2', ports: { sel: selBit, a: aNet, b: bNet, y }, busGroup, busBit: idx, busWidth: busGroup ? s.width : null, busBase: busGroup ? base : null });
       this.markDriven(y, id);
       result.set(key, y);
     }
@@ -1570,6 +1602,7 @@ class Synthesizer {
     if (hasDefault) for (const k of this._changedKeys(cv, defaultCv)) touched.add(k);
 
     const result = new Map(cv);
+    const busGroups = new Map();
     for (const key of touched) {
       // every item must assign this key — partial coverage would mean inferring a latch
       for (const { cv: icv } of itemCvs) {
@@ -1586,6 +1619,8 @@ class Synthesizer {
         acc = itemCvs[itemCvs.length - 1].cv.get(key);
         startIdx = itemCvs.length - 2;
       }
+      const { base, idx: bitIdx } = parseNet(key);
+      const s = this.sig[base];
       // walk remaining items in reverse so the FIRST-listed item ends up with top priority,
       // matching Verilog's case-statement priority (first match wins)
       for (let idx = startIdx; idx >= 0; idx--) {
@@ -1593,7 +1628,10 @@ class Synthesizer {
         if (itemNet === acc) continue;
         const id = this.newId('mux2');
         const y = `w_${id}`;
-        this.cells.push({ id, type: 'mux2', ports: { sel: itemCvs[idx].matchNet, a: acc, b: itemNet, y } });
+        // group by (signal, priority level) so each level of the ladder bundles into its
+        // own bus box — bits of unrelated signals, or of different levels, never merge
+        const busGroup = bitIdx !== null && s && s.width > 1 ? this._busGroupId(busGroups, `${base}:${idx}`) : null;
+        this.cells.push({ id, type: 'mux2', ports: { sel: itemCvs[idx].matchNet, a: acc, b: itemNet, y }, busGroup, busBit: bitIdx, busWidth: busGroup ? s.width : null, busBase: busGroup ? base : null });
         this.markDriven(y, id);
         acc = y;
       }
@@ -1656,15 +1694,85 @@ class Synthesizer {
     if (stmt.type === 'If') {
       const thenStmts = stmt.then.type === 'Block' ? stmt.then.stmts : [stmt.then];
       const elseStmts = stmt.else ? (stmt.else.type === 'Block' ? stmt.else.stmts : [stmt.else]) : [];
+      // The common idiom `if(reset) x<=0; else x<=...;` maps straight onto the `dff`
+      // primitive's own built-in async-reset behavior, so when the else-branch is a flat
+      // list of plain assignments we look each one up directly (preserved verbatim below).
+      // But an `else if(...) ... else if(...) ...` ladder (the "normal operation" logic
+      // following a reset check) parses as a single nested If sitting in that else slot —
+      // fall through to the general priority-mux resolver for that case instead of
+      // silently matching nothing and falling back to the reset value forever.
+      const elseIsFlat = elseStmts.every(es => es.type === 'NBAssign');
+      const elseCv = elseIsFlat ? null : this._synthSeqSeq(elseStmts, new Map());
       for (const ts of thenStmts) {
         if (ts.type !== 'NBAssign') this.error('only nonblocking assignments are supported inside if/else of a clocked always block');
         this._checkResetValueIsZero(ts.rhs, this._lvalueKey(ts.lhs));
-        const matchingElse = elseStmts.find(es => es.type === 'NBAssign' && this._lvalueKey(es.lhs) === this._lvalueKey(ts.lhs));
-        this._makeDff(ts.lhs, matchingElse ? matchingElse.rhs : ts.rhs, clk, rst);
+        if (elseIsFlat) {
+          const matchingElse = elseStmts.find(es => this._lvalueKey(es.lhs) === this._lvalueKey(ts.lhs));
+          this._makeDff(ts.lhs, matchingElse ? matchingElse.rhs : ts.rhs, clk, rst);
+          continue;
+        }
+        const width = this._lvalueWidth(ts.lhs);
+        const dNets = [];
+        let matched = 0;
+        for (let i = 0; i < width; i++) {
+          const key = this._lvalueBitNet(ts.lhs, i);
+          if (elseCv.has(key)) { dNets.push(elseCv.get(key)); matched++; }
+          else dNets.push(null);
+        }
+        if (matched === 0) { this._makeDff(ts.lhs, ts.rhs, clk, rst); continue; }
+        if (matched !== width) this.error(`signal '${this._lvalueKey(ts.lhs)}' is only partially driven by the else-branch of a clocked always block — assign all of its bits there, or none`);
+        this._makeDffBits(ts.lhs, dNets, clk, rst, `${this._lvalueKey(ts.lhs)} <= <priority-muxed in else-branch>`);
       }
       return;
     }
     this.error(`Unsupported statement '${stmt.type}' inside a clocked always block`);
+  }
+
+  // Resolves the statements of a clocked always block's "normal operation" branch (i.e.
+  // everything below the top reset check) into a priority-mux chain per driven signal
+  // bit — the sequential-logic counterpart of _synthCombSeq/_synthCombIf (used for
+  // always@(*)). The one semantic difference: a net left untouched on some branch falls
+  // back to *holding its own current value* (its own net name, i.e. its eventual dff's Q
+  // fed back into this mux) rather than erroring, since in a clocked block "no assignment
+  // on this path" means "keep the previous value," not an inferred latch.
+  _synthSeqSeq(stmts, cv) {
+    let cur = cv;
+    for (const stmt of stmts) cur = this._synthSeqStmt(stmt, cur);
+    return cur;
+  }
+  _synthSeqStmt(stmt, cv) {
+    if (stmt.type === 'NBAssign') {
+      const width = this._lvalueWidth(stmt.lhs);
+      const nets = this.synthExpr(stmt.rhs, width);
+      const next = new Map(cv);
+      for (let i = 0; i < width; i++) next.set(this._lvalueBitNet(stmt.lhs, i), nets[i]);
+      return next;
+    }
+    if (stmt.type === 'Block') return this._synthSeqSeq(stmt.stmts, cv);
+    if (stmt.type === 'If') return this._synthSeqIf(stmt, cv);
+    this.error(`Unsupported statement '${stmt.type}' inside a clocked always block`);
+  }
+  _synthSeqIf(stmt, cv) {
+    const thenCv = this._synthSeqSeq(stmt.then.type === 'Block' ? stmt.then.stmts : [stmt.then], cv);
+    const elseCv = stmt.else ? this._synthSeqSeq(stmt.else.type === 'Block' ? stmt.else.stmts : [stmt.else], cv) : cv;
+    const touched = new Set([...this._changedKeys(cv, thenCv), ...this._changedKeys(cv, elseCv)]);
+    const selBit = this._synthToBool(stmt.cond);
+    const result = new Map(cv);
+    const busGroups = new Map();
+    for (const key of touched) {
+      const bNet = thenCv.has(key) ? thenCv.get(key) : key; // untouched on this path -> hold current value
+      const aNet = elseCv.has(key) ? elseCv.get(key) : key;
+      if (bNet === aNet) { result.set(key, bNet); continue; }
+      const { base, idx } = parseNet(key);
+      const s = this.sig[base];
+      const busGroup = idx !== null && s && s.width > 1 ? this._busGroupId(busGroups, base) : null;
+      const id = this.newId('mux2');
+      const y = `w_${id}`;
+      this.cells.push({ id, type: 'mux2', ports: { sel: selBit, a: aNet, b: bNet, y }, busGroup, busBit: idx, busWidth: busGroup ? s.width : null, busBase: busGroup ? base : null });
+      this.markDriven(y, id);
+      result.set(key, y);
+    }
+    return result;
   }
 
   _checkResetValueIsZero(node, targetLabel) {
@@ -1674,27 +1782,31 @@ class Synthesizer {
     }
   }
 
+  _resetNet(rst) {
+    if (!rst) return this.constNet(1);
+    if (rst.activeLow) return this.netName(rst.sig, 0);
+    const rawNet = this.netName(rst.sig, 0);
+    const invId = this.newId('not');
+    const y = `w_${invId}`;
+    this.cells.push({ id: invId, type: 'not', ports: { a: rawNet, y }, comment: `~${rst.sig}` });
+    this.markDriven(y, invId);
+    return y;
+  }
+
+  _makeDffBits(lv, dNets, clk, rst, commentFor0) {
+    const rstn = this._resetNet(rst);
+    for (let i = 0; i < dNets.length; i++) {
+      const id = this.newId('dff');
+      const qNet = this._lvalueBitNet(lv, i);
+      this.cells.push({ id, type: 'dff', ports: { clk: this.netName(clk, 0), rstn, d: dNets[i], q: qNet }, comment: i === 0 ? commentFor0 : null });
+      this.markDriven(qNet, id);
+    }
+  }
+
   _makeDff(lv, dNode, clk, rst) {
     const width = this._lvalueWidth(lv);
     const dNets = this.synthExpr(dNode, width);
-    let rstn;
-    if (!rst) {
-      rstn = this.constNet(1);
-    } else if (rst.activeLow) {
-      rstn = this.netName(rst.sig, 0);
-    } else {
-      const rawNet = this.netName(rst.sig, 0);
-      const invId = this.newId('not');
-      rstn = `w_${invId}`;
-      this.cells.push({ id: invId, type: 'not', ports: { a: rawNet, y: rstn }, comment: `~${rst.sig}` });
-      this.markDriven(rstn, invId);
-    }
-    for (let i = 0; i < width; i++) {
-      const id = this.newId('dff');
-      const qNet = this._lvalueBitNet(lv, i);
-      this.cells.push({ id, type: 'dff', ports: { clk: this.netName(clk, 0), rstn, d: dNets[i], q: qNet }, comment: i === 0 ? `${this._lvalueKey(lv)} <= ${exprToStr(dNode)}` : null });
-      this.markDriven(qNet, id);
-    }
+    this._makeDffBits(lv, dNets, clk, rst, `${this._lvalueKey(lv)} <= ${exprToStr(dNode)}`);
   }
 
   run() {
@@ -1890,18 +2002,20 @@ function parseNet(net) {
   return m ? { base: m[1], idx: parseInt(m[2], 10) } : { base: net, idx: null };
 }
 
-function collapseBuses(graph, sig, skipCellKinds) {
+function collapseBuses(graph, sig, skipCellKinds, bundleCells = true) {
   const cellGroups = {};
-  for (const n of graph.nodes) {
-    if (n.kind === 'port-in' || n.kind === 'port-out' || n.kind === 'const') continue;
-    if (skipCellKinds && skipCellKinds.has(n.kind)) continue;
-    const idPort = IDENTITY_PORT[n.kind];
-    const net = idPort && n.cell.ports[idPort];
-    if (!net) continue;
-    const { base, idx } = parseNet(net);
-    if (idx === null || !sig[base] || sig[base].width <= 1) continue;
-    const key = `cell::${n.kind}::${base}`;
-    (cellGroups[key] ||= { kind: n.kind, base, members: [] }).members.push({ node: n, idx });
+  if (bundleCells) {
+    for (const n of graph.nodes) {
+      if (n.kind === 'port-in' || n.kind === 'port-out' || n.kind === 'const') continue;
+      if (skipCellKinds && skipCellKinds.has(n.kind)) continue;
+      const idPort = IDENTITY_PORT[n.kind];
+      const net = idPort && n.cell.ports[idPort];
+      if (!net) continue;
+      const { base, idx } = parseNet(net);
+      if (idx === null || !sig[base] || sig[base].width <= 1) continue;
+      const key = `cell::${n.kind}::${base}`;
+      (cellGroups[key] ||= { kind: n.kind, base, members: [] }).members.push({ node: n, idx });
+    }
   }
   const portGroups = {};
   for (const n of graph.nodes) {
@@ -1939,6 +2053,46 @@ function collapseBuses(graph, sig, skipCellKinds) {
   }
   tryMakeBus(cellGroups, false);
   tryMakeBus(portGroups, true);
+
+  // Fallback pass: bundle per-bit mux/gate chains whose output nets never resolve to a
+  // declared signal name (so the pass above can't claim them by net-name lookup) — e.g.
+  // every level of a multi-level if/else-if or case ladder except the last, or any
+  // bitwise/equality operator's intermediate per-bit gates. These were tagged with a
+  // shared `busGroup` id at synthesis time (see Synthesizer._busGroupId and friends)
+  // specifically so the diagram can still bundle them into one box each, the same way a
+  // dff bus does. Only nodes NOT already claimed above are considered, so a chain's final
+  // level (whose net DOES land on a real signal, e.g. via an assign's aliasing) keeps
+  // going through the ordinary named-signal path above unchanged.
+  const anonGroups = {};
+  if (bundleCells) {
+    for (const n of graph.nodes) {
+      if (nodeToBus[n.id]) continue;
+      if (skipCellKinds && skipCellKinds.has(n.kind)) continue;
+      const g = n.cell && n.cell.busGroup;
+      if (!g) continue;
+      (anonGroups[g] ||= { kind: n.kind, width: n.cell.busWidth, base: n.cell.busBase, members: [] }).members.push({ node: n, idx: n.cell.busBit });
+    }
+  }
+  for (const key of Object.keys(anonGroups)) {
+    const g = anonGroups[key];
+    if (!g.width || g.members.length !== g.width) continue;
+    const seen = new Set(g.members.map(m => m.idx));
+    if (seen.size !== g.width) continue;
+    g.members.sort((a, b) => a.idx - b.idx);
+    const namedSig = g.base && sig[g.base];
+    const range = namedSig ? `[${namedSig.lo + namedSig.width - 1}:${namedSig.lo}]` : `[${g.width - 1}:0]`;
+    const netLabel = namedSig ? `${g.base}${range}` : `w_${key}${range}`;
+    const busId = `busnode_anon::${key}`;
+    busNodes.push({
+      id: busId, kind: g.kind, isBus: true, width: g.width,
+      label: g.kind.toUpperCase(),
+      range,
+      netLabel,
+      members: g.members,
+    });
+    for (const m of g.members) nodeToBus[m.node.id] = busId;
+  }
+
   if (!busNodes.length) return graph;
 
   const groupedIds = new Set(Object.keys(nodeToBus));
@@ -2249,7 +2403,7 @@ function synthesizeModuleView(all, moduleName) {
   // when drilling into an auto-generated FUNC_addN/FUNC_subN, show the real per-bit fa
   // chain (not re-collapsed into one composite node) — that's the whole point of drilling in
   const skipCellKinds = result.isAdderModule ? new Set(['fa']) : null;
-  const graph = mergeInstancePins(collapseBuses(buildGraph(result), result.sig, skipCellKinds));
+  const graph = mergeInstancePins(collapseBuses(buildGraph(result), result.sig, skipCellKinds, bundleMultibitLogic));
   const layout = layoutGraph(graph);
   return { result, graph, layout };
 }
@@ -2538,6 +2692,19 @@ document.querySelectorAll('[data-collapse]').forEach(btn => {
     apply(visible);
   });
   apply(localStorage.getItem('netlistHierarchyVisible') === '1');
+})();
+
+/* ---- bundle multi-bit logic toggle (mux2/dff/gate chains collapsed into one N-bit box vs
+   shown as N individual 1-bit cells) — read by synthesizeModuleView on every re-render */
+let bundleMultibitLogic = localStorage.getItem('netlistBundleMultibit') !== '0';
+(() => {
+  const checkbox = document.getElementById('bundleMultibitCheckbox');
+  checkbox.checked = bundleMultibitLogic;
+  checkbox.addEventListener('change', () => {
+    bundleMultibitLogic = checkbox.checked;
+    localStorage.setItem('netlistBundleMultibit', bundleMultibitLogic ? '1' : '0');
+    showCurrentView();
+  });
 })();
 </script>
 
