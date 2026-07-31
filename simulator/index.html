@@ -345,6 +345,17 @@
     }
 
     /* --- memory viewer card --- */
+    .mem-radix-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #3a3a3c;
+      cursor: pointer;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .mem-radix-toggle input { cursor: pointer; }
     .mem-file-list {
       display: flex;
       gap: 8px;
@@ -521,6 +532,14 @@
         <select id="memorySelect"><option value="">(no memories declared)</option></select>
         <button class="btn secondary" id="memAttachBtn">Attach file(s)…</button>
         <input type="file" id="memFileInput" accept=".hex,.mem,.bin,.txt" multiple style="display:none">
+        <label class="mem-radix-toggle">
+          <input type="checkbox" id="memHexCheckbox" checked>
+          Hexadecimal
+        </label>
+        <label class="mem-radix-toggle">
+          <input type="checkbox" id="memBinCheckbox" checked>
+          Binary
+        </label>
       </div>
       <div class="mem-file-list" id="memFileList"></div>
       <div class="memory-table-wrap" id="memoryTableWrap">
@@ -1510,9 +1529,9 @@ class Simulator {
     const bitsPerDigit = radix === 'h' ? 4 : 1;
     const digitMask = (1 << bitsPerDigit) - 1;
     for (const tok of tokens) {
-      if (tok[0] === '@') { addr = parseInt(tok.slice(1), 16); continue; }
+      if (tok[0] === '@') { addr = parseInt(tok.slice(1).replace(/_/g, ''), 16); continue; }
       let v = 0, x = 0, z = 0, shift = 0;
-      for (const ch of tok.split('').reverse()) {
+      for (const ch of tok.replace(/_/g, '').split('').reverse()) {
         if (ch === 'x' || ch === 'X') x |= digitMask << shift;
         else if (ch === 'z' || ch === 'Z' || ch === '?') z |= digitMask << shift;
         else v |= (parseInt(ch, 16) & digitMask) << shift;
@@ -2212,6 +2231,8 @@ const memFileList = document.getElementById('memFileList');
 const memoryTable = document.getElementById('memoryTable');
 const memoryTableWrap = document.getElementById('memoryTableWrap');
 const memoryEmpty = document.getElementById('memoryEmpty');
+const memHexCheckbox = document.getElementById('memHexCheckbox');
+const memBinCheckbox = document.getElementById('memBinCheckbox');
 
 const PALETTE = ['#007aff', '#34c759', '#ff9500', '#ff2d55', '#af52de', '#5ac8fa', '#ffcc00', '#a2845e'];
 let lastResult = null;
@@ -2469,6 +2490,23 @@ function renderMemFileList() {
   }
 }
 memorySelect.addEventListener('change', () => { selectedMemory = memorySelect.value; renderMemoryTable(); });
+// At least one of hex/binary must stay checked - unchecking the last one just
+// re-checks itself, so the table never has "neither" to fall back to.
+memHexCheckbox.addEventListener('change', () => {
+  if (!memHexCheckbox.checked && !memBinCheckbox.checked) memHexCheckbox.checked = true;
+  else renderMemoryTable();
+});
+memBinCheckbox.addEventListener('change', () => {
+  if (!memBinCheckbox.checked && !memHexCheckbox.checked) memBinCheckbox.checked = true;
+  else renderMemoryTable();
+});
+// Combines the hex/binary strings per the two checkboxes: hex alone, binary
+// alone, or "hex (binary)" when both are checked (checked above to never
+// both be off at once).
+function formatMemRadix(hexStr, binStr) {
+  if (memHexCheckbox.checked && memBinCheckbox.checked) return hexStr + ' (' + binStr + ')';
+  return memHexCheckbox.checked ? hexStr : binStr;
+}
 function renderMemorySelect() {
   memorySelect.innerHTML = '';
   if (lastMemoryDecls.length === 0) {
@@ -2499,10 +2537,20 @@ function renderMemoryTable() {
   }
   memoryTableWrap.style.display = 'block';
   memoryEmpty.style.display = 'none';
-  let html = '<thead><tr><th>Address</th><th>Value (hex)</th></tr></thead><tbody>';
+  const addrWidth = Math.max(1, Math.ceil(Math.log2(Math.max(mem.hi, 1) + 1)));
+  const addrLabel = memHexCheckbox.checked && memBinCheckbox.checked ? 'Address (hex (binary))'
+    : memHexCheckbox.checked ? 'Address (hex)' : 'Address (binary)';
+  const valueLabel = memHexCheckbox.checked && memBinCheckbox.checked ? 'Value (hex (binary))'
+    : memHexCheckbox.checked ? 'Value (hex)' : 'Value (binary)';
+  let html = '<thead><tr><th>' + addrLabel + '</th><th>' + valueLabel + '</th></tr></thead><tbody>';
   for (let i = 0; i < mem.depth; i++) {
     const addr = mem.lo + i;
-    html += '<tr><td class="mem-addr">' + addr + '</td><td>' + formatValue(mem.cells[i], mem.elemWidth, 'hex') + '</td></tr>';
+    const addrHex = addr.toString(16).padStart(Math.ceil(addrWidth / 4), '0');
+    const addrBin = addr.toString(2).padStart(addrWidth, '0');
+    const value = mem.cells[i];
+    const valueHex = formatValue(value, mem.elemWidth, 'hex');
+    const valueBin = formatValue(value, mem.elemWidth, 'bin');
+    html += '<tr><td class="mem-addr">' + formatMemRadix(addrHex, addrBin) + '</td><td>' + formatMemRadix(valueHex, valueBin) + '</td></tr>';
   }
   memoryTable.innerHTML = html + '</tbody>';
 }
@@ -2651,6 +2699,8 @@ resetBtn.addEventListener('click', () => {
   waveCanvas.style.display = 'none';
   renderHierarchyTree(null);
   lastMemoryDecls = [];
+  memHexCheckbox.checked = true;
+  memBinCheckbox.checked = true;
   renderMemorySelect();
 });
 
