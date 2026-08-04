@@ -1,0 +1,4163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>C Compiler</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+      background: #f2f2f7;
+      color: #1c1c1e;
+      padding: 24px;
+    }
+    h1 {
+      text-align: center;
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: #1c1c1e;
+    }
+    h1 a { color: inherit; text-decoration: none; }
+    h1 a:hover { text-decoration: underline; }
+    .subtitle {
+      text-align: center;
+      font-size: 13px;
+      color: #8e8e93;
+      margin-bottom: 24px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 20px 22px 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    }
+    .card.full { grid-column: 1 / -1; }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #1c1c1e;
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+    }
+    .card-collapse-btn {
+      cursor: pointer;
+      font-size: 8px;
+      font-weight: 600;
+      color: #1c1c1e;
+      user-select: none;
+      flex-shrink: 0;
+      margin-right: 6px;
+      width: 13px;
+      height: 13px;
+      border: 1px solid #1c1c1e;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .card-collapse-btn:hover { border-color: #3a3a3c; color: #3a3a3c; }
+    .card.collapsed > *:not(:first-child) { display: none !important; }
+    .card.collapsed { padding-bottom: 20px; }
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+    .layout-toggle {
+      display: flex;
+      gap: 4px;
+    }
+    .layout-btn {
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 18px;
+      border: 1px solid #c7c7cc;
+      border-radius: 5px;
+      color: #8e8e93;
+      background: #fff;
+    }
+    .layout-btn:hover { border-color: #8e8e93; color: #3a3a3c; }
+    .layout-btn.active { border-color: #007aff; color: #007aff; }
+    .layout-btn svg { width: 13px; height: 13px; display: block; }
+    .grid.stack-editor-console .layout-pair { grid-column: 1 / -1; }
+    .card p {
+      font-size: 12px;
+      color: #8e8e93;
+      margin-bottom: 14px;
+    }
+    canvas { width: 100% !important; }
+    .legend-row {
+      display: flex;
+      gap: 18px;
+      justify-content: center;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #3a3a3c;
+    }
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .badge-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 2px;
+    }
+    .badge {
+      background: #f2f2f7;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: #3a3a3c;
+    }
+    .badge span { font-weight: 700; color: #007aff; }
+    .badge.error span { color: #ff3b30; }
+
+    /* --- toolbar groups (zoom controls, range inputs) --- */
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #f2f2f7;
+      border-radius: 10px;
+      padding: 5px 8px;
+    }
+    .toolbar-group .btn.secondary { background: #fff; }
+    .toolbar-group .btn.secondary:hover { background: #e5e5ea; }
+    .toolbar-group .num-input { background: #fff; width: 84px; }
+    .icon-btn { padding: 6px 11px; font-weight: 700; }
+    .zoom-level {
+      font-size: 11px;
+      color: #8e8e93;
+      font-variant-numeric: tabular-nums;
+      min-width: 40px;
+      text-align: center;
+    }
+    .num-input.error { box-shadow: 0 0 0 1.5px #ff3b30 inset; }
+
+    /* --- radix picker popup for waveform value column --- */
+    .radix-popup {
+      position: fixed;
+      display: none;
+      background: #fff;
+      border-radius: 12px;
+      padding: 8px;
+      font-size: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      z-index: 1000;
+      min-width: 130px;
+    }
+    .radix-popup-title {
+      font-weight: 700;
+      font-size: 12px;
+      color: #1c1c1e;
+      padding: 4px 8px 6px;
+    }
+    .radix-opt {
+      padding: 6px 8px;
+      border-radius: 8px;
+      color: #8e8e93;
+      cursor: pointer;
+    }
+    .radix-opt:hover { background: #f2f2f7; }
+    .radix-opt.selected {
+      color: #007aff;
+      border: 1.5px solid #007aff;
+      font-weight: 600;
+    }
+
+    /* --- module hierarchy browser card (sits left of the waveform/netlist viewer) --- */
+    .split-row {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 18px;
+      align-items: flex-start;
+    }
+    .split-row > .card:first-child { flex: 0 0 220px; width: 220px; }
+    .split-row > .card:last-child { flex: 1 1 auto; min-width: 0; }
+    .split-row.hierarchy-collapsed > .card:first-child { display: none; }
+    .hierarchy-tree { font-size: 12px; }
+    .hierarchy-node-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 6px;
+      border-radius: 6px;
+      cursor: pointer;
+      color: #3a3a3c;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .hierarchy-node-row:hover { background: #f2f2f7; }
+    .hierarchy-node-row.active { background: #e8f1ff; color: #007aff; font-weight: 600; }
+    .hierarchy-node-type { color: #8e8e93; font-size: 10px; }
+    .hierarchy-node-icon {
+      width: 13px;
+      height: 13px;
+      color: #8e8e93;
+      flex-shrink: 0;
+    }
+    .hierarchy-children { margin-left: 12px; border-left: 1px solid #e5e5ea; padding-left: 6px; }
+
+    /* --- additions for editor / console / assembly listing / register & memory panel, same visual language --- */
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    select, .btn, .num-input {
+      font-family: inherit;
+      font-size: 12px;
+      border: none;
+      border-radius: 8px;
+      padding: 7px 12px;
+      background: #f2f2f7;
+      color: #1c1c1e;
+      cursor: pointer;
+    }
+    select { flex: 1 1 auto; min-width: 120px; }
+    .num-input { width: 64px; cursor: text; text-align: center; }
+    .btn {
+      background: #007aff;
+      color: #fff;
+      font-weight: 600;
+      transition: background 0.15s ease;
+    }
+    .btn:hover { background: #0066d6; }
+    .btn.secondary { background: #f2f2f7; color: #1c1c1e; }
+    .btn.secondary:hover { background: #e5e5ea; }
+    .btn:disabled { background: #c7c7cc; cursor: default; }
+    .time-label { font-size: 12px; color: #8e8e93; margin-right: -2px; }
+
+    .editor-wrap {
+      display: flex;
+      background: #1c1c1e;
+      border-radius: 12px;
+      overflow: hidden;
+      height: 360px;
+    }
+    .gutter {
+      flex-shrink: 0;
+      width: 52px;
+      padding: 12px 6px 12px 0;
+      text-align: right;
+      font: 12px/1.55 "SF Mono", Menlo, Consolas, monospace;
+      color: #5a5a5e;
+      background: #232326;
+      overflow: hidden;
+      user-select: none;
+      white-space: pre;
+      cursor: pointer;
+    }
+    /* One block per line, no flex/margins, so each row is exactly one text
+       line-height tall and stays aligned with the textarea beside it. */
+    .gutter-line { position: relative; }
+    .gutter-line:hover { color: #e5e5ea; }
+    .gutter-line.current { color: #5ac8fa; font-weight: 700; }
+    .bp-dot {
+      position: absolute;
+      left: 4px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      box-sizing: border-box;
+    }
+    .gutter-line:hover .bp-dot { background: rgba(255,59,48,0.4); }
+    .gutter-line.bp .bp-dot, .gutter-line.bp:hover .bp-dot { background: #ff3b30; }
+    /* breakpoint on a line the compiler generated no code for: it can never hit */
+    .gutter-line.bp-unmapped .bp-dot,
+    .gutter-line.bp-unmapped:hover .bp-dot { background: transparent; border: 1.5px solid #ff3b30; }
+
+    /* Positioning context for the current-line band. The textarea is
+       transparent, so the band behind it shows through. */
+    .editor-code {
+      position: relative;
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .line-highlight {
+      position: absolute;
+      left: 0;
+      right: 0;
+      display: none;
+      background: rgba(90,200,250,0.16);
+      border-left: 2px solid #5ac8fa;
+      pointer-events: none;
+    }
+    textarea#codeInput {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      resize: none;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: #e5e5ea;
+      font: 12px/1.55 "SF Mono", Menlo, Consolas, monospace;
+      padding: 12px 12px 12px 8px;
+      tab-size: 2;
+      white-space: pre;
+      overflow: auto;
+    }
+    .console-box {
+      height: 360px;
+      overflow-y: auto;
+      background: #1c1c1e;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+      color: #b6f2b6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .console-box .err { color: #ff8a80; }
+    .console-box .info { color: #8e8e93; }
+    .console-box .time-tag { color: #5ac8fa; }
+
+    /* --- assembly listing card --- */
+    .asm-listing {
+      max-height: 420px;
+      overflow-y: auto;
+      /* rows are white-space:pre with a nowrap comment pinned right, so at half
+         width they run wider than the card - scroll rather than clip them */
+      overflow-x: auto;
+      background: #1c1c1e;
+      border-radius: 12px;
+      padding: 8px 0;
+      font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+    }
+    .asm-line {
+      display: flex;
+      gap: 10px;
+      padding: 2px 14px;
+      white-space: pre;
+    }
+    /* Row tint spans the whole row; the cyan rule itself lives on the text
+       column (see .asm-mnem below) so it sits just after "addr: (code)". */
+    .asm-line.current-pc { background: rgba(90,200,250,0.16); }
+    .asm-addr {
+      position: relative;
+      color: #5a5a5e;
+      flex-shrink: 0;
+      width: 152px;
+      padding-left: 14px;
+    }
+    .asm-code { color: #48484a; }
+    .asm-line:hover .asm-code { color: #8e8e93; }
+    .asm-addr[data-index] { cursor: pointer; }
+    .asm-line:hover .asm-addr[data-index] { color: #e5e5ea; }
+    .asm-line:hover .asm-addr[data-index] .bp-dot { background: rgba(255,59,48,0.4); }
+    /* an instruction breakpoint set right here */
+    .asm-line.bp-explicit .asm-addr .bp-dot,
+    .asm-line.bp-explicit:hover .asm-addr .bp-dot { background: #ff3b30; }
+    /* trapped only because a C-line breakpoint covers this instruction */
+    .asm-line.bp-inherited .asm-addr .bp-dot,
+    .asm-line.bp-inherited:hover .asm-addr .bp-dot {
+      background: transparent;
+      border: 1.5px solid #ff3b30;
+    }
+    /* The border is present (transparent) on every row and merely coloured in on
+       the current one, so the text never shifts sideways as the highlight moves.
+       Labels carry it too, purely so they line up with the mnemonic column. */
+    .asm-mnem, .asm-label {
+      border-left: 2px solid transparent;
+      padding-left: 8px;
+    }
+    .asm-line.current-pc .asm-mnem { border-left-color: #5ac8fa; }
+    .asm-label { color: #5ac8fa; flex-shrink: 0; }
+    .asm-mnem { color: #e5e5ea; }
+    .asm-comment { color: #8e8e93; font-style: italic; margin-left: auto; padding-left: 12px; white-space: nowrap; }
+
+    /* --- register grid --- */
+    /* Column-major fill: x0..x7 down the first column, then x8.. down the next.
+       With grid-auto-flow:column it is the ROW count that drives the wrap, so
+       every column-count override below must change the row count to match. */
+    .reg-grid {
+      display: grid;
+      grid-auto-flow: column;
+      grid-template-rows: repeat(8, auto);
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      background: #1c1c1e;
+      border-radius: 12px;
+      overflow: hidden;
+      font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+    }
+    /* pc lives outside the grid: as a 33rd item it would start a phantom extra
+       column and squeeze all the others. */
+    .reg-pc {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 12px;
+      margin-top: 1px;
+      background: #2c2c2e;
+      border-radius: 0 0 12px 12px;
+      font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+    }
+    .reg-grid { border-radius: 12px 12px 0 0; }
+    /* A grid item defaults to min-width:auto, i.e. it refuses to shrink below its
+       content's min-content width. The assembly listing is white-space:pre, so
+       without this a half-width Assembly card would balloon its column and steal
+       space from the card beside it (642px vs 440px instead of an even split).
+       The listing scrolls horizontally instead - see .asm-listing overflow-x. */
+    .card:not(.full) { min-width: 0; }
+    /* Half-width card: 4 columns would overflow, since a cell holds "x10 (a0)"
+       plus "0x00000000". The 2-column rule further down is inside a viewport
+       media query, so it does nothing for a narrow card on a wide screen. */
+    .card:not(.full) .reg-grid {
+      grid-template-rows: repeat(16, auto);
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .reg-cell {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 12px;
+      background: #232326;
+    }
+    .reg-cell.current { background: #2c2c2e; }
+    /* the value the highlighted (not yet executed) instruction is about to write */
+    .reg-cell.pending { background: #2c2c2e; }
+    .reg-next { color: #30d158; }
+    /* a register the highlighted instruction READS - name only, amber, so it
+       stays distinct from the green "about to be written" arrow */
+    .reg-cell.src .reg-xnum, .reg-cell.src .reg-abi { color: #ffd60a; }
+    .reg-name { color: #5ac8fa; }
+    .reg-xnum { display: inline-block; width: 3ch; }
+    .reg-abi { color: #8e8e93; }
+    .reg-value { color: #e5e5ea; }
+
+    /* --- radix checkbox, shared by the register and memory cards --- */
+    .radix-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #3a3a3c;
+      cursor: pointer;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .radix-toggle input { cursor: pointer; }
+
+    /* --- memory panel (reuses the same table pattern as Baerilog's Memory Viewer) --- */
+    .memory-table-wrap {
+      max-height: 320px;
+      overflow-y: auto;
+      border-radius: 12px;
+      background: #1c1c1e;
+    }
+    table.memory-table {
+      width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+      color: #e5e5ea;
+    }
+    table.memory-table th {
+      position: sticky;
+      top: 0;
+      background: #232326;
+      text-align: left;
+      padding: 6px 12px;
+      color: #8e8e93;
+      font-weight: 600;
+    }
+    table.memory-table td {
+      padding: 4px 12px;
+      border-top: 1px solid #2c2c2e;
+    }
+    table.memory-table td.mem-addr { color: #5ac8fa; white-space: nowrap; }
+    /* sp/fp marker, inline after the address in the stack table - dim, so it
+       never competes with the green pending-write or amber load-read highlights */
+    table.memory-table .mem-mark { color: #8e8e93; white-space: nowrap; }
+    table.memory-table td.mem-hint { color: #8e8e93; white-space: nowrap; }
+    /* Fixed widths so a column doesn't resize as you step: reserve room for the
+       widest possible content (a pending "old → new" word, or an address with a
+       "sp/fp" marker) even on renders where that content isn't present. Set on
+       the header cell, not the body cells - table-layout:fixed sizes columns
+       from the first row only, so a body-cell rule would have no effect. The
+       +24px accounts for the cell's own left+right padding, since box-sizing:
+       border-box (set globally) makes `width` include padding rather than add
+       to it - without this, 19ch of stated width leaves less than 19ch for
+       content, and the widest value clips/wraps instead of fitting exactly.
+       Content is fixed-width digits, so ch-based sizing is exact, not a guess. */
+    table.memory-table th.mem-word { width: calc(19ch + 24px); }
+    table.memory-table td.mem-word { white-space: nowrap; }
+    table.memory-table.stack-table th:first-child { width: calc(13ch + 24px); }
+    /* Rows below sp: abandoned leftovers from calls that already returned, so
+       the address and value are dimmed to keep the live stack prominent. */
+    table.memory-table tr.mem-dead td.mem-addr { color: #2f5a6b; }
+    table.memory-table tr.mem-dead td { color: #5a5a5e; }
+    /* Region label. A <caption> rather than a spanning <th>, because the th rule
+       above is position:sticky and two sticky rows in one thead would overlap. */
+    table.memory-table caption {
+      caption-side: top;
+      text-align: left;
+      padding: 8px 12px 2px;
+      color: #8e8e93;
+      font-weight: 600;
+    }
+    table.memory-table + table.memory-table { margin-top: 6px; }
+    table.memory-table tr.pending td { background: #2c2c2e; }
+    table.memory-table td .mem-next { color: #30d158; }
+    /* the row a load instruction is about to read from */
+    table.memory-table tr.reading td { background: #2c2c2e; }
+    table.memory-table tr.reading td.mem-addr { color: #ffd60a; }
+
+    .panel-empty {
+      font-size: 12px;
+      color: #8e8e93;
+      text-align: center;
+      padding: 40px 0;
+    }
+
+    @media (max-width: 760px) {
+      .grid { grid-template-columns: 1fr; }
+      .reg-grid {
+        grid-template-rows: repeat(16, auto);
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: #8e8e93;
+      margin-top: 24px;
+    }
+    .footer a { color: #8e8e93; text-decoration: none; }
+    .footer a:hover { color: #007aff; }
+</style>
+</head>
+<body>
+
+  <h1><a href="https://jeremyjbae.github.io/Baerilog">Baerilog</a>: C Compiler</h1>
+  <div class="subtitle">Write · Compile · Run — a C subset to RISC-V, all in the browser</div>
+
+  <div class="grid">
+
+    <div class="card layout-pair" id="card-editor">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>C Editor
+        <span class="header-controls">
+          <span class="layout-toggle">
+            <span class="layout-btn" id="editorHeightDec" title="Decrease height">−</span>
+            <span class="layout-btn" id="editorHeightInc" title="Increase height">+</span>
+          </span>
+          <span class="layout-toggle">
+            <span class="layout-btn" data-layout-btn="side" title="Side by side">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="6.6" height="10.6" rx="1.3"/><rect x="8.7" y="0.7" width="6.6" height="10.6" rx="1.3"/></svg>
+            </span>
+            <span class="layout-btn" data-layout-btn="stack" title="Stacked">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
+            </span>
+          </span>
+        </span>
+      </h2>
+      <p>Behavioral subset: int/char, arrays, pointers, if/while/for, functions &amp; recursion, printf (literal format strings)</p>
+      <div class="toolbar">
+        <select id="exampleSelect"></select>
+        <button class="btn secondary" id="openBtn">Open…</button>
+        <button class="btn secondary" id="saveBtn">Save</button>
+        <input type="file" id="fileOpenInput" accept=".c,.h,.txt" style="display:none">
+      </div>
+      <div class="editor-wrap" id="editorWrap">
+        <div class="gutter" id="gutter" title="Click a line number to toggle a breakpoint"></div>
+        <div class="editor-code" id="editorCode">
+          <div class="line-highlight" id="lineHighlight"></div>
+          <textarea id="codeInput" spellcheck="false"></textarea>
+        </div>
+      </div>
+      <div class="toolbar" style="margin-top:12px; margin-bottom:0;">
+        <button class="btn" id="compileBtn">⚙ Compile</button>
+        <div class="toolbar-group">
+          <span class="time-label">memory</span>
+          <input class="num-input" id="memSizeInput" type="number" min="4" step="256" value="1024">
+          <span class="time-label">KB</span>
+        </div>
+        <select id="isaSelect" style="flex:0 1 auto; min-width:0;">
+          <option value="rv32im" selected>RV32IM (hardware mul/div)</option>
+          <option value="rv32i">RV32I (software mul/div)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card layout-pair" id="card-console">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Console
+        <span class="header-controls">
+          <span class="layout-toggle">
+            <span class="layout-btn" id="consoleHeightDec" title="Decrease height">−</span>
+            <span class="layout-btn" id="consoleHeightInc" title="Increase height">+</span>
+          </span>
+          <span class="layout-toggle">
+            <span class="layout-btn" data-layout-btn="side" title="Side by side">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="6.6" height="10.6" rx="1.3"/><rect x="8.7" y="0.7" width="6.6" height="10.6" rx="1.3"/></svg>
+            </span>
+            <span class="layout-btn" data-layout-btn="stack" title="Stacked">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
+            </span>
+          </span>
+        </span>
+      </h2>
+      <p>printf output and program status</p>
+      <div class="console-box" id="consoleBox"><span class="info">Click Compile to generate RISC-V assembly…</span></div>
+      <div class="badge-row" id="badgeRow"></div>
+    </div>
+
+    <div class="card full" id="card-asm">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>RISC-V Assembly
+        <span class="header-controls">
+          <span class="layout-toggle">
+            <span class="layout-btn" id="asmHeightDec" title="Decrease height">−</span>
+            <span class="layout-btn" id="asmHeightInc" title="Increase height">+</span>
+          </span>
+          <span class="layout-toggle">
+            <span class="layout-btn" data-width-btn="half" data-width-card="card-asm" title="Half width">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="6.6" height="10.6" rx="1.3"/><rect x="8.7" y="0.7" width="6.6" height="10.6" rx="1.3"/></svg>
+            </span>
+            <span class="layout-btn" data-width-btn="full" data-width-card="card-asm" title="Full width">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
+            </span>
+          </span>
+        </span>
+      </h2>
+      <p>Generated instruction listing for the program above — Run executes exactly these instructions, not a separate rendering</p>
+      <div class="toolbar">
+        <button class="btn" id="runBtn" disabled>▶ Run</button>
+        <button class="btn secondary" id="stepBtn" disabled title="Execute one instruction">⤼ Step</button>
+        <button class="btn secondary" id="resetBtn" disabled>Reset</button>
+        <div class="toolbar-group">
+          <span class="time-label">run for</span>
+          <input class="num-input" id="maxStepsInput" type="number" min="100" step="1000" value="200000">
+          <span class="time-label">steps</span>
+        </div>
+      </div>
+      <div class="asm-listing" id="asmListing"></div>
+      <div class="panel-empty" id="asmEmpty">Compile the program to see its RISC-V assembly.</div>
+    </div>
+
+    <div class="card full" id="card-regs">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Registers
+        <span class="header-controls">
+          <span class="layout-toggle">
+            <span class="layout-btn" data-width-btn="half" data-width-card="card-regs" title="Half width">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="6.6" height="10.6" rx="1.3"/><rect x="8.7" y="0.7" width="6.6" height="10.6" rx="1.3"/></svg>
+            </span>
+            <span class="layout-btn" data-width-btn="full" data-width-card="card-regs" title="Full width">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
+            </span>
+          </span>
+        </span>
+      </h2>
+      <p>RV32I register file at the current position — a green <code>→</code> shows the value the highlighted instruction is about to write</p>
+      <div class="toolbar" style="justify-content:flex-end;">
+        <label class="radix-toggle">
+          <input type="checkbox" id="regHexCheckbox" checked>
+          Hexadecimal
+        </label>
+      </div>
+      <div class="reg-grid" id="regGrid"></div>
+      <div class="reg-pc" id="regPc"></div>
+    </div>
+
+    <div class="card full" id="card-data">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Data Segment
+        <span class="header-controls">
+          <span class="layout-toggle">
+            <span class="layout-btn" id="dataHeightDec" title="Decrease height">−</span>
+            <span class="layout-btn" id="dataHeightInc" title="Increase height">+</span>
+          </span>
+          <span class="layout-toggle">
+            <span class="layout-btn" data-width-btn="half" data-width-card="card-data" title="Half width">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="6.6" height="10.6" rx="1.3"/><rect x="8.7" y="0.7" width="6.6" height="10.6" rx="1.3"/></svg>
+            </span>
+            <span class="layout-btn" data-width-btn="full" data-width-card="card-data" title="Full width">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
+            </span>
+          </span>
+        </span>
+      </h2>
+      <p>Globals and string constants, from address 0 up. Global arrays live here too.</p>
+      <div class="memory-table-wrap" id="dataTableWrap"></div>
+      <div class="panel-empty" id="dataEmpty">Compile the program to see the data segment.</div>
+    </div>
+
+    <div class="card full" id="card-stack">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Stack
+        <span class="header-controls">
+          <span class="layout-toggle">
+            <span class="layout-btn" id="stackHeightDec" title="Decrease height">−</span>
+            <span class="layout-btn" id="stackHeightInc" title="Increase height">+</span>
+          </span>
+          <span class="layout-toggle">
+            <span class="layout-btn" data-width-btn="half" data-width-card="card-stack" title="Half width">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="6.6" height="10.6" rx="1.3"/><rect x="8.7" y="0.7" width="6.6" height="10.6" rx="1.3"/></svg>
+            </span>
+            <span class="layout-btn" data-width-btn="full" data-width-card="card-stack" title="Full width">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
+            </span>
+          </span>
+        </span>
+      </h2>
+      <p>The live stack, from <code>sp</code> up to the top of memory — <code>fp</code> marks the current frame base</p>
+      <div class="toolbar">
+        <div class="toolbar-group">
+          <span class="time-label">rows</span>
+          <input class="num-input" id="stackRowsInput" type="number" min="4" step="4" placeholder="all">
+          <span class="time-label">blank = whole stack; a number pins the view to the top of memory</span>
+        </div>
+      </div>
+      <div class="memory-table-wrap" id="stackTableWrap"></div>
+      <div class="panel-empty" id="stackEmpty">Compile the program to see the stack.</div>
+    </div>
+
+  </div>
+
+  <div class="footer">© Jeremy Bae 2026 · <a href="https://github.com/jeremyjbae" target="_blank" rel="noopener">github.com/jeremyjbae</a></div>
+
+<script>
+'use strict';
+
+/* =========================================================================
+   LEXER
+   ========================================================================= */
+
+const KEYWORDS = new Set(['int', 'char', 'void', 'if', 'else', 'while', 'for', 'return']);
+
+function lex(src) {
+  const toks = [];
+  let i = 0, line = 1;
+  const n = src.length;
+
+  function isDigit(c) { return c >= '0' && c <= '9'; }
+  function isHexDigit(c) { return isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'); }
+  function isIdentStart(c) { return c === '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
+  function isIdentChar(c) { return isIdentStart(c) || isDigit(c); }
+
+  function readEscape() {
+    // called with i pointing just past the backslash
+    const c = src[i++];
+    switch (c) {
+      case 'n': return 10;
+      case 't': return 9;
+      case '0': return 0;
+      case '\\': return 92;
+      case "'": return 39;
+      case '"': return 34;
+      case 'r': return 13;
+      default: throw new Error('Lex error: unknown escape \'\\' + c + '\' at line ' + line);
+    }
+  }
+
+  while (i < n) {
+    const c = src[i];
+
+    if (c === '\n') { line++; i++; continue; }
+    if (c === ' ' || c === '\t' || c === '\r') { i++; continue; }
+
+    // comments
+    if (c === '/' && src[i + 1] === '/') {
+      while (i < n && src[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && src[i + 1] === '*') {
+      i += 2;
+      while (i < n && !(src[i] === '*' && src[i + 1] === '/')) { if (src[i] === '\n') line++; i++; }
+      i += 2;
+      continue;
+    }
+
+    // numbers
+    if (isDigit(c)) {
+      const startLine = line;
+      let j = i;
+      if (c === '0' && (src[i + 1] === 'x' || src[i + 1] === 'X')) {
+        j = i + 2;
+        while (j < n && isHexDigit(src[j])) j++;
+        toks.push({ type: 'num', value: parseInt(src.slice(i, j), 16) | 0, line: startLine });
+      } else {
+        while (j < n && isDigit(src[j])) j++;
+        toks.push({ type: 'num', value: parseInt(src.slice(i, j), 10) | 0, line: startLine });
+      }
+      i = j;
+      continue;
+    }
+
+    // identifiers / keywords
+    if (isIdentStart(c)) {
+      let j = i + 1;
+      while (j < n && isIdentChar(src[j])) j++;
+      const word = src.slice(i, j);
+      toks.push({ type: KEYWORDS.has(word) ? 'kw' : 'ident', value: word, line });
+      i = j;
+      continue;
+    }
+
+    // char literal
+    if (c === "'") {
+      const startLine = line;
+      i++;
+      let value;
+      if (src[i] === '\\') { i++; value = readEscape(); }
+      else { value = src.charCodeAt(i); i++; }
+      if (src[i] !== "'") throw new Error('Lex error: unterminated char literal at line ' + startLine);
+      i++;
+      toks.push({ type: 'char', value, line: startLine });
+      continue;
+    }
+
+    // string literal
+    if (c === '"') {
+      const startLine = line;
+      i++;
+      let s = '';
+      while (i < n && src[i] !== '"') {
+        if (src[i] === '\n') throw new Error('Lex error: unterminated string literal at line ' + startLine);
+        if (src[i] === '\\') { i++; s += String.fromCharCode(readEscape()); }
+        else { s += src[i]; i++; }
+      }
+      if (i >= n) throw new Error('Lex error: unterminated string literal at line ' + startLine);
+      i++;
+      toks.push({ type: 'str', value: s, line: startLine });
+      continue;
+    }
+
+    // two-char operators
+    const two = src.slice(i, i + 2);
+    if (['==', '!=', '<=', '>=', '&&', '||', '<<', '>>', '++', '--'].includes(two)) {
+      toks.push({ type: 'op', value: two, line });
+      i += 2;
+      continue;
+    }
+
+    // single-char operators / punctuation
+    if ('+-*/%=<>!&|^~(){}[],;'.includes(c)) {
+      toks.push({ type: 'op', value: c, line });
+      i++;
+      continue;
+    }
+
+    throw new Error('Lex error: unexpected character \'' + c + '\' at line ' + line);
+  }
+
+  toks.push({ type: 'eof', value: null, line });
+  return toks;
+}
+
+/* =========================================================================
+   PARSER -> AST
+
+   Program        { type:'Program', decls:[VarDecl|FuncDecl] }
+   VarDecl        { type:'VarDecl', name, ctype:{base,ptr,arraySize}, init:Expr|null }
+   FuncDecl       { type:'FuncDecl', name, retType:{base,ptr}, params:[{name,ctype}], body:Block }
+   Block          { type:'Block', stmts:[Stmt] }
+   If             { type:'If', cond, then, els }
+   While          { type:'While', cond, body }
+   For            { type:'For', init, cond, post, body }
+   Return         { type:'Return', expr:Expr|null }
+   ExprStmt       { type:'ExprStmt', expr }
+
+   Num            { type:'Num', value }
+   CharLit        { type:'CharLit', value }
+   StringLit      { type:'StringLit', value }
+   Ident          { type:'Ident', name }
+   Unary          { type:'Unary', op:'-'|'!'|'~'|'&'|'*', expr }
+   IncDec         { type:'IncDec', op:'++'|'--', prefix:bool, target:Expr }
+   Binary         { type:'Binary', op, left, right }
+   Assign         { type:'Assign', target:Expr, value:Expr }
+   Index          { type:'Index', array:Expr, index:Expr }
+   Call           { type:'Call', name, args:[Expr] }
+   ========================================================================= */
+
+const TYPE_KEYWORDS = new Set(['int', 'char', 'void']);
+
+class Parser {
+  constructor(toks) {
+    this.toks = toks;
+    this.i = 0;
+  }
+  peek(off) { return this.toks[this.i + (off || 0)]; }
+  at(type, value) {
+    const t = this.peek();
+    if (t.type !== type) return false;
+    if (value !== undefined && t.value !== value) return false;
+    return true;
+  }
+  atKw(word) { return this.at('kw', word); }
+  atOp(op) { return this.at('op', op); }
+  next() { return this.toks[this.i++]; }
+  expect(type, value) {
+    if (!this.at(type, value)) this.err('expected ' + (value !== undefined ? '\'' + value + '\'' : type));
+    return this.next();
+  }
+  err(msg) {
+    const t = this.peek();
+    throw new Error('Parse error at line ' + t.line + ': ' + msg + ', got ' + t.type + ' \'' + t.value + '\'');
+  }
+
+  parseProgram() {
+    const decls = [];
+    while (!this.at('eof')) decls.push(this.parseTopLevel());
+    return { type: 'Program', decls };
+  }
+
+  parseBaseType() {
+    if (!this.atKw('int') && !this.atKw('char') && !this.atKw('void')) this.err('expected a type (int/char/void)');
+    return this.next().value;
+  }
+
+  parseTopLevel() {
+    const declLine = this.peek().line;
+    const base = this.parseBaseType();
+    let ptr = 0;
+    while (this.atOp('*')) { this.next(); ptr++; }
+    const name = this.expect('ident').value;
+
+    if (this.atOp('(')) {
+      // function definition
+      this.next();
+      const params = [];
+      if (!this.atOp(')')) {
+        do {
+          const pbase = this.parseBaseType();
+          let pptr = 0;
+          while (this.atOp('*')) { this.next(); pptr++; }
+          const pname = this.expect('ident').value;
+          params.push({ name: pname, ctype: { base: pbase, ptr: pptr, arraySize: null } });
+        } while (this.atOp(',') && this.next());
+      }
+      this.expect('op', ')');
+      // a forward declaration (prototype) - lets mutually recursive functions
+      // name each other; the definition itself is what actually gets compiled
+      if (this.atOp(';')) { this.next(); return { type: 'FuncProto', name }; }
+      const body = this.parseBlock();
+      return { type: 'FuncDecl', name, retType: { base, ptr: Math.min(ptr, 1) }, params, body, line: declLine };
+    }
+
+    // global variable declaration list
+    const decls = [];
+    let curName = name, curPtr = ptr;
+    for (;;) {
+      let arraySize = null;
+      if (this.atOp('[')) {
+        this.next();
+        const sizeTok = this.expect('num');
+        arraySize = sizeTok.value;
+        this.expect('op', ']');
+      }
+      let init = null;
+      if (this.atOp('=')) { this.next(); init = this.parseAssignment(); }
+      decls.push({ type: 'VarDecl', name: curName, ctype: { base, ptr: Math.min(curPtr, 1), arraySize }, init });
+      if (this.atOp(',')) {
+        this.next();
+        curPtr = 0;
+        while (this.atOp('*')) { this.next(); curPtr++; }
+        curName = this.expect('ident').value;
+        continue;
+      }
+      break;
+    }
+    this.expect('op', ';');
+    return decls.length === 1 ? decls[0] : { type: 'Block', stmts: decls };
+  }
+
+  parseBlock() {
+    this.expect('op', '{');
+    const stmts = [];
+    while (!this.atOp('}')) stmts.push(...this.parseStmt());
+    this.expect('op', '}');
+    return { type: 'Block', stmts };
+  }
+
+  // Stamps the source line onto every statement this produces, so codegen can
+  // tag each emitted instruction with the C line it came from (statement
+  // granularity - expressions inherit their statement's line).
+  parseStmt() {
+    const line = this.peek().line;
+    const stmts = this.parseStmtInner();
+    for (const s of stmts) if (s.line === undefined) s.line = line;
+    return stmts;
+  }
+
+  // returns an array of statement nodes (a local decl statement may expand to several)
+  parseStmtInner() {
+    if (this.atOp('{')) return [this.parseBlock()];
+
+    if (this.atKw('int') || this.atKw('char')) return this.parseLocalVarDeclStmt();
+
+    if (this.atKw('if')) {
+      this.next();
+      this.expect('op', '(');
+      const cond = this.parseExpr();
+      this.expect('op', ')');
+      const then = this.parseStmt();
+      let els = null;
+      if (this.atKw('else')) { this.next(); els = this.parseStmt(); }
+      return [{ type: 'If', cond, then: wrapBlock(then), els: els && wrapBlock(els) }];
+    }
+
+    if (this.atKw('while')) {
+      this.next();
+      this.expect('op', '(');
+      const cond = this.parseExpr();
+      this.expect('op', ')');
+      const body = this.parseStmt();
+      return [{ type: 'While', cond, body: wrapBlock(body) }];
+    }
+
+    if (this.atKw('for')) {
+      this.next();
+      this.expect('op', '(');
+      let init = null;
+      if (!this.atOp(';')) {
+        if (this.atKw('int') || this.atKw('char')) {
+          const declStmts = this.parseVarDeclarators();
+          init = declStmts.length === 1 ? declStmts[0] : { type: 'Block', stmts: declStmts };
+        } else {
+          init = { type: 'ExprStmt', expr: this.parseExpr() };
+        }
+      }
+      this.expect('op', ';');
+      let cond = null;
+      if (!this.atOp(';')) cond = this.parseExpr();
+      this.expect('op', ';');
+      let post = null;
+      if (!this.atOp(')')) post = this.parseExpr();
+      this.expect('op', ')');
+      const body = this.parseStmt();
+      return [{ type: 'For', init, cond, post, body: wrapBlock(body) }];
+    }
+
+    if (this.atKw('return')) {
+      this.next();
+      let expr = null;
+      if (!this.atOp(';')) expr = this.parseExpr();
+      this.expect('op', ';');
+      return [{ type: 'Return', expr }];
+    }
+
+    const expr = this.parseExpr();
+    this.expect('op', ';');
+    return [{ type: 'ExprStmt', expr }];
+  }
+
+  parseLocalVarDeclStmt() {
+    const out = this.parseVarDeclarators();
+    this.expect('op', ';');
+    return out;
+  }
+
+  parseVarDeclarators() {
+    const base = this.parseBaseType();
+    const out = [];
+    for (;;) {
+      let ptr = 0;
+      while (this.atOp('*')) { this.next(); ptr++; }
+      const name = this.expect('ident').value;
+      let arraySize = null;
+      if (this.atOp('[')) {
+        this.next();
+        arraySize = this.expect('num').value;
+        this.expect('op', ']');
+      }
+      let init = null;
+      if (this.atOp('=')) { this.next(); init = this.parseAssignment(); }
+      out.push({ type: 'VarDecl', name, ctype: { base, ptr: Math.min(ptr, 1), arraySize }, init });
+      if (this.atOp(',')) { this.next(); continue; }
+      break;
+    }
+    return out;
+  }
+
+  parseExpr() { return this.parseAssignment(); }
+
+  parseAssignment() {
+    const left = this.parseLogicalOr();
+    if (this.atOp('=')) {
+      this.next();
+      const value = this.parseAssignment();
+      return { type: 'Assign', target: left, value };
+    }
+    return left;
+  }
+
+  parseBinaryLevel(nextLevel, ops) {
+    let left = nextLevel.call(this);
+    while (ops.includes(this.peek().value) && this.at('op')) {
+      const op = this.next().value;
+      const right = nextLevel.call(this);
+      left = { type: 'Binary', op, left, right };
+    }
+    return left;
+  }
+
+  parseLogicalOr() { return this.parseBinaryLevel(this.parseLogicalAnd, ['||']); }
+  parseLogicalAnd() { return this.parseBinaryLevel(this.parseBitOr, ['&&']); }
+  parseBitOr() { return this.parseBinaryLevel(this.parseBitXor, ['|']); }
+  parseBitXor() { return this.parseBinaryLevel(this.parseBitAnd, ['^']); }
+  parseBitAnd() { return this.parseBinaryLevel(this.parseEquality, ['&']); }
+  parseEquality() { return this.parseBinaryLevel(this.parseRelational, ['==', '!=']); }
+  parseRelational() { return this.parseBinaryLevel(this.parseShift, ['<', '>', '<=', '>=']); }
+  parseShift() { return this.parseBinaryLevel(this.parseAdditive, ['<<', '>>']); }
+  parseAdditive() { return this.parseBinaryLevel(this.parseMultiplicative, ['+', '-']); }
+  parseMultiplicative() { return this.parseBinaryLevel(this.parseUnary, ['*', '/', '%']); }
+
+  parseUnary() {
+    if (this.at('op') && ['!', '~', '-', '&', '*'].includes(this.peek().value)) {
+      const op = this.next().value;
+      return { type: 'Unary', op, expr: this.parseUnary() };
+    }
+    if (this.atOp('++') || this.atOp('--')) {
+      const op = this.next().value;
+      return { type: 'IncDec', op, prefix: true, target: this.parseUnary() };
+    }
+    return this.parsePostfix();
+  }
+
+  parsePostfix() {
+    let expr = this.parsePrimary();
+    for (;;) {
+      if (this.atOp('[')) {
+        this.next();
+        const index = this.parseExpr();
+        this.expect('op', ']');
+        expr = { type: 'Index', array: expr, index };
+        continue;
+      }
+      if (this.atOp('(')) {
+        if (expr.type !== 'Ident') this.err('function calls require a plain function name');
+        this.next();
+        const args = [];
+        if (!this.atOp(')')) {
+          do { args.push(this.parseAssignment()); } while (this.atOp(',') && this.next());
+        }
+        this.expect('op', ')');
+        expr = { type: 'Call', name: expr.name, args };
+        continue;
+      }
+      if (this.atOp('++') || this.atOp('--')) {
+        const op = this.next().value;
+        expr = { type: 'IncDec', op, prefix: false, target: expr };
+        continue;
+      }
+      break;
+    }
+    return expr;
+  }
+
+  parsePrimary() {
+    const t = this.peek();
+    if (t.type === 'num') { this.next(); return { type: 'Num', value: t.value }; }
+    if (t.type === 'char') { this.next(); return { type: 'CharLit', value: t.value }; }
+    if (t.type === 'str') { this.next(); return { type: 'StringLit', value: t.value }; }
+    if (t.type === 'ident') { this.next(); return { type: 'Ident', name: t.value }; }
+    if (this.atOp('(')) {
+      this.next();
+      const expr = this.parseExpr();
+      this.expect('op', ')');
+      return expr;
+    }
+    this.err('expected an expression');
+  }
+}
+
+function wrapBlock(stmts) {
+  return stmts.length === 1 && stmts[0].type === 'Block' ? stmts[0] : { type: 'Block', stmts };
+}
+
+function parseC(src) {
+  const toks = lex(src);
+  const p = new Parser(toks);
+  return p.parseProgram();
+}
+
+/* =========================================================================
+   DATA SEGMENT + DECL-META
+   Flattens globals/functions into a flat symbol table with fixed addresses
+   (globals, string constants) and per-function stack-frame layouts (params +
+   locals, one flat frame per function - no nested-block shadowing).
+   ========================================================================= */
+
+function elemSize(ctype) { return (ctype.base === 'char' && ctype.ptr === 0) ? 1 : 4; }
+
+class DataSegment {
+  constructor() { this.bytes = []; this.stringCache = new Map(); }
+  align4() { while (this.bytes.length % 4 !== 0) this.bytes.push(0); }
+  addString(s) {
+    if (this.stringCache.has(s)) return this.stringCache.get(s);
+    const addr = this.bytes.length;
+    for (let i = 0; i < s.length; i++) this.bytes.push(s.charCodeAt(i) & 0xff);
+    this.bytes.push(0);
+    this.stringCache.set(s, addr);
+    return addr;
+  }
+  addBytes(n) { this.align4(); const addr = this.bytes.length; for (let i = 0; i < n; i++) this.bytes.push(0); return addr; }
+  addWord(v) {
+    this.align4();
+    const addr = this.bytes.length;
+    this.bytes.push(v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff);
+    return addr;
+  }
+}
+
+function evalConstExpr(expr) {
+  if (expr.type === 'Num') return expr.value;
+  if (expr.type === 'CharLit') return expr.value;
+  if (expr.type === 'Unary' && expr.op === '-') return -evalConstExpr(expr.expr);
+  if (expr.type === 'Unary' && expr.op === '~') return ~evalConstExpr(expr.expr);
+  throw new Error('Compile error: global initializers must be constant expressions');
+}
+
+function flattenGlobalDecls(program) {
+  const out = [];
+  for (const d of program.decls) {
+    if (d.type === 'VarDecl') out.push(d);
+    else if (d.type === 'Block') out.push(...d.stmts);
+  }
+  return out;
+}
+
+function walkStmtForLocals(s, out) {
+  if (!s) return;
+  if (s.type === 'VarDecl') { out.push(s); return; }
+  if (s.type === 'Block') { for (const c of s.stmts) walkStmtForLocals(c, out); return; }
+  if (s.type === 'If') { walkStmtForLocals(s.then, out); walkStmtForLocals(s.els, out); return; }
+  if (s.type === 'While') { walkStmtForLocals(s.body, out); return; }
+  if (s.type === 'For') { walkStmtForLocals(s.init, out); walkStmtForLocals(s.body, out); return; }
+}
+
+/* Peak operand-stack depth, in slots, that evaluating `e` onto an empty stack
+   needs. This mirrors what Codegen's push/pop calls actually do, and is used to
+   decide how many slot registers a function may keep values in.
+
+   It only has to be a good *upper bound*, never an exact one: codegen spills any
+   slot past the registers the frame reserved back to memory, so an undercount
+   costs speed and an overcount costs one save/restore pair and 4 bytes of frame -
+   neither can make the generated code wrong.
+
+   `isGlobal` is needed only to predict codegen's direct-local fast paths, which
+   skip the slot that would otherwise hold an address. A name that is both a
+   global and a shadowing local reads as global here, which just gives the
+   conservative answer - so guessing wrong is always safe in that direction. */
+function operandDepthOfAddr(e, isGlobal) {
+  if (e.type === 'Unary' && e.op === '*') return operandDepthOfExpr(e.expr, isGlobal);
+  if (e.type === 'Index') {
+    return Math.max(operandDepthOfExpr(e.array, isGlobal), 1 + operandDepthOfExpr(e.index, isGlobal));
+  }
+  return 1; // plain Ident: one slot holds its address
+}
+// True when codegen can address `target` straight off s0, with no address slot.
+function isDirectLocalTarget(target, isGlobal) {
+  return target.type === 'Ident' && !isGlobal(target.name);
+}
+function operandDepthOfExpr(e, isGlobal) {
+  if (!e) return 0;
+  switch (e.type) {
+    case 'Num': case 'CharLit': case 'StringLit': case 'Ident': return 1;
+    case 'Index': return operandDepthOfAddr(e, isGlobal);
+    case 'Assign':
+      return isDirectLocalTarget(e.target, isGlobal)
+        ? operandDepthOfExpr(e.value, isGlobal)
+        : Math.max(operandDepthOfAddr(e.target, isGlobal), 1 + operandDepthOfExpr(e.value, isGlobal));
+    case 'IncDec':
+      // The direct case works entirely in t1/t2, so it needs one slot for its result.
+      return isDirectLocalTarget(e.target, isGlobal)
+        ? 1 : Math.max(1, operandDepthOfAddr(e.target, isGlobal));
+    case 'Unary':
+      return e.op === '&' ? operandDepthOfAddr(e.expr, isGlobal) : operandDepthOfExpr(e.expr, isGlobal);
+    case 'Binary':
+      // && / || pop each side before evaluating the other, so they peak at the
+      // deeper side rather than holding both at once.
+      if (e.op === '&&' || e.op === '||') {
+        return Math.max(1, operandDepthOfExpr(e.left, isGlobal), operandDepthOfExpr(e.right, isGlobal));
+      }
+      return Math.max(operandDepthOfExpr(e.left, isGlobal), 1 + operandDepthOfExpr(e.right, isGlobal));
+    case 'Call': {
+      // A real call holds every argument on the stack at once (they are moved
+      // into a0-aN only once all are evaluated); printf pops each before
+      // evaluating the next, so its arguments do not accumulate.
+      const accumulates = e.name === 'printf' ? 0 : 1;
+      let m = 1;
+      e.args.forEach((a, i) => { m = Math.max(m, i * accumulates + operandDepthOfExpr(a, isGlobal)); });
+      return m;
+    }
+  }
+  return 1;
+}
+function maxOperandDepth(fnDecl, isGlobal) {
+  let max = 0;
+  const ex = e => { max = Math.max(max, operandDepthOfExpr(e, isGlobal)); };
+  const walk = s => {
+    if (!s) return;
+    switch (s.type) {
+      case 'Block': s.stmts.forEach(walk); return;
+      // A declaration's target is always a local, so it always takes the direct path.
+      case 'VarDecl': if (s.init) ex(s.init); return;
+      case 'ExprStmt': ex(s.expr); return;
+      case 'If': ex(s.cond); walk(s.then); walk(s.els); return;
+      case 'While': ex(s.cond); walk(s.body); return;
+      case 'For': walk(s.init); if (s.cond) ex(s.cond); if (s.post) ex(s.post); walk(s.body); return;
+      case 'Return': if (s.expr) ex(s.expr); return;
+    }
+  };
+  walk(fnDecl.body);
+  return max;
+}
+
+function buildProgramMeta(ast) {
+  const data = new DataSegment();
+  const globals = new Map(); // name -> { ctype, addr }
+  const funcs = new Map();   // name -> { node, params:[{name,ctype,offset}], frameSize }
+
+  for (const d of flattenGlobalDecls(ast)) {
+    if (globals.has(d.name)) throw new Error('Compile error: redefinition of global \'' + d.name + '\'');
+    const ctype = d.ctype;
+    let addr;
+    if (ctype.arraySize != null) {
+      addr = data.addBytes(ctype.arraySize * elemSize(ctype));
+    } else if (d.init && d.init.type === 'StringLit' && ctype.ptr === 1) {
+      const strAddr = data.addString(d.init.value);
+      addr = data.addWord(strAddr);
+    } else if (d.init) {
+      addr = data.addWord(evalConstExpr(d.init) | 0);
+    } else {
+      addr = data.addWord(0);
+    }
+    globals.set(d.name, { ctype, addr });
+  }
+
+  for (const d of ast.decls) {
+    if (d.type !== 'FuncDecl') continue;
+    if (funcs.has(d.name) || globals.has(d.name)) throw new Error('Compile error: redefinition of \'' + d.name + '\'');
+    if (d.params.length > 8) throw new Error('Compile error: function \'' + d.name + '\' has more than 8 parameters');
+
+    // Every declaration in the function gets its own frame slot, whatever block
+    // it sits in - slots are never reused across sibling scopes. That costs a
+    // few bytes of stack but means block scoping needs no liveness analysis:
+    // each VarDecl node just carries the offset codegen will address it by.
+    let off = 8; // s0-4 = saved ra, s0-8 = saved caller's s0
+    function allocSlot(ctype) {
+      const size = ctype.arraySize != null ? ctype.arraySize * elemSize(ctype) : 4;
+      off += size;
+      while (off % 4 !== 0) off++;
+      return off;
+    }
+
+    const params = d.params.map(p => ({ name: p.name, ctype: p.ctype, offset: allocSlot(p.ctype) }));
+    const localDecls = [];
+    walkStmtForLocals(d.body, localDecls);
+    for (const vd of localDecls) vd.slotOffset = allocSlot(vd.ctype);
+
+    // Slot registers are callee-saved, so each one this function uses needs a
+    // word of its own frame to be saved in. The count is settled here rather
+    // than during codegen because the prologue has to know the frame size
+    // before the body that uses the slots has been generated.
+    const opRegSaves = [];
+    const wanted = Math.min(maxOperandDepth(d, n => globals.has(n)), OPREGS.length);
+    for (let i = 0; i < wanted; i++) {
+      opRegSaves.push({ reg: OPREGS[i], slot: i, offset: allocSlot(INT_TYPE) });
+    }
+
+    // Keep every named slot (params + locals) so the Stack viewer can say which
+    // variable a word holds. Codegen itself only needs the per-node slotOffset.
+    const slots = params.map(p => ({ name: p.name, ctype: p.ctype, offset: p.offset, param: true }))
+      .concat(localDecls.map(vd => ({ name: vd.name, ctype: vd.ctype, offset: vd.slotOffset, param: false })));
+
+    const frameSize = Math.ceil(off / 16) * 16;
+    funcs.set(d.name, { node: d, params, slots, opRegSaves, frameSize });
+  }
+
+  if (!funcs.has('main')) throw new Error('Compile error: no \'main\' function defined');
+
+  return { data, globals, funcs };
+}
+
+/* =========================================================================
+   CODE GENERATOR: AST -> RISC-V instruction objects
+
+   Instructions are structured objects, never text:
+       { op, rd, rs1, rs2, imm, targetLabel, comment }
+   The interpreter executes these objects directly and formatAsm() renders the
+   same objects as text, so the listing can never drift from what actually runs.
+
+   Labels are NOT array entries (that would break the pc/4 <-> index mapping) -
+   they live in a separate name -> instruction-index map, and the formatter
+   emits them as their own lines from the reverse mapping.
+
+   Expression codegen is a stack machine: every expression leaves its result
+   pushed on the operand stack, every consumer pops. There is still no register
+   allocation and no liveness analysis - but the operand stack is held in
+   REGISTERS rather than in memory, because its depth is known statically at
+   every point in codegen, so slot d can simply be assigned OPREGS[d]. A push or
+   pop is therefore usually bookkeeping that emits no instruction at all, and a
+   binary operator reads and writes its slot registers in place.
+
+   Only an expression deeper than the slot registers its function reserved spills
+   the excess slots back to memory (see slotReg/memPush), which is what keeps
+   arbitrarily nested expressions correct without a register allocator.
+   ========================================================================= */
+
+const REG = {
+  zero: 0, ra: 1, sp: 2, gp: 3, tp: 4,
+  t0: 5, t1: 6, t2: 7,
+  s0: 8, s1: 9,
+  a0: 10, a1: 11, a2: 12, a3: 13, a4: 14, a5: 15, a6: 16, a7: 17,
+  s2: 18, s3: 19, s4: 20, s5: 21, s6: 22, s7: 23, s8: 24, s9: 25, s10: 26, s11: 27,
+  t3: 28, t4: 29, t5: 30, t6: 31,
+};
+const REG_NAMES = ['zero', 'ra', 'sp', 'gp', 'tp', 't0', 't1', 't2', 's0', 's1',
+  'a0', 'a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 's2', 's3', 's4', 's5', 's6',
+  's7', 's8', 's9', 's10', 's11', 't3', 't4', 't5', 't6'];
+
+// Operand-stack slot d lives in OPREGS[d]. The *callee-saved* bank is used
+// rather than the temporaries for one decisive reason: a value parked here
+// survives a nested call for free, because whoever clobbers it is obliged by
+// the ABI to save it first - so an expression containing a call needs no spill
+// logic at all. s0 is the frame pointer, leaving s1..s11; t0-t2 are therefore
+// guaranteed never to alias a slot, which is what lets them be used as scratch
+// while slots are live.
+const OPREGS = [REG.s1, REG.s2, REG.s3, REG.s4, REG.s5, REG.s6,
+  REG.s7, REG.s8, REG.s9, REG.s10, REG.s11];
+
+const SYSCALL = { PRINT_INT: 1, PRINT_STR: 4, EXIT: 10, PRINT_CHAR: 11, PRINT_HEX: 34 };
+
+const INT_TYPE = { base: 'int', ptr: 0, arraySize: null };
+
+function isPtrLike(ctype) { return ctype.ptr > 0 || ctype.arraySize != null; }
+function pointedSize(ctype) { return ctype.base === 'char' ? 1 : 4; }
+
+class Codegen {
+  constructor(ast, meta, opts) {
+    this.ast = ast;
+    this.meta = meta;
+    this.useM = !!(opts && opts.useM);
+    // The stack top is baked into _start as an immediate, the way a real crt0
+    // loads a linker-provided __stack_top - which is exactly why memory size is
+    // a *compile-time* input here and changing it invalidates the compile.
+    this.memSize = (opts && opts.memSize) || DEFAULT_MEM_SIZE;
+    this.instrs = [];
+    this.labels = new Map();
+    this.labelSeq = 0;
+    this.usedHelpers = new Set();
+    this.fn = null;      // current function record
+    this.scopes = [];    // block-scope stack of Map(name -> {kind,ctype,offset})
+    this.curLine = null; // C source line currently being compiled, stamped onto each instruction
+    this.depth = 0;      // current operand-stack depth, in slots
+    this.opRegs = 0;     // how many of those slots the current function keeps in registers
+  }
+
+  /* ---- emit primitives ---- */
+  emit(op, f) {
+    this.instrs.push({
+      op,
+      rd: f && f.rd !== undefined ? f.rd : 0,
+      rs1: f && f.rs1 !== undefined ? f.rs1 : 0,
+      rs2: f && f.rs2 !== undefined ? f.rs2 : 0,
+      imm: f && f.imm !== undefined ? f.imm | 0 : 0,
+      targetLabel: f && f.targetLabel !== undefined ? f.targetLabel : null,
+      comment: f && f.comment !== undefined ? f.comment : null,
+      line: this.curLine,
+    });
+  }
+  label(name) {
+    if (this.labels.has(name)) throw new Error('Compile error: duplicate label ' + name);
+    this.labels.set(name, this.instrs.length);
+  }
+  freshLabel(hint) { return '.L' + hint + (this.labelSeq++); }
+
+  emitLi(rd, imm, comment) {
+    imm = imm | 0;
+    if (imm >= -2048 && imm <= 2047) {
+      this.emit('ADDI', { rd, rs1: REG.zero, imm, comment });
+      return;
+    }
+    // ADDI sign-extends its 12-bit immediate, so bias the upper half by +0x800
+    // whenever the low 12 bits would come back negative.
+    const upper = (imm + 0x800) >> 12;
+    const lower = imm - (upper << 12);
+    this.emit('LUI', { rd, imm: upper, comment });
+    // LUI alone already yields imm when the low bits are zero - skipping the
+    // add avoids emitting a bare `mv rd, rd`, which reads like a bug. Every
+    // KB-multiple stack top hits this case.
+    if (lower !== 0) this.emit('ADDI', { rd, rs1: rd, imm: lower });
+  }
+  push(reg) {
+    const rd = this.pushTarget();
+    if (rd !== reg) this.emit('ADDI', { rd, rs1: reg, imm: 0 });
+    this.pushDone();
+  }
+
+  /* ---- operand stack ----
+     The operand stack is a REGISTER stack: slot d lives in OPREGS[d], so a push
+     or a pop is usually pure compile-time bookkeeping that emits no instruction
+     at all. This works without any liveness analysis because the depth is known
+     statically at every point in codegen - which slot is in which register is
+     never in question.
+
+     Only slots past the registers this function reserved (fnRec.opRegSaves) fall
+     back to the old memory stack, which is what keeps arbitrarily deep
+     expressions correct. Note the spilled slots are always the DEEPEST ones, so
+     the memory stack is still strictly LIFO among its own entries.
+  */
+  slotReg(d) { return d < this.opRegs ? OPREGS[d] : null; }
+
+  // The register the next pushed value should be COMPUTED INTO - so the value is
+  // produced in its final home rather than moved there. Must be paired with
+  // pushDone() once the value is actually in it.
+  pushTarget() {
+    const r = this.slotReg(this.depth);
+    return r === null ? REG.t0 : r;
+  }
+  pushDone() {
+    if (this.slotReg(this.depth) === null) this.memPush(REG.t0);
+    this.depth++;
+  }
+  // Register holding the top of the stack without popping it, or null if it has
+  // spilled to memory.
+  peekTop() { return this.slotReg(this.depth - 1); }
+
+  // Pop, returning whichever register now holds the value - no instruction at all
+  // in the common case where it is already in its slot register. `scratch` is
+  // only touched if the slot had spilled. CAREFUL: the returned register may BE a
+  // slot register, so it is only valid until the next push; use popTo() when the
+  // value has to outlive one.
+  pop1(scratch) {
+    this.depth--;
+    const r = this.slotReg(this.depth);
+    if (r !== null) return r;
+    this.memPop(scratch);
+    return scratch;
+  }
+  // Pop into one specific register, whatever it takes.
+  popTo(reg) {
+    const r = this.pop1(reg);
+    if (r !== reg) this.emit('ADDI', { rd: reg, rs1: r, imm: 0 });
+  }
+  drop() {
+    this.depth--;
+    if (this.slotReg(this.depth) === null) this.emit('ADDI', { rd: REG.sp, rs1: REG.sp, imm: 4 });
+  }
+  memPush(reg) {
+    this.emit('ADDI', { rd: REG.sp, rs1: REG.sp, imm: -4 });
+    this.emit('SW', { rs1: REG.sp, rs2: reg, imm: 0, comment: 'spill operand slot ' + this.depth });
+  }
+  memPop(reg) {
+    this.emit('LW', { rd: reg, rs1: REG.sp, imm: 0, comment: 'reload operand slot ' + this.depth });
+    this.emit('ADDI', { rd: REG.sp, rs1: REG.sp, imm: 4 });
+  }
+
+  /* ---- symbol lookup / typing ---- */
+  // Innermost-out through the block-scope stack, then globals - so an inner
+  // declaration shadows an outer one, and sibling blocks can reuse a name.
+  lookupVar(name) {
+    for (let i = this.scopes.length - 1; i >= 0; i--) {
+      if (this.scopes[i].has(name)) return this.scopes[i].get(name);
+    }
+    if (this.meta.globals.has(name)) {
+      const g = this.meta.globals.get(name);
+      return { kind: 'global', ctype: g.ctype, addr: g.addr };
+    }
+    return null;
+  }
+  pushScope() { this.scopes.push(new Map()); }
+  popScope() { this.scopes.pop(); }
+  declareLocal(name, ctype, offset) {
+    const scope = this.scopes[this.scopes.length - 1];
+    if (scope.has(name)) throw new Error('Compile error: redeclaration of \'' + name + '\' in the same scope');
+    scope.set(name, { kind: 'local', ctype, offset });
+  }
+  typeOf(e) {
+    switch (e.type) {
+      case 'Num': case 'CharLit': return INT_TYPE;
+      case 'StringLit': return { base: 'char', ptr: 1, arraySize: null };
+      case 'Ident': {
+        const v = this.lookupVar(e.name);
+        return v ? v.ctype : INT_TYPE;
+      }
+      case 'Unary':
+        if (e.op === '&') return { base: this.typeOf(e.expr).base, ptr: 1, arraySize: null };
+        if (e.op === '*') return { base: this.typeOf(e.expr).base, ptr: 0, arraySize: null };
+        return INT_TYPE;
+      case 'IncDec': return this.typeOf(e.target);
+      case 'Assign': return this.typeOf(e.target);
+      case 'Index': return { base: this.typeOf(e.array).base, ptr: 0, arraySize: null };
+      case 'Call': {
+        const f = this.meta.funcs.get(e.name);
+        return f ? { base: f.node.retType.base, ptr: f.node.retType.ptr, arraySize: null } : INT_TYPE;
+      }
+      case 'Binary': {
+        if (e.op === '+' || e.op === '-') {
+          const lt = this.typeOf(e.left), rt = this.typeOf(e.right);
+          if (isPtrLike(lt) && !isPtrLike(rt)) return { base: lt.base, ptr: 1, arraySize: null };
+          if (!isPtrLike(lt) && isPtrLike(rt) && e.op === '+') return { base: rt.base, ptr: 1, arraySize: null };
+        }
+        return INT_TYPE;
+      }
+    }
+    return INT_TYPE;
+  }
+  // 1-byte accesses for plain char, 4-byte for everything else (int, pointers).
+  loadOp(ctype) { return elemSize(ctype) === 1 ? 'LB' : 'LW'; }
+  storeOp(ctype) { return elemSize(ctype) === 1 ? 'SB' : 'SW'; }
+
+  /* ---- program ---- */
+  generate() {
+    // entry stub: set up the stack, call main, then exit with its return value.
+    // Registers are undefined at reset on real hardware, so the startup code -
+    // not the simulator - is what establishes sp.
+    this.curLine = null; // no C source corresponds to the entry stub or the helpers
+    this.label('_start');
+    this.emitLi(REG.sp, this.memSize, '__stack_top');
+    this.emit('JAL', { rd: REG.ra, targetLabel: 'main', comment: 'call main()' });
+    this.emitLi(REG.a7, SYSCALL.EXIT, 'exit(main())');
+    this.emit('ECALL', {});
+
+    for (const d of this.ast.decls) {
+      if (d.type === 'FuncDecl') this.genFunction(this.meta.funcs.get(d.name));
+    }
+    this.genHelpers();
+    peepholePushPop(this.instrs, this.labels);
+    resolveLabels(this.instrs, this.labels);
+    return {
+      instrs: this.instrs,
+      labels: this.labels,
+      data: this.meta.data,
+      globals: this.meta.globals,
+      funcs: this.meta.funcs,
+      useM: this.useM,
+      // the size _start's stack setup was built for; the machine must use this
+      memSize: this.memSize,
+    };
+  }
+
+  genFunction(fnRec) {
+    this.fn = fnRec;
+    const d = fnRec.node;
+    const fs = fnRec.frameSize;
+    this.epilogueLabel = '.Lepi_' + d.name;
+    this.scopes = [new Map()];
+    this.curLine = d.line != null ? d.line : null;
+    this.depth = 0;
+    this.opRegs = fnRec.opRegSaves.length;
+    for (const p of fnRec.params) this.declareLocal(p.name, p.ctype, p.offset);
+
+    this.label(d.name);
+    this.emit('ADDI', { rd: REG.sp, rs1: REG.sp, imm: -fs, comment: d.name + '(): prologue, frame = ' + fs + ' bytes' });
+    this.emit('SW', { rs1: REG.sp, rs2: REG.ra, imm: fs - 4, comment: 'save return address' });
+    this.emit('SW', { rs1: REG.sp, rs2: REG.s0, imm: fs - 8, comment: "save caller's frame pointer" });
+    this.emit('ADDI', { rd: REG.s0, rs1: REG.sp, imm: fs, comment: 'frame base' });
+    // Slot registers are callee-saved, so save the ones this function will use.
+    // Emitted AFTER the frame base so they can address off s0 - which also keeps
+    // the first four instructions exactly the prologue shape the Stack viewer
+    // recognises (see PROLOGUE_BYTES).
+    for (const sv of fnRec.opRegSaves) {
+      this.emit('SW', { rs1: REG.s0, rs2: sv.reg, imm: -sv.offset,
+        comment: 'save ' + REG_NAMES[sv.reg] + ' (operand slot ' + sv.slot + ')' });
+    }
+    fnRec.params.forEach((p, i) => {
+      this.emit(this.storeOp(p.ctype), { rs1: REG.s0, rs2: REG.a0 + i, imm: -p.offset, comment: 'param ' + p.name });
+    });
+
+    this.genStmt(d.body);
+    if (this.depth !== 0) throw new Error('Internal error: operand stack depth ' + this.depth + ' at end of ' + d.name + '()');
+
+    this.curLine = d.line != null ? d.line : null;
+    this.label(this.epilogueLabel);
+    // Restores come first, while s0 is still THIS frame's base. That leaves the
+    // last four instructions as `lw ra / mv sp,s0 / lw s0 / ret`, the shape the
+    // Stack viewer keys off (it offsets past these restores to find the `ret`).
+    fnRec.opRegSaves.forEach((sv, i) => {
+      this.emit('LW', { rd: sv.reg, rs1: REG.s0, imm: -sv.offset,
+        comment: (i === 0 ? d.name + '(): epilogue, restore ' : 'restore ') + REG_NAMES[sv.reg] });
+    });
+    this.emit('LW', { rd: REG.ra, rs1: REG.s0, imm: -4,
+      comment: fnRec.opRegSaves.length ? 'restore return address' : d.name + '(): epilogue' });
+    this.emit('ADDI', { rd: REG.sp, rs1: REG.s0, imm: 0, comment: 'discard frame' });
+    this.emit('LW', { rd: REG.s0, rs1: REG.s0, imm: -8, comment: "restore caller's frame pointer" });
+    this.emit('JALR', { rd: REG.zero, rs1: REG.ra, imm: 0, comment: 'return' });
+    this.fn = null;
+    this.scopes = [];
+  }
+
+  /* ---- statements ---- */
+  genStmt(s) {
+    if (s.line != null) this.curLine = s.line;
+    switch (s.type) {
+      case 'Block':
+        this.pushScope();
+        for (const c of s.stmts) this.genStmt(c);
+        this.popScope();
+        return;
+
+      case 'VarDecl': {
+        this.declareLocal(s.name, s.ctype, s.slotOffset);
+        if (!s.init) return;
+        if (s.ctype.arraySize != null) throw new Error('Compile error: array initializers are not supported (\'' + s.name + '\')');
+        this.genAssignTo({ type: 'Ident', name: s.name }, s.init, 'init ' + s.name, true);
+        return;
+      }
+
+      case 'ExprStmt':
+        this.genExprDiscard(s.expr);
+        return;
+
+      case 'If': {
+        const elseL = this.freshLabel('else');
+        const endL = this.freshLabel('endif');
+        this.genExpr(s.cond);
+        const rc = this.pop1(REG.t0);
+        this.emit('BEQ', { rs1: rc, rs2: REG.zero, targetLabel: s.els ? elseL : endL, comment: 'if' });
+        this.genStmt(s.then);
+        if (s.els) {
+          this.curLine = s.line; // the jump over the else belongs to the `if` line, not the last then-statement
+          this.emit('JAL', { rd: REG.zero, targetLabel: endL });
+          this.label(elseL);
+          this.genStmt(s.els);
+        }
+        this.label(endL);
+        return;
+      }
+
+      case 'While': {
+        const topL = this.freshLabel('while');
+        const endL = this.freshLabel('endwhile');
+        this.label(topL);
+        this.genExpr(s.cond);
+        const rc = this.pop1(REG.t0);
+        this.emit('BEQ', { rs1: rc, rs2: REG.zero, targetLabel: endL, comment: 'while' });
+        this.genStmt(s.body);
+        this.curLine = s.line; // the back-jump is part of the `while` header
+        this.emit('JAL', { rd: REG.zero, targetLabel: topL });
+        this.label(endL);
+        return;
+      }
+
+      case 'For': {
+        const topL = this.freshLabel('for');
+        const endL = this.freshLabel('endfor');
+        this.pushScope(); // an `int i` declared in the init clause is scoped to the loop
+        if (s.init) this.genStmt(s.init);
+        this.label(topL);
+        this.curLine = s.line;
+        if (s.cond) {
+          this.genExpr(s.cond);
+          const rc = this.pop1(REG.t0);
+          this.emit('BEQ', { rs1: rc, rs2: REG.zero, targetLabel: endL, comment: 'for' });
+        }
+        this.genStmt(s.body);
+        this.curLine = s.line; // cond/post/back-jump all belong to the `for` header
+        if (s.post) this.genExprDiscard(s.post);
+        this.emit('JAL', { rd: REG.zero, targetLabel: topL });
+        this.label(endL);
+        this.popScope();
+        return;
+      }
+
+      case 'Return': {
+        if (s.expr) {
+          this.genExpr(s.expr);
+          this.popTo(REG.a0);
+        }
+        this.emit('JAL', { rd: REG.zero, targetLabel: this.epilogueLabel, comment: 'return' });
+        return;
+      }
+    }
+    throw new Error('Compile error: unsupported statement ' + s.type);
+  }
+
+  /* ---- lvalue addresses (pushes the address) ---- */
+  genAddr(e) {
+    if (e.type === 'Ident') {
+      const v = this.lookupVar(e.name);
+      if (!v) throw new Error('Compile error: undefined variable \'' + e.name + '\'');
+      const rd = this.pushTarget();
+      if (v.kind === 'local') this.emit('ADDI', { rd, rs1: REG.s0, imm: -v.offset, comment: '&' + e.name });
+      else this.emitLi(rd, v.addr, '&' + e.name);
+      this.pushDone();
+      return;
+    }
+    if (e.type === 'Unary' && e.op === '*') { this.genExpr(e.expr); return; }
+    if (e.type === 'Index') {
+      const at = this.typeOf(e.array);
+      if (!isPtrLike(at)) throw new Error('Compile error: cannot index a non-array/non-pointer value');
+      const scale = pointedSize(at);
+      this.genExpr(e.array);
+      this.genExpr(e.index);
+      const ri = this.pop1(REG.t1);
+      const rb = this.pop1(REG.t0);
+      const rd = this.pushTarget();
+      if (scale === 4) this.emit('SLLI', { rd: ri, rs1: ri, imm: 2, comment: 'index * 4' });
+      this.emit('ADD', { rd, rs1: rb, rs2: ri });
+      this.pushDone();
+      return;
+    }
+    throw new Error('Compile error: invalid assignment target (' + e.type + ')');
+  }
+
+  // A plain local's address is a constant offset from s0 with no side effects of
+  // its own, so a load or store can address it directly instead of materialising
+  // the address into a slot first. Returns the var record, or null if the general
+  // address-then-access path is needed.
+  directLocal(target) {
+    if (target.type !== 'Ident') return null;
+    const v = this.lookupVar(target.name);
+    if (!v || v.kind !== 'local' || v.ctype.arraySize != null) return null;
+    return v;
+  }
+
+  // `discard` means the caller does not want the assignment's value as an
+  // expression result - which is the common `x = e;` statement case, and saves
+  // materialising a result into a slot register only to drop it again.
+  genAssignTo(target, valueExpr, comment, discard) {
+    const tt = this.typeOf(target);
+    const v = this.directLocal(target);
+    if (v) {
+      this.genExpr(valueExpr);
+      const rv = this.peekTop();
+      if (rv !== null) {
+        // The value is already sitting in the register this expression's result
+        // belongs in, so the store is the entire job - nothing to move after it.
+        this.emit(this.storeOp(tt), { rs1: REG.s0, rs2: rv, imm: -v.offset, comment });
+        if (discard) this.drop();
+        return;
+      }
+      const r = this.pop1(REG.t1); // spilled: round-trip through scratch
+      this.emit(this.storeOp(tt), { rs1: REG.s0, rs2: r, imm: -v.offset, comment });
+      if (!discard) this.push(r);
+      return;
+    }
+    this.genAddr(target);
+    this.genExpr(valueExpr);
+    const rv = this.pop1(REG.t1);
+    const ra = this.pop1(REG.t0);
+    this.emit(this.storeOp(tt), { rs1: ra, rs2: rv, imm: 0, comment });
+    // An assignment is an expression: its value is the value stored. Safe to
+    // overwrite the address slot with it, since the store has already happened.
+    if (!discard) this.push(rv);
+  }
+
+  /* ---- expressions (each pushes exactly one result) ---- */
+  genExpr(e) {
+    switch (e.type) {
+      case 'Num': {
+        const rd = this.pushTarget();
+        this.emitLi(rd, e.value);
+        this.pushDone();
+        return;
+      }
+
+      case 'CharLit': {
+        const rd = this.pushTarget();
+        this.emitLi(rd, e.value, '\'' + printableChar(e.value) + '\'');
+        this.pushDone();
+        return;
+      }
+
+      case 'StringLit': {
+        const addr = this.meta.data.addString(e.value);
+        const rd = this.pushTarget();
+        this.emitLi(rd, addr, 'string constant');
+        this.pushDone();
+        return;
+      }
+
+      case 'Ident': {
+        const v = this.lookupVar(e.name);
+        if (!v) throw new Error('Compile error: undefined variable \'' + e.name + '\'');
+        if (v.ctype.arraySize != null) { this.genAddr(e); return; } // arrays decay to their base address
+        const direct = this.directLocal(e);
+        if (direct) {
+          const rd = this.pushTarget();
+          this.emit(this.loadOp(v.ctype), { rd, rs1: REG.s0, imm: -direct.offset, comment: e.name });
+          this.pushDone();
+          return;
+        }
+        this.genAddr(e);
+        const ra = this.pop1(REG.t0);
+        const rd = this.pushTarget();
+        this.emit(this.loadOp(v.ctype), { rd, rs1: ra, imm: 0, comment: e.name });
+        this.pushDone();
+        return;
+      }
+
+      case 'Index': {
+        const et = this.typeOf(e);
+        this.genAddr(e);
+        const ra = this.pop1(REG.t0);
+        const rd = this.pushTarget();
+        this.emit(this.loadOp(et), { rd, rs1: ra, imm: 0 });
+        this.pushDone();
+        return;
+      }
+
+      case 'Assign':
+        this.genAssignTo(e.target, e.value);
+        return;
+
+      case 'Unary': return this.genUnary(e);
+      case 'IncDec': return this.genIncDec(e);
+      case 'Binary': return this.genBinary(e);
+      case 'Call': return this.genCall(e);
+    }
+    throw new Error('Compile error: unsupported expression ' + e.type);
+  }
+
+  // Evaluate for side effects only. `x = e;`, `i++;` and `f();` in statement
+  // position would otherwise each materialise a result into a slot register just
+  // to drop it on the next line.
+  genExprDiscard(e) {
+    if (e.type === 'Assign') return this.genAssignTo(e.target, e.value, null, true);
+    if (e.type === 'IncDec') return this.genIncDec(e, true);
+    if (e.type === 'Call') return this.genCall(e, true);
+    this.genExpr(e);
+    this.drop();
+  }
+
+  genUnary(e) {
+    if (e.op === '&') { this.genAddr(e.expr); return; }
+    if (e.op === '*') {
+      const pt = this.typeOf(e.expr);
+      if (!isPtrLike(pt)) throw new Error('Compile error: cannot dereference a non-pointer value');
+      this.genAddr(e);
+      const ra = this.pop1(REG.t0);
+      const rd = this.pushTarget();
+      this.emit(this.loadOp({ base: pt.base, ptr: 0, arraySize: null }), { rd, rs1: ra, imm: 0, comment: 'deref' });
+      this.pushDone();
+      return;
+    }
+    this.genExpr(e.expr);
+    const r = this.pop1(REG.t0);
+    const rd = this.pushTarget();
+    if (e.op === '-') this.emit('SUB', { rd, rs1: REG.zero, rs2: r, comment: 'negate' });
+    else if (e.op === '~') this.emit('XORI', { rd, rs1: r, imm: -1, comment: 'bitwise not' });
+    else if (e.op === '!') this.emit('SLTIU', { rd, rs1: r, imm: 1, comment: 'logical not' });
+    else throw new Error('Compile error: unsupported unary operator ' + e.op);
+    this.pushDone();
+  }
+
+  // The old value is kept in t1 and the new one in t2 where they differ, so that
+  // the result is only pushed AFTER the store. Pushing first would be a trap: the
+  // slot register the result lands in is the same one that may still be holding
+  // the address the store needs.
+  genIncDec(e, discard) {
+    const tt = this.typeOf(e.target);
+    const delta = (isPtrLike(tt) ? pointedSize(tt) : 1) * (e.op === '++' ? 1 : -1);
+    const cmt = e.op + (e.prefix ? ' (prefix)' : ' (postfix)');
+    const keepOld = !discard && !e.prefix;
+    const rnew = keepOld ? REG.t2 : REG.t1;
+
+    const v = this.directLocal(e.target);
+    if (v) {
+      this.emit(this.loadOp(tt), { rd: REG.t1, rs1: REG.s0, imm: -v.offset, comment: cmt });
+      this.emit('ADDI', { rd: rnew, rs1: REG.t1, imm: delta });
+      this.emit(this.storeOp(tt), { rs1: REG.s0, rs2: rnew, imm: -v.offset });
+      if (!discard) this.push(e.prefix ? rnew : REG.t1);
+      return;
+    }
+    this.genAddr(e.target);
+    const ra = this.pop1(REG.t0);
+    this.emit(this.loadOp(tt), { rd: REG.t1, rs1: ra, imm: 0, comment: cmt });
+    this.emit('ADDI', { rd: rnew, rs1: REG.t1, imm: delta });
+    this.emit(this.storeOp(tt), { rs1: ra, rs2: rnew, imm: 0 });
+    if (!discard) this.push(e.prefix ? rnew : REG.t1);
+  }
+
+  genBinary(e) {
+    if (e.op === '&&' || e.op === '||') return this.genShortCircuit(e);
+
+    const lt = this.typeOf(e.left), rt = this.typeOf(e.right);
+    const lPtr = isPtrLike(lt), rPtr = isPtrLike(rt);
+
+    // pointer arithmetic: scale the integer side by the pointed-to size
+    if ((e.op === '+' || e.op === '-') && (lPtr !== rPtr)) {
+      const size = pointedSize(lPtr ? lt : rt);
+      const ptrSide = lPtr ? e.left : e.right;
+      const intSide = lPtr ? e.right : e.left;
+      if (!lPtr && e.op === '-') throw new Error('Compile error: cannot subtract a pointer from an integer');
+      this.genExpr(ptrSide);
+      this.genExpr(intSide);
+      const ri = this.pop1(REG.t1);
+      const rp = this.pop1(REG.t0);
+      const rd = this.pushTarget();
+      if (size === 4) this.emit('SLLI', { rd: ri, rs1: ri, imm: 2, comment: 'scale by sizeof(elem)' });
+      this.emit(e.op === '+' ? 'ADD' : 'SUB', { rd, rs1: rp, rs2: ri });
+      this.pushDone();
+      return;
+    }
+
+    this.genExpr(e.left);
+    this.genExpr(e.right);
+    // Both operands are popped before the result's target is chosen, so `rd` is
+    // normally the very register `ra` was in - the operation happens in place.
+    const rb = this.pop1(REG.t1);
+    const ra = this.pop1(REG.t0);
+
+    if (e.op === '*' || e.op === '/' || e.op === '%') return this.genMulDiv(e.op, ra, rb);
+    const rd = this.pushTarget();
+
+    // pointer difference: subtract, then divide by the pointed-to size
+    if (e.op === '-' && lPtr && rPtr) {
+      const size = pointedSize(lt);
+      this.emit('SUB', { rd, rs1: ra, rs2: rb, comment: 'pointer difference' });
+      if (size === 4) this.emit('SRAI', { rd, rs1: rd, imm: 2 });
+      this.pushDone();
+      return;
+    }
+
+    switch (e.op) {
+      case '+': this.emit('ADD', { rd, rs1: ra, rs2: rb }); break;
+      case '-': this.emit('SUB', { rd, rs1: ra, rs2: rb }); break;
+      case '&': this.emit('AND', { rd, rs1: ra, rs2: rb }); break;
+      case '|': this.emit('OR', { rd, rs1: ra, rs2: rb }); break;
+      case '^': this.emit('XOR', { rd, rs1: ra, rs2: rb }); break;
+      case '<<': this.emit('SLL', { rd, rs1: ra, rs2: rb }); break;
+      case '>>': this.emit('SRA', { rd, rs1: ra, rs2: rb }); break;
+      case '<': this.emit('SLT', { rd, rs1: ra, rs2: rb }); break;
+      case '>': this.emit('SLT', { rd, rs1: rb, rs2: ra }); break;
+      case '<=':
+        this.emit('SLT', { rd, rs1: rb, rs2: ra });
+        this.emit('XORI', { rd, rs1: rd, imm: 1 });
+        break;
+      case '>=':
+        this.emit('SLT', { rd, rs1: ra, rs2: rb });
+        this.emit('XORI', { rd, rs1: rd, imm: 1 });
+        break;
+      case '==':
+        this.emit('SUB', { rd, rs1: ra, rs2: rb });
+        this.emit('SLTIU', { rd, rs1: rd, imm: 1 });
+        break;
+      case '!=':
+        this.emit('SUB', { rd, rs1: ra, rs2: rb });
+        this.emit('SLTU', { rd, rs1: REG.zero, rs2: rd });
+        break;
+      default: throw new Error('Compile error: unsupported operator ' + e.op);
+    }
+    this.pushDone();
+  }
+
+  // `ra`/`rb` hold the already-popped left and right operands. Either the M
+  // extension's hardware instruction, or a call to a compiler-generated routine.
+  genMulDiv(op, ra, rb) {
+    if (this.useM) {
+      const mnem = op === '*' ? 'MUL' : op === '/' ? 'DIV' : 'REM';
+      const rd = this.pushTarget();
+      this.emit(mnem, { rd, rs1: ra, rs2: rb });
+      this.pushDone();
+      return;
+    }
+    // The helpers clobber only ra/a0-a7/t0-t6 - never the callee-saved bank the
+    // operand slots live in - so any operands still on the stack survive the call
+    // untouched, and this function's own ra is already saved in its frame.
+    this.emit('ADDI', { rd: REG.a0, rs1: ra, imm: 0 });
+    this.emit('ADDI', { rd: REG.a1, rs1: rb, imm: 0 });
+    if (op === '*') {
+      this.usedHelpers.add('__mul');
+      this.emit('JAL', { rd: REG.ra, targetLabel: '__mul', comment: 'software multiply' });
+      this.push(REG.a0);
+    } else {
+      this.usedHelpers.add('__divmod');
+      this.emit('JAL', { rd: REG.ra, targetLabel: '__divmod', comment: 'software ' + (op === '/' ? 'divide' : 'remainder') });
+      this.push(op === '/' ? REG.a0 : REG.a1); // __divmod returns quotient in a0, remainder in a1
+    }
+  }
+
+  genShortCircuit(e) {
+    const falseL = this.freshLabel(e.op === '&&' ? 'andfalse' : 'ortrue');
+    const endL = this.freshLabel('endlogic');
+    const isAnd = e.op === '&&';
+    this.genExpr(e.left);
+    const rl = this.pop1(REG.t0);
+    this.emit(isAnd ? 'BEQ' : 'BNE', { rs1: rl, rs2: REG.zero, targetLabel: falseL, comment: 'short-circuit ' + e.op });
+    this.genExpr(e.right);
+    const rr = this.pop1(REG.t0);
+    this.emit(isAnd ? 'BEQ' : 'BNE', { rs1: rr, rs2: REG.zero, targetLabel: falseL });
+    // Both arms must write the same register, which they do: the depth is
+    // identical on both paths, so pushTarget() resolves to one register - and the
+    // push is only completed after the join, so a spill emits once, not twice.
+    const rd = this.pushTarget();
+    this.emitLi(rd, isAnd ? 1 : 0);
+    this.emit('JAL', { rd: REG.zero, targetLabel: endL });
+    this.label(falseL);
+    this.emitLi(rd, isAnd ? 0 : 1);
+    this.label(endL);
+    this.pushDone();
+  }
+
+  genCall(e, discard) {
+    if (e.name === 'printf') return this.genPrintf(e, discard);
+    const f = this.meta.funcs.get(e.name);
+    if (!f) throw new Error('Compile error: call to undefined function \'' + e.name + '\'');
+    if (e.args.length !== f.params.length) {
+      throw new Error('Compile error: \'' + e.name + '\' expects ' + f.params.length + ' argument(s), got ' + e.args.length);
+    }
+    // Evaluate left to right onto the operand stack, then move into a0..aN. The
+    // moves go in reverse because the operand stack is still a stack: with more
+    // arguments than slot registers the deepest ones are in memory, where only
+    // LIFO order is valid. a0-a7 can never alias a slot register, so no argument
+    // can clobber another whichever order they go in.
+    for (const a of e.args) this.genExpr(a);
+    for (let i = e.args.length - 1; i >= 0; i--) this.popTo(REG.a0 + i);
+    this.emit('JAL', { rd: REG.ra, targetLabel: e.name, comment: 'call ' + e.name + '()' });
+    if (!discard) this.push(REG.a0);
+  }
+
+  /* ---- printf: fully lowered at compile time into print syscalls ---- */
+  genPrintf(e, discard) {
+    if (e.args.length === 0 || e.args[0].type !== 'StringLit') {
+      throw new Error('Compile error: printf\'s first argument must be a literal format string');
+    }
+    const parts = parseFormatString(e.args[0].value);
+    const specs = parts.filter(p => p.kind === 'spec').length;
+    if (specs !== e.args.length - 1) {
+      throw new Error('Compile error: printf format has ' + specs + ' specifier(s) but ' + (e.args.length - 1) + ' argument(s)');
+    }
+    let argi = 1;
+    for (const part of parts) {
+      if (part.kind === 'text') {
+        const addr = this.meta.data.addString(part.text);
+        this.emitLi(REG.a0, addr, 'printf: ' + JSON.stringify(part.text));
+        this.emitLi(REG.a7, SYSCALL.PRINT_STR);
+        this.emit('ECALL', {});
+        continue;
+      }
+      const arg = e.args[argi++];
+      this.genExpr(arg);
+      this.popTo(REG.a0);
+      const call = part.spec === 'd' ? SYSCALL.PRINT_INT
+        : part.spec === 'c' ? SYSCALL.PRINT_CHAR
+        : part.spec === 'x' ? SYSCALL.PRINT_HEX
+        : SYSCALL.PRINT_STR; // %s: the argument already is an address
+      this.emitLi(REG.a7, call, 'printf: %' + part.spec);
+      this.emit('ECALL', {});
+    }
+    if (!discard) {
+      const rd = this.pushTarget();
+      this.emitLi(rd, 0);
+      this.pushDone(); // printf's own value, discarded in statement position
+    }
+  }
+
+  /* ---- software mul/div helpers (RV32I mode only) ---- */
+  genHelpers() {
+    this.curLine = null; // compiler-generated: no C line to attribute these to
+    if (this.usedHelpers.has('__mul')) this.genMulHelper();
+    if (this.usedHelpers.has('__divmod')) this.genDivmodHelper();
+  }
+
+  // a0 * a1 -> a0. Shift-add over 32 bits. Logical shifts throughout are correct
+  // for the low 32 bits of the product regardless of operand signs, since
+  // two's-complement multiply mod 2^32 equals unsigned multiply mod 2^32.
+  genMulHelper() {
+    const loop = '.L__mul_loop', skip = '.L__mul_skip', done = '.L__mul_done';
+    this.label('__mul');
+    this.emit('ADDI', { rd: REG.t0, rs1: REG.zero, imm: 0, comment: '__mul: software multiply (RV32I, no M extension)' });
+    this.label(loop);
+    this.emit('BEQ', { rs1: REG.a1, rs2: REG.zero, targetLabel: done });
+    this.emit('ANDI', { rd: REG.t1, rs1: REG.a1, imm: 1 });
+    this.emit('BEQ', { rs1: REG.t1, rs2: REG.zero, targetLabel: skip });
+    this.emit('ADD', { rd: REG.t0, rs1: REG.t0, rs2: REG.a0 });
+    this.label(skip);
+    this.emit('SLLI', { rd: REG.a0, rs1: REG.a0, imm: 1 });
+    this.emit('SRLI', { rd: REG.a1, rs1: REG.a1, imm: 1 });
+    this.emit('JAL', { rd: REG.zero, targetLabel: loop });
+    this.label(done);
+    this.emit('ADDI', { rd: REG.a0, rs1: REG.t0, imm: 0 });
+    this.emit('JALR', { rd: REG.zero, rs1: REG.ra, imm: 0 });
+  }
+
+  // a0 / a1 -> quotient in a0, remainder in a1. Restoring division on
+  // magnitudes, then signs reapplied: quotient gets sign(a0)^sign(a1) and the
+  // remainder gets sign(a0), matching C's truncate-toward-zero semantics.
+  genDivmodHelper() {
+    const L = n => '.L__divmod_' + n;
+    this.label('__divmod');
+    this.emit('BEQ', { rs1: REG.a1, rs2: REG.zero, targetLabel: L('byzero'), comment: '__divmod: software divide (RV32I, no M extension)' });
+    this.emit('ADDI', { rd: REG.t3, rs1: REG.zero, imm: 0 }); // negate-quotient flag
+    this.emit('ADDI', { rd: REG.t4, rs1: REG.zero, imm: 0 }); // negate-remainder flag
+    this.emit('BGE', { rs1: REG.a0, rs2: REG.zero, targetLabel: L('dvd_ok') });
+    this.emit('SUB', { rd: REG.a0, rs1: REG.zero, rs2: REG.a0, comment: 'abs(dividend)' });
+    this.emit('ADDI', { rd: REG.t3, rs1: REG.zero, imm: 1 });
+    this.emit('ADDI', { rd: REG.t4, rs1: REG.zero, imm: 1 });
+    this.label(L('dvd_ok'));
+    this.emit('BGE', { rs1: REG.a1, rs2: REG.zero, targetLabel: L('dvr_ok') });
+    this.emit('SUB', { rd: REG.a1, rs1: REG.zero, rs2: REG.a1, comment: 'abs(divisor)' });
+    this.emit('XORI', { rd: REG.t3, rs1: REG.t3, imm: 1 });
+    this.label(L('dvr_ok'));
+    this.emit('ADDI', { rd: REG.t0, rs1: REG.zero, imm: 0, comment: 'quotient' });
+    this.emit('ADDI', { rd: REG.t1, rs1: REG.zero, imm: 0, comment: 'remainder' });
+    this.emit('ADDI', { rd: REG.t2, rs1: REG.zero, imm: 31, comment: 'bit index' });
+    this.label(L('loop'));
+    this.emit('SLLI', { rd: REG.t1, rs1: REG.t1, imm: 1 });
+    this.emit('SRL', { rd: REG.t5, rs1: REG.a0, rs2: REG.t2 });
+    this.emit('ANDI', { rd: REG.t5, rs1: REG.t5, imm: 1 });
+    this.emit('OR', { rd: REG.t1, rs1: REG.t1, rs2: REG.t5, comment: 'shift next dividend bit in' });
+    this.emit('SLTU', { rd: REG.t5, rs1: REG.t1, rs2: REG.a1 });
+    this.emit('BNE', { rs1: REG.t5, rs2: REG.zero, targetLabel: L('skip') });
+    this.emit('SUB', { rd: REG.t1, rs1: REG.t1, rs2: REG.a1 });
+    this.emit('ADDI', { rd: REG.t6, rs1: REG.zero, imm: 1 });
+    this.emit('SLL', { rd: REG.t6, rs1: REG.t6, rs2: REG.t2 });
+    this.emit('OR', { rd: REG.t0, rs1: REG.t0, rs2: REG.t6, comment: 'set quotient bit' });
+    this.label(L('skip'));
+    this.emit('BEQ', { rs1: REG.t2, rs2: REG.zero, targetLabel: L('end') });
+    this.emit('ADDI', { rd: REG.t2, rs1: REG.t2, imm: -1 });
+    this.emit('JAL', { rd: REG.zero, targetLabel: L('loop') });
+    this.label(L('end'));
+    this.emit('BEQ', { rs1: REG.t3, rs2: REG.zero, targetLabel: L('qpos') });
+    this.emit('SUB', { rd: REG.t0, rs1: REG.zero, rs2: REG.t0 });
+    this.label(L('qpos'));
+    this.emit('BEQ', { rs1: REG.t4, rs2: REG.zero, targetLabel: L('rpos') });
+    this.emit('SUB', { rd: REG.t1, rs1: REG.zero, rs2: REG.t1 });
+    this.label(L('rpos'));
+    this.emit('ADDI', { rd: REG.a0, rs1: REG.t0, imm: 0 });
+    this.emit('ADDI', { rd: REG.a1, rs1: REG.t1, imm: 0 });
+    this.emit('JALR', { rd: REG.zero, rs1: REG.ra, imm: 0 });
+    this.label(L('byzero'));
+    // same result as the hardware DIV/REM give for a zero divisor, so both ISA
+    // modes agree: quotient = -1, remainder = dividend
+    this.emit('ADDI', { rd: REG.a1, rs1: REG.a0, imm: 0, comment: 'divide by zero: rem = dividend' });
+    this.emit('ADDI', { rd: REG.a0, rs1: REG.zero, imm: -1, comment: 'divide by zero: quot = -1' });
+    this.emit('JALR', { rd: REG.zero, rs1: REG.ra, imm: 0 });
+  }
+}
+
+function printableChar(code) {
+  if (code === 10) return '\\n';
+  if (code === 9) return '\\t';
+  if (code === 0) return '\\0';
+  if (code < 32 || code > 126) return '\\x' + code.toString(16);
+  return String.fromCharCode(code);
+}
+
+// Splits a printf format string into literal-text and specifier parts. "%%" is
+// folded into the surrounding literal text, so it costs nothing at runtime.
+function parseFormatString(fmt) {
+  const parts = [];
+  let text = '';
+  for (let i = 0; i < fmt.length; i++) {
+    if (fmt[i] !== '%') { text += fmt[i]; continue; }
+    const spec = fmt[i + 1];
+    if (spec === '%') { text += '%'; i++; continue; }
+    if (!'dcsx'.includes(spec)) {
+      throw new Error('Compile error: unsupported printf specifier \'%' + (spec === undefined ? '' : spec) + '\' (supported: %d %c %s %x %%)');
+    }
+    if (text) { parts.push({ kind: 'text', text }); text = ''; }
+    parts.push({ kind: 'spec', spec });
+    i++;
+  }
+  if (text) parts.push({ kind: 'text', text });
+  return parts;
+}
+
+/* =========================================================================
+   PEEPHOLE: collapse push-then-immediately-pop
+       addi sp,sp,-4 ; sw rX,0(sp) ; lw rY,0(sp) ; addi sp,sp,4
+   writes a word and reads it straight back, so the four collapse to `mv rY,rX`
+   (or vanish when rX === rY).
+
+   Since the operand stack became a *register* stack this only ever has anything
+   to fold on the memory-spill fallback path - an expression deeper than the slot
+   registers the frame reserved. Measured across every built-in example in both
+   ISA modes it now fires zero times; it still earns its place on the deep
+   expressions that do spill, where a push of one slot is often immediately
+   followed by the pop of it.
+
+   Runs MUST happen before resolveLabels, since branch immediates are computed
+   from final indices - and it must remap the label map itself, because labels
+   here are instruction indices rather than array entries.
+   ========================================================================= */
+
+function peepholePushPop(instrs, labels) {
+  const SP = REG.sp;
+  const isPushA = i => i.op === 'ADDI' && i.rd === SP && i.rs1 === SP && i.imm === -4;
+  const isPushB = i => i.op === 'SW' && i.rs1 === SP && i.imm === 0;
+  const isPopA = i => i.op === 'LW' && i.rs1 === SP && i.imm === 0;
+  const isPopB = i => i.op === 'ADDI' && i.rd === SP && i.rs1 === SP && i.imm === 4;
+
+  // Any index a label points at must survive: collapsing across one would let
+  // control flow land in the middle of a sequence that no longer exists.
+  const labelled = new Set(labels.values());
+
+  const out = [];
+  const remap = new Int32Array(instrs.length + 1); // old index -> new index
+  for (let i = 0; i < instrs.length; ) {
+    remap[i] = out.length;
+    const canFold = i + 3 < instrs.length
+      && isPushA(instrs[i]) && isPushB(instrs[i + 1])
+      && isPopA(instrs[i + 2]) && isPopB(instrs[i + 3])
+      && !labelled.has(i + 1) && !labelled.has(i + 2) && !labelled.has(i + 3);
+    if (!canFold) { out.push(instrs[i]); i++; continue; }
+
+    const src = instrs[i + 1].rs2, dst = instrs[i + 2].rd;
+    // Preserve any comment/line the four carried, so the listing and the C-line
+    // mapping do not lose information when the run collapses.
+    const comment = [instrs[i], instrs[i + 1], instrs[i + 2], instrs[i + 3]]
+      .map(x => x.comment).filter(Boolean)[0] || null;
+    const line = [instrs[i], instrs[i + 1], instrs[i + 2], instrs[i + 3]]
+      .map(x => x.line).find(x => x != null);
+    if (src !== dst) {
+      out.push({ op: 'ADDI', rd: dst, rs1: src, rs2: 0, imm: 0, targetLabel: null,
+        comment, line: line == null ? null : line });
+    }
+    // src === dst: the whole run is a no-op and disappears entirely
+    for (let k = 1; k < 4; k++) remap[i + k] = out.length;
+    i += 4;
+  }
+  remap[instrs.length] = out.length;
+
+  if (out.length === instrs.length) return; // nothing folded
+  for (const [name, idx] of labels) labels.set(name, remap[idx]);
+  instrs.length = 0;
+  for (const ins of out) instrs.push(ins);
+}
+
+/* =========================================================================
+   LABEL RESOLUTION
+   Fills in each branch/jump's PC-relative immediate once every label's
+   instruction index is known (instruction i lives at byte address i*4).
+   ========================================================================= */
+
+const BRANCH_OPS = new Set(['BEQ', 'BNE', 'BLT', 'BGE']);
+
+function resolveLabels(instrs, labels) {
+  for (let i = 0; i < instrs.length; i++) {
+    const ins = instrs[i];
+    if (!ins.targetLabel) continue;
+    if (!labels.has(ins.targetLabel)) throw new Error('Compile error: unresolved label ' + ins.targetLabel);
+    ins.imm = labels.get(ins.targetLabel) * 4 - i * 4;
+  }
+}
+
+/* =========================================================================
+   BREAKPOINT MAPPING
+   A breakpoint is a C source line; execution should trap at the first
+   instruction of each *contiguous run* of that line. Not every instruction on
+   the line (the very next instruction would re-trap and never make progress),
+   and not merely the line's lowest index either - a `for` header emits its init
+   once at the top and its cond/post elsewhere, so the lowest index would fire
+   only on the first iteration instead of every one.
+   ========================================================================= */
+
+function trapIndicesForLines(instrs, lines) {
+  const traps = new Set();
+  if (!lines || lines.size === 0) return traps;
+  for (let i = 0; i < instrs.length; i++) {
+    const line = instrs[i].line;
+    if (line == null || !lines.has(line)) continue;
+    if (i === 0 || instrs[i - 1].line !== line) traps.add(i);
+  }
+  return traps;
+}
+
+// The set of C lines that actually produced instructions, so the UI can dim a
+// breakpoint sitting on a line no code was generated for.
+function executableLines(instrs) {
+  const set = new Set();
+  for (const ins of instrs) if (ins.line != null) set.add(ins.line);
+  return set;
+}
+
+function compileC(src, opts) {
+  const ast = parseC(src);
+  const meta = buildProgramMeta(ast);
+  const cg = new Codegen(ast, meta, opts);
+  return cg.generate();
+}
+
+/* =========================================================================
+   RISC-V INTERPRETER
+   Executes the instruction objects codegen produced - no binary encode/decode
+   step, since they are already in decoded form. Instruction i lives at byte
+   address i*4; code is fetched from the array, not from the data memory, so
+   the whole byte array is available to the program as data + stack.
+   ========================================================================= */
+
+// Default size of the byte-addressable memory. `_start` bakes the stack top in
+// as an immediate (like a real crt0 loading __stack_top), so the size is a
+// *compile-time* input: a machine must run at the size its program was built
+// for, which is why `program.memSize` takes precedence over any option here.
+const DEFAULT_MEM_SIZE = 1 << 20; // 1 MiB
+
+// Registers are undefined at reset on real hardware. Filling them with an
+// obviously-wrong value means code that reads one before writing it shows
+// garbage rather than a plausible zero.
+const POISON = 0xdeadbeef | 0;
+
+class RiscvSim {
+  constructor(program, opts) {
+    this.instrs = program.instrs;
+    this.entry = (program.labels.get('_start') || 0) * 4;
+    this.memSize = program.memSize || (opts && opts.memSize) || DEFAULT_MEM_SIZE;
+    // Checked here so the engine is self-protecting whatever the caller does:
+    // otherwise mem.set() below throws a bare "offset is out of bounds"
+    // RangeError that says nothing about what actually went wrong.
+    if (program.data.bytes.length > this.memSize) {
+      throw new Error('data segment (' + program.data.bytes.length
+        + ' bytes) does not fit in ' + this.memSize + ' bytes of memory');
+    }
+    this.mem = new Uint8Array(this.memSize);
+    // Stack/heap bytes are undefined at reset on real hardware too - poison them
+    // the same way registers are poisoned (POISON, above), so a word the program
+    // never wrote reads as deadbeef rather than a plausible-looking zero. Must
+    // happen BEFORE the data segment is written below, since that range (BSS
+    // included) genuinely is zero-initialized by the C standard and must keep
+    // its real compiled bytes, not poison.
+    for (let i = 0; i < this.mem.length; i += 4) {
+      this.mem[i] = 0xef; this.mem[i + 1] = 0xbe; this.mem[i + 2] = 0xad; this.mem[i + 3] = 0xde;
+    }
+    this.mem.set(Uint8Array.from(program.data.bytes), 0);
+    this.dataSize = program.data.bytes.length;
+    this.regs = new Int32Array(32);
+    this.regs.fill(POISON);
+    this.regs[0] = 0; // x0 is hardwired
+    // sp is deliberately NOT set up here - _start's `li sp, __stack_top` does
+    // it, so the reset state is honest and the emitted program is self-contained.
+    this.stackTop = this.memSize;
+    this.pc = this.entry;
+    this.out = [];
+    this.finished = false;
+    this.error = null;
+    this.exitCode = 0;
+    this.steps = 0;
+    this.hitBreakpoint = false;
+    this.journal = null; // non-null during previewStep(), see setReg/writeByte/writeWord
+    this.readLog = null; // non-null during previewStep(), see readByte/readWord
+    this.maxSteps = (opts && opts.maxSteps) || 200000;
+  }
+
+  // Every state mutation funnels through setReg / writeByte / writeWord (and
+  // out.push in ecall). When `journal` is non-null each records what it is about
+  // to overwrite, which is what lets previewStep() run the real step() and then
+  // undo it - no second "what would this do" implementation to drift out of sync.
+  setReg(i, v) {
+    if (i === 0) return;
+    if (this.journal) this.journal.push({ kind: 'reg', i, old: this.regs[i] });
+    this.regs[i] = v | 0;
+  }
+
+  checkAddr(addr, size) {
+    if (addr < 0 || addr + size > this.memSize) {
+      throw new Error('memory access out of range at address 0x' + (addr >>> 0).toString(16));
+    }
+  }
+  readByte(addr) {
+    this.checkAddr(addr, 1);
+    if (this.readLog) this.readLog.push(addr);
+    return this.mem[addr];
+  }
+  readWord(addr) {
+    this.checkAddr(addr, 4);
+    if (this.readLog) for (let k = 0; k < 4; k++) this.readLog.push(addr + k);
+    return (this.mem[addr] | (this.mem[addr + 1] << 8) | (this.mem[addr + 2] << 16) | (this.mem[addr + 3] << 24)) | 0;
+  }
+  writeByte(addr, v) {
+    this.checkAddr(addr, 1);
+    if (this.journal) this.journal.push({ kind: 'mem', addr, old: this.mem[addr] });
+    this.mem[addr] = v & 0xff;
+  }
+  writeWord(addr, v) {
+    this.checkAddr(addr, 4);
+    if (this.journal) {
+      for (let k = 0; k < 4; k++) this.journal.push({ kind: 'mem', addr: addr + k, old: this.mem[addr + k] });
+    }
+    this.mem[addr] = v & 0xff;
+    this.mem[addr + 1] = (v >>> 8) & 0xff;
+    this.mem[addr + 2] = (v >>> 16) & 0xff;
+    this.mem[addr + 3] = (v >>> 24) & 0xff;
+  }
+  readCString(addr) {
+    let s = '';
+    for (let a = addr; a < this.memSize; a++) {
+      const b = this.readByte(a);
+      if (b === 0) return s;
+      s += String.fromCharCode(b);
+    }
+    throw new Error('unterminated string at address 0x' + (addr >>> 0).toString(16));
+  }
+
+  // A view of the machine's current state, in the shape the UI consumes. Safe to
+  // call at any point mid-execution, which is what makes stepping possible.
+  snapshot() {
+    return {
+      regs: this.regs,
+      mem: this.mem,
+      pc: this.pc,
+      line: this.currentLine(),
+      output: this.out.join(''),
+      finished: this.finished,
+      error: this.error,
+      exitCode: this.exitCode,
+      steps: this.steps,
+      dataSize: this.dataSize,
+      stackTop: this.stackTop,
+      memSize: this.memSize,
+      hitBreakpoint: this.hitBreakpoint,
+      atStart: this.steps === 0,
+    };
+  }
+
+  // The C source line of the instruction about to execute, or null for the entry
+  // stub, the compiler-generated helpers, and a finished program.
+  currentLine() {
+    const idx = this.pc >> 2;
+    if (this.finished || idx < 0 || idx >= this.instrs.length) return null;
+    const line = this.instrs[idx].line;
+    return line == null ? null : line;
+  }
+
+  // Runs until the program exits, a trap index is reached, an error occurs, or
+  // `maxSteps` instructions have been executed by *this* call. maxSteps is a
+  // per-call budget (matching the UI's "run for N steps"), so pressing Run again
+  // continues from wherever this left off.
+  runUntilBreak(traps, maxSteps) {
+    this.hitBreakpoint = false;
+    const budget = maxSteps == null ? this.maxSteps : maxSteps;
+    try {
+      let executed = 0;
+      while (!this.finished && executed < budget) {
+        this.steps++;
+        executed++;
+        this.step();
+        // Checked only *after* executing, so resuming from a breakpoint cannot
+        // immediately re-trap on the instruction it is parked on.
+        if (!this.finished && traps && traps.has(this.pc >> 2)) {
+          this.hitBreakpoint = true;
+          break;
+        }
+      }
+    } catch (e) {
+      this.error = e.message;
+    }
+    return this.snapshot();
+  }
+
+  // Executes exactly one instruction.
+  stepOne() {
+    this.hitBreakpoint = false;
+    if (this.finished) return this.snapshot();
+    try {
+      this.steps++;
+      this.step();
+    } catch (e) {
+      this.error = e.message;
+    }
+    return this.snapshot();
+  }
+
+  // What the *next* instruction would do, without committing it: runs the real
+  // step() with every mutation journaled, harvests the resulting writes, then
+  // rolls the whole thing back. Returns
+  //   { reg: {i, from, to} | null, mem: [{addr, from, to}], reads: [addr], nextPc }
+  // or null if there is nothing to preview (finished, or the instruction faults).
+  // `reads` lists every byte the instruction read; deciding which of those are
+  // worth showing is the UI's policy, not the simulator's.
+  // Rollback is exact and cheap because one instruction writes at most one
+  // register and at most four bytes, so no memory copying is involved.
+  previewStep() {
+    if (this.finished) return null;
+    const savedPc = this.pc, savedSteps = this.steps, savedFinished = this.finished;
+    const savedExit = this.exitCode, savedError = this.error, savedOutLen = this.out.length;
+    this.journal = [];
+    this.readLog = [];
+    let result = null;
+    try {
+      this.step();
+      let reg = null;
+      const mem = [];
+      for (const e of this.journal) {
+        // last write wins, though one instruction only ever writes one register
+        if (e.kind === 'reg') reg = { i: e.i, from: e.old | 0, to: this.regs[e.i] | 0 };
+        else mem.push({ addr: e.addr, from: e.old, to: this.mem[e.addr] });
+      }
+      result = { reg, mem, reads: this.readLog.slice(), nextPc: this.pc };
+    } catch (e) {
+      result = null; // a preview must never surface an error of its own
+    } finally {
+      for (let k = this.journal.length - 1; k >= 0; k--) {
+        const e = this.journal[k];
+        if (e.kind === 'reg') this.regs[e.i] = e.old | 0;
+        else this.mem[e.addr] = e.old;
+      }
+      this.journal = null;
+      this.readLog = null;
+      this.out.length = savedOutLen;
+      this.pc = savedPc;
+      this.steps = savedSteps;
+      this.finished = savedFinished;
+      this.exitCode = savedExit;
+      this.error = savedError;
+    }
+    return result;
+  }
+
+  run() {
+    return this.runUntilBreak(null, this.maxSteps);
+  }
+
+  step() {
+    const idx = this.pc >> 2;
+    if (this.pc % 4 !== 0) throw new Error('misaligned pc 0x' + (this.pc >>> 0).toString(16));
+    if (idx === this.instrs.length) { this.finished = true; return; } // ran off the end cleanly
+    if (idx < 0 || idx > this.instrs.length) {
+      throw new Error('pc 0x' + (this.pc >>> 0).toString(16) + ' is outside the program');
+    }
+    const ins = this.instrs[idx];
+    const r = this.regs;
+    const a = r[ins.rs1] | 0, b = r[ins.rs2] | 0, imm = ins.imm | 0;
+    let nextPc = this.pc + 4;
+
+    switch (ins.op) {
+      /* --- register-register --- */
+      case 'ADD': this.setReg(ins.rd, a + b); break;
+      case 'SUB': this.setReg(ins.rd, a - b); break;
+      case 'AND': this.setReg(ins.rd, a & b); break;
+      case 'OR': this.setReg(ins.rd, a | b); break;
+      case 'XOR': this.setReg(ins.rd, a ^ b); break;
+      case 'SLL': this.setReg(ins.rd, a << (b & 31)); break;
+      case 'SRL': this.setReg(ins.rd, a >>> (b & 31)); break;
+      case 'SRA': this.setReg(ins.rd, a >> (b & 31)); break;
+      case 'SLT': this.setReg(ins.rd, a < b ? 1 : 0); break;
+      case 'SLTU': this.setReg(ins.rd, (a >>> 0) < (b >>> 0) ? 1 : 0); break;
+      case 'MUL': this.setReg(ins.rd, Math.imul(a, b)); break;
+      case 'DIV':
+        if (b === 0) this.setReg(ins.rd, -1);
+        else if (a === -2147483648 && b === -1) this.setReg(ins.rd, -2147483648);
+        else this.setReg(ins.rd, (a / b) | 0);
+        break;
+      case 'REM':
+        if (b === 0) this.setReg(ins.rd, a);
+        else if (a === -2147483648 && b === -1) this.setReg(ins.rd, 0);
+        else this.setReg(ins.rd, a % b);
+        break;
+
+      /* --- register-immediate --- */
+      case 'ADDI': this.setReg(ins.rd, a + imm); break;
+      case 'ANDI': this.setReg(ins.rd, a & imm); break;
+      case 'ORI': this.setReg(ins.rd, a | imm); break;
+      case 'XORI': this.setReg(ins.rd, a ^ imm); break;
+      case 'SLLI': this.setReg(ins.rd, a << (imm & 31)); break;
+      case 'SRLI': this.setReg(ins.rd, a >>> (imm & 31)); break;
+      case 'SRAI': this.setReg(ins.rd, a >> (imm & 31)); break;
+      case 'SLTI': this.setReg(ins.rd, a < imm ? 1 : 0); break;
+      case 'SLTIU': this.setReg(ins.rd, (a >>> 0) < (imm >>> 0) ? 1 : 0); break;
+      case 'LUI': this.setReg(ins.rd, imm << 12); break;
+
+      /* --- loads / stores --- */
+      case 'LW': this.setReg(ins.rd, this.readWord(a + imm)); break;
+      case 'LB': this.setReg(ins.rd, (this.readByte(a + imm) << 24) >> 24); break;
+      case 'SW': this.writeWord(a + imm, b); break;
+      case 'SB': this.writeByte(a + imm, b); break;
+
+      /* --- branches / jumps --- */
+      case 'BEQ': if (a === b) nextPc = this.pc + imm; break;
+      case 'BNE': if (a !== b) nextPc = this.pc + imm; break;
+      case 'BLT': if (a < b) nextPc = this.pc + imm; break;
+      case 'BGE': if (a >= b) nextPc = this.pc + imm; break;
+      case 'JAL':
+        this.setReg(ins.rd, this.pc + 4);
+        nextPc = this.pc + imm;
+        break;
+      case 'JALR': {
+        const target = (a + imm) & ~1;
+        this.setReg(ins.rd, this.pc + 4);
+        nextPc = target;
+        break;
+      }
+
+      case 'ECALL': this.ecall(); break;
+
+      default: throw new Error('unimplemented instruction ' + ins.op);
+    }
+
+    this.pc = nextPc;
+  }
+
+  // Bare-metal print/exit syscalls (RARS/Venus-style): there is no OS or libc
+  // here, so printf is lowered into these at compile time.
+  ecall() {
+    const which = this.regs[REG.a7] | 0;
+    const arg = this.regs[REG.a0] | 0;
+    switch (which) {
+      case SYSCALL.PRINT_INT: this.out.push(String(arg)); break;
+      case SYSCALL.PRINT_STR: this.out.push(this.readCString(arg)); break;
+      case SYSCALL.PRINT_CHAR: this.out.push(String.fromCharCode(arg & 0xff)); break;
+      case SYSCALL.PRINT_HEX: this.out.push((arg >>> 0).toString(16)); break;
+      case SYSCALL.EXIT: this.finished = true; this.exitCode = arg; break;
+      default: throw new Error('unknown ecall service ' + which + ' in a7');
+    }
+  }
+}
+
+/* =========================================================================
+   INSTRUCTION ENCODING
+   Packs an instruction object into its real 32-bit RV32IM word, purely so the
+   listing can show the machine code. The interpreter never consults this - it
+   executes the decoded objects directly - so this is display-only and cannot
+   affect program behaviour.
+
+   Two quirks specific to how this codegen stores immediates:
+     - LUI's `imm` is already the upper-20-bit value (the interpreter does
+       `rd = imm << 12`), so encU shifts it into place as-is.
+     - JAL/branch `imm` is the resolved byte offset filled in by resolveLabels,
+       which is exactly what the B/J formats encode.
+   ========================================================================= */
+
+function encR(funct7, rs2, rs1, funct3, rd, opcode) {
+  return ((funct7 & 0x7f) << 25) | ((rs2 & 31) << 20) | ((rs1 & 31) << 15)
+    | ((funct3 & 7) << 12) | ((rd & 31) << 7) | (opcode & 0x7f);
+}
+function encI(imm, rs1, funct3, rd, opcode) {
+  return ((imm & 0xfff) << 20) | ((rs1 & 31) << 15) | ((funct3 & 7) << 12)
+    | ((rd & 31) << 7) | (opcode & 0x7f);
+}
+function encS(imm, rs2, rs1, funct3, opcode) {
+  return (((imm >> 5) & 0x7f) << 25) | ((rs2 & 31) << 20) | ((rs1 & 31) << 15)
+    | ((funct3 & 7) << 12) | ((imm & 0x1f) << 7) | (opcode & 0x7f);
+}
+function encB(imm, rs2, rs1, funct3, opcode) {
+  return (((imm >> 12) & 1) << 31) | (((imm >> 5) & 0x3f) << 25) | ((rs2 & 31) << 20)
+    | ((rs1 & 31) << 15) | ((funct3 & 7) << 12) | (((imm >> 1) & 0xf) << 8)
+    | (((imm >> 11) & 1) << 7) | (opcode & 0x7f);
+}
+function encU(imm, rd, opcode) {
+  return ((imm & 0xfffff) << 12) | ((rd & 31) << 7) | (opcode & 0x7f);
+}
+function encJ(imm, rd, opcode) {
+  return (((imm >> 20) & 1) << 31) | (((imm >> 1) & 0x3ff) << 21) | (((imm >> 11) & 1) << 20)
+    | (((imm >> 12) & 0xff) << 12) | ((rd & 31) << 7) | (opcode & 0x7f);
+}
+
+const OP_ALU = 0x33, OP_ALUI = 0x13, OP_LOAD = 0x03, OP_STORE = 0x23;
+const OP_BRANCH = 0x63, OP_LUI = 0x37, OP_JAL = 0x6f, OP_JALR = 0x67;
+
+const ENCODERS = {
+  /* R-type */
+  ADD:  i => encR(0x00, i.rs2, i.rs1, 0, i.rd, OP_ALU),
+  SUB:  i => encR(0x20, i.rs2, i.rs1, 0, i.rd, OP_ALU),
+  SLL:  i => encR(0x00, i.rs2, i.rs1, 1, i.rd, OP_ALU),
+  SLT:  i => encR(0x00, i.rs2, i.rs1, 2, i.rd, OP_ALU),
+  SLTU: i => encR(0x00, i.rs2, i.rs1, 3, i.rd, OP_ALU),
+  XOR:  i => encR(0x00, i.rs2, i.rs1, 4, i.rd, OP_ALU),
+  SRL:  i => encR(0x00, i.rs2, i.rs1, 5, i.rd, OP_ALU),
+  SRA:  i => encR(0x20, i.rs2, i.rs1, 5, i.rd, OP_ALU),
+  OR:   i => encR(0x00, i.rs2, i.rs1, 6, i.rd, OP_ALU),
+  AND:  i => encR(0x00, i.rs2, i.rs1, 7, i.rd, OP_ALU),
+  /* M extension: same opcode, funct7 = 0000001 */
+  MUL:  i => encR(0x01, i.rs2, i.rs1, 0, i.rd, OP_ALU),
+  DIV:  i => encR(0x01, i.rs2, i.rs1, 4, i.rd, OP_ALU),
+  REM:  i => encR(0x01, i.rs2, i.rs1, 6, i.rd, OP_ALU),
+  /* I-type ALU */
+  ADDI:  i => encI(i.imm, i.rs1, 0, i.rd, OP_ALUI),
+  SLTI:  i => encI(i.imm, i.rs1, 2, i.rd, OP_ALUI),
+  SLTIU: i => encI(i.imm, i.rs1, 3, i.rd, OP_ALUI),
+  XORI:  i => encI(i.imm, i.rs1, 4, i.rd, OP_ALUI),
+  ORI:   i => encI(i.imm, i.rs1, 6, i.rd, OP_ALUI),
+  ANDI:  i => encI(i.imm, i.rs1, 7, i.rd, OP_ALUI),
+  /* shift-immediate: shamt in imm[4:0], funct7 in the upper bits */
+  SLLI: i => encI((0x00 << 5) | (i.imm & 31), i.rs1, 1, i.rd, OP_ALUI),
+  SRLI: i => encI((0x00 << 5) | (i.imm & 31), i.rs1, 5, i.rd, OP_ALUI),
+  SRAI: i => encI((0x20 << 5) | (i.imm & 31), i.rs1, 5, i.rd, OP_ALUI),
+  /* loads / stores */
+  LB: i => encI(i.imm, i.rs1, 0, i.rd, OP_LOAD),
+  LW: i => encI(i.imm, i.rs1, 2, i.rd, OP_LOAD),
+  SB: i => encS(i.imm, i.rs2, i.rs1, 0, OP_STORE),
+  SW: i => encS(i.imm, i.rs2, i.rs1, 2, OP_STORE),
+  /* branches */
+  BEQ: i => encB(i.imm, i.rs2, i.rs1, 0, OP_BRANCH),
+  BNE: i => encB(i.imm, i.rs2, i.rs1, 1, OP_BRANCH),
+  BLT: i => encB(i.imm, i.rs2, i.rs1, 4, OP_BRANCH),
+  BGE: i => encB(i.imm, i.rs2, i.rs1, 5, OP_BRANCH),
+  /* upper-immediate, jumps, system */
+  LUI:  i => encU(i.imm, i.rd, OP_LUI),
+  JAL:  i => encJ(i.imm, i.rd, OP_JAL),
+  JALR: i => encI(i.imm, i.rs1, 0, i.rd, OP_JALR),
+  ECALL: () => 0x00000073,
+};
+
+// >>> 0 because several formats set bit 31, which would otherwise read negative.
+function encodeInstr(ins) {
+  const enc = ENCODERS[ins.op];
+  return enc ? (enc(ins) >>> 0) : null;
+}
+
+// Which operand fields each op genuinely READS. This table has to exist: emit()
+// defaults unused fields to 0, so reading ins.rd/rs1/rs2 blindly would report
+// x0 as an operand of every store and branch (no rd) and of lui/jal (no rs1/rs2).
+const SRC_FIELDS = {
+  /* R-type: both source registers */
+  ADD: ['rs1', 'rs2'], SUB: ['rs1', 'rs2'], SLL: ['rs1', 'rs2'], SLT: ['rs1', 'rs2'],
+  SLTU: ['rs1', 'rs2'], XOR: ['rs1', 'rs2'], SRL: ['rs1', 'rs2'], SRA: ['rs1', 'rs2'],
+  OR: ['rs1', 'rs2'], AND: ['rs1', 'rs2'],
+  MUL: ['rs1', 'rs2'], DIV: ['rs1', 'rs2'], REM: ['rs1', 'rs2'],
+  /* I-type ALU, shifts, loads, jalr: rs1 only */
+  ADDI: ['rs1'], SLTI: ['rs1'], SLTIU: ['rs1'], XORI: ['rs1'], ORI: ['rs1'], ANDI: ['rs1'],
+  SLLI: ['rs1'], SRLI: ['rs1'], SRAI: ['rs1'],
+  LB: ['rs1'], LW: ['rs1'], JALR: ['rs1'],
+  /* stores: rs1 is the base address, rs2 the value being stored */
+  SB: ['rs1', 'rs2'], SW: ['rs1', 'rs2'],
+  /* branches: both compared registers */
+  BEQ: ['rs1', 'rs2'], BNE: ['rs1', 'rs2'], BLT: ['rs1', 'rs2'], BGE: ['rs1', 'rs2'],
+  /* no source registers at all */
+  LUI: [], JAL: [], ECALL: [],
+};
+
+// The set of registers the instruction reads. x0 is included when genuinely read
+// (`li rd, imm` really is `addi rd, zero, imm`) - unlike a write to x0, which is
+// discarded and so is excluded from the pending-write display.
+function sourceRegs(ins) {
+  const srcs = new Set();
+  for (const f of (SRC_FIELDS[ins.op] || [])) srcs.add(ins[f] & 31);
+  // ECALL's inputs are fixed registers rather than instruction fields
+  if (ins.op === 'ECALL') { srcs.add(REG.a7); srcs.add(REG.a0); }
+  return srcs;
+}
+
+const LOAD_OPS = new Set(['LW', 'LB']);
+
+function formatCode(ins) {
+  const word = encodeInstr(ins);
+  return word == null ? '--------' : word.toString(16).padStart(8, '0');
+}
+
+/* =========================================================================
+   ASSEMBLY LISTING FORMATTER
+   Renders the same instruction objects the interpreter executes. Pseudo-
+   instruction display (li/mv/j/ret/nop) is cosmetic only - it is derived from
+   the real instruction, so it can never disagree with what runs. Note the
+   machine code beside it encodes that real instruction, so the hex on a
+   pseudo-instruction row decodes to e.g. `addi a7, zero, 10`, not `li a7, 10`.
+   ========================================================================= */
+
+function rn(i) { return REG_NAMES[i]; }
+
+function formatInstr(ins, labelAt) {
+  const target = ins.targetLabel;
+  const R3 = m => m + ' ' + rn(ins.rd) + ', ' + rn(ins.rs1) + ', ' + rn(ins.rs2);
+  const I3 = m => m + ' ' + rn(ins.rd) + ', ' + rn(ins.rs1) + ', ' + ins.imm;
+  const MEM = m => m + ' ' + (ins.op[0] === 'L' ? rn(ins.rd) : rn(ins.rs2)) + ', ' + ins.imm + '(' + rn(ins.rs1) + ')';
+  const BR = m => m + ' ' + rn(ins.rs1) + ', ' + rn(ins.rs2) + ', ' + (target || ins.imm);
+
+  switch (ins.op) {
+    case 'ADDI':
+      if (ins.rd === 0 && ins.rs1 === 0 && ins.imm === 0) return 'nop';
+      if (ins.rs1 === 0) return 'li ' + rn(ins.rd) + ', ' + ins.imm;
+      if (ins.imm === 0) return 'mv ' + rn(ins.rd) + ', ' + rn(ins.rs1);
+      return I3('addi');
+    case 'ANDI': return I3('andi');
+    case 'ORI': return I3('ori');
+    case 'XORI':
+      if (ins.imm === -1) return 'not ' + rn(ins.rd) + ', ' + rn(ins.rs1);
+      return I3('xori');
+    case 'SLLI': return I3('slli');
+    case 'SRLI': return I3('srli');
+    case 'SRAI': return I3('srai');
+    case 'SLTI': return I3('slti');
+    case 'SLTIU':
+      if (ins.imm === 1) return 'seqz ' + rn(ins.rd) + ', ' + rn(ins.rs1);
+      return I3('sltiu');
+    case 'LUI': return 'lui ' + rn(ins.rd) + ', ' + ins.imm;
+    case 'SUB':
+      if (ins.rs1 === 0) return 'neg ' + rn(ins.rd) + ', ' + rn(ins.rs2);
+      return R3('sub');
+    case 'SLTU':
+      if (ins.rs1 === 0) return 'snez ' + rn(ins.rd) + ', ' + rn(ins.rs2);
+      return R3('sltu');
+    case 'ADD': case 'AND': case 'OR': case 'XOR': case 'SLL': case 'SRL':
+    case 'SRA': case 'SLT': case 'MUL': case 'DIV': case 'REM':
+      return R3(ins.op.toLowerCase());
+    case 'LW': case 'LB': case 'SW': case 'SB':
+      return MEM(ins.op.toLowerCase());
+    case 'BEQ': case 'BNE': case 'BLT': case 'BGE': {
+      if (ins.rs2 === 0 && ins.op === 'BEQ') return 'beqz ' + rn(ins.rs1) + ', ' + (target || ins.imm);
+      if (ins.rs2 === 0 && ins.op === 'BNE') return 'bnez ' + rn(ins.rs1) + ', ' + (target || ins.imm);
+      return BR(ins.op.toLowerCase());
+    }
+    case 'JAL':
+      if (ins.rd === 0) return 'j ' + (target || ins.imm);
+      if (ins.rd === REG.ra) return 'jal ' + (target || ins.imm);
+      return 'jal ' + rn(ins.rd) + ', ' + (target || ins.imm);
+    case 'JALR':
+      if (ins.rd === 0 && ins.rs1 === REG.ra && ins.imm === 0) return 'ret';
+      return 'jalr ' + rn(ins.rd) + ', ' + ins.imm + '(' + rn(ins.rs1) + ')';
+    case 'ECALL': return 'ecall';
+  }
+  return ins.op.toLowerCase();
+}
+
+// Builds the reverse label map (instruction index -> label names) so the
+// listing can print label lines without them occupying address slots.
+function labelsByIndex(labels) {
+  const byIndex = new Map();
+  for (const [name, idx] of labels) {
+    if (!byIndex.has(idx)) byIndex.set(idx, []);
+    byIndex.get(idx).push(name);
+  }
+  return byIndex;
+}
+
+function formatAsm(program) {
+  const byIndex = labelsByIndex(program.labels);
+  const lines = [];
+  lines.push({ kind: 'header', text: '; target: ' + (program.useM ? 'RV32IM (hardware mul/div)' : 'RV32I (software mul/div)') });
+  for (let i = 0; i < program.instrs.length; i++) {
+    for (const name of (byIndex.get(i) || [])) lines.push({ kind: 'label', text: name + ':' });
+    const ins = program.instrs[i];
+    lines.push({ kind: 'instr', addr: i * 4, index: i, text: formatInstr(ins), comment: ins.comment, code: formatCode(ins) });
+  }
+  return lines;
+}
+
+/* =========================================================================
+   EXAMPLES
+   ========================================================================= */
+
+const EXAMPLES = {
+  'Hello, printf': `// printf is lowered at compile time into print syscalls (ecall),
+// one per literal fragment and one per format specifier.
+char *name = "RISC-V";
+
+int main() {
+  int a = 2;
+  int b = 40;
+  printf("Hello, %s!\\n", name);
+  printf("%d + %d = %d\\n", a, b, a + b);
+  printf("%d in hex is %x, and '%c' is char %d\\n", 255, 255, 'A', 'A');
+  return 0;
+}
+`,
+
+  'Factorial (recursion)': `// Each call gets its own stack frame: ra and the caller's frame
+// pointer are saved in the prologue and restored in the epilogue.
+int fact(int n) {
+  if (n <= 1) return 1;
+  return n * fact(n - 1);
+}
+
+int main() {
+  for (int i = 1; i <= 10; i++) {
+    printf("%d! = %d\\n", i, fact(i));
+  }
+  return 0;
+}
+`,
+
+  'Fibonacci (loop + array)': `// A local array lives in the current stack frame; indexing it
+// compiles to an address computation plus a load or store.
+int main() {
+  int f[15];
+  f[0] = 0;
+  f[1] = 1;
+  for (int i = 2; i < 15; i++) {
+    f[i] = f[i - 1] + f[i - 2];
+  }
+  printf("fib:");
+  for (int i = 0; i < 15; i++) {
+    printf(" %d", f[i]);
+  }
+  printf("\\n");
+  return 0;
+}
+`,
+
+  'Array sum (globals + while)': `// Globals live in the data segment at a fixed address, so they are
+// reached with an absolute address rather than a frame offset.
+int arr[8];
+
+int main() {
+  int i = 0;
+  while (i < 8) {
+    arr[i] = (i + 1) * (i + 1);
+    i++;
+  }
+
+  int sum = 0;
+  int max = 0;
+  i = 0;
+  while (i < 8) {
+    sum = sum + arr[i];
+    if (arr[i] > max) max = arr[i];
+    i++;
+  }
+  printf("squares 1..8 sum to %d (0x%x), max = %d\\n", sum, sum, max);
+  printf("average = %d remainder %d\\n", sum / 8, sum % 8);
+  return 0;
+}
+`,
+
+  'Pointer swap + bubble sort': `// Pointers are plain 32-bit addresses: & takes one, * follows one.
+// Arrays decay to their base address when passed to a function.
+void swap(int *a, int *b) {
+  int t = *a;
+  *a = *b;
+  *b = t;
+}
+
+void sort(int *v, int n) {
+  for (int i = 0; i < n; i++) {
+    for (int j = 0; j < n - 1 - i; j++) {
+      if (v[j] > v[j + 1]) swap(&v[j], &v[j + 1]);
+    }
+  }
+}
+
+int data[8];
+
+int main() {
+  data[0] = 5; data[1] = 2; data[2] = 9; data[3] = 1;
+  data[4] = 7; data[5] = 3; data[6] = 8; data[7] = 4;
+
+  printf("before:");
+  for (int i = 0; i < 8; i++) printf(" %d", data[i]);
+  printf("\\n");
+
+  sort(data, 8);
+
+  printf("after: ");
+  for (int i = 0; i < 8; i++) printf(" %d", data[i]);
+  printf("\\n");
+  return 0;
+}
+`,
+
+  'String walk (char + pointers)': `// A char is one byte, so char arrays and char* use lb/sb while
+// int and pointer accesses use lw/sw.
+char *src = "hello, riscv";
+char upper[32];
+
+int main() {
+  int n = 0;
+  while (src[n] != 0) {
+    char c = src[n];
+    if (c >= 'a' && c <= 'z') c = c - 32;
+    upper[n] = c;
+    n++;
+  }
+  upper[n] = 0;
+
+  printf("%s -> %s (%d chars)\\n", src, upper, n);
+
+  char *p = upper;
+  printf("first=%c last=%c\\n", *p, *(p + n - 1));
+  return 0;
+}
+`,
+};
+
+/* =========================================================================
+   UI WIRING
+   ========================================================================= */
+
+const $ = id => document.getElementById(id);
+const codeInput = $('codeInput'), gutter = $('gutter'), consoleBox = $('consoleBox');
+const lineHighlight = $('lineHighlight');
+const exampleSelect = $('exampleSelect'), openBtn = $('openBtn'), saveBtn = $('saveBtn'), fileOpenInput = $('fileOpenInput');
+const runBtn = $('runBtn'), stepBtn = $('stepBtn'), resetBtn = $('resetBtn');
+const compileBtn = $('compileBtn');
+const isaSelect = $('isaSelect'), maxStepsInput = $('maxStepsInput'), memSizeInput = $('memSizeInput');
+const asmListing = $('asmListing'), asmEmpty = $('asmEmpty'), regGrid = $('regGrid'), badgeRow = $('badgeRow');
+const regPc = $('regPc');
+const regHexCheckbox = $('regHexCheckbox');
+const dataTableWrap = $('dataTableWrap'), dataEmpty = $('dataEmpty');
+const stackTableWrap = $('stackTableWrap'), stackEmpty = $('stackEmpty');
+const stackRowsInput = $('stackRowsInput');
+
+let lastProgram = null;    // compiled program (instructions + labels + data)
+let lastResult = null;     // latest snapshot from the live simulator
+let sim = null;            // live RiscvSim, retained across Step/Run so execution can resume
+let compiledSource = null; // the exact source text lastProgram was built from
+let compileFailed = false;
+let breakpointLines = new Set();   // C source line numbers
+let breakpointIndices = new Set(); // instruction indices, set directly on the assembly listing
+let compiledExecLines = new Set(); // C lines the last compile actually emitted code for
+let pendingWrite = null;           // what the highlighted instruction is about to write
+let memoryRegions = [];
+// addr -> last-known "Holds" label from buildStackHints, kept across renders so a
+// retired frame (fp has moved past it) still shows what it used to hold instead
+// of falling back to generic "operand temp". Reset on every fresh compile, since
+// old addresses mean nothing once the program that gave them meaning is gone.
+let retiredStackHints = new Map();
+
+/* ---- console helpers ---- */
+function clearConsole() { consoleBox.innerHTML = ''; }
+function logLine(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  consoleBox.appendChild(div);
+  consoleBox.scrollTop = consoleBox.scrollHeight;
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+/* ---- editor: line-number gutter, breakpoints, current-line band ---- */
+
+// The C line the machine is parked on, or null (not running, in the entry stub,
+// inside a compiler-generated helper, or finished).
+function currentLine() {
+  return lastResult && !lastResult.finished ? lastResult.line : null;
+}
+
+function updateGutter() {
+  const count = codeInput.value.split('\n').length;
+  const cur = currentLine();
+  let html = '';
+  for (let i = 1; i <= count; i++) {
+    const bp = breakpointLines.has(i);
+    // a breakpoint on a line the last compile emitted no code for can never hit
+    const unmapped = bp && lastProgram && !compiledExecLines.has(i);
+    html += '<div class="gutter-line' + (bp ? ' bp' : '') + (unmapped ? ' bp-unmapped' : '')
+      + (i === cur ? ' current' : '') + '" data-line="' + i + '">'
+      + '<span class="bp-dot"></span>' + i + '</div>';
+  }
+  gutter.innerHTML = html;
+}
+
+// Metrics come from getComputedStyle rather than hardcoded numbers so the band
+// tracks any future font/padding change. Sound only because the textarea is
+// white-space:pre - with no soft wrapping, one logical line is one visual line.
+function editorMetrics() {
+  const cs = getComputedStyle(codeInput);
+  let lh = parseFloat(cs.lineHeight);
+  if (!isFinite(lh)) lh = parseFloat(cs.fontSize) * 1.55;
+  return { lineHeight: lh, paddingTop: parseFloat(cs.paddingTop) || 0 };
+}
+
+function updateLineHighlight() {
+  const cur = currentLine();
+  if (cur == null) { lineHighlight.style.display = 'none'; return; }
+  const { lineHeight, paddingTop } = editorMetrics();
+  lineHighlight.style.height = lineHeight + 'px';
+  lineHighlight.style.top = (paddingTop + (cur - 1) * lineHeight - codeInput.scrollTop) + 'px';
+  lineHighlight.style.display = 'block';
+}
+
+function scrollLineIntoView(line) {
+  if (line == null) return;
+  const { lineHeight, paddingTop } = editorMetrics();
+  const y = paddingTop + (line - 1) * lineHeight;
+  const top = codeInput.scrollTop;
+  const bottom = top + codeInput.clientHeight;
+  if (y < top + lineHeight) codeInput.scrollTop = Math.max(0, y - lineHeight * 2);
+  else if (y + lineHeight > bottom - lineHeight) codeInput.scrollTop = y - codeInput.clientHeight + lineHeight * 3;
+  gutter.scrollTop = codeInput.scrollTop;
+}
+
+function toggleBreakpoint(line) {
+  if (!line || line < 1) return;
+  if (breakpointLines.has(line)) breakpointLines.delete(line);
+  else breakpointLines.add(line);
+  updateGutter();
+  renderAsm(); // breakpoint markers live on the instruction rows too
+}
+
+// Instruction-level breakpoints are their own set, unioned with the C-line ones
+// to form the trap set. Toggling one here never touches breakpointLines, so
+// clicking an instruction that is only trapped via its C line adds a breakpoint
+// on top of it rather than silently clearing the line's.
+function toggleAsmBreakpoint(index) {
+  if (!Number.isInteger(index) || index < 0) return;
+  if (breakpointIndices.has(index)) breakpointIndices.delete(index);
+  else breakpointIndices.add(index);
+  renderAsm();
+}
+
+function activeTraps() {
+  if (!lastProgram) return new Set();
+  const traps = trapIndicesForLines(lastProgram.instrs, breakpointLines);
+  for (const i of breakpointIndices) traps.add(i);
+  return traps;
+}
+
+gutter.addEventListener('click', (e) => {
+  const row = e.target.closest ? e.target.closest('.gutter-line') : null;
+  if (!row) return;
+  toggleBreakpoint(parseInt(row.dataset.line, 10));
+});
+
+codeInput.addEventListener('input', updateGutter);
+codeInput.addEventListener('scroll', () => {
+  gutter.scrollTop = codeInput.scrollTop;
+  updateLineHighlight();
+});
+codeInput.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab') return;
+  e.preventDefault();
+  const v = codeInput.value;
+  const s = codeInput.selectionStart, en = codeInput.selectionEnd;
+  if (e.shiftKey) {
+    const lineStart = v.lastIndexOf('\n', s - 1) + 1;
+    let lineEnd = v.indexOf('\n', en);
+    if (lineEnd === -1) lineEnd = v.length;
+    const lines = v.slice(lineStart, lineEnd).split('\n');
+    let startRemoved = 0, totalRemoved = 0;
+    const outdented = lines.map((l, i) => {
+      const m = l.match(/^ {1,2}|^\t/);
+      const removed = m ? m[0].length : 0;
+      if (i === 0) startRemoved = removed;
+      totalRemoved += removed;
+      return l.slice(removed);
+    }).join('\n');
+    codeInput.setSelectionRange(lineStart, lineEnd);
+    document.execCommand('insertText', false, outdented);
+    const newStart = Math.max(lineStart, s - startRemoved);
+    const newEnd = Math.max(newStart, en - totalRemoved);
+    codeInput.setSelectionRange(newStart, newEnd);
+    updateGutter();
+    return;
+  }
+  if (s === en) {
+    document.execCommand('insertText', false, '  ');
+    updateGutter();
+    return;
+  }
+  const lineStart = v.lastIndexOf('\n', s - 1) + 1;
+  let lineEnd = v.indexOf('\n', en);
+  if (lineEnd === -1) lineEnd = v.length;
+  const lines = v.slice(lineStart, lineEnd).split('\n');
+  const indented = lines.map(l => '  ' + l).join('\n');
+  codeInput.setSelectionRange(lineStart, lineEnd);
+  document.execCommand('insertText', false, indented);
+  codeInput.setSelectionRange(s + 2, en + lines.length * 2);
+  updateGutter();
+});
+
+/* ---- example dropdown ---- */
+let currentFileName = 'program.c';
+for (const name of Object.keys(EXAMPLES)) {
+  const opt = document.createElement('option');
+  opt.value = name; opt.textContent = name;
+  exampleSelect.appendChild(opt);
+}
+function loadExample(name) {
+  codeInput.value = EXAMPLES[name];
+  currentFileName = name.replace(/[^A-Za-z0-9_-]+/g, '_') + '.c';
+  updateGutter();
+  invalidateCompile(); // setting .value in script does not fire an 'input' event
+}
+exampleSelect.addEventListener('change', () => loadExample(exampleSelect.value));
+
+/* ---- open / save ---- */
+openBtn.addEventListener('click', () => fileOpenInput.click());
+fileOpenInput.addEventListener('change', () => {
+  const file = fileOpenInput.files[0];
+  fileOpenInput.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    codeInput.value = reader.result;
+    currentFileName = file.name;
+    exampleSelect.selectedIndex = -1;
+    updateGutter();
+    invalidateCompile();
+  };
+  reader.readAsText(file);
+});
+saveBtn.addEventListener('click', () => {
+  const blob = new Blob([codeInput.value], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = currentFileName;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+/* ---- collapse buttons (generic, works for any .card-collapse-btn) ---- */
+document.querySelectorAll('[data-collapse]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const card = btn.closest('.card');
+    card.classList.toggle('collapsed');
+    btn.textContent = card.classList.contains('collapsed') ? '▸' : '▾';
+  });
+});
+
+/* ---- editor/console layout toggle (side-by-side vs stacked) ----
+   The shared style.css rule targets a generic .layout-pair class rather than
+   per-app ids, so this is the same wiring the simulator uses, unchanged. */
+(() => {
+  const grid = document.querySelector('.grid');
+  const sideBtns = document.querySelectorAll('[data-layout-btn="side"]');
+  const stackBtns = document.querySelectorAll('[data-layout-btn="stack"]');
+  function applyLayout(mode) {
+    grid.classList.toggle('stack-editor-console', mode === 'stack');
+    sideBtns.forEach(b => b.classList.toggle('active', mode !== 'stack'));
+    stackBtns.forEach(b => b.classList.toggle('active', mode === 'stack'));
+  }
+  sideBtns.forEach(b => b.addEventListener('click', () => {
+    localStorage.setItem('compilerLayout', 'side');
+    applyLayout('side');
+  }));
+  stackBtns.forEach(b => b.addEventListener('click', () => {
+    localStorage.setItem('compilerLayout', 'stack');
+    applyLayout('stack');
+  }));
+  applyLayout(localStorage.getItem('compilerLayout') === 'stack' ? 'stack' : 'side');
+})();
+
+/* ---- per-card full/half width (assembly, registers, memory) ----
+   These three are .card.full, so "half" simply drops that class and lets the
+   card occupy one cell of the existing 1fr 1fr grid; two adjacent half cards
+   then pair up by normal grid auto-placement. Uses data-width-btn, distinct
+   from the editor/console pair's data-layout-btn, so neither toggle's
+   querySelectorAll picks up the other's buttons. */
+(() => {
+  const CARDS = [
+    { id: 'card-asm', key: 'compilerAsmWidth' },
+    { id: 'card-regs', key: 'compilerRegsWidth' },
+    { id: 'card-data', key: 'compilerDataWidth' },
+    { id: 'card-stack', key: 'compilerStackWidth' },
+  ];
+  for (const { id, key } of CARDS) {
+    const card = document.getElementById(id);
+    const btns = document.querySelectorAll('[data-width-card="' + id + '"]');
+    function apply(mode) {
+      card.classList.toggle('full', mode !== 'half');
+      btns.forEach(b => b.classList.toggle('active', b.dataset.widthBtn === mode));
+    }
+    btns.forEach(b => b.addEventListener('click', () => {
+      const mode = b.dataset.widthBtn;
+      localStorage.setItem(key, mode);
+      apply(mode);
+    }));
+    apply(localStorage.getItem(key) === 'half' ? 'half' : 'full');
+  }
+})();
+(() => {
+  const MIN_HEIGHT = 200, MAX_HEIGHT = 1000, STEP = 80;
+  // `prop` is 'height' for panels sized by height, 'maxHeight' for the scrolling
+  // panels capped by max-height - writing style.height on those would be silently
+  // overridden, since height:800px still renders at 420px under max-height:420px.
+  function wireHeight(storageKey, el, decBtn, incBtn, prop) {
+    const saved = parseInt(localStorage.getItem(storageKey), 10);
+    if (!isNaN(saved)) el.style[prop] = saved + 'px';
+    function adjust(delta) {
+      // Read the property being adjusted, not the rendered box: a max-height
+      // panel whose content is short renders far below its cap, so measuring the
+      // box would make '+' shrink the cap instead of growing it.
+      let cur = parseFloat(getComputedStyle(el)[prop]);
+      if (!isFinite(cur)) cur = el.getBoundingClientRect().height;
+      const next = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, cur + delta));
+      el.style[prop] = next + 'px';
+      localStorage.setItem(storageKey, next);
+    }
+    decBtn.addEventListener('click', () => adjust(-STEP));
+    incBtn.addEventListener('click', () => adjust(STEP));
+  }
+  const $$ = id => document.getElementById(id);
+  wireHeight('compilerEditorHeight', $$('editorWrap'), $$('editorHeightDec'), $$('editorHeightInc'), 'height');
+  wireHeight('compilerConsoleHeight', $$('consoleBox'), $$('consoleHeightDec'), $$('consoleHeightInc'), 'height');
+  wireHeight('compilerAsmHeight', $$('asmListing'), $$('asmHeightDec'), $$('asmHeightInc'), 'maxHeight');
+  wireHeight('compilerDataHeight', $$('dataTableWrap'), $$('dataHeightDec'), $$('dataHeightInc'), 'maxHeight');
+  wireHeight('compilerStackHeight', $$('stackTableWrap'), $$('stackHeightDec'), $$('stackHeightInc'), 'maxHeight');
+})();
+
+/* ---- compile / run / step / reset ----
+   Compile and Run are deliberately separate steps: Compile produces the
+   instruction listing, Run executes that exact listing. Run/Step/Reset stay
+   disabled until a successful compile, and editing the source (or switching the
+   target ISA, which changes codegen) invalidates the compile again - so the
+   listing on screen always matches whatever Run would execute.
+
+   `sim` is a live simulator retained between clicks, which is what lets Step
+   advance one instruction and Run resume rather than restart. */
+compileBtn.addEventListener('click', compileProgram);
+runBtn.addEventListener('click', runProgram);
+stepBtn.addEventListener('click', stepProgram);
+resetBtn.addEventListener('click', resetMachine);
+
+function setRunEnabled(on) {
+  runBtn.disabled = !on;
+  stepBtn.disabled = !on;
+  resetBtn.disabled = !on;
+}
+
+function readMaxSteps() {
+  return Math.max(100, parseInt(maxStepsInput.value, 10) || 200000);
+}
+
+// Clamped so a typo cannot try to allocate a gigabyte Uint8Array and hang the
+// tab. KB granularity also keeps `sp = size - 16` 16-byte aligned for free.
+const MIN_MEM_KB = 4, MAX_MEM_KB = 65536;
+function readMemSize() {
+  const kb = Math.max(MIN_MEM_KB, Math.min(MAX_MEM_KB, parseInt(memSizeInput.value, 10) || 1024));
+  return kb * 1024;
+}
+
+// Shared by Compile and Reset - both build a machine, so both must refuse an
+// unusable size rather than let the constructor throw. Returns a message or null.
+const MIN_STACK_BYTES = 1024;
+function memSizeProblem(program, memSize) {
+  if (program.data.bytes.length + MIN_STACK_BYTES > memSize) {
+    return 'Memory too small: the data segment needs ' + program.data.bytes.length
+      + ' bytes plus at least ' + MIN_STACK_BYTES + ' for the stack, but memory is only '
+      + memSize + ' bytes (' + (memSize / 1024) + ' KB).';
+  }
+  return null;
+}
+
+// Called whenever the compiled program can no longer be trusted to match the
+// editor. Keeps the listing on screen (clearing it on every keystroke would be
+// jarring) but blocks Run/Step until the user recompiles.
+function invalidateCompile() {
+  if (!lastProgram || compiledSource === codeInput.value) return;
+  setRunEnabled(false);
+}
+codeInput.addEventListener('input', invalidateCompile);
+isaSelect.addEventListener('change', () => {
+  if (!lastProgram) return;
+  compiledSource = null; // the ISA is a codegen input, so any prior compile is stale
+  setRunEnabled(false);
+});
+// Memory size is a codegen input too, now that _start bakes the stack top in as
+// an immediate - so changing it invalidates the compile exactly like the ISA.
+// Reset can no longer apply a new size on its own; a recompile is required.
+for (const ev of ['input', 'change']) {
+  memSizeInput.addEventListener(ev, () => {
+    if (!lastProgram) return;
+    if (readMemSize() === lastProgram.memSize) return;
+    compiledSource = null;
+    setRunEnabled(false);
+  });
+}
+
+function compileProgram() {
+  const src = codeInput.value;
+  const useM = isaSelect.value === 'rv32im';
+  sim = null;        // any previous machine state belongs to the previous program
+  lastResult = null;
+  retiredStackHints = new Map(); // old addresses mean nothing once the program changes
+  // Instruction indices only mean something for one particular compile, so they
+  // cannot survive one. C-line breakpoints stay, since a line number still
+  // refers to something the user can see.
+  breakpointIndices = new Set();
+
+  // lex -> parse -> meta -> codegen. Lex/parse and semantic errors both surface
+  // here, already prefixed by whichever stage threw them. memSize is a codegen
+  // input because _start bakes the stack top in as an immediate.
+  const memSize = readMemSize();
+  let program;
+  try {
+    program = compileC(src, { useM, memSize });
+  } catch (e) {
+    lastProgram = null;
+    compiledSource = null;
+    compileFailed = true;
+    compiledExecLines = new Set();
+    memoryRegions = [];
+    setRunEnabled(false);
+    renderAll();
+    clearConsole();
+    logLine('<span class="err">' + escapeHtml(e.message) + '</span>');
+    return;
+  }
+
+  // Validated here, where the data-segment size is known, rather than left to
+  // fail later with an obscure out-of-range error part-way through a run.
+  const memProblem = memSizeProblem(program, memSize);
+  if (memProblem) {
+    lastProgram = null;
+    compiledSource = null;
+    compileFailed = true;
+    compiledExecLines = new Set();
+    memoryRegions = [];
+    setRunEnabled(false);
+    renderAll();
+    clearConsole();
+    logLine('<span class="err">' + escapeHtml(memProblem) + '</span>');
+    return;
+  }
+
+  lastProgram = program;
+  compiledSource = src;
+  compileFailed = false;
+  compiledExecLines = executableLines(program.instrs);
+  memoryRegions = buildMemoryRegions(program, memSize);
+  // Park the machine at the entry point rather than leaving it unbuilt, so
+  // address 0 is highlighted and the register/memory panels show real state.
+  sim = new RiscvSim(program, { maxSteps: readMaxSteps(), memSize });
+  lastResult = sim.snapshot();
+  setRunEnabled(true);
+  renderAll();
+  clearConsole();
+  logLine('<span class="info">Compiled ' + program.instrs.length + ' instructions for '
+    + (useM ? 'RV32IM' : 'RV32I') + ', ' + (memSize / 1024) + ' KB memory. Click Run or Step to execute.</span>');
+}
+
+// Creates the live simulator on first use. Compile and Reset both build one
+// eagerly, so this is a defensive fallback. It uses the *compiled* size, since
+// _start's baked-in stack top must match the machine it runs on.
+function ensureSim() {
+  if (!sim) sim = new RiscvSim(lastProgram, { maxSteps: readMaxSteps() });
+  return sim;
+}
+
+function runProgram() {
+  if (!lastProgram) return;
+  const traps = activeTraps();
+  execute(() => ensureSim().runUntilBreak(traps, readMaxSteps()));
+}
+
+function stepProgram() {
+  if (!lastProgram) return;
+  execute(() => ensureSim().stepOne());
+}
+
+// Shared tail for Run and Step: advance the machine, then repaint everything
+// from the resulting snapshot.
+function execute(advance) {
+  try {
+    lastResult = advance();
+  } catch (e) {
+    lastResult = null;
+    renderAll();
+    clearConsole();
+    logLine('<span class="err">Simulator crashed: ' + escapeHtml(e.message) + '</span>');
+    return;
+  }
+  scrollLineIntoView(currentLine());
+  renderAll();
+  scrollAsmIntoView(); // after renderAll, so the current-pc row exists in the DOM
+  renderConsoleFromState();
+}
+
+// Clears machine state only - the compiled program, its listing and the
+// breakpoints all survive, so Run/Step stay available. The machine is rebuilt
+// parked at the entry point rather than left unbuilt.
+function resetMachine() {
+  if (!lastProgram) return;
+  // Rebuilds at the *compiled* size, never the input's current value: _start's
+  // baked-in stack top must match the machine, so a new size needs a recompile
+  // (the input's change handler is what disables Run/Step until then).
+  sim = new RiscvSim(lastProgram, { maxSteps: readMaxSteps() });
+  lastResult = sim.snapshot();
+  retiredStackHints = new Map(); // execution is restarting, so no frame has retired yet
+  memoryRegions = buildMemoryRegions(lastProgram, lastProgram.memSize);
+  renderAll();
+  clearConsole();
+  logLine('<span class="info">Machine reset to the entry point, '
+    + (lastProgram.memSize / 1024) + ' KB memory. Click Run or Step to execute.</span>');
+}
+
+// Page-load state: nothing compiled, nothing run.
+function initState() {
+  lastProgram = null;
+  lastResult = null;
+  sim = null;
+  compiledSource = null;
+  compileFailed = false;
+  compiledExecLines = new Set();
+  breakpointIndices = new Set();
+  memoryRegions = [];
+  setRunEnabled(false);
+  renderAll();
+  clearConsole();
+  logLine('<span class="info">Click Compile to generate RISC-V assembly…</span>');
+}
+
+// Every panel is a pure function of (lastProgram, lastResult, breakpointLines),
+// so each action just repaints all of them. The pending-write preview is
+// computed once up front, before any panel reads it.
+function renderAll() {
+  pendingWrite = (sim && lastResult && !lastResult.finished && !lastResult.error)
+    ? sim.previewStep() : null;
+  renderAsm();
+  renderRegisters();
+  renderMemoryTable();
+  renderBadges();
+  updateGutter();
+  updateLineHighlight();
+}
+
+// Rebuilt from the snapshot every time rather than appended to, so stepping
+// cannot accumulate duplicate output or stack up status lines.
+function renderConsoleFromState() {
+  clearConsole();
+  if (!lastResult) return;
+  const r = lastResult;
+  if (r.output) {
+    for (const line of r.output.replace(/\n$/, '').split('\n')) logLine(escapeHtml(line));
+  }
+  if (r.error) {
+    logLine('<span class="err">Runtime error: ' + escapeHtml(r.error) + '</span>');
+    return;
+  }
+  if (r.finished) {
+    if (!r.output) logLine('<span class="info">(no output)</span>');
+    logLine('<span class="info">Exited with code ' + r.exitCode + ' after ' + r.steps + ' instructions.</span>');
+    return;
+  }
+  const where = 'pc=0x' + (r.pc >>> 0).toString(16).padStart(5, '0')
+    + (r.line != null ? ', line ' + r.line : '')
+    + ', ' + r.steps + ' instruction' + (r.steps === 1 ? '' : 's') + ' executed';
+  if (r.hitBreakpoint) {
+    logLine('<span class="time-tag">Paused at breakpoint</span> <span class="info">(' + where + ')</span>');
+  } else {
+    logLine('<span class="info">Paused (' + where + ')</span>');
+  }
+}
+
+function renderBadges() {
+  badgeRow.innerHTML = '';
+  if (compileFailed) {
+    const b = document.createElement('div');
+    b.className = 'badge error';
+    b.innerHTML = '<span>✕</span> compile error';
+    badgeRow.appendChild(b);
+    return;
+  }
+  if (!lastProgram) return;
+  const stats = [
+    ['instructions', lastProgram.instrs.length],
+    ['target', lastProgram.useM ? 'RV32IM' : 'RV32I'],
+  ];
+  if (lastResult && lastResult.steps > 0) {
+    stats.push(['executed', lastResult.steps]);
+    stats.push(['status', lastResult.error ? 'error'
+      : lastResult.finished ? 'exit ' + lastResult.exitCode
+      : lastResult.hitBreakpoint ? 'breakpoint' : 'paused']);
+  } else {
+    // parked at the entry point: compiled but nothing executed yet
+    stats.push(['status', 'compiled']);
+  }
+  for (const [label, value] of stats) {
+    const b = document.createElement('div');
+    b.className = 'badge' + (label === 'status' && lastResult && lastResult.error ? ' error' : '');
+    b.innerHTML = label + ': <span>' + escapeHtml(value) + '</span>';
+    badgeRow.appendChild(b);
+  }
+}
+
+/* ---- assembly listing ---- */
+function renderAsm() {
+  if (!lastProgram) {
+    asmListing.style.display = 'none';
+    asmEmpty.style.display = 'block';
+    asmListing.innerHTML = '';
+    return;
+  }
+  asmListing.style.display = 'block';
+  asmEmpty.style.display = 'none';
+  // The instruction about to execute, so the listing tracks Step/Run and also
+  // shows where a run that hit the step cap or an error came to rest.
+  const stopIndex = lastResult && !lastResult.finished ? (lastResult.pc >> 2) : -1;
+  const lineTraps = trapIndicesForLines(lastProgram.instrs, breakpointLines);
+  let html = '';
+  for (const line of formatAsm(lastProgram)) {
+    if (line.kind === 'header') {
+      html += '<div class="asm-line"><span class="asm-comment" style="margin:0">' + escapeHtml(line.text) + '</span></div>';
+    } else if (line.kind === 'label') {
+      html += '<div class="asm-line"><span class="asm-addr"></span><span class="asm-label">' + escapeHtml(line.text) + '</span></div>';
+    } else {
+      // explicit wins over inherited when an instruction is trapped both ways
+      const bp = breakpointIndices.has(line.index) ? ' bp-explicit'
+        : lineTraps.has(line.index) ? ' bp-inherited' : '';
+      const cls = 'asm-line' + (line.index === stopIndex ? ' current-pc' : '') + bp;
+      html += '<div class="' + cls + '">'
+        + '<span class="asm-addr" data-index="' + line.index + '" title="Click to toggle a breakpoint here">'
+        + '<span class="bp-dot"></span>' + line.addr.toString(16).padStart(5, '0') + ': '
+        + '<span class="asm-code">(' + line.code + ')</span></span>'
+        + '<span class="asm-mnem">' + escapeHtml(line.text) + '</span>'
+        + (line.comment ? '<span class="asm-comment"># ' + escapeHtml(line.comment) + '</span>' : '')
+        + '</div>';
+    }
+  }
+  asmListing.innerHTML = html;
+}
+
+asmListing.addEventListener('click', (e) => {
+  const addr = e.target.closest ? e.target.closest('.asm-addr[data-index]') : null;
+  if (!addr) return;
+  toggleAsmBreakpoint(parseInt(addr.dataset.index, 10));
+});
+
+// Keeps the highlighted instruction visible while stepping - the listing scrolls
+// and a compiled program runs to hundreds of rows, so the current row is
+// otherwise usually off-screen. Must run after renderAsm() has built the DOM.
+function scrollAsmIntoView() {
+  const row = asmListing.querySelector('.asm-line.current-pc');
+  if (!row) return;
+  const rowTop = row.offsetTop - asmListing.offsetTop;
+  const rowH = row.offsetHeight;
+  const viewTop = asmListing.scrollTop;
+  const viewH = asmListing.clientHeight;
+  if (rowTop < viewTop + rowH) {
+    asmListing.scrollTop = Math.max(0, rowTop - rowH * 2);
+  } else if (rowTop + rowH > viewTop + viewH - rowH) {
+    asmListing.scrollTop = rowTop - viewH + rowH * 3;
+  }
+}
+
+/* ---- register file ---- */
+regHexCheckbox.addEventListener('change', renderRegisters);
+
+// 32-bit hex when the box is checked, signed decimal otherwise. The title
+// attribute always carries the other form, so hovering never loses information.
+// Hex without the '0x' prefix - the 8 digits are unambiguous in context and the
+// reclaimed width matters once cells are narrow. The title keeps its prefix,
+// since a tooltip gains nothing from being shorter.
+function formatRegValue(v) {
+  return regHexCheckbox.checked ? (v >>> 0).toString(16).padStart(8, '0') : String(v | 0);
+}
+function formatRegTitle(v) {
+  return regHexCheckbox.checked ? String(v | 0) : '0x' + (v >>> 0).toString(16).padStart(8, '0');
+}
+
+// The instruction the machine is parked on (the one about to execute), or null.
+function currentInstr() {
+  if (!lastProgram || !lastResult || lastResult.finished) return null;
+  const idx = lastResult.pc >> 2;
+  return idx >= 0 && idx < lastProgram.instrs.length ? lastProgram.instrs[idx] : null;
+}
+
+function renderRegisters() {
+  if (!lastResult) {
+    regGrid.innerHTML = '<div class="reg-cell" style="grid-column:1/-1; justify-content:center; color:#8e8e93">'
+      + 'Compile to see the register file.</div>';
+    regPc.innerHTML = '';
+    return;
+  }
+  const pendReg = pendingWrite && pendingWrite.reg ? pendingWrite.reg : null;
+  const ins = currentInstr();
+  const srcs = ins ? sourceRegs(ins) : new Set();
+  let html = '';
+  // Emitted in plain x0..x31 order; the column-major arrangement is purely a
+  // CSS concern, so DOM order stays the natural reading order.
+  for (let i = 0; i < 32; i++) {
+    const v = lastResult.regs[i] | 0;
+    // x0 is hardwired, so a write to it is never shown as pending
+    const pend = pendReg && pendReg.i === i && i !== 0 ? pendReg.to | 0 : null;
+    const cls = 'reg-cell' + (pend !== null ? ' pending' : '') + (srcs.has(i) ? ' src' : '');
+    html += '<div class="' + cls + '" title="' + formatRegTitle(v) + '">'
+      + '<span class="reg-name"><span class="reg-xnum">x' + i + '</span> '
+      + '<span class="reg-abi">(' + REG_NAMES[i] + ')</span></span>'
+      + '<span class="reg-value">' + formatRegValue(v)
+      + (pend !== null ? ' <span class="reg-next">→ ' + formatRegValue(pend) + '</span>' : '')
+      + '</span></div>';
+  }
+  regGrid.innerHTML = html;
+
+  const nextPc = pendingWrite ? pendingWrite.nextPc : null;
+  regPc.innerHTML = '<span class="reg-name">pc</span>'
+    + '<span class="reg-value">' + formatRegValue(lastResult.pc)
+    + (nextPc !== null ? ' <span class="reg-next">→ ' + formatRegValue(nextPc) + '</span>' : '')
+    + '</span>';
+}
+
+/* ---- memory panel ---- */
+
+/* Hint columns: what each word actually holds. Both maps are address -> text,
+   and a blank entry is always preferred to a confidently wrong one. */
+
+// Data segment: variable names (with array indices) and string constants.
+// Strings are laid down first so a named variable always wins for its own word -
+// a `char*` global's pointer word must read as the variable, while the string's
+// own bytes read as the text.
+function buildDataHints(program) {
+  const hints = new Map();
+  for (const [text, addr] of program.data.stringCache) {
+    const shown = text.length > 16 ? text.slice(0, 16) + '…' : text;
+    const label = '"' + shown.replace(/\n/g, '\\n').replace(/\t/g, '\\t') + '"';
+    for (let a = addr; a < addr + text.length + 1; a += 4) hints.set(a & ~3, label);
+  }
+  for (const [name, g] of program.globals) {
+    if (g.ctype.arraySize == null) { hints.set(g.addr & ~3, name); continue; }
+    const esz = elemSize(g.ctype);
+    if (esz === 4) {
+      for (let i = 0; i < g.ctype.arraySize; i++) hints.set(g.addr + i * 4, name + '[' + i + ']');
+    } else {
+      // char[]: four elements per word, so label the range rather than pretend
+      // one word is one element
+      for (let i = 0; i < g.ctype.arraySize; i += 4) {
+        const last = Math.min(i + 3, g.ctype.arraySize - 1);
+        hints.set(g.addr + i, name + '[' + i + (last > i ? '..' + last : '') + ']');
+      }
+    }
+  }
+  return hints;
+}
+
+// pc -> function, from the label map. Helpers (__mul/__divmod) are leaf routines
+// with no frame, so they are excluded: attributing a frame to one would derail
+// the chain walk.
+function buildFunctionIndex(program) {
+  const index = [];
+  for (const [name, idx] of program.labels) {
+    if (!program.funcs.has(name)) continue; // skips _start, .L labels and helpers
+    index.push({ start: idx * 4, name });
+  }
+  index.sort((a, b) => a.start - b.start);
+  return index;
+}
+
+function functionContaining(index, pc) {
+  let found = null;
+  for (const e of index) { if (e.start <= pc) found = e.name; else break; }
+  return found;
+}
+
+// A prologue is `addi sp,sp,-fs / sw ra / sw s0 / addi s0,sp,fs`: s0 only becomes
+// *this* frame's base after the 4th instruction, so within that window the
+// innermost frame still belongs to the caller.
+const PROLOGUE_BYTES = 16;
+
+const MAX_FRAME_WALK = 64;
+
+// Walks the saved-fp chain to label every live frame. Each prologue stores
+// [fp-4] = saved ra and [fp-8] = the caller's fp, which is exactly what makes
+// the chain walkable.
+// `retired` (optional) is an addr -> {label, value} cache that survives across
+// renders. A word the walk can no longer explain - because fp has moved past
+// it, not just because sp has - would otherwise fall back to generic "operand
+// temp" the instant it retires, discarding real info (which frame/slot it was)
+// that's still sitting right there in memory, unread. If `retired` has an entry
+// for that address AND the word's bytes still match what they were when the
+// walk last explained it, nothing has actually touched it since - the old
+// label is still true, so it's kept (dimmed by the caller, not blanked out).
+// If the bytes differ, something legitimately reused the address (a new push,
+// a new frame), so the label is correctly dropped in favor of "operand temp".
+function buildStackHints(program, result, lo, hi, retired) {
+  const hints = new Map();
+  if (!program || !result) return hints;
+  const index = buildFunctionIndex(program);
+  const word = a => (a >= 0 && a + 3 < result.memSize)
+    ? ((result.mem[a] | (result.mem[a + 1] << 8) | (result.mem[a + 2] << 16) | (result.mem[a + 3] << 24)) | 0)
+    : null;
+
+  let fp = result.regs[REG.s0] | 0;
+  let fnName = functionContaining(index, result.pc);
+  // Detect the prologue window by pc, not by comparing fp against sp: sp moves
+  // constantly as operands are pushed, so an sp-based test would keep flipping
+  // and relabel an established frame every time something was pushed.
+  if (fnName) {
+    const fnStart = index.find(e => e.name === fnName);
+    if (fnStart && result.pc < fnStart.start + PROLOGUE_BYTES) {
+      // s0 is still the caller's: attribute the innermost frame to whoever the
+      // saved ra points into, rather than to the function being entered.
+      const callerRa = result.regs[REG.ra] | 0;
+      fnName = functionContaining(index, callerRa - 4);
+    } else {
+      // Mirror image at the other end: the epilogue is
+      // `[restore slot regs] / lw ra,-4(s0) / mv sp,s0 / lw s0,-8(s0) / ret` (see
+      // genFunction). By the time the `lw s0` has run, s0 already holds the
+      // CALLER's frame base, but pc is still inside fnName - it hasn't reached
+      // `ret` yet. Same fix as the prologue case, same direction of travel: `ra`
+      // was reloaded with fnName's own return address just before, so
+      // functionContaining(ra-4) recovers who fp now actually belongs to. The
+      // slot-register restores come first, so `ret` sits that many words further on.
+      const epiIdx = program.labels.get('.Lepi_' + fnName);
+      const epiFn = program.funcs.get(fnName);
+      const retOff = 12 + (epiFn && epiFn.opRegSaves ? epiFn.opRegSaves.length * 4 : 0);
+      if (epiIdx != null && result.pc === epiIdx * 4 + retOff) {
+        const callerRa = result.regs[REG.ra] | 0;
+        fnName = functionContaining(index, callerRa - 4);
+      }
+    }
+  }
+  const put = (a, text) => { if (a >= lo && a < hi && !hints.has(a)) hints.set(a, text); };
+
+  for (let depth = 0; depth < MAX_FRAME_WALK; depth++) {
+    // stop on anything implausible rather than guessing: poison before _start,
+    // a frame outside the live stack, or a chain that fails to move upward.
+    // Deliberately NOT fp <= sp: right after a `mv sp, s0` epilogue instruction,
+    // sp already equals fp for the frame that's mid-return, but fp is still a
+    // valid pointer - both to that frame's own (now-popped) slots and to the
+    // rest of the chain above it. Bailing out here would mislabel the entire
+    // caller chain as scratch, not just the one frame that's actually discarded.
+    if (!fnName || fp > result.memSize || (fp & 3) !== 0) break;
+    const fn = program.funcs.get(fnName);
+    if (!fn) break;
+    put(fp - 4, fnName + '() · saved ra');
+    put(fp - 8, fnName + '() · saved fp');
+    // Operand-slot registers are callee-saved, so each frame holds the caller's
+    // copy of every slot register this function uses.
+    for (const sv of (fn.opRegSaves || [])) {
+      put(fp - sv.offset, fnName + '() · saved ' + REG_NAMES[sv.reg]);
+    }
+    for (const s of fn.slots) {
+      const base = fp - s.offset;
+      const n = s.ctype.arraySize != null ? s.ctype.arraySize : 1;
+      const esz = elemSize(s.ctype);
+      if (s.ctype.arraySize != null && esz === 4) {
+        for (let i = 0; i < n; i++) put(base + i * 4, fnName + '() · ' + s.name + '[' + i + ']');
+      } else {
+        const bytes = s.ctype.arraySize != null ? n * esz : 4;
+        for (let b = 0; b < bytes; b += 4) {
+          put(base + b, fnName + '() · ' + s.name + (s.ctype.arraySize != null ? '[…]' : ''));
+        }
+      }
+    }
+    const callerFp = word(fp - 8);
+    const callerRa = word(fp - 4);
+    // Any word still unlabelled *inside this frame's own extent* is alignment
+    // padding (frameSize rounds the slots up to 16). Kept last so real slots
+    // always win, and bounded to the frame so it can never bleed onto pushes
+    // made below it.
+    for (let a = fp - fn.frameSize; a < fp; a += 4) put(a, fnName + '() · frame padding');
+    if (callerFp === null || callerRa === null || callerFp <= fp) break;
+    fnName = functionContaining(index, callerRa - 4); // ra points *after* the call
+    fp = callerFp;
+  }
+
+  // Anything still unlabelled is either operand-stack scratch, a word never
+  // written since reset (still holding the RiscvSim constructor's POISON fill
+  // - see the memory-poison comment there), or a retired frame's old label
+  // that still applies (see the doc comment above): same address, bytes
+  // unchanged since the walk last explained it.
+  for (let a = lo; a < hi; a += 4) {
+    if (hints.has(a)) continue;
+    const old = retired && retired.get(a);
+    if (old && old.value === word(a)) { hints.set(a, old.label); continue; }
+    hints.set(a, word(a) === POISON ? 'unused' : 'operand temp');
+  }
+  // Record what the walk positively explained this render, so a future render
+  // where fp has moved past these addresses can still recall what they held.
+  // Neither generic fallback is worth caching: 'unused' is always re-derivable
+  // from the value check above, and 'operand temp' already means "not a named
+  // slot" - keeping it would just let its captured value spuriously satisfy the
+  // old.value === word(a) check above, when a later render should call it
+  // 'unused' if it somehow reverted to POISON, not "restore the stale label".
+  if (retired) for (const [a, label] of hints) {
+    if (label !== 'operand temp' && label !== 'unused') retired.set(a, { label, value: word(a) });
+  }
+  return hints;
+}
+
+// One flat address space, so the card offers logical regions rather than the
+// named memories a Verilog design would declare. Global arrays are not listed
+// separately: they live inside the data segment, so showing it shows them too.
+// `memSize` is the *compiled* machine's size, since _start's baked-in stack top
+// must match the machine the addresses belong to.
+// The data segment's extent is fixed at compile time. The stack's is not - it
+// depends on the live sp - so it is computed per render by stackRange() below.
+function buildMemoryRegions(program, memSize) {
+  return [
+    { key: '__data', label: 'data segment', lo: 0,
+      hi: Math.max(4, Math.ceil(program.data.bytes.length / 4) * 4) },
+  ];
+}
+
+// Rendering more than this many rows makes deep recursion hang the tab, so the
+// view keeps the words nearest sp (the active frames) and says so.
+const MAX_STACK_ROWS = 512;
+
+// Blank means "follow sp" (the dynamic default); a number pins the window to
+// that many rows below the top of memory. Purely a view control - it never
+// touches the machine, so it needs no compile invalidation.
+// The floor here is 1, deliberately lower than the input's min="4": the spinner
+// starts at 4 (a 1-row view is useless, and min also drives the step base so the
+// arrows give 4/8/12 rather than 1/5/9), but a hand-typed 2 still renders rather
+// than being silently rounded up to something the user did not ask for.
+function readStackRows() {
+  const raw = stackRowsInput.value.trim();
+  if (raw === '') return null;
+  const n = parseInt(raw, 10);
+  if (!isFinite(n) || n < 1) return null; // garbage falls back to dynamic
+  return Math.min(n, MAX_STACK_ROWS);
+}
+stackRowsInput.addEventListener('input', () => {
+  localStorage.setItem('compilerStackRows', stackRowsInput.value);
+  renderMemoryTable();
+});
+
+// The live stack. Two modes:
+//   dynamic (default) - from sp up to the top of memory, so sp and fp are always
+//                       in view however deep the recursion goes
+//   fixed (rows = N)  - exactly N rows anchored at the *top*, so the window
+//                       stays put and sp moves up and down inside it (or falls
+//                       below it entirely, in which case it has no row)
+// Returns null when there is no stack yet - at reset sp still holds the POISON
+// value, which as a signed int is negative and would produce a nonsensical range.
+function stackRange() {
+  if (!lastResult) return null;
+  const top = lastResult.memSize;
+  const sp = lastResult.regs[REG.sp] | 0;
+  if (sp < 0 || sp > top) return null; // uninitialised (poison) or out of range
+
+  const fixedRows = readStackRows();
+  if (fixedRows) {
+    // clamp at 0 so a large N cannot address below the start of memory
+    const lo = Math.max(0, top - fixedRows * 4);
+    return { lo, hi: top, truncated: false, empty: false, fixed: true };
+  }
+
+  const lo = sp & ~3;                  // round down so rows stay 4-byte aligned
+  if (lo >= top) return { lo: top, hi: top, truncated: false, empty: true };
+  const maxBytes = MAX_STACK_ROWS * 4;
+  // When capped, the window stays anchored at sp and extends *upward*, keeping
+  // the active frames. Clamping `lo` up to `top - maxBytes` instead would show
+  // the oldest frames and push sp out of view entirely - defeating the point.
+  if (top - lo > maxBytes) return { lo, hi: lo + maxBytes, truncated: true, empty: false };
+  return { lo, hi: top, truncated: false, empty: false };
+}
+
+// One table per card. Values are always hex; the Decimal and ASCII columns carry
+// the other readings.
+function renderMemoryTable() {
+  // Bytes the highlighted instruction is about to write, keyed by address, so a
+  // pending store can be flagged on whichever row(s) contain those bytes.
+  const pendBytes = new Map();
+  if (pendingWrite) for (const m of pendingWrite.mem) pendBytes.set(m.addr, m.to);
+  // Bytes a load is about to read. previewStep() reports every read; showing only
+  // loads is the UI's policy - otherwise a printf ecall's string scan would light
+  // up every row holding that string.
+  const readBytes = new Set();
+  const curIns = currentInstr();
+  if (pendingWrite && curIns && LOAD_OPS.has(curIns.op)) {
+    for (const a of pendingWrite.reads) readBytes.add(a);
+  }
+
+  /* ---- data segment ---- */
+  const dataRegion = memoryRegions.find(r => r.key === '__data');
+  if (!lastResult || !dataRegion) {
+    showPanel(dataTableWrap, dataEmpty, false, 'Compile the program to see the data segment.');
+  } else {
+    showPanel(dataTableWrap, dataEmpty, true);
+    dataTableWrap.innerHTML = regionTableHtml(dataRegion, pendBytes, readBytes, null,
+      buildDataHints(lastProgram));
+  }
+
+  /* ---- stack ---- */
+  const sr = stackRange();
+  if (!lastResult || !memoryRegions.length) {
+    showPanel(stackTableWrap, stackEmpty, false, 'Compile the program to see the stack.');
+  } else if (!sr) {
+    showPanel(stackTableWrap, stackEmpty, false,
+      'No stack yet — sp is uninitialised until _start runs. Step once to set it up.');
+  } else if (sr.empty) {
+    showPanel(stackTableWrap, stackEmpty, false, 'Stack is empty — nothing has been pushed yet.');
+  } else {
+    showPanel(stackTableWrap, stackEmpty, true);
+    // Only fp is marked: the table starts at sp by construction, so an "sp"
+    // marker on the top row would be redundant (sp is always 4-byte aligned, so
+    // the first row is sp exactly, never merely the word containing it).
+    // fp (s0) is the frame *base*: [fp-4] holds the saved ra, so the row marked
+    // fp is the caller's first word rather than this frame's. That is the
+    // conventional reading and matches what the prologue computes.
+    // Both pointers are marked in a column beside the address. In dynamic mode
+    // sp is always the first row, but naming it still reads as a landmark now
+    // that the marker sits next to the address; in fixed mode sp can fall
+    // outside the window entirely, and addMark's bounds check drops it.
+    // A word can be both when a frame has just been discarded.
+    const marks = new Map();
+    const addMark = (addr, name) => {
+      if (addr < sr.lo || addr >= sr.hi) return;
+      marks.set(addr, marks.has(addr) ? marks.get(addr) + '/' + name : name);
+    };
+    addMark(lastResult.regs[REG.sp] & ~3, 'sp');
+    const fp = lastResult.regs[REG.s0] | 0;
+    const fpRow = fp & ~3;
+    if (fp >= 0) addMark(fpRow, 'fp');
+    const spVal = (lastResult.regs[REG.sp] | 0) >>> 0;
+    // The caption always states sp, so its value is never lost when a fixed
+    // window leaves it off-screen.
+    const label = 'stack · sp = ' + spVal.toString(16).padStart(5, '0')
+      + (sr.fixed
+        ? ' · fixed ' + ((sr.hi - sr.lo) / 4) + ' rows from the top'
+          + (spVal < sr.lo ? ' · sp is below this window' : spVal >= sr.hi ? ' · sp is above this window' : '')
+        : sr.truncated ? ' · showing the ' + MAX_STACK_ROWS + ' words from sp upward; older frames omitted' : '');
+    stackTableWrap.innerHTML = regionTableHtml({ lo: sr.lo, hi: sr.hi, label }, pendBytes, readBytes, marks,
+      buildStackHints(lastProgram, lastResult, sr.lo, sr.hi, retiredStackHints), lastResult.regs[REG.sp] | 0);
+  }
+}
+
+function showPanel(wrap, empty, show, message) {
+  wrap.style.display = show ? 'block' : 'none';
+  empty.style.display = show ? 'none' : 'block';
+  if (!show) { wrap.innerHTML = ''; empty.textContent = message; }
+}
+
+// Shared by both cards, so the pending/reading highlighting and the word
+// assembly exist in exactly one place. `marks` is null for the data segment,
+// which then renders no sp/fp marker; the stack passes a map, and its marker
+// (when present) renders inline in the address cell. The stack also drops the
+// ASCII column, since its words are raw frame data rather than strings.
+// `hints` is the right-most "what this holds" column, present on both.
+// `deadBelow` (stack only) dims rows under sp: they are abandoned leftovers from
+// calls that already returned, not part of the live stack. Only a fixed-row
+// window can show them at all, since the dynamic window starts at sp.
+function regionTableHtml(region, pendBytes, readBytes, marks, hints, deadBelow) {
+  const isStack = !!marks;
+  let html = '<table class="memory-table' + (isStack ? ' stack-table' : '') + '"><caption>' + escapeHtml(region.label) + '</caption>'
+    + '<thead><tr><th>Address</th>'
+    + '<th class="mem-word">Word (hex)</th>'
+    + (isStack ? '' : '<th>Bytes as ASCII</th>')
+    + '<th>Holds</th></tr></thead><tbody>';
+  for (let addr = region.lo; addr < region.hi; addr += 4) {
+    const byteAt = k => lastResult.mem[addr + k];
+    const w = (byteAt(0) | (byteAt(1) << 8) | (byteAt(2) << 16) | (byteAt(3) << 24)) | 0;
+    let ascii = '';
+    if (!isStack) {
+      for (let b = 0; b < 4; b++) {
+        const c = byteAt(b);
+        ascii += (c >= 32 && c < 127) ? String.fromCharCode(c) : '.';
+      }
+    }
+    // recompute this word with the pending bytes applied, if any land in it
+    let pending = false;
+    let reading = false;
+    let pw = 0;
+    for (let b = 0; b < 4; b++) {
+      const nb = pendBytes.has(addr + b) ? pendBytes.get(addr + b) : byteAt(b);
+      if (pendBytes.has(addr + b) && nb !== byteAt(b)) pending = true;
+      if (readBytes.has(addr + b)) reading = true;
+      pw |= (nb & 0xff) << (8 * b);
+    }
+    pw = pw | 0;
+    const dead = deadBelow != null && addr < deadBelow;
+    const cls = [pending ? 'pending' : reading ? 'reading' : '', dead ? 'mem-dead' : '']
+      .filter(Boolean).join(' ');
+    html += '<tr' + (cls ? ' class="' + cls + '"' : '') + '>'
+      + '<td class="mem-addr">' + addr.toString(16).padStart(5, '0')
+      + (isStack && marks.has(addr) ? ' <span class="mem-mark">◀ ' + marks.get(addr) + '</span>' : '')
+      + '</td>'
+      + '<td class="mem-word">' + (w >>> 0).toString(16).padStart(8, '0')
+      + (pending ? ' <span class="mem-next">→ ' + (pw >>> 0).toString(16).padStart(8, '0') + '</span>' : '')
+      + '</td>'
+      + (isStack ? '' : '<td>' + escapeHtml(ascii) + '</td>')
+      + '<td class="mem-hint">' + escapeHtml((hints && hints.get(addr)) || '') + '</td>'
+      + '</tr>';
+  }
+  return html + '</tbody></table>';
+}
+
+/* ---- initial state ---- */
+loadExample(Object.keys(EXAMPLES)[0]);
+stackRowsInput.value = localStorage.getItem('compilerStackRows') || '';
+initState();
+
+
+
+
+
+</script>
+</body>
+</html>

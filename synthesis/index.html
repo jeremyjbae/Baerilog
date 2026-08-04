@@ -298,6 +298,39 @@
       white-space: pre;
       overflow: auto;
     }
+    .editor-hierarchy-row {
+      display: flex;
+      gap: 10px;
+      align-items: stretch;
+    }
+    .editor-hierarchy-row .editor-wrap { flex: 1 1 auto; min-width: 0; }
+    .editor-hierarchy-row > .code-out { flex: 1 1 auto; min-width: 0; }
+    .editor-hierarchy-panel {
+      flex: 0 0 150px;
+      width: 150px;
+      background: #232326;
+      border-radius: 12px;
+      padding: 6px;
+      overflow-y: auto;
+      font: 12px "SF Mono", Menlo, Consolas, monospace;
+    }
+    .editor-hierarchy-row.hierarchy-collapsed .editor-hierarchy-panel { display: none; }
+    .editor-module-row {
+      padding: 5px 8px;
+      border-radius: 6px;
+      color: #8e8e93;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .editor-module-row:hover { background: #2c2c2e; color: #e5e5ea; }
+    .editor-module-row.active { background: #2c2c2e; color: #5ac8fa; font-weight: 600; }
+    .editor-sync-warning {
+      font-size: 12px;
+      color: #ff8a80;
+      margin-bottom: 12px;
+    }
     .console-box {
       height: 360px;
       overflow-y: auto;
@@ -509,6 +542,11 @@
             <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
           </span>
         </span>
+        <span class="layout-toggle">
+          <span class="layout-btn" id="editorHierarchyToggleBtn" title="Show/hide module hierarchy">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 2 H10 M4 6 H10 M2 10 H10" stroke-linecap="round"/><rect x="10.5" y="0.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="10.5" y="4.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="10.5" y="8.5" width="3" height="3" fill="currentColor" stroke="none"/><path d="M2 2 V10" stroke-linecap="round"/></svg>
+          </span>
+        </span>
       </span>
     </h2>
     <p>always@(posedge clk or negedge resetn) → dff · assign with &amp; | ^ ~ ~^ → gates · assign with + / - → adder/subtractor (fa) · always@(*) if/case/casex, ?:, ==, &amp;&amp;/||, reduction ops, {concat} → mux2 chains</p>
@@ -516,9 +554,13 @@
       <select id="exampleSelect"></select>
       <button class="btn" id="synthBtn">Synthesize</button>
     </div>
-    <div class="editor-wrap" id="editorWrap">
-      <div class="gutter" id="gutter">1</div>
-      <textarea id="codeInput" spellcheck="false"></textarea>
+    <div id="editorSyncWarning" class="editor-sync-warning" style="display:none"></div>
+    <div class="editor-hierarchy-row hierarchy-collapsed" id="editorHierarchyRow">
+      <div class="editor-hierarchy-panel" id="editorHierarchyPanel"></div>
+      <div class="editor-wrap" id="editorWrap">
+        <div class="gutter" id="gutter">1</div>
+        <textarea id="codeInput" spellcheck="false"></textarea>
+      </div>
     </div>
   </div>
 
@@ -551,10 +593,18 @@
           <span class="layout-btn" id="netlistHeightDec" title="Decrease height">−</span>
           <span class="layout-btn" id="netlistHeightInc" title="Increase height">+</span>
         </span>
+        <span class="layout-toggle">
+          <span class="layout-btn" id="codeOutHierarchyToggleBtn" title="Show/hide module hierarchy">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 2 H10 M4 6 H10 M2 10 H10" stroke-linecap="round"/><rect x="10.5" y="0.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="10.5" y="4.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="10.5" y="8.5" width="3" height="3" fill="currentColor" stroke="none"/><path d="M2 2 V10" stroke-linecap="round"/></svg>
+          </span>
+        </span>
       </span>
     </h2>
     <p>top-level module instantiating primitive cells, followed by the behavioral definition of each cell used</p>
-    <pre class="code-out" id="codeOut"></pre>
+    <div class="editor-hierarchy-row hierarchy-collapsed" id="codeOutHierarchyRow">
+      <div class="editor-hierarchy-panel" id="codeOutHierarchyPanel"></div>
+      <pre class="code-out" id="codeOut"></pre>
+    </div>
   </div>
 
   <div class="split-row hierarchy-collapsed" id="netlistSplitRow">
@@ -734,11 +784,11 @@ function lex(src) {
         const base = src[j+1];
         let k = j + 2;
         while (k < n && /[0-9A-Fa-fxXzZ?_]/.test(src[k])) k++;
-        toks.push({ type: 'num', value: { width: parseInt(widthStr,10), base, digits: src.slice(j+2, k) }, line });
+        toks.push({ type: 'num', value: { width: parseInt(widthStr,10), base, digits: src.slice(j+2, k) }, line, start: i, end: k });
         i = k;
         continue;
       }
-      toks.push({ type: 'num', value: { width: null, base: 'd', digits: src.slice(i, j) }, line });
+      toks.push({ type: 'num', value: { width: null, base: 'd', digits: src.slice(i, j) }, line, start: i, end: j });
       i = j;
       continue;
     }
@@ -746,16 +796,16 @@ function lex(src) {
       let j = i + 1;
       while (j < n && isIdChar(src[j])) j++;
       const word = src.slice(i, j);
-      toks.push({ type: KEYWORDS.has(word) ? word : 'ident', value: word, line });
+      toks.push({ type: KEYWORDS.has(word) ? word : 'ident', value: word, line, start: i, end: j });
       i = j;
       continue;
     }
     const two = src.slice(i, i+2);
-    if (['==','!=','<=','~^','^~','&&','||'].includes(two)) { toks.push({ type: two, value: two, line }); i += 2; continue; }
-    if ('()[]{};,.@=&|^~!+-:*?'.includes(c)) { toks.push({ type: c, value: c, line }); i++; continue; }
+    if (['==','!=','<=','~^','^~','&&','||'].includes(two)) { toks.push({ type: two, value: two, line, start: i, end: i + 2 }); i += 2; continue; }
+    if ('()[]{};,.@=&|^~!+-:*?'.includes(c)) { toks.push({ type: c, value: c, line, start: i, end: i + 1 }); i++; continue; }
     throw new Error(`Lex error: unexpected character '${c}' at line ${line}`);
   }
-  toks.push({ type: 'eof', value: null, line });
+  toks.push({ type: 'eof', value: null, line, start: i, end: i });
   return toks;
 }
 
@@ -770,7 +820,7 @@ class Parser {
     return this.next();
   }
   parseModule() {
-    this.expect('module');
+    const modTok = this.expect('module');
     const name = this.expect('ident').value;
     const ports = [];
     const decls = [];
@@ -797,8 +847,8 @@ class Parser {
         throw new Error(`Parse error: unexpected token '${this.peek().type}' (line ${this.peek().line})`);
       }
     }
-    this.expect('endmodule');
-    return { name, ports, decls, assigns, always, instances };
+    const endTok = this.expect('endmodule');
+    return { name, ports, decls, assigns, always, instances, srcStart: modTok.start, srcEnd: endTok.end };
   }
   // A port-list item is either the old style, a bare name whose input/output/wire/reg
   // declaration appears later in the module body (`module m(a, b);`), or ANSI style,
@@ -1030,7 +1080,13 @@ class Parser {
     if (this.at('(')) { this.next(); const e = this.parseExpr(); this.expect(')'); return e; }
     if (this.at('num')) { return { type: 'Num', value: this.next().value }; }
     const name = this.expect('ident').value;
-    if (this.at('[')) { this.next(); const bit = parseInt(this.expect('num').value.digits, 10); this.expect(']'); return { type: 'Index', name, bit }; }
+    if (this.at('[')) {
+      this.next();
+      const hi = parseInt(this.expect('num').value.digits, 10);
+      if (this.at(':')) { this.next(); const lo = parseInt(this.expect('num').value.digits, 10); this.expect(']'); return { type: 'Slice', name, hi, lo }; }
+      this.expect(']');
+      return { type: 'Index', name, bit: hi };
+    }
     return { type: 'Ident', name };
   }
 }
@@ -1043,6 +1099,16 @@ function parseVerilog(src) {
   return modules;
 }
 
+function parseTopLevelModules(src) {
+  const modules = parseVerilog(src);
+  const map = new Map();
+  for (const mod of modules) {
+    if (map.has(mod.name)) throw new Error(`Parse error: module '${mod.name}' declared more than once`);
+    map.set(mod.name, mod);
+  }
+  return map;
+}
+
 // Port directions/widths for one module, needed to validate instance connections in a
 // *different* module before that module has been (or ever gets) fully synthesized.
 function extractInterface(mod) {
@@ -1050,7 +1116,14 @@ function extractInterface(mod) {
   for (const d of mod.decls) {
     const width = d.range ? (d.range.hi - d.range.lo + 1) : 1;
     const lo = d.range ? d.range.lo : 0;
-    for (const name of d.names) sig[name] = { width, lo, dir: d.kind };
+    for (const name of d.names) {
+      const existing = sig[name];
+      // legacy non-ANSI idiom: `output [hi:lo] name;` then later `reg [hi:lo] name;` (or the
+      // ANSI equivalent) — keep reporting it as 'output' to instantiating modules, matching
+      // the merge Synthesizer._buildSignalTable does for the module's own internal use.
+      const dir = existing && ((existing.dir === 'output' && d.kind === 'reg') || (existing.dir === 'reg' && d.kind === 'output')) ? 'output' : d.kind;
+      sig[name] = { width, lo, dir };
+    }
   }
   return { name: mod.name, ports: mod.ports, sig };
 }
@@ -1072,6 +1145,7 @@ function exprToStr(node) {
     case 'Num': return node.value.width ? `${node.value.width}'${node.value.base}${node.value.digits}` : node.value.digits;
     case 'Ident': return node.name;
     case 'Index': return `${node.name}[${node.bit}]`;
+    case 'Slice': return `${node.name}[${node.hi}:${node.lo}]`;
     case 'Unary': return REDUCE_SYM[node.op] ? `${REDUCE_SYM[node.op]}${exprToStr(node.expr)}` : `~${exprToStr(node.expr)}`;
     case 'Binary': return `(${exprToStr(node.l)} ${node.op === 'xnor' ? '~^' : node.op} ${exprToStr(node.r)})`;
     case 'Ternary': return `(${exprToStr(node.cond)} ? ${exprToStr(node.then)} : ${exprToStr(node.else)})`;
@@ -1171,6 +1245,7 @@ class Synthesizer {
       case 'Num': return node.value.width || 32;
       case 'Ident': return this._sigWidth(node.name);
       case 'Index': return 1;
+      case 'Slice': return node.hi - node.lo + 1;
       case 'Unary':
         if (['redand', 'redor', 'redxor', 'redxnor'].includes(node.op)) return 1;
         return this.naturalWidth(node.expr);
@@ -1260,6 +1335,12 @@ class Synthesizer {
       case 'Index': {
         const nets = [this.netName(node.name, node.bit)];
         for (let i = 1; i < width; i++) nets.push(this.constNet(0));
+        return nets;
+      }
+      case 'Slice': {
+        const sliceWidth = node.hi - node.lo + 1;
+        const nets = [];
+        for (let i = 0; i < width; i++) nets.push(i < sliceWidth ? this.netName(node.name, node.lo + i) : this.constNet(0));
         return nets;
       }
       case 'Unary': {
@@ -2324,11 +2405,19 @@ function genVerilog(results) {
   const allUsedTypes = new Set();
   for (const result of results) {
     const { text, usedTypes } = genModuleVerilog(result);
-    parts.push(text);
+    parts.push({ name: result.moduleName, text });
     for (const t of usedTypes) allUsedTypes.add(t);
   }
-  for (const t of allUsedTypes) parts.push(PRIMITIVE_SRC[t]);
-  return parts.join('\n\n');
+  for (const t of allUsedTypes) parts.push({ name: CELL_MODNAME[t], text: PRIMITIVE_SRC[t] });
+  let joined = '';
+  const segments = [];
+  for (const p of parts) {
+    const start = joined.length;
+    joined += p.text;
+    segments.push({ name: p.name, start, end: joined.length });
+    joined += '\n\n';
+  }
+  return { text: joined, segments };
 }
 
 function toFlowElements(graph, layout) {
@@ -2411,10 +2500,18 @@ function synthesizeModuleView(all, moduleName) {
 /* ---------------- UI wiring ---------------- */
 const codeInput = document.getElementById('codeInput');
 const gutter = document.getElementById('gutter');
+const editorHierarchyPanel = document.getElementById('editorHierarchyPanel');
+const editorSyncWarning = document.getElementById('editorSyncWarning');
+let editorFullSource = '';
+let editorSelectedModule = '(all)';
 const exampleSelect = document.getElementById('exampleSelect');
 const logBox = document.getElementById('logBox');
 const statsBadges = document.getElementById('statsBadges');
 const codeOut = document.getElementById('codeOut');
+const codeOutHierarchyPanel = document.getElementById('codeOutHierarchyPanel');
+let netlistFullText = '';
+let netlistSegments = [];
+let netlistSelectedModule = '(all)';
 const breadcrumbRow = document.getElementById('breadcrumbRow');
 const hierarchyTree = document.getElementById('hierarchyTree');
 
@@ -2427,6 +2524,7 @@ for (const name of Object.keys(EXAMPLES)) {
 function loadExample(name) {
   codeInput.value = EXAMPLES[name];
   updateGutter();
+  resetEditorHierarchyState();
 }
 exampleSelect.addEventListener('change', () => loadExample(exampleSelect.value));
 
@@ -2478,6 +2576,97 @@ codeInput.addEventListener('keydown', (e) => {
   document.execCommand('insertText', false, indented);
   codeInput.setSelectionRange(s + 2, en + lines.length * 2);
   updateGutter();
+});
+
+/* ---- editor: module hierarchy view (browse/edit one module definition at a
+   time out of the single underlying source file) ---- */
+function showEditorSyncWarning(reason) {
+  if (!reason) { editorSyncWarning.style.display = 'none'; return; }
+  editorSyncWarning.textContent = 'Latest edit wasn\'t merged (' + reason + ') — switch to (all) to make structural changes.';
+  editorSyncWarning.style.display = 'block';
+}
+
+function showModuleInEditor(name) {
+  if (name === '(all)') {
+    codeInput.value = editorFullSource;
+    updateGutter();
+    return;
+  }
+  let modules;
+  try { modules = parseTopLevelModules(editorFullSource); } catch (e) { return; }
+  const mod = modules.get(name);
+  if (!mod) return;
+  codeInput.value = editorFullSource.slice(mod.srcStart, mod.srcEnd);
+  updateGutter();
+}
+
+// Merges whatever is currently visible in the textarea back into
+// editorFullSource. Never blocks navigation: on mismatch it just leaves
+// editorFullSource untouched and reports why, rather than trapping the user
+// in a view they can't leave.
+function spliceEditorChangesBack() {
+  if (editorSelectedModule === '(all)') {
+    editorFullSource = codeInput.value;
+    return { ok: true };
+  }
+  let baseModules;
+  try { baseModules = parseTopLevelModules(editorFullSource); } catch (e) {
+    return { ok: false, reason: 'the full file no longer parses' };
+  }
+  const baseMod = baseModules.get(editorSelectedModule);
+  if (!baseMod) return { ok: false, reason: 'module no longer exists' };
+
+  let editedModules;
+  try { editedModules = parseTopLevelModules(codeInput.value); } catch (e) {
+    return { ok: false, reason: 'parse error' };
+  }
+  if (editedModules.size !== 1 || !editedModules.has(editorSelectedModule)) {
+    return { ok: false, reason: 'module structure changed' };
+  }
+
+  const editedMod = editedModules.get(editorSelectedModule);
+  const newText = codeInput.value.slice(editedMod.srcStart, editedMod.srcEnd);
+  editorFullSource = editorFullSource.slice(0, baseMod.srcStart) + newText + editorFullSource.slice(baseMod.srcEnd);
+  return { ok: true };
+}
+
+function renderEditorHierarchyList() {
+  let modules;
+  try { modules = parseTopLevelModules(editorFullSource); } catch (e) {
+    if (editorHierarchyPanel.childElementCount > 0) return; // keep last-good list on a transient parse error
+    modules = new Map();
+  }
+  editorHierarchyPanel.innerHTML = '';
+  const names = ['(all)', ...modules.keys()];
+  for (const name of names) {
+    const row = document.createElement('div');
+    row.className = 'editor-module-row' + (name === editorSelectedModule ? ' active' : '');
+    row.textContent = name;
+    row.addEventListener('click', () => selectEditorModule(name));
+    editorHierarchyPanel.appendChild(row);
+  }
+}
+
+function selectEditorModule(name) {
+  if (name === editorSelectedModule) return;
+  const res = spliceEditorChangesBack();
+  showEditorSyncWarning(res.ok ? null : res.reason);
+  editorSelectedModule = name;
+  showModuleInEditor(name);
+  renderEditorHierarchyList();
+}
+
+function resetEditorHierarchyState() {
+  editorFullSource = codeInput.value;
+  editorSelectedModule = '(all)';
+  showEditorSyncWarning(null);
+  renderEditorHierarchyList();
+}
+
+codeInput.addEventListener('blur', () => {
+  const res = spliceEditorChangesBack();
+  showEditorSyncWarning(res.ok ? null : res.reason);
+  if (res.ok) renderEditorHierarchyList();
 });
 
 function logLine(level, msg) {
@@ -2587,6 +2776,35 @@ function renderBreadcrumb() {
   });
 }
 
+/* ---- structural netlist: browse-only module hierarchy view. codeOut is
+   regenerated wholesale on every synthesis run, so there's no user-authored
+   source to splice edits back into - selecting a module here just changes
+   which slice of the already-generated text is displayed. ---- */
+function renderNetlistView() {
+  if (netlistSelectedModule === '(all)') { codeOut.textContent = netlistFullText; return; }
+  const seg = netlistSegments.find(s => s.name === netlistSelectedModule);
+  codeOut.textContent = seg ? netlistFullText.slice(seg.start, seg.end) : netlistFullText;
+}
+
+function renderNetlistHierarchyList() {
+  codeOutHierarchyPanel.innerHTML = '';
+  const names = ['(all)', ...netlistSegments.map(s => s.name)];
+  for (const name of names) {
+    const row = document.createElement('div');
+    row.className = 'editor-module-row' + (name === netlistSelectedModule ? ' active' : '');
+    row.textContent = name;
+    row.addEventListener('click', () => selectNetlistModule(name));
+    codeOutHierarchyPanel.appendChild(row);
+  }
+}
+
+function selectNetlistModule(name) {
+  if (name === netlistSelectedModule) return;
+  netlistSelectedModule = name;
+  renderNetlistView();
+  renderNetlistHierarchyList();
+}
+
 function showCurrentView() {
   if (!currentAll) return;
   const modName = viewStack[viewStack.length - 1];
@@ -2595,7 +2813,11 @@ function showCurrentView() {
     setStats(result.cells);
     // structural text always starts from the actual top module, regardless of which sub-module is being viewed in the graph
     const topResult = currentAll.results[currentAll.top.name];
-    codeOut.textContent = genVerilog([topResult, ...Object.entries(currentAll.results).filter(([k]) => k !== currentAll.top.name).map(([, v]) => v)]);
+    const gen = genVerilog([topResult, ...Object.entries(currentAll.results).filter(([k]) => k !== currentAll.top.name).map(([, v]) => v)]);
+    netlistFullText = gen.text;
+    netlistSegments = gen.segments;
+    renderNetlistView();
+    renderNetlistHierarchyList();
     const { nodes, edges } = toFlowElements(graph, layout);
     pushGraph(nodes, edges);
   } catch (e) {
@@ -2623,7 +2845,11 @@ function runSynthesis() {
   statsBadges.innerHTML = '';
   codeOut.textContent = '';
   breadcrumbRow.innerHTML = '';
-  const src = codeInput.value;
+  const splice = spliceEditorChangesBack();
+  showEditorSyncWarning(splice.ok ? null : splice.reason);
+  if (splice.ok) renderEditorHierarchyList();
+  const src = editorFullSource;
+  netlistSelectedModule = '(all)';
   try {
     currentAll = synthesizeAll(src);
     for (const l of currentAll.log) logLine(l.level, `[${l.level}] ${l.msg}`);
@@ -2637,6 +2863,9 @@ function runSynthesis() {
     logLine('err', 'error: ' + e.message);
     pushGraph([], []);
     renderHierarchyTree();
+    netlistFullText = '';
+    netlistSegments = [];
+    renderNetlistHierarchyList();
   }
 }
 document.getElementById('synthBtn').addEventListener('click', runSynthesis);
@@ -2724,6 +2953,38 @@ document.querySelectorAll('[data-collapse]').forEach(btn => {
     apply(visible);
   });
   apply(localStorage.getItem('netlistHierarchyVisible') === '1');
+})();
+
+/* ---- editor module hierarchy panel toggle ---- */
+(() => {
+  const row = document.getElementById('editorHierarchyRow');
+  const btn = document.getElementById('editorHierarchyToggleBtn');
+  function apply(visible) {
+    row.classList.toggle('hierarchy-collapsed', !visible);
+    btn.classList.toggle('active', visible);
+  }
+  btn.addEventListener('click', () => {
+    const visible = row.classList.contains('hierarchy-collapsed');
+    localStorage.setItem('editorHierarchyVisible', visible ? '1' : '0');
+    apply(visible);
+  });
+  apply(localStorage.getItem('editorHierarchyVisible') === '1');
+})();
+
+/* ---- structural netlist module hierarchy panel toggle ---- */
+(() => {
+  const row = document.getElementById('codeOutHierarchyRow');
+  const btn = document.getElementById('codeOutHierarchyToggleBtn');
+  function apply(visible) {
+    row.classList.toggle('hierarchy-collapsed', !visible);
+    btn.classList.toggle('active', visible);
+  }
+  btn.addEventListener('click', () => {
+    const visible = row.classList.contains('hierarchy-collapsed');
+    localStorage.setItem('netlistTextHierarchyVisible', visible ? '1' : '0');
+    apply(visible);
+  });
+  apply(localStorage.getItem('netlistTextHierarchyVisible') === '1');
 })();
 
 /* ---- bundle multi-bit logic toggle (mux2/dff/gate chains collapsed into one N-bit box vs

@@ -306,6 +306,38 @@
       white-space: pre;
       overflow: auto;
     }
+    .editor-hierarchy-row {
+      display: flex;
+      gap: 10px;
+      align-items: stretch;
+    }
+    .editor-hierarchy-row .editor-wrap { flex: 1 1 auto; min-width: 0; }
+    .editor-hierarchy-panel {
+      flex: 0 0 150px;
+      width: 150px;
+      background: #232326;
+      border-radius: 12px;
+      padding: 6px;
+      overflow-y: auto;
+      font: 12px "SF Mono", Menlo, Consolas, monospace;
+    }
+    .editor-hierarchy-row.hierarchy-collapsed .editor-hierarchy-panel { display: none; }
+    .editor-module-row {
+      padding: 5px 8px;
+      border-radius: 6px;
+      color: #8e8e93;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .editor-module-row:hover { background: #2c2c2e; color: #e5e5ea; }
+    .editor-module-row.active { background: #2c2c2e; color: #5ac8fa; font-weight: 600; }
+    .editor-sync-warning {
+      font-size: 12px;
+      color: #ff8a80;
+      margin-bottom: 12px;
+    }
     .console-box {
       height: 360px;
       overflow-y: auto;
@@ -440,6 +472,11 @@
               <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
             </span>
           </span>
+          <span class="layout-toggle">
+            <span class="layout-btn" id="editorHierarchyToggleBtn" title="Show/hide module hierarchy">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 2 H10 M4 6 H10 M2 10 H10" stroke-linecap="round"/><rect x="10.5" y="0.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="10.5" y="4.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="10.5" y="8.5" width="3" height="3" fill="currentColor" stroke="none"/><path d="M2 2 V10" stroke-linecap="round"/></svg>
+            </span>
+          </span>
         </span>
       </h2>
       <p>Behavioral subset: module/reg/wire, assign, always @(posedge/negedge/*), initial, if/else, #delay, $display, $finish</p>
@@ -449,9 +486,13 @@
         <button class="btn secondary" id="saveBtn">Save</button>
         <input type="file" id="fileOpenInput" accept=".v,.sv,.vh,.txt" style="display:none">
       </div>
-      <div class="editor-wrap" id="editorWrap">
-        <div class="gutter" id="gutter">1</div>
-        <textarea id="codeInput" spellcheck="false"></textarea>
+      <div id="editorSyncWarning" class="editor-sync-warning" style="display:none"></div>
+      <div class="editor-hierarchy-row hierarchy-collapsed" id="editorHierarchyRow">
+        <div class="editor-hierarchy-panel" id="editorHierarchyPanel"></div>
+        <div class="editor-wrap" id="editorWrap">
+          <div class="gutter" id="gutter">1</div>
+          <textarea id="codeInput" spellcheck="false"></textarea>
+        </div>
       </div>
       <div class="toolbar" style="margin-top:12px; margin-bottom:0;">
         <button class="btn" id="runBtn">▶ Run</button>
@@ -583,7 +624,7 @@ function lex(src) {
         if (src[j] === '\\') { s += src[j+1]; j += 2; }
         else { s += src[j]; j++; }
       }
-      toks.push({ type: 'STRING', value: s, line });
+      toks.push({ type: 'STRING', value: s, line, start: i, end: j + 1 });
       i = j + 1; continue;
     }
     if (/[0-9]/.test(c)) {
@@ -596,10 +637,10 @@ function lex(src) {
         const ds = k;
         while (k < n && /[0-9a-fA-FxXzZ?_]/.test(src[k])) k++;
         const digits = src.slice(ds, k).replace(/_/g, '');
-        toks.push({ type: 'NUMBER', value: { size: sizeStr ? parseInt(sizeStr, 10) : null, base, digits }, line });
+        toks.push({ type: 'NUMBER', value: { size: sizeStr ? parseInt(sizeStr, 10) : null, base, digits }, line, start: i, end: k });
         i = k; continue;
       }
-      toks.push({ type: 'NUMBER', value: { size: null, base: 'd', digits: src.slice(i, j) }, line });
+      toks.push({ type: 'NUMBER', value: { size: null, base: 'd', digits: src.slice(i, j) }, line, start: i, end: j });
       i = j; continue;
     }
     if (c === "'") {
@@ -608,26 +649,26 @@ function lex(src) {
       const ds = k;
       while (k < n && /[0-9a-fA-FxXzZ?_]/.test(src[k])) k++;
       const digits = src.slice(ds, k).replace(/_/g, '');
-      toks.push({ type: 'NUMBER', value: { size: null, base, digits }, line });
+      toks.push({ type: 'NUMBER', value: { size: null, base, digits }, line, start: i, end: k });
       i = k; continue;
     }
     if (/[A-Za-z_]/.test(c)) {
       let j = i;
       while (j < n && /[A-Za-z0-9_$]/.test(src[j])) j++;
       const word = src.slice(i, j);
-      toks.push({ type: KEYWORDS.has(word) ? 'KW' : 'IDENT', value: word, line });
+      toks.push({ type: KEYWORDS.has(word) ? 'KW' : 'IDENT', value: word, line, start: i, end: j });
       i = j; continue;
     }
     const two = src.slice(i, i + 2);
     if (['<=','>=','==','!=','&&','||','<<','>>','~&','~|','~^','^~'].includes(two)) {
-      toks.push({ type: 'OP', value: two, line }); i += 2; continue;
+      toks.push({ type: 'OP', value: two, line, start: i, end: i + 2 }); i += 2; continue;
     }
     if ('+-*/%&|^~!<>=?:,;()[]{}@#.$'.includes(c)) {
-      toks.push({ type: 'OP', value: c, line }); i++; continue;
+      toks.push({ type: 'OP', value: c, line, start: i, end: i + 1 }); i++; continue;
     }
     throw new Error(`Lex error: unexpected character '${c}' at line ${line}`);
   }
-  toks.push({ type: 'EOF', value: null, line });
+  toks.push({ type: 'EOF', value: null, line, start: i, end: i });
   return toks;
 }
 
@@ -655,7 +696,7 @@ class Parser {
   }
 
   parseModule() {
-    this.expectKw('module');
+    const modTok = this.expectKw('module');
     const name = this.expectIdent();
     this.curModule = name;
     const ports = [];
@@ -685,8 +726,8 @@ class Parser {
         this.err('expected declaration or module item');
       }
     }
-    this.expectKw('endmodule');
-    return { type: 'Module', name, ports, decls, items };
+    const endTok = this.expectKw('endmodule');
+    return { type: 'Module', name, ports, decls, items, srcStart: modTok.start, srcEnd: endTok.end };
   }
 
   // A port-list item is either the old style, a bare name whose input/output/
@@ -1126,7 +1167,7 @@ function parseNumberLiteral(raw) {
   return { value: mkVal(v, x, z), width };
 }
 
-function parseVerilog(src) {
+function parseTopLevelModules(src) {
   const p = new Parser(lex(src));
   const modules = new Map();
   while (!p.at('EOF')) {
@@ -1135,7 +1176,11 @@ function parseVerilog(src) {
     modules.set(mod.name, mod);
   }
   if (modules.size === 0) throw new Error('Parse error: no module found');
-  return elaborate(modules);
+  return modules;
+}
+
+function parseVerilog(src) {
+  return elaborate(parseTopLevelModules(src));
 }
 
 /* =========================================================================
@@ -2198,6 +2243,125 @@ module rom_tb;
     #100 $finish;
   end
 endmodule`,
+
+  '8-bit RAM': `module ram (input clk, input we, input [7:0] waddr, input [7:0] wdata, input [7:0] raddr, output [7:0] rdata);
+  reg [7:0] mem [0:'hff];
+  reg [7:0] rdata;
+
+  always@(posedge clk)
+    if(we) mem[waddr] = wdata;
+
+  always@(posedge clk)
+    rdata = mem[raddr];
+
+  // loads mem[] from a file attached via the Memory Viewer card below -
+  // this app has no real filesystem access over file://, so $readmemh can
+  // only resolve a filename the user has already attached there
+  initial $readmemh("test.txt", mem, 0);
+endmodule
+
+module ram_tb;
+  reg  clk, we;
+  reg  [7:0] waddr, raddr, wdata;
+  wire [7:0] rdata;
+
+  ram u0 (clk, we, waddr, wdata, raddr, rdata);
+
+  always#10
+    clk <= ~clk;
+
+  always@(posedge clk) begin
+    raddr <= raddr + 1;
+    waddr <= waddr + 1;
+  end
+
+  initial begin
+    waddr = 1;
+    wdata = 8'hA;
+    raddr = 0;
+    clk = 0;
+    we = 0;
+    #15 $display("addr=%d data=%h", raddr, rdata);
+    #10 $display("addr=%d data=%h", raddr, rdata);
+    #10 $display("addr=%d data=%h", raddr, rdata);
+    we = 1;
+    #30 $display("addr=%d data=%h", raddr, rdata);
+    #10 $display("addr=%d data=%h", raddr, rdata);
+    #100 $finish;
+  end
+endmodule`,
+
+  '8-bit Calculator': `module calc (input clk, input rst_n, input [7:0] data, output [7:0] addr);
+  reg [7:0] results;
+
+  always@(posedge clk or negedge rst_n) begin
+    if(!rst_n)
+      results <= 0;
+    else begin
+      if(data[6])
+        results <= data[5:0];
+      else begin
+        if(data[5])
+          results <= results + data[3:0];
+        else if(data[4])
+          results <= results - data[3:0];
+      end
+    end
+  end
+
+  pc u_pc (.clk(clk), .rst_n(rst_n), .addr(addr));
+
+endmodule
+
+module pc (input clk, input rst_n, output [7:0] addr);
+  reg [7:0] addr;
+
+  always@(posedge clk or negedge rst_n) begin
+    if(!rst_n)
+      addr <= 0;
+    else
+      addr <= addr + 1;
+  end
+
+endmodule
+
+module rom (input [7:0] addr, output [7:0] data);
+  reg [7:0] mem [0:'hff];
+
+  assign data = mem[addr];
+
+  // loads mem[] from a file attached via the Memory Viewer card below -
+  // this app has no real filesystem access over file://, so $readmemh can
+  // only resolve a filename the user has already attached there
+  initial $readmemb("test.txt", mem, 0);
+
+endmodule
+
+module system (input clk, input rst_n);
+  wire [7:0] addr;
+  wire [7:0] data;
+
+  rom u_rom (addr, data);
+  calc u_calc (clk, rst_n, data, addr);
+
+endmodule
+
+module system_tb;
+  reg clk;
+  reg rst_n;
+
+  system u_sys (clk, rst_n);
+
+  // clock generator: toggles every 5 time units
+  always #5 clk = ~clk;
+
+  initial begin
+    clk = 0;
+    rst_n = 0;
+    #10 rst_n = 1;
+    #100 $finish;
+  end
+endmodule`,
 };
 
 /* =========================================================================
@@ -2205,6 +2369,10 @@ endmodule`,
    ========================================================================= */
 const codeInput = document.getElementById('codeInput');
 const gutter = document.getElementById('gutter');
+const editorHierarchyPanel = document.getElementById('editorHierarchyPanel');
+const editorSyncWarning = document.getElementById('editorSyncWarning');
+let editorFullSource = '';
+let editorSelectedModule = '(all)';
 const exampleSelect = document.getElementById('exampleSelect');
 const openBtn = document.getElementById('openBtn');
 const saveBtn = document.getElementById('saveBtn');
@@ -2429,6 +2597,7 @@ function loadExample(name) {
   codeInput.value = EXAMPLES[name];
   currentFileName = name.replace(/[^A-Za-z0-9_-]+/g, '_') + '.v';
   updateGutter();
+  resetEditorHierarchyState();
 }
 exampleSelect.addEventListener('change', () => loadExample(exampleSelect.value));
 loadExample(Object.keys(EXAMPLES)[0]);
@@ -2446,11 +2615,14 @@ fileOpenInput.addEventListener('change', () => {
     currentFileName = file.name;
     exampleSelect.selectedIndex = -1;
     updateGutter();
+    resetEditorHierarchyState();
   };
   reader.readAsText(file);
 });
 saveBtn.addEventListener('click', () => {
-  const blob = new Blob([codeInput.value], { type: 'text/plain' });
+  const res = spliceEditorChangesBack();
+  showEditorSyncWarning(res.ok ? null : res.reason);
+  const blob = new Blob([editorFullSource], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -2606,6 +2778,97 @@ codeInput.addEventListener('keydown', (e) => {
   updateGutter();
 });
 
+/* ---- editor: module hierarchy view (browse/edit one module definition at a
+   time out of the single underlying source file) ---- */
+function showEditorSyncWarning(reason) {
+  if (!reason) { editorSyncWarning.style.display = 'none'; return; }
+  editorSyncWarning.textContent = 'Latest edit wasn\'t merged (' + reason + ') — switch to (all) to make structural changes.';
+  editorSyncWarning.style.display = 'block';
+}
+
+function showModuleInEditor(name) {
+  if (name === '(all)') {
+    codeInput.value = editorFullSource;
+    updateGutter();
+    return;
+  }
+  let modules;
+  try { modules = parseTopLevelModules(editorFullSource); } catch (e) { return; }
+  const mod = modules.get(name);
+  if (!mod) return;
+  codeInput.value = editorFullSource.slice(mod.srcStart, mod.srcEnd);
+  updateGutter();
+}
+
+// Merges whatever is currently visible in the textarea back into
+// editorFullSource. Never blocks navigation: on mismatch it just leaves
+// editorFullSource untouched and reports why, rather than trapping the user
+// in a view they can't leave.
+function spliceEditorChangesBack() {
+  if (editorSelectedModule === '(all)') {
+    editorFullSource = codeInput.value;
+    return { ok: true };
+  }
+  let baseModules;
+  try { baseModules = parseTopLevelModules(editorFullSource); } catch (e) {
+    return { ok: false, reason: 'the full file no longer parses' };
+  }
+  const baseMod = baseModules.get(editorSelectedModule);
+  if (!baseMod) return { ok: false, reason: 'module no longer exists' };
+
+  let editedModules;
+  try { editedModules = parseTopLevelModules(codeInput.value); } catch (e) {
+    return { ok: false, reason: 'parse error' };
+  }
+  if (editedModules.size !== 1 || !editedModules.has(editorSelectedModule)) {
+    return { ok: false, reason: 'module structure changed' };
+  }
+
+  const editedMod = editedModules.get(editorSelectedModule);
+  const newText = codeInput.value.slice(editedMod.srcStart, editedMod.srcEnd);
+  editorFullSource = editorFullSource.slice(0, baseMod.srcStart) + newText + editorFullSource.slice(baseMod.srcEnd);
+  return { ok: true };
+}
+
+function renderEditorHierarchyList() {
+  let modules;
+  try { modules = parseTopLevelModules(editorFullSource); } catch (e) {
+    if (editorHierarchyPanel.childElementCount > 0) return; // keep last-good list on a transient parse error
+    modules = new Map();
+  }
+  editorHierarchyPanel.innerHTML = '';
+  const names = ['(all)', ...modules.keys()];
+  for (const name of names) {
+    const row = document.createElement('div');
+    row.className = 'editor-module-row' + (name === editorSelectedModule ? ' active' : '');
+    row.textContent = name;
+    row.addEventListener('click', () => selectEditorModule(name));
+    editorHierarchyPanel.appendChild(row);
+  }
+}
+
+function selectEditorModule(name) {
+  if (name === editorSelectedModule) return;
+  const res = spliceEditorChangesBack();
+  showEditorSyncWarning(res.ok ? null : res.reason);
+  editorSelectedModule = name;
+  showModuleInEditor(name);
+  renderEditorHierarchyList();
+}
+
+function resetEditorHierarchyState() {
+  editorFullSource = codeInput.value;
+  editorSelectedModule = '(all)';
+  showEditorSyncWarning(null);
+  renderEditorHierarchyList();
+}
+
+codeInput.addEventListener('blur', () => {
+  const res = spliceEditorChangesBack();
+  showEditorSyncWarning(res.ok ? null : res.reason);
+  if (res.ok) renderEditorHierarchyList();
+});
+
 /* ---- collapse buttons (generic, works for any .card-collapse-btn) ---- */
 document.querySelectorAll('[data-collapse]').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -2670,6 +2933,22 @@ document.querySelectorAll('[data-collapse]').forEach(btn => {
   apply(localStorage.getItem('waveHierarchyVisible') === '1');
 })();
 
+/* ---- editor module hierarchy panel toggle ---- */
+(() => {
+  const row = document.getElementById('editorHierarchyRow');
+  const btn = document.getElementById('editorHierarchyToggleBtn');
+  function apply(visible) {
+    row.classList.toggle('hierarchy-collapsed', !visible);
+    btn.classList.toggle('active', visible);
+  }
+  btn.addEventListener('click', () => {
+    const visible = row.classList.contains('hierarchy-collapsed');
+    localStorage.setItem('editorHierarchyVisible', visible ? '1' : '0');
+    apply(visible);
+  });
+  apply(localStorage.getItem('editorHierarchyVisible') === '1');
+})();
+
 /* ---- console helpers ---- */
 function clearConsole() { consoleBox.innerHTML = ''; }
 function logLine(html) {
@@ -2708,7 +2987,10 @@ runBtn.addEventListener('click', runSimulation);
 
 function runSimulation() {
   clearConsole();
-  const src = codeInput.value;
+  const splice = spliceEditorChangesBack();
+  showEditorSyncWarning(splice.ok ? null : splice.reason);
+  if (splice.ok) renderEditorHierarchyList();
+  const src = editorFullSource;
   const maxTime = Math.max(10, parseInt(maxTimeInput.value, 10) || 300);
 
   let ast;
