@@ -1831,7 +1831,50 @@ class Synthesizer {
     }
     if (stmt.type === 'Block') return this._synthSeqSeq(stmt.stmts, cv);
     if (stmt.type === 'If') return this._synthSeqIf(stmt, cv);
+    if (stmt.type === 'Case') return this._synthSeqCase(stmt, cv);
     this.error(`Unsupported statement '${stmt.type}' inside a clocked always block`);
+  }
+  // case/casex counterpart of _synthSeqIf: a selector value matched by no item (and no
+  // default) means "no assignment this cycle," which in a clocked block means the
+  // register holds its previous value rather than inferring a latch — so every item
+  // (and the no-match baseline) falls back to the key's own net, exactly like _synthSeqIf's
+  // untouched-branch fallback, instead of _synthCombCase's "every item must assign this key"
+  // error. Priority (first-listed item wins) is resolved the same way as _synthCombCase's
+  // mux ladder, just without its exhaustiveness-driven last-item-as-baseline optimization,
+  // since here the ladder must stay correct even when items don't cover every selector value.
+  _synthSeqCase(stmt, cv) {
+    const selWidth = this.naturalWidth(stmt.selector);
+    const selNets = this.synthExpr(stmt.selector, selWidth);
+    const itemCvs = stmt.items.map(item => ({
+      matchNet: this._synthCasePatternMatch(item.patterns, selNets, selWidth),
+      cv: this._synthSeqSeq(item.body.type === 'Block' ? item.body.stmts : [item.body], cv),
+    }));
+    if (!itemCvs.length) this.error('case statement has no items');
+    const defaultCv = stmt.defaultBody ? this._synthSeqSeq(stmt.defaultBody.type === 'Block' ? stmt.defaultBody.stmts : [stmt.defaultBody], cv) : null;
+
+    const touched = new Set();
+    for (const { cv: icv } of itemCvs) for (const k of this._changedKeys(cv, icv)) touched.add(k);
+    if (defaultCv) for (const k of this._changedKeys(cv, defaultCv)) touched.add(k);
+
+    const result = new Map(cv);
+    const busGroups = new Map();
+    for (const key of touched) {
+      let acc = defaultCv ? (defaultCv.has(key) ? defaultCv.get(key) : key) : key;
+      const { base, idx: bitIdx } = parseNet(key);
+      const s = this.sig[base];
+      for (let idx = itemCvs.length - 1; idx >= 0; idx--) {
+        const itemNet = itemCvs[idx].cv.has(key) ? itemCvs[idx].cv.get(key) : key;
+        if (itemNet === acc) continue;
+        const id = this.newId('mux2');
+        const y = `w_${id}`;
+        const busGroup = bitIdx !== null && s && s.width > 1 ? this._busGroupId(busGroups, `${base}:${idx}`) : null;
+        this.cells.push({ id, type: 'mux2', ports: { sel: itemCvs[idx].matchNet, a: acc, b: itemNet, y }, busGroup, busBit: bitIdx, busWidth: busGroup ? s.width : null, busBase: busGroup ? base : null });
+        this.markDriven(y, id);
+        acc = y;
+      }
+      result.set(key, acc);
+    }
+    return result;
   }
   _synthSeqIf(stmt, cv) {
     const thenCv = this._synthSeqSeq(stmt.then.type === 'Block' ? stmt.then.stmts : [stmt.then], cv);
