@@ -271,6 +271,8 @@
     .btn:hover { background: #0066d6; }
     .btn.secondary { background: #f2f2f7; color: #1c1c1e; }
     .btn.secondary:hover { background: #e5e5ea; }
+    .btn.outline { background: #fff; color: #007aff; border: 1.5px solid #007aff; }
+    .btn.outline:hover { background: #f0f7ff; }
     .btn:disabled { background: #c7c7cc; cursor: default; }
     .time-label { font-size: 12px; color: #8e8e93; margin-right: -2px; }
 
@@ -436,6 +438,7 @@
       border-top: 1px solid #2c2c2e;
     }
     table.memory-table td.mem-addr { color: #5ac8fa; }
+    table.memory-table td.mem-hint { color: #8e8e93; }
 
     @media (max-width: 760px) {
       .grid { grid-template-columns: 1fr; }
@@ -458,11 +461,17 @@
   <div class="grid">
 
     <div class="card layout-pair" id="card-editor">
-      <h2><span class="card-collapse-btn" data-collapse>▾</span>Verilog Editor
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Verilog Source Editor
         <span class="header-controls">
           <span class="layout-toggle">
-            <span class="layout-btn" id="editorHeightDec" title="Decrease height">−</span>
-            <span class="layout-btn" id="editorHeightInc" title="Increase height">+</span>
+            <span class="layout-btn" id="editorHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
+            <span class="layout-btn" id="editorHeightInc" title="Increase height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
+            <span class="layout-btn" id="editorCopyBtn" title="Copy to clipboard">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3" width="8" height="8" rx="1"/><rect x="6.5" y="0.7" width="8" height="8" rx="1"/></svg>
+            </span>
+            <span class="layout-btn" id="editorSaveBtn" title="Save to file">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 0.8 V7.5 M5 4.5 L8 7.5 L11 4.5"/><path d="M1.5 8.5 V10.2 a1 1 0 0 0 1 1 H13.5 a1 1 0 0 0 1-1 V8.5"/></svg>
+            </span>
           </span>
           <span class="layout-toggle">
             <span class="layout-btn" data-layout-btn="side" title="Side by side">
@@ -481,9 +490,9 @@
       </h2>
       <p>Behavioral subset: module/reg/wire, assign, always @(posedge/negedge/*), initial, if/else, #delay, $display, $finish</p>
       <div class="toolbar">
+        <button class="btn outline" id="openBtn">Import File</button>
+        <span class="time-label">Select from Examples:</span>
         <select id="exampleSelect"></select>
-        <button class="btn secondary" id="openBtn">Open…</button>
-        <button class="btn secondary" id="saveBtn">Save</button>
         <input type="file" id="fileOpenInput" accept=".v,.sv,.vh,.txt" style="display:none">
       </div>
       <div id="editorSyncWarning" class="editor-sync-warning" style="display:none"></div>
@@ -499,7 +508,7 @@
         <button class="btn secondary" id="resetBtn">Reset</button>
         <span class="time-label">run for</span>
         <input class="num-input" id="maxTimeInput" type="number" min="10" step="10" value="300">
-        <span class="time-label">time units</span>
+        <span class="time-label">time units<span id="maxTimeAutoNote" style="display:none"> (set by $finish)</span></span>
       </div>
     </div>
 
@@ -507,8 +516,8 @@
       <h2><span class="card-collapse-btn" data-collapse>▾</span>Console
         <span class="header-controls">
           <span class="layout-toggle">
-            <span class="layout-btn" id="consoleHeightDec" title="Decrease height">−</span>
-            <span class="layout-btn" id="consoleHeightInc" title="Increase height">+</span>
+            <span class="layout-btn" id="consoleHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
+            <span class="layout-btn" id="consoleHeightInc" title="Increase height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
           </span>
           <span class="layout-toggle">
             <span class="layout-btn" data-layout-btn="side" title="Side by side">
@@ -549,6 +558,8 @@
             <span class="zoom-level" id="waveZoomLevel">1.0×</span>
             <button class="btn secondary icon-btn" id="waveZoomOut" title="Zoom out">−</button>
             <button class="btn secondary" id="waveZoomReset">Reset</button>
+            <button class="btn secondary icon-btn" id="waveScrollLeft" title="Scroll left">◀</button>
+            <button class="btn secondary icon-btn" id="waveScrollRight" title="Scroll right">▶</button>
           </div>
           <div class="toolbar-group">
             <span class="time-label">Start</span>
@@ -601,7 +612,7 @@
    ========================================================================= */
 const KEYWORDS = new Set(['module','endmodule','input','output','reg','wire','assign',
   'always','initial','begin','end','if','else','posedge','negedge','or',
-  'case','casex','casez','endcase','default']);
+  'case','casex','casez','endcase','default','parameter']);
 
 function lex(src) {
   const toks = [];
@@ -675,8 +686,21 @@ function lex(src) {
 /* =========================================================================
    PARSER  (recursive descent -> AST)
    ========================================================================= */
+// A NUMBER token's `value` is a {size, base, digits} object, not a plain
+// string like every other token's - interpolating it directly into an error
+// message would print the useless "[object Object]" rather than the actual
+// literal text, so error() goes through this to render it back as source.
+function describeTokenValue(t) {
+  if (t.type === 'NUMBER') {
+    const { size, base, digits } = t.value;
+    if (size === null && base === 'd') return digits;
+    return (size !== null ? size : '') + "'" + base + digits;
+  }
+  return t.value;
+}
+
 class Parser {
-  constructor(toks) { this.toks = toks; this.p = 0; this.curModule = null; this.arrayDecls = new Set(); }
+  constructor(toks) { this.toks = toks; this.p = 0; this.curModule = null; this.arrayDecls = new Set(); this.params = new Map(); }
   peek(o=0) { return this.toks[this.p + o]; }
   at(type, value) {
     const t = this.peek();
@@ -692,7 +716,7 @@ class Parser {
   expectIdent() { if (!this.at('IDENT')) this.err('expected identifier'); return this.next().value; }
   err(msg) {
     const t = this.peek();
-    throw new Error(`Parse error at line ${t.line}: ${msg}, got ${t.type} '${t.value}'`);
+    throw new Error(`Parse error at line ${t.line}: ${msg}, got ${t.type} '${describeTokenValue(t)}'`);
   }
 
   parseModule() {
@@ -720,6 +744,8 @@ class Parser {
         items.push(this.parseAlways());
       } else if (this.atKw('initial')) {
         items.push(this.parseInitial());
+      } else if (this.atKw('parameter')) {
+        this.parseParameterDecl();
       } else if (this.at('IDENT')) {
         items.push(this.parseInstance());
       } else {
@@ -785,7 +811,7 @@ class Parser {
       this.expectOp(':');
       const lo = this.parseExpr();
       this.expectOp(']');
-      return Math.abs(evalConstExpr(hi) - evalConstExpr(lo)) + 1;
+      return Math.abs(evalConstExpr(hi, this.curModule, this.params) - evalConstExpr(lo, this.curModule, this.params)) + 1;
     }
     return 1;
   }
@@ -801,7 +827,28 @@ class Parser {
     this.expectOp(':');
     const secondExpr = this.parseExpr();
     this.expectOp(']');
-    return { first: evalConstExpr(firstExpr), second: evalConstExpr(secondExpr) };
+    return { first: evalConstExpr(firstExpr, this.curModule, this.params), second: evalConstExpr(secondExpr, this.curModule, this.params) };
+  }
+
+  // `parameter NAME = expr;` - expr must be a constant expression, validated
+  // eagerly here (via evalConstExpr, the same one used for range/array bounds
+  // and replication counts) so a bad parameter definition fails at its own
+  // declaration rather than wherever it happens to be used. The expression
+  // NODE itself (not just its folded value) is what gets stored, keyed by
+  // module name like this.arrayDecls - substituting the node wherever the
+  // parameter is referenced (see parsePrimary) is what lets a parameter be
+  // used in ANY expression context, not just the three constant-only ones
+  // evalConstExpr covers, and keeps a 4-state literal's x/z bits intact for
+  // e.g. a casex label (`parameter ADD = 3'b10?;`) instead of collapsing it
+  // to evalConstExpr's known-bits-only integer.
+  parseParameterDecl() {
+    this.expectKw('parameter');
+    const name = this.expectIdent();
+    this.expectOp('=');
+    const expr = this.parseExpr();
+    this.expectOp(';');
+    evalConstExpr(expr, this.curModule, this.params);
+    this.params.set(this.curModule + '::' + name, expr);
   }
 
   parseDecl() {
@@ -1062,6 +1109,16 @@ class Parser {
     if (t.type === 'IDENT') {
       this.next();
       let name = t.value;
+      // A bare (non-hierarchical) reference to a declared parameter is
+      // substituted with its defining expression right here, so evalExpr
+      // never needs to know parameters exist - this is what makes a
+      // parameter usable in any expression (case labels, RHS of assigns,
+      // conditions, ...), not just the constant-only contexts evalConstExpr
+      // covers (bit-ranges, array bounds, replication counts).
+      if (!this.atOp('.')) {
+        const paramKey = this.curModule + '::' + name;
+        if (this.params.has(paramKey)) return this.params.get(paramKey);
+      }
       // hierarchical reference (e.g. `u0.q`) - lets $display/expressions
       // probe a submodule instance's internal signal from an ancestor scope
       while (this.atOp('.') && this.peek(1).type === 'IDENT') {
@@ -1086,8 +1143,8 @@ class Parser {
     this.err('expected expression');
   }
   // One comma-separated slot inside {...}: a plain expression (1 item), or
-  // Verilog's replication form {N{expr}} - N must be a constant (no
-  // parameter support here to make it anything else) - which expands to N
+  // Verilog's replication form {N{expr}} - N must be a constant expression
+  // (a literal or a parameter declared in this module) - which expands to N
   // copies of expr right here so evalExpr/writeLValue/widthOfExpr never need
   // to know replication exists, only plain Concat.
   parseConcatItem() {
@@ -1096,17 +1153,22 @@ class Parser {
       this.next();
       const inner = this.parseExpr();
       this.expectOp('}');
-      const n = evalConstExpr(first);
+      const n = evalConstExpr(first, this.curModule, this.params);
       return Array(Math.max(0, n)).fill(inner);
     }
     return [first];
   }
 }
 
-function evalConstExpr(node) {
+function evalConstExpr(node, curModule, params) {
   if (node.type === 'Number') return parseNumberLiteral(node.raw).value.v;
+  if (node.type === 'Ident') {
+    const key = curModule + '::' + node.name;
+    if (params && params.has(key)) return evalConstExpr(params.get(key), curModule, params);
+    throw new Error(`Parse error: unknown parameter '${node.name}' in constant expression`);
+  }
   if (node.type === 'Binary') {
-    const l = evalConstExpr(node.left), r = evalConstExpr(node.right);
+    const l = evalConstExpr(node.left, curModule, params), r = evalConstExpr(node.right, curModule, params);
     if (node.op === '+') return l + r;
     if (node.op === '-') return l - r;
     if (node.op === '*') return l * r;
@@ -1412,6 +1474,24 @@ function elaborate(modules) {
           }
           conns = item.conns.map((c, i) => ({ port: child.ports[i], expr: c.expr }));
         }
+        // An unconnected INPUT silently defaults to all-X (declareSignal's
+        // usual uninitialized state) with no other signal - real hardware
+        // never leaves an input floating like that, and it's virtually
+        // always a mistake (a typo'd port name, or a port added to the
+        // child module after this instantiation was written), so it's
+        // caught here rather than left to surface later as a confusing all-X
+        // signal deep in the waveform. Positional connections can never
+        // trigger this - the count check above already requires exactly one
+        // connection per port. Unconnected OUTPUTs are left alone: leaving
+        // an output floating is completely ordinary Verilog (the instance
+        // just doesn't drive anything with it).
+        const connectedPorts = new Set(conns.map(c => c.port));
+        const unconnectedInputs = child.decls
+          .filter(d => d.ioKind === 'input' && !connectedPorts.has(d.name))
+          .map(d => d.name);
+        if (unconnectedInputs.length) {
+          throw new Error(`Parse error: module '${item.module}' instantiated as '${item.name}' leaves input port${unconnectedInputs.length > 1 ? 's' : ''} ${unconnectedInputs.join(', ')} unconnected`);
+        }
         const childPrefix = qualify(prefix, item.name);
         stack.push(item.module);
         node.children.push(elaborateModule(child, childPrefix));
@@ -1495,7 +1575,7 @@ class Simulator {
     const depth = hi - lo + 1;
     const cells = new Array(depth);
     for (let i = 0; i < depth; i++) cells[i] = mkVal(0, fullMask(elemWidth));
-    this.memories[name] = { elemWidth, first: array.first, second: array.second, lo, hi, depth, cells };
+    this.memories[name] = { elemWidth, first: array.first, second: array.second, lo, hi, depth, cells, comments: new Map() };
   }
 
   _build() {
@@ -1567,24 +1647,34 @@ class Simulator {
     if (text === undefined) {
       throw new Error(`$readmem${radix}: file '${filename}' was not attached (use the Memory Viewer to attach it before running)`);
     }
-    const cleaned = text.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-    const tokens = cleaned.split(/\s+/).filter(Boolean);
+    const withoutBlockComments = text.replace(/\/\*[\s\S]*?\*\//g, '');
     const step = mem.second >= mem.first ? 1 : -1;
     let addr = start !== undefined ? start : mem.first;
     const bitsPerDigit = radix === 'h' ? 4 : 1;
     const digitMask = (1 << bitsPerDigit) - 1;
-    for (const tok of tokens) {
-      if (tok[0] === '@') { addr = parseInt(tok.slice(1).replace(/_/g, ''), 16); continue; }
-      let v = 0, x = 0, z = 0, shift = 0;
-      for (const ch of tok.replace(/_/g, '').split('').reverse()) {
-        if (ch === 'x' || ch === 'X') x |= digitMask << shift;
-        else if (ch === 'z' || ch === 'Z' || ch === '?') z |= digitMask << shift;
-        else v |= (parseInt(ch, 16) & digitMask) << shift;
-        shift += bitsPerDigit;
+    let finished = false;
+    for (const rawLine of withoutBlockComments.split('\n')) {
+      if (finished) break;
+      const commentIdx = rawLine.indexOf('//');
+      const codePart = commentIdx === -1 ? rawLine : rawLine.slice(0, commentIdx);
+      const comment = commentIdx === -1 ? null : rawLine.slice(commentIdx + 2).trim();
+      const tokens = codePart.split(/\s+/).filter(Boolean);
+      let firstAddrOnLine = null;
+      for (const tok of tokens) {
+        if (tok[0] === '@') { addr = parseInt(tok.slice(1).replace(/_/g, ''), 16); continue; }
+        let v = 0, x = 0, z = 0, shift = 0;
+        for (const ch of tok.replace(/_/g, '').split('').reverse()) {
+          if (ch === 'x' || ch === 'X') x |= digitMask << shift;
+          else if (ch === 'z' || ch === 'Z' || ch === '?') z |= digitMask << shift;
+          else v |= (parseInt(ch, 16) & digitMask) << shift;
+          shift += bitsPerDigit;
+        }
+        if (firstAddrOnLine === null) firstAddrOnLine = addr;
+        if (addr >= mem.lo && addr <= mem.hi) mem.cells[addr - mem.lo] = maskVal(mkVal(v, x, z), mem.elemWidth);
+        if (finish !== undefined && addr === finish) { finished = true; break; }
+        addr += step;
       }
-      if (addr >= mem.lo && addr <= mem.hi) mem.cells[addr - mem.lo] = maskVal(mkVal(v, x, z), mem.elemWidth);
-      if (finish !== undefined && addr === finish) break;
-      addr += step;
+      if (comment && firstAddrOnLine !== null) mem.comments.set(firstAddrOnLine, comment);
     }
   }
 
@@ -2223,7 +2313,7 @@ endmodule`,
   // loads mem[] from a file attached via the Memory Viewer card below -
   // this app has no real filesystem access over file://, so $readmemh can
   // only resolve a filename the user has already attached there
-  initial $readmemh("test.txt", mem, 0);
+  initial $readmemh("rom.txt", mem, 0);
 endmodule
 
 module rom_tb;
@@ -2244,20 +2334,20 @@ module rom_tb;
   end
 endmodule`,
 
-  '8-bit RAM': `module ram (input clk, input we, input [7:0] waddr, input [7:0] wdata, input [7:0] raddr, output [7:0] rdata);
+  '8-bit RAM': `module ram (input clk, input we, input [7:0] addr, input [7:0] wdata, output [7:0] rdata);
   reg [7:0] mem [0:'hff];
   reg [7:0] rdata;
 
   always@(posedge clk)
-    if(we) mem[waddr] = wdata;
+    if(we) mem[addr] = wdata;
 
   always@(posedge clk)
-    rdata = mem[raddr];
+    rdata = mem[addr];
 
   // loads mem[] from a file attached via the Memory Viewer card below -
   // this app has no real filesystem access over file://, so $readmemh can
   // only resolve a filename the user has already attached there
-  initial $readmemh("test.txt", mem, 0);
+  initial $readmemh("ram.txt", mem, 0);
 endmodule
 
 module ram_tb;
@@ -2291,7 +2381,23 @@ module ram_tb;
   end
 endmodule`,
 
-  '8-bit Calculator': `module calc (input clk, input rst_n, input [7:0] data, output [7:0] addr);
+  '8-bit Calculator': `/* Instruction Set
+| Bit 7 | Bit 6 | Bit 5 | Bit 4 | Bit 3 | Bit 2 | Bit 1 | Bit 0 |           Function           |  Assembly code   |
+|-------|-------|-------|-------|-------|-------|-------|-------|------------------------------|------------------|
+|   0   |   0   |  opcode[1:0]  |            a[3:0]             |    results = results op a    | ADD/SUB/SHL/SHR  |
+|   0   |   1   |                   imm[5:0]                    |        results = imm         |       MOV        |
+*/
+
+/* Opcode
+| Bit 1 | Bit 0 | Function |
+|-------|-------|----------|
+|   0   |   0   |   ADD    |
+|   0   |   1   |   SUB    |
+|   1   |   0   |   SHL    | (not implemented)
+|   1   |   1   |   SHR    | (not implemented)
+*/
+
+module calc (input clk, input rst_n, input [7:0] data, output [7:0] addr);
   reg [7:0] results;
 
   always@(posedge clk or negedge rst_n) begin
@@ -2333,7 +2439,7 @@ module rom (input [7:0] addr, output [7:0] data);
   // loads mem[] from a file attached via the Memory Viewer card below -
   // this app has no real filesystem access over file://, so $readmemh can
   // only resolve a filename the user has already attached there
-  initial $readmemb("test.txt", mem, 0);
+  initial $readmemb("rom.txt", mem, 0);
 
 endmodule
 
@@ -2362,6 +2468,135 @@ module system_tb;
     #100 $finish;
   end
 endmodule`,
+
+  '8-bit CPU': `/* Instruction Set
+| Bit 7 | Bit 6 | Bit 5 | Bit 4 | Bit 3 | Bit 2 | Bit 1 | Bit 0 |           Function           |  Assembly code   |
+|-------|-------|-------|-------|-------|-------|-------|-------|------------------------------|------------------|
+|   0   |   0   |  opcode[1:0]  |            a[3:0]             |    results = results op a    | ADD/SUB/SHL/SHR  |
+|   0   |   1   |                   imm[5:0]                    |        results = imm         |       MOV        |
+|   1   |   0   |         offset[5:0] (2's complement)          | if results > 0, pc=pc+offset |       BGT        |
+|   1   |   1   |  L/S  |         addr[4:0] (unsigned)          |         load / store         |     LD / ST      | (not implemented)
+*/
+
+/* Opcode
+| Bit 1 | Bit 0 | Function |
+|-------|-------|----------|
+|   0   |   0   |   ADD    |
+|   0   |   1   |   SUB    |
+|   1   |   0   |   SHL    |
+|   1   |   1   |   SHR    |
+*/
+
+/* Test Code (rom.txt)
+01001111 // MOV 15
+00010001 // SUB 1
+10111111 // BGT -1
+00100000 // NOP
+00100000 // NOP
+*/        
+
+module cpu (input clk, input rst_n, input [7:0] inst, output [7:0] addr, input [7:0] wdata, output [7:0] rdata);
+  reg [7:0] results;
+  wire      gt0;
+
+  assign gt0 = (results > 8'b0);
+
+  always@(posedge clk or negedge rst_n) begin
+    if(!rst_n)
+      results <= 0;
+    else begin
+      if(inst[6])
+        results <= inst[5:0];
+      else if(!inst[7])begin
+        casex(inst[6:4])
+          3'b1xx: results <= inst[5:0]; // MOV
+          3'b010: results <= results + inst[3:0]; // ADD
+          3'b001: results <= results - inst[3:0]; // SUB
+          3'b000: results <= results << inst[3:0]; // SHL
+          3'b011: results <= results >> inst[3:0]; // SHR
+        endcase
+      end
+    end
+  end
+
+  pc u_pc (.clk(clk), .rst_n(rst_n), .inst(inst), .gt0(gt0), .addr(addr));
+
+endmodule
+
+module pc (input clk, input rst_n, input [7:0] inst, input gt0, output [7:0] addr);
+  reg [7:0] addr;
+
+  always@(posedge clk or negedge rst_n) begin
+    if(!rst_n)
+      addr <= 0;
+    else begin
+      if(inst[7:6] == 2'b10 && gt0)
+        addr <= addr + {{2{inst[5]}},inst[5:0]};
+      else
+        addr <= addr + 1;
+    end
+  end
+
+endmodule
+
+module rom (input [7:0] addr, output [7:0] data);
+  reg [7:0] mem [0:'hff];
+
+  assign data = mem[addr];
+
+  // loads mem[] from a file attached via the Memory Viewer card below -
+  // this app has no real filesystem access over file://, so $readmemh can
+  // only resolve a filename the user has already attached there
+  initial $readmemb("rom.txt", mem, 0);
+
+endmodule
+
+module ram (input clk, input we, input [7:0] addr, input [7:0] wdata, output [7:0] rdata);
+  reg [7:0] mem [0:'hff];
+  reg [7:0] rdata;
+
+  always@(posedge clk)
+    if(we) mem[addr] = wdata;
+
+  always@(posedge clk)
+    rdata = mem[addr];
+
+  // loads mem[] from a file attached via the Memory Viewer card below -
+  // this app has no real filesystem access over file://, so $readmemh can
+  // only resolve a filename the user has already attached there
+  initial $readmemh("ram.txt", mem, 0);
+endmodule
+
+module system (input clk, input rst_n);
+  wire [7:0] addr;
+  wire [7:0] data;
+  wire [7:0] daddr;
+  wire [7:0] wdata;
+  wire [7:0] rdata;
+  wire we;
+
+  rom u_rom (addr, data);
+  ram u_ram (clk, we, addr, wdata, rdata);
+  cpu u_cpu (clk, rst_n, data, addr, wdata, rdata);
+
+endmodule
+
+module system_tb;
+  reg clk;
+  reg rst_n;
+
+  system u_sys (clk, rst_n);
+
+  // clock generator: toggles every 5 time units
+  always #5 clk = ~clk;
+
+  initial begin
+    clk = 0;
+    rst_n = 0;
+    #10 rst_n = 1;
+    #400 $finish;
+  end
+endmodule`,
 };
 
 /* =========================================================================
@@ -2375,11 +2610,11 @@ let editorFullSource = '';
 let editorSelectedModule = '(all)';
 const exampleSelect = document.getElementById('exampleSelect');
 const openBtn = document.getElementById('openBtn');
-const saveBtn = document.getElementById('saveBtn');
 const fileOpenInput = document.getElementById('fileOpenInput');
 const runBtn = document.getElementById('runBtn');
 const resetBtn = document.getElementById('resetBtn');
 const maxTimeInput = document.getElementById('maxTimeInput');
+const maxTimeAutoNote = document.getElementById('maxTimeAutoNote');
 const consoleBox = document.getElementById('consoleBox');
 const waveCanvas = document.getElementById('waveCanvas');
 const waveEmpty = document.getElementById('waveEmpty');
@@ -2388,6 +2623,8 @@ const hierarchyTree = document.getElementById('hierarchyTree');
 const waveZoomInBtn = document.getElementById('waveZoomIn');
 const waveZoomOutBtn = document.getElementById('waveZoomOut');
 const waveZoomResetBtn = document.getElementById('waveZoomReset');
+const waveScrollLeftBtn = document.getElementById('waveScrollLeft');
+const waveScrollRightBtn = document.getElementById('waveScrollRight');
 const waveZoomLevelEl = document.getElementById('waveZoomLevel');
 const waveStartInput = document.getElementById('waveStartInput');
 const waveEndInput = document.getElementById('waveEndInput');
@@ -2408,7 +2645,7 @@ let lastMemoryDecls = []; // array-type decls from the last successful parse, fo
 let attachedMemFiles = {}; // filename -> file text, for $readmemh/$readmemb to resolve - persists across Run/Reset like currentFileName does
 let selectedMemory = '';   // fully-qualified memory name currently shown in the Memory Viewer table
 let hiddenSignals = new Set();
-let hiddenInstances = new Set(); // instance paths hidden as a whole subtree (single-click toggle) - layered on top of hiddenSignals, so per-signal choices survive show/hide of an ancestor instance
+let instanceVisibility = new Map(); // path -> 'shown'|'hidden', the last explicit single-click action on that exact path (single-click toggle) - a path with no entry inherits its parent's effective state, but an explicit entry always wins over inheritance regardless of depth, which is what lets a submodule be shown/hidden independently of its parent's own state. Layered on top of hiddenSignals, so per-signal choices survive show/hide of an ancestor instance.
 let lastTopModuleName = null; // top module's modType from the last run - a change means a new design, so visibility resets to top-only-visible
 let expandedHierarchyPaths = new Set(); // module-instance paths whose own-signal checklist is open
 let declKindMap = new Map();   // fullName -> {kind, ioKind}, from the last successful parse's decls
@@ -2565,6 +2802,23 @@ function waveZoomReset() {
   [viewStart, viewEnd] = waveFullRange();
   drawWaveform(lastResult);
 }
+// Pans the view by a fraction of its own current width, preserving the
+// current zoom level (window width) rather than changing it - clamped so
+// scrolling stops at the data's actual boundaries instead of drifting into
+// empty space beyond t=0 or the end of the simulation.
+function waveScrollBy(fraction) {
+  if (!lastResult) return;
+  const [fullMin, fullMax] = waveFullRange();
+  const width = viewEnd - viewStart;
+  let newStart = viewStart + width * fraction;
+  let newEnd = viewEnd + width * fraction;
+  if (newStart < fullMin) { newStart = fullMin; newEnd = fullMin + width; }
+  if (newEnd > fullMax) { newEnd = fullMax; newStart = fullMax - width; }
+  viewStart = newStart; viewEnd = newEnd;
+  drawWaveform(lastResult);
+}
+function waveScrollLeft() { waveScrollBy(-0.5); }
+function waveScrollRight() { waveScrollBy(0.5); }
 function waveApplyRange() {
   if (!lastResult) return;
   const s = parseFloat(waveStartInput.value);
@@ -2582,6 +2836,8 @@ function waveApplyRange() {
 waveZoomInBtn.addEventListener('click', waveZoomIn);
 waveZoomOutBtn.addEventListener('click', waveZoomOut);
 waveZoomResetBtn.addEventListener('click', waveZoomReset);
+waveScrollLeftBtn.addEventListener('click', waveScrollLeft);
+waveScrollRightBtn.addEventListener('click', waveScrollRight);
 waveApplyBtn.addEventListener('click', waveApplyRange);
 waveStartInput.addEventListener('keydown', e => { if (e.key === 'Enter') waveApplyRange(); });
 waveEndInput.addEventListener('keydown', e => { if (e.key === 'Enter') waveApplyRange(); });
@@ -2598,6 +2854,7 @@ function loadExample(name) {
   currentFileName = name.replace(/[^A-Za-z0-9_-]+/g, '_') + '.v';
   updateGutter();
   resetEditorHierarchyState();
+  tryApplyAutoFinishTime(codeInput.value);
 }
 exampleSelect.addEventListener('change', () => loadExample(exampleSelect.value));
 loadExample(Object.keys(EXAMPLES)[0]);
@@ -2616,10 +2873,27 @@ fileOpenInput.addEventListener('change', () => {
     exampleSelect.selectedIndex = -1;
     updateGutter();
     resetEditorHierarchyState();
+    tryApplyAutoFinishTime(codeInput.value);
   };
   reader.readAsText(file);
 });
-saveBtn.addEventListener('click', () => {
+
+function copyTextToClipboard(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+}
+document.getElementById('editorCopyBtn').addEventListener('click', () => {
+  const res = spliceEditorChangesBack();
+  showEditorSyncWarning(res.ok ? null : res.reason);
+  copyTextToClipboard(editorFullSource);
+});
+document.getElementById('editorSaveBtn').addEventListener('click', () => {
   const res = spliceEditorChangesBack();
   showEditorSyncWarning(res.ok ? null : res.reason);
   const blob = new Blob([editorFullSource], { type: 'text/plain' });
@@ -2672,6 +2946,18 @@ memBinCheckbox.addEventListener('change', () => {
   if (!memBinCheckbox.checked && !memHexCheckbox.checked) memBinCheckbox.checked = true;
   else renderMemoryTable();
 });
+// Groups a binary digit string into 8-bit chunks separated by '_', counting
+// from the LSB (right) so any remainder group sits at the left - e.g. a
+// 12-bit value groups as 4+8: "1010_11001100". Left unchanged at 8 bits
+// or fewer, since there's nothing to separate.
+function groupBinary(bin) {
+  if (bin.length <= 8) return bin;
+  const parts = [];
+  let i = bin.length;
+  while (i > 8) { parts.unshift(bin.slice(i - 8, i)); i -= 8; }
+  parts.unshift(bin.slice(0, i));
+  return parts.join('_');
+}
 // Combines the hex/binary strings per the two checkboxes: hex alone, binary
 // alone, or "hex (binary)" when both are checked (checked above to never
 // both be off at once).
@@ -2710,19 +2996,19 @@ function renderMemoryTable() {
   memoryTableWrap.style.display = 'block';
   memoryEmpty.style.display = 'none';
   const addrWidth = Math.max(1, Math.ceil(Math.log2(Math.max(mem.hi, 1) + 1)));
-  const addrLabel = memHexCheckbox.checked && memBinCheckbox.checked ? 'Address (hex (binary))'
-    : memHexCheckbox.checked ? 'Address (hex)' : 'Address (binary)';
   const valueLabel = memHexCheckbox.checked && memBinCheckbox.checked ? 'Value (hex (binary))'
     : memHexCheckbox.checked ? 'Value (hex)' : 'Value (binary)';
-  let html = '<thead><tr><th>' + addrLabel + '</th><th>' + valueLabel + '</th></tr></thead><tbody>';
+  const hasComments = mem.comments && mem.comments.size > 0;
+  let html = '<thead><tr><th>Address (hex)</th><th>' + valueLabel + '</th>'
+    + (hasComments ? '<th>Comment</th>' : '') + '</tr></thead><tbody>';
   for (let i = 0; i < mem.depth; i++) {
     const addr = mem.lo + i;
     const addrHex = addr.toString(16).padStart(Math.ceil(addrWidth / 4), '0');
-    const addrBin = addr.toString(2).padStart(addrWidth, '0');
     const value = mem.cells[i];
     const valueHex = formatValue(value, mem.elemWidth, 'hex');
-    const valueBin = formatValue(value, mem.elemWidth, 'bin');
-    html += '<tr><td class="mem-addr">' + formatMemRadix(addrHex, addrBin) + '</td><td>' + formatMemRadix(valueHex, valueBin) + '</td></tr>';
+    const valueBin = groupBinary(formatValue(value, mem.elemWidth, 'bin'));
+    html += '<tr><td class="mem-addr">' + addrHex + '</td><td>' + formatMemRadix(valueHex, valueBin) + '</td>'
+      + (hasComments ? '<td class="mem-hint">' + escapeHtml(mem.comments.get(addr) || '') + '</td>' : '') + '</tr>';
   }
   memoryTable.innerHTML = html + '</tbody>';
 }
@@ -2967,7 +3253,7 @@ resetBtn.addEventListener('click', () => {
   logLine('<span class="info">Click Run to simulate…</span>');
   lastResult = null;
   hiddenSignals = new Set();
-  hiddenInstances = new Set();
+  instanceVisibility = new Map();
   lastTopModuleName = null;
   expandedHierarchyPaths = new Set();
   radixMap = new Map();
@@ -2985,13 +3271,100 @@ resetBtn.addEventListener('click', () => {
 
 runBtn.addEventListener('click', runSimulation);
 
+// Best-effort static detection of when $finish executes, so "run for N time
+// units" can be auto-filled instead of guessed. Walks every `initial`
+// block's statement tree, summing literal #N delays along the straight-line
+// path leading to each $finish - through plain statements and if/else/case
+// branches (each branch considered on its own) - but not through an
+// @(posedge/negedge...) edge-wait, whose real-time duration can't be known
+// ahead of running. If every $finish found this way resolves to a concrete
+// number, the largest one is used (long enough to reach all of them); if
+// even one doesn't resolve (an edge-wait on the way to it, or a preceding
+// conditional whose branches disagree on how much time has passed by the
+// time execution reaches it), returns null and the field stays manual,
+// exactly as today.
+function computeAutoFinishTime(ast) {
+  const finishes = [];
+
+  // Returns the deterministic accumulated-delay value AFTER this statement,
+  // or null if it can't be determined - the caller uses that as the entry
+  // value for whatever follows it in the same sequence.
+  function walk(stmt, acc) {
+    if (!stmt) return acc;
+    switch (stmt.type) {
+      case 'Finish':
+        finishes.push(acc);
+        return acc;
+      case 'Block': {
+        let cur = acc;
+        for (const s of stmt.stmts) cur = walk(s, cur);
+        return cur;
+      }
+      case 'If': {
+        const thenAcc = walk(stmt.then, acc);
+        const elsAcc = stmt.els ? walk(stmt.els, acc) : acc;
+        return (thenAcc !== null && elsAcc !== null && thenAcc === elsAcc) ? thenAcc : null;
+      }
+      case 'Case': {
+        const branches = stmt.items.map(item => walk(item.body, acc));
+        if (!stmt.items.some(item => item.labels === null)) branches.push(acc); // implicit "no label matched" fallthrough, unless a default already covers it
+        const first = branches[0];
+        return branches.every(b => b !== null && b === first) ? first : null;
+      }
+      case 'Timing': {
+        if (stmt.control.kind === 'delay') {
+          let newAcc = acc;
+          if (acc !== null) {
+            const amt = stmt.control.amount;
+            newAcc = amt.type === 'Number' ? acc + parseNumberLiteral(amt.raw).value.v : null;
+          }
+          return walk(stmt.stmt, newAcc);
+        }
+        return walk(stmt.stmt, null); // event/edge-wait control - duration unknowable ahead of running
+      }
+      default:
+        return acc;
+    }
+  }
+
+  for (const item of ast.items) {
+    if (item.type === 'Initial') walk(item.body, 0);
+  }
+  if (finishes.length === 0 || finishes.some(f => f === null)) return null;
+  return Math.max(...finishes);
+}
+
+function applyAutoFinishTime(ast) {
+  const t = computeAutoFinishTime(ast);
+  if (t === null) {
+    maxTimeInput.disabled = false;
+    maxTimeAutoNote.style.display = 'none';
+  } else {
+    maxTimeInput.value = t;
+    maxTimeInput.disabled = true;
+    maxTimeAutoNote.style.display = '';
+  }
+}
+
+// Same as applyAutoFinishTime, but for call sites (loading an example,
+// importing a file) that only have raw source text, not an already-parsed
+// ast - a source that fails to parse just falls back to manual, same as a
+// source with no statically-resolvable $finish.
+function tryApplyAutoFinishTime(src) {
+  try {
+    applyAutoFinishTime(parseVerilog(src));
+  } catch (e) {
+    maxTimeInput.disabled = false;
+    maxTimeAutoNote.style.display = 'none';
+  }
+}
+
 function runSimulation() {
   clearConsole();
   const splice = spliceEditorChangesBack();
   showEditorSyncWarning(splice.ok ? null : splice.reason);
   if (splice.ok) renderEditorHierarchyList();
   const src = editorFullSource;
-  const maxTime = Math.max(10, parseInt(maxTimeInput.value, 10) || 300);
 
   let ast;
   try {
@@ -3004,6 +3377,8 @@ function runSimulation() {
     renderMemorySelect();
     return;
   }
+  applyAutoFinishTime(ast);
+  const maxTime = Math.max(10, parseInt(maxTimeInput.value, 10) || 300);
   computeDeclMeta(ast);
   lastMemoryDecls = ast.decls.filter(d => d.array);
   renderMemorySelect();
@@ -3013,8 +3388,8 @@ function runSimulation() {
     // direct child instance - hiding a child transitively hides everything
     // nested inside it, so nothing deeper needs listing - and drop any
     // leftover per-signal overrides from whatever was run before.
-    hiddenInstances = new Set(ast.tree.children.map(c => c.path));
     hiddenSignals = new Set();
+    instanceVisibility = new Map(ast.tree.children.map(c => [c.path, 'hidden']));
     lastTopModuleName = ast.tree.modType;
   }
 
@@ -3085,17 +3460,22 @@ function renderBadges(result) {
 // nested under one. Root path '' has prefix '', so hiding the root ('') hides
 // every signal in the design, same as hiding any other instance hides
 // everything nested inside it.
+// A path's own explicit entry (if any) always wins, regardless of depth -
+// that's what lets a submodule be shown/hidden independently of its parent.
+// A path with no entry inherits its parent's effective state (climbing the
+// dotted path one segment at a time), so hiding an instance still hides
+// every descendant that hasn't itself been explicitly overridden.
 function isPathHidden(path) {
-  for (const p of hiddenInstances) {
-    if (path === p) return true;
-    if (path.startsWith(p ? p + '.' : '')) return true;
-  }
-  return false;
+  const state = instanceVisibility.get(path);
+  if (state) return state === 'hidden';
+  if (path === '') return false;
+  const dot = path.lastIndexOf('.');
+  return isPathHidden(dot === -1 ? '' : path.slice(0, dot));
 }
 // A signal is hidden if it was individually toggled off (hiddenSignals) or
 // if it lives inside a subtree hidden via the instance-row toggle
-// (hiddenInstances) - the two are independent, so toggling an instance off
-// and back on never disturbs the individual per-signal choices underneath.
+// (instanceVisibility) - the two are independent, so toggling an instance
+// off and back on never disturbs the individual per-signal choices underneath.
 function isSignalHidden(fullName) {
   return hiddenSignals.has(fullName) || isPathHidden(fullName);
 }
@@ -3184,15 +3564,35 @@ function renderHierarchyTree(tree) {
       row.appendChild(typeSpan);
     }
     row.classList.toggle('off', isPathHidden(node.path));
-    // single-click toggles this instance's whole subtree (own signals plus
-    // every nested sub-instance) on/off in the waveform/legend. Double-click
-    // is the dedicated fold/unfold gesture for the own-signal checklist - a
-    // real double-click fires click, click, dblclick, so the two preceding
-    // clicks flip the subtree visibility twice (net no-op) before dblclick
-    // toggles the checklist, leaving this exactly as it behaved before.
+    // single-click toggles only this instance's OWN effective visibility -
+    // setting an explicit entry here always wins over whatever any ancestor
+    // is doing (see isPathHidden), which is what lets a submodule be shown
+    // or hidden independently of its parent, e.g. drilling straight into a
+    // deeply-nested instance without first revealing everything above it.
+    // Hiding still hides every descendant that has no explicit entry of its
+    // own (isPathHidden's inherit-from-parent fallback takes care of that
+    // for free), but revealing must not cascade to reveal further-nested
+    // descendants that were only ever hidden by inheriting this instance's
+    // hidden state - so a reveal also (re-)seeds this instance's direct
+    // children as explicitly hidden, the same seeding logic used when a
+    // fresh design loads. That makes reveal a one-level-at-a-time drill-
+    // down, same as expanding a folder, while any descendant deeper down
+    // that was independently given its own explicit entry keeps that entry
+    // untouched either way. Double-click is the dedicated fold/unfold
+    // gesture for the own-signal checklist - a real double-click fires
+    // click, click, dblclick, so the two preceding clicks flip this
+    // instance's own visibility twice (net no-op, and the children-
+    // recollapse only fires on the first of those two, which is
+    // immediately undone by hiding this instance again on the second)
+    // before dblclick toggles the checklist, leaving this exactly as it
+    // behaved before.
     row.addEventListener('click', () => {
-      if (hiddenInstances.has(node.path)) hiddenInstances.delete(node.path);
-      else hiddenInstances.add(node.path);
+      if (isPathHidden(node.path)) {
+        instanceVisibility.set(node.path, 'shown');
+        for (const child of node.children) instanceVisibility.set(child.path, 'hidden');
+      } else {
+        instanceVisibility.set(node.path, 'hidden');
+      }
       renderHierarchyTree(tree);
       if (lastResult) drawWaveform(lastResult);
     });

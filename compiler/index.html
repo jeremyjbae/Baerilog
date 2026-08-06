@@ -415,6 +415,18 @@
     }
     /* pc lives outside the grid: as a 33rd item it would start a phantom extra
        column and squeeze all the others. */
+    /* SREG is a bitfield, so it reads as flag letters rather than a number:
+       lit when set, dimmed when clear, and outlined when this instruction is
+       about to change it. */
+    .sreg-flag {
+      display: inline-block; width: 15px; text-align: center;
+      font-weight: 600; color: #c7c7cc; border-radius: 3px;
+      border: 1px solid transparent;
+    }
+    .sreg-flag.on { color: #0a84ff; background: rgba(10,132,255,0.12); }
+    .sreg-flag.changing { border-color: #34c759; }
+    .sreg-hex { color: #8e8e93; margin-left: 4px; }
+
     .reg-pc {
       display: flex;
       justify-content: space-between;
@@ -422,9 +434,15 @@
       padding: 6px 12px;
       margin-top: 1px;
       background: #2c2c2e;
-      border-radius: 0 0 12px 12px;
+      border-radius: 0;
       font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
     }
+    /* Only the LAST visible row closes off the stack, so pc and sreg read as one
+       block continuing the grid rather than as two separate pills. Which row is
+       last depends on whether the machine has an SREG, and a `display:none` row
+       is still :last-child - so renderRegisters marks it rather than CSS
+       guessing. */
+    .reg-pc.reg-pc-last { border-radius: 0 0 12px 12px; }
     .reg-grid { border-radius: 12px 12px 0 0; }
     /* A grid item defaults to min-width:auto, i.e. it refuses to shrink below its
        content's min-content width. The assembly listing is white-space:pre, so
@@ -563,7 +581,7 @@
 <body>
 
   <h1><a href="https://jeremyjbae.github.io/Baerilog">Baerilog</a>: C Compiler</h1>
-  <div class="subtitle">Write · Compile · Run — a C subset to RISC-V, all in the browser</div>
+  <div class="subtitle">Write · Compile · Run — a C subset to RISC-V or AVR, all in the browser</div>
 
   <div class="grid">
 
@@ -571,8 +589,11 @@
       <h2><span class="card-collapse-btn" data-collapse>▾</span>C Editor
         <span class="header-controls">
           <span class="layout-toggle">
-            <span class="layout-btn" id="editorHeightDec" title="Decrease height">−</span>
-            <span class="layout-btn" id="editorHeightInc" title="Increase height">+</span>
+            <span class="layout-btn" id="editorHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
+            <span class="layout-btn" id="editorHeightInc" title="Increase height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
+            <span class="layout-btn" id="editorSaveBtn" title="Save to file">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 0.8 V7.5 M5 4.5 L8 7.5 L11 4.5"/><path d="M1.5 8.5 V10.2 a1 1 0 0 0 1 1 H13.5 a1 1 0 0 0 1-1 V8.5"/></svg>
+            </span>
           </span>
           <span class="layout-toggle">
             <span class="layout-btn" data-layout-btn="side" title="Side by side">
@@ -588,7 +609,6 @@
       <div class="toolbar">
         <select id="exampleSelect"></select>
         <button class="btn secondary" id="openBtn">Open…</button>
-        <button class="btn secondary" id="saveBtn">Save</button>
         <input type="file" id="fileOpenInput" accept=".c,.h,.txt" style="display:none">
       </div>
       <div class="editor-wrap" id="editorWrap">
@@ -602,12 +622,13 @@
         <button class="btn" id="compileBtn">⚙ Compile</button>
         <div class="toolbar-group">
           <span class="time-label">memory</span>
-          <input class="num-input" id="memSizeInput" type="number" min="4" step="256" value="1024">
-          <span class="time-label">KB</span>
+          <input class="num-input" id="memSizeInput" type="number" value="4096" disabled>
+          <span class="time-label" id="memUnitLabel">B</span>
         </div>
         <select id="isaSelect" style="flex:0 1 auto; min-width:0;">
-          <option value="rv32im" selected>RV32IM (hardware mul/div)</option>
+          <option value="rv32im">RV32IM (hardware mul/div)</option>
           <option value="rv32i">RV32I (software mul/div)</option>
+          <option value="atmega644" selected>ATmega644 (8-bit AVR)</option>
         </select>
       </div>
     </div>
@@ -616,8 +637,8 @@
       <h2><span class="card-collapse-btn" data-collapse>▾</span>Console
         <span class="header-controls">
           <span class="layout-toggle">
-            <span class="layout-btn" id="consoleHeightDec" title="Decrease height">−</span>
-            <span class="layout-btn" id="consoleHeightInc" title="Increase height">+</span>
+            <span class="layout-btn" id="consoleHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
+            <span class="layout-btn" id="consoleHeightInc" title="Increase height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
           </span>
           <span class="layout-toggle">
             <span class="layout-btn" data-layout-btn="side" title="Side by side">
@@ -630,16 +651,19 @@
         </span>
       </h2>
       <p>printf output and program status</p>
-      <div class="console-box" id="consoleBox"><span class="info">Click Compile to generate RISC-V assembly…</span></div>
+      <div class="console-box" id="consoleBox"><span class="info">Click Compile to generate assembly…</span></div>
       <div class="badge-row" id="badgeRow"></div>
     </div>
 
     <div class="card full" id="card-asm">
-      <h2><span class="card-collapse-btn" data-collapse>▾</span>RISC-V Assembly
+      <h2><span class="card-collapse-btn" data-collapse>▾</span><span id="asmCardTitle">Assembly</span>
         <span class="header-controls">
           <span class="layout-toggle">
-            <span class="layout-btn" id="asmHeightDec" title="Decrease height">−</span>
-            <span class="layout-btn" id="asmHeightInc" title="Increase height">+</span>
+            <span class="layout-btn" id="asmHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
+            <span class="layout-btn" id="asmHeightInc" title="Increase height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
+            <span class="layout-btn" id="asmSaveBtn" title="Save to file">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 0.8 V7.5 M5 4.5 L8 7.5 L11 4.5"/><path d="M1.5 8.5 V10.2 a1 1 0 0 0 1 1 H13.5 a1 1 0 0 0 1-1 V8.5"/></svg>
+            </span>
           </span>
           <span class="layout-toggle">
             <span class="layout-btn" data-width-btn="half" data-width-card="card-asm" title="Half width">
@@ -663,7 +687,7 @@
         </div>
       </div>
       <div class="asm-listing" id="asmListing"></div>
-      <div class="panel-empty" id="asmEmpty">Compile the program to see its RISC-V assembly.</div>
+      <div class="panel-empty" id="asmEmpty">Compile the program to see its assembly.</div>
     </div>
 
     <div class="card full" id="card-regs">
@@ -679,7 +703,7 @@
           </span>
         </span>
       </h2>
-      <p>RV32I register file at the current position — a green <code>→</code> shows the value the highlighted instruction is about to write</p>
+      <p id="regCardNote">Register file at the current position — a green <code>→</code> shows the value the highlighted instruction is about to write</p>
       <div class="toolbar" style="justify-content:flex-end;">
         <label class="radix-toggle">
           <input type="checkbox" id="regHexCheckbox" checked>
@@ -688,14 +712,18 @@
       </div>
       <div class="reg-grid" id="regGrid"></div>
       <div class="reg-pc" id="regPc"></div>
+      <div class="reg-pc" id="regSreg" style="display:none"></div>
     </div>
 
     <div class="card full" id="card-data">
       <h2><span class="card-collapse-btn" data-collapse>▾</span>Data Segment
         <span class="header-controls">
           <span class="layout-toggle">
-            <span class="layout-btn" id="dataHeightDec" title="Decrease height">−</span>
-            <span class="layout-btn" id="dataHeightInc" title="Increase height">+</span>
+            <span class="layout-btn" id="dataHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
+            <span class="layout-btn" id="dataHeightInc" title="Increase height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
+            <span class="layout-btn" id="dataSaveBtn" title="Save to file">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 0.8 V7.5 M5 4.5 L8 7.5 L11 4.5"/><path d="M1.5 8.5 V10.2 a1 1 0 0 0 1 1 H13.5 a1 1 0 0 0 1-1 V8.5"/></svg>
+            </span>
           </span>
           <span class="layout-toggle">
             <span class="layout-btn" data-width-btn="half" data-width-card="card-data" title="Half width">
@@ -716,8 +744,8 @@
       <h2><span class="card-collapse-btn" data-collapse>▾</span>Stack
         <span class="header-controls">
           <span class="layout-toggle">
-            <span class="layout-btn" id="stackHeightDec" title="Decrease height">−</span>
-            <span class="layout-btn" id="stackHeightInc" title="Increase height">+</span>
+            <span class="layout-btn" id="stackHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
+            <span class="layout-btn" id="stackHeightInc" title="Increase height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
           </span>
           <span class="layout-toggle">
             <span class="layout-btn" data-width-btn="half" data-width-card="card-stack" title="Half width">
@@ -1208,24 +1236,45 @@ function parseC(src) {
    locals, one flat frame per function - no nested-block shadowing).
    ========================================================================= */
 
-function elemSize(ctype) { return (ctype.base === 'char' && ctype.ptr === 0) ? 1 : 4; }
+/* An `abi` describes the target's C storage model, and is the only thing this
+   stage needs to know about the machine:
+     intSize/ptrSize/charSize  sizes of the C types, in bytes
+     dataStart                 machine address the data segment begins at
+                               (0 on RV32; AVR's SRAM starts above its I/O space)
+     dataAlign/slotAlign       alignment for globals and for frame slots
+     frameBase                 bytes reserved at the top of a frame before the
+                               first slot (RV32 saves ra and fp there; AVR
+                               pushes both outside the frame, so 0)
+     frameAlign                frame-size rounding
+     slotCount                 how many operand-stack slots live in registers */
+
+function elemSize(ctype, abi) {
+  if (ctype.ptr > 0) return abi.ptrSize;
+  return ctype.base === 'char' ? abi.charSize : abi.intSize;
+}
 
 class DataSegment {
-  constructor() { this.bytes = []; this.stringCache = new Map(); }
-  align4() { while (this.bytes.length % 4 !== 0) this.bytes.push(0); }
+  constructor(abi) {
+    this.abi = abi;
+    this.base = abi.dataStart; // addresses handed out are machine addresses
+    this.bytes = [];
+    this.stringCache = new Map();
+  }
+  align() { const a = this.abi.dataAlign; while (this.bytes.length % a !== 0) this.bytes.push(0); }
   addString(s) {
     if (this.stringCache.has(s)) return this.stringCache.get(s);
-    const addr = this.bytes.length;
+    const addr = this.base + this.bytes.length;
     for (let i = 0; i < s.length; i++) this.bytes.push(s.charCodeAt(i) & 0xff);
     this.bytes.push(0);
     this.stringCache.set(s, addr);
     return addr;
   }
-  addBytes(n) { this.align4(); const addr = this.bytes.length; for (let i = 0; i < n; i++) this.bytes.push(0); return addr; }
+  addBytes(n) { this.align(); const addr = this.base + this.bytes.length; for (let i = 0; i < n; i++) this.bytes.push(0); return addr; }
+  // One int-sized cell, little-endian - which both RV32 and AVR are.
   addWord(v) {
-    this.align4();
-    const addr = this.bytes.length;
-    this.bytes.push(v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff);
+    this.align();
+    const addr = this.base + this.bytes.length;
+    for (let i = 0; i < this.abi.intSize; i++) this.bytes.push((v >>> (8 * i)) & 0xff);
     return addr;
   }
 }
@@ -1334,8 +1383,8 @@ function maxOperandDepth(fnDecl, isGlobal) {
   return max;
 }
 
-function buildProgramMeta(ast) {
-  const data = new DataSegment();
+function buildProgramMeta(ast, abi) {
+  const data = new DataSegment(abi);
   const globals = new Map(); // name -> { ctype, addr }
   const funcs = new Map();   // name -> { node, params:[{name,ctype,offset}], frameSize }
 
@@ -1344,7 +1393,7 @@ function buildProgramMeta(ast) {
     const ctype = d.ctype;
     let addr;
     if (ctype.arraySize != null) {
-      addr = data.addBytes(ctype.arraySize * elemSize(ctype));
+      addr = data.addBytes(ctype.arraySize * elemSize(ctype, abi));
     } else if (d.init && d.init.type === 'StringLit' && ctype.ptr === 1) {
       const strAddr = data.addString(d.init.value);
       addr = data.addWord(strAddr);
@@ -1365,11 +1414,14 @@ function buildProgramMeta(ast) {
     // it sits in - slots are never reused across sibling scopes. That costs a
     // few bytes of stack but means block scoping needs no liveness analysis:
     // each VarDecl node just carries the offset codegen will address it by.
-    let off = 8; // s0-4 = saved ra, s0-8 = saved caller's s0
+    // `offset` is a distance *below the top of the frame*, which is what lets
+    // both a downward-growing negative-offset frame (RV32, s0-off) and an
+    // upward-addressed one (AVR, Y+fs-off+1) use the same numbers.
+    let off = abi.frameBase;
     function allocSlot(ctype) {
-      const size = ctype.arraySize != null ? ctype.arraySize * elemSize(ctype) : 4;
+      const size = ctype.arraySize != null ? ctype.arraySize * elemSize(ctype, abi) : abi.intSize;
       off += size;
-      while (off % 4 !== 0) off++;
+      while (off % abi.slotAlign !== 0) off++;
       return off;
     }
 
@@ -1379,13 +1431,14 @@ function buildProgramMeta(ast) {
     for (const vd of localDecls) vd.slotOffset = allocSlot(vd.ctype);
 
     // Slot registers are callee-saved, so each one this function uses needs a
-    // word of its own frame to be saved in. The count is settled here rather
+    // cell of its own frame to be saved in. The count is settled here rather
     // than during codegen because the prologue has to know the frame size
-    // before the body that uses the slots has been generated.
+    // before the body that uses the slots has been generated. Only the slot
+    // *number* is recorded - which register that is belongs to the backend.
     const opRegSaves = [];
-    const wanted = Math.min(maxOperandDepth(d, n => globals.has(n)), OPREGS.length);
+    const wanted = Math.min(maxOperandDepth(d, n => globals.has(n)), abi.slotCount);
     for (let i = 0; i < wanted; i++) {
-      opRegSaves.push({ reg: OPREGS[i], slot: i, offset: allocSlot(INT_TYPE) });
+      opRegSaves.push({ slot: i, offset: allocSlot(INT_TYPE) });
     }
 
     // Keep every named slot (params + locals) so the Stack viewer can say which
@@ -1393,7 +1446,7 @@ function buildProgramMeta(ast) {
     const slots = params.map(p => ({ name: p.name, ctype: p.ctype, offset: p.offset, param: true }))
       .concat(localDecls.map(vd => ({ name: vd.name, ctype: vd.ctype, offset: vd.slotOffset, param: false })));
 
-    const frameSize = Math.ceil(off / 16) * 16;
+    const frameSize = Math.ceil(off / abi.frameAlign) * abi.frameAlign;
     funcs.set(d.name, { node: d, params, slots, opRegSaves, frameSize });
   }
 
@@ -1454,17 +1507,40 @@ const SYSCALL = { PRINT_INT: 1, PRINT_STR: 4, EXIT: 10, PRINT_CHAR: 11, PRINT_HE
 const INT_TYPE = { base: 'int', ptr: 0, arraySize: null };
 
 function isPtrLike(ctype) { return ctype.ptr > 0 || ctype.arraySize != null; }
-function pointedSize(ctype) { return ctype.base === 'char' ? 1 : 4; }
+function pointedSize(ctype, abi) { return ctype.base === 'char' ? abi.charSize : abi.intSize; }
 
-class Codegen {
+// Bytes of memory a target defaults to, from its own descriptor - so the fallback
+// matches what the control would have offered rather than a second constant.
+// A fixed-size device carries `size` and no `default`; reading `default` here
+// yielded NaN, which then slipped through every `||` fallback (NaN is falsy) and
+// past the fit check below into a bare RangeError.
+function targetDefaultMemSize(t) {
+  if (t.mem.fixed) return t.mem.size;
+  return t.mem.default * (t.mem.unit === 'KB' ? 1024 : 1);
+}
+
+/* =========================================================================
+   Pieces of code generation that are the same whatever the machine is: the
+   instruction buffer and its label map, block scoping, and C type inference.
+   Each backend (Codegen for RV32, AvrCodegen for AVR25) extends this and
+   supplies everything that touches registers or instructions.
+
+   The *operand stack* is deliberately not here. Both backends use the same
+   scheme - slot d lives in a register, spilling only past the registers the
+   frame reserved - but an RV32 slot is one register while an AVR slot is a
+   register *pair*, so the bookkeeping differs in kind, not just in constants.
+   ========================================================================= */
+class CodegenBase {
   constructor(ast, meta, opts) {
     this.ast = ast;
     this.meta = meta;
-    this.useM = !!(opts && opts.useM);
+    this.target = (opts && opts.target) || null;
+    this.abi = this.target ? this.target.abi : null;
     // The stack top is baked into _start as an immediate, the way a real crt0
     // loads a linker-provided __stack_top - which is exactly why memory size is
     // a *compile-time* input here and changing it invalidates the compile.
-    this.memSize = (opts && opts.memSize) || DEFAULT_MEM_SIZE;
+    this.memSize = (opts && opts.memSize)
+      || (this.target ? targetDefaultMemSize(this.target) : DEFAULT_MEM_SIZE);
     this.instrs = [];
     this.labels = new Map();
     this.labelSeq = 0;
@@ -1487,6 +1563,10 @@ class Codegen {
       targetLabel: f && f.targetLabel !== undefined ? f.targetLabel : null,
       comment: f && f.comment !== undefined ? f.comment : null,
       line: this.curLine,
+      // Filled in later by assignAddresses / resolveLabels. Declared here so
+      // every instruction object has one shape from the moment it is created.
+      addr: 0,
+      targetIndex: null,
     });
   }
   label(name) {
@@ -1494,6 +1574,67 @@ class Codegen {
     this.labels.set(name, this.instrs.length);
   }
   freshLabel(hint) { return '.L' + hint + (this.labelSeq++); }
+
+  /* ---- symbol lookup / typing ---- */
+  // Innermost-out through the block-scope stack, then globals - so an inner
+  // declaration shadows an outer one, and sibling blocks can reuse a name.
+  lookupVar(name) {
+    for (let i = this.scopes.length - 1; i >= 0; i--) {
+      if (this.scopes[i].has(name)) return this.scopes[i].get(name);
+    }
+    if (this.meta.globals.has(name)) {
+      const g = this.meta.globals.get(name);
+      return { kind: 'global', ctype: g.ctype, addr: g.addr };
+    }
+    return null;
+  }
+  pushScope() { this.scopes.push(new Map()); }
+  popScope() { this.scopes.pop(); }
+  declareLocal(name, ctype, offset) {
+    const scope = this.scopes[this.scopes.length - 1];
+    if (scope.has(name)) throw new Error('Compile error: redeclaration of \'' + name + '\' in the same scope');
+    scope.set(name, { kind: 'local', ctype, offset });
+  }
+  typeOf(e) {
+    switch (e.type) {
+      case 'Num': case 'CharLit': return INT_TYPE;
+      case 'StringLit': return { base: 'char', ptr: 1, arraySize: null };
+      case 'Ident': {
+        const v = this.lookupVar(e.name);
+        return v ? v.ctype : INT_TYPE;
+      }
+      case 'Unary':
+        if (e.op === '&') return { base: this.typeOf(e.expr).base, ptr: 1, arraySize: null };
+        if (e.op === '*') return { base: this.typeOf(e.expr).base, ptr: 0, arraySize: null };
+        return INT_TYPE;
+      case 'IncDec': return this.typeOf(e.target);
+      case 'Assign': return this.typeOf(e.target);
+      case 'Index': return { base: this.typeOf(e.array).base, ptr: 0, arraySize: null };
+      case 'Call': {
+        const f = this.meta.funcs.get(e.name);
+        return f ? { base: f.node.retType.base, ptr: f.node.retType.ptr, arraySize: null } : INT_TYPE;
+      }
+      case 'Binary': {
+        if (e.op === '+' || e.op === '-') {
+          const lt = this.typeOf(e.left), rt = this.typeOf(e.right);
+          if (isPtrLike(lt) && !isPtrLike(rt)) return { base: lt.base, ptr: 1, arraySize: null };
+          if (!isPtrLike(lt) && isPtrLike(rt) && e.op === '+') return { base: rt.base, ptr: 1, arraySize: null };
+        }
+        return INT_TYPE;
+      }
+    }
+    return INT_TYPE;
+  }
+  // A local's slot offset is a distance below the top of the frame; each backend
+  // turns that into its own addressing form.
+  slotOffsetOf(v) { return v.offset; }
+}
+
+class Codegen extends CodegenBase {
+  constructor(ast, meta, opts) {
+    super(ast, meta, opts);
+    this.useM = !!(opts && opts.useM);
+  }
 
   emitLi(rd, imm, comment) {
     imm = imm | 0;
@@ -1576,59 +1717,9 @@ class Codegen {
     this.emit('ADDI', { rd: REG.sp, rs1: REG.sp, imm: 4 });
   }
 
-  /* ---- symbol lookup / typing ---- */
-  // Innermost-out through the block-scope stack, then globals - so an inner
-  // declaration shadows an outer one, and sibling blocks can reuse a name.
-  lookupVar(name) {
-    for (let i = this.scopes.length - 1; i >= 0; i--) {
-      if (this.scopes[i].has(name)) return this.scopes[i].get(name);
-    }
-    if (this.meta.globals.has(name)) {
-      const g = this.meta.globals.get(name);
-      return { kind: 'global', ctype: g.ctype, addr: g.addr };
-    }
-    return null;
-  }
-  pushScope() { this.scopes.push(new Map()); }
-  popScope() { this.scopes.pop(); }
-  declareLocal(name, ctype, offset) {
-    const scope = this.scopes[this.scopes.length - 1];
-    if (scope.has(name)) throw new Error('Compile error: redeclaration of \'' + name + '\' in the same scope');
-    scope.set(name, { kind: 'local', ctype, offset });
-  }
-  typeOf(e) {
-    switch (e.type) {
-      case 'Num': case 'CharLit': return INT_TYPE;
-      case 'StringLit': return { base: 'char', ptr: 1, arraySize: null };
-      case 'Ident': {
-        const v = this.lookupVar(e.name);
-        return v ? v.ctype : INT_TYPE;
-      }
-      case 'Unary':
-        if (e.op === '&') return { base: this.typeOf(e.expr).base, ptr: 1, arraySize: null };
-        if (e.op === '*') return { base: this.typeOf(e.expr).base, ptr: 0, arraySize: null };
-        return INT_TYPE;
-      case 'IncDec': return this.typeOf(e.target);
-      case 'Assign': return this.typeOf(e.target);
-      case 'Index': return { base: this.typeOf(e.array).base, ptr: 0, arraySize: null };
-      case 'Call': {
-        const f = this.meta.funcs.get(e.name);
-        return f ? { base: f.node.retType.base, ptr: f.node.retType.ptr, arraySize: null } : INT_TYPE;
-      }
-      case 'Binary': {
-        if (e.op === '+' || e.op === '-') {
-          const lt = this.typeOf(e.left), rt = this.typeOf(e.right);
-          if (isPtrLike(lt) && !isPtrLike(rt)) return { base: lt.base, ptr: 1, arraySize: null };
-          if (!isPtrLike(lt) && isPtrLike(rt) && e.op === '+') return { base: rt.base, ptr: 1, arraySize: null };
-        }
-        return INT_TYPE;
-      }
-    }
-    return INT_TYPE;
-  }
   // 1-byte accesses for plain char, 4-byte for everything else (int, pointers).
-  loadOp(ctype) { return elemSize(ctype) === 1 ? 'LB' : 'LW'; }
-  storeOp(ctype) { return elemSize(ctype) === 1 ? 'SB' : 'SW'; }
+  loadOp(ctype) { return elemSize(ctype, this.abi) === 1 ? 'LB' : 'LW'; }
+  storeOp(ctype) { return elemSize(ctype, this.abi) === 1 ? 'SB' : 'SW'; }
 
   /* ---- program ---- */
   generate() {
@@ -1647,13 +1738,19 @@ class Codegen {
     }
     this.genHelpers();
     peepholePushPop(this.instrs, this.labels);
-    resolveLabels(this.instrs, this.labels);
+    // Addresses first, since label resolution is expressed in terms of them.
+    const layout = assignAddresses(this.instrs, rv32InstrBytes);
+    resolveLabels(this.instrs, this.labels, layout.addrs);
     return {
       instrs: this.instrs,
       labels: this.labels,
+      addrs: layout.addrs,
+      addrToIndex: layout.addrToIndex,
+      codeBytes: layout.codeBytes,
       data: this.meta.data,
       globals: this.meta.globals,
       funcs: this.meta.funcs,
+      target: this.target,
       useM: this.useM,
       // the size _start's stack setup was built for; the machine must use this
       memSize: this.memSize,
@@ -1681,8 +1778,8 @@ class Codegen {
     // the first four instructions exactly the prologue shape the Stack viewer
     // recognises (see PROLOGUE_BYTES).
     for (const sv of fnRec.opRegSaves) {
-      this.emit('SW', { rs1: REG.s0, rs2: sv.reg, imm: -sv.offset,
-        comment: 'save ' + REG_NAMES[sv.reg] + ' (operand slot ' + sv.slot + ')' });
+      this.emit('SW', { rs1: REG.s0, rs2: OPREGS[sv.slot], imm: -sv.offset,
+        comment: 'save ' + REG_NAMES[OPREGS[sv.slot]] + ' (operand slot ' + sv.slot + ')' });
     }
     fnRec.params.forEach((p, i) => {
       this.emit(this.storeOp(p.ctype), { rs1: REG.s0, rs2: REG.a0 + i, imm: -p.offset, comment: 'param ' + p.name });
@@ -1697,8 +1794,8 @@ class Codegen {
     // last four instructions as `lw ra / mv sp,s0 / lw s0 / ret`, the shape the
     // Stack viewer keys off (it offsets past these restores to find the `ret`).
     fnRec.opRegSaves.forEach((sv, i) => {
-      this.emit('LW', { rd: sv.reg, rs1: REG.s0, imm: -sv.offset,
-        comment: (i === 0 ? d.name + '(): epilogue, restore ' : 'restore ') + REG_NAMES[sv.reg] });
+      this.emit('LW', { rd: OPREGS[sv.slot], rs1: REG.s0, imm: -sv.offset,
+        comment: (i === 0 ? d.name + '(): epilogue, restore ' : 'restore ') + REG_NAMES[OPREGS[sv.slot]] });
     });
     this.emit('LW', { rd: REG.ra, rs1: REG.s0, imm: -4,
       comment: fnRec.opRegSaves.length ? 'restore return address' : d.name + '(): epilogue' });
@@ -1810,7 +1907,7 @@ class Codegen {
     if (e.type === 'Index') {
       const at = this.typeOf(e.array);
       if (!isPtrLike(at)) throw new Error('Compile error: cannot index a non-array/non-pointer value');
-      const scale = pointedSize(at);
+      const scale = pointedSize(at, this.abi);
       this.genExpr(e.array);
       this.genExpr(e.index);
       const ri = this.pop1(REG.t1);
@@ -1971,7 +2068,7 @@ class Codegen {
   // the address the store needs.
   genIncDec(e, discard) {
     const tt = this.typeOf(e.target);
-    const delta = (isPtrLike(tt) ? pointedSize(tt) : 1) * (e.op === '++' ? 1 : -1);
+    const delta = (isPtrLike(tt) ? pointedSize(tt, this.abi) : 1) * (e.op === '++' ? 1 : -1);
     const cmt = e.op + (e.prefix ? ' (prefix)' : ' (postfix)');
     const keepOld = !discard && !e.prefix;
     const rnew = keepOld ? REG.t2 : REG.t1;
@@ -2000,7 +2097,7 @@ class Codegen {
 
     // pointer arithmetic: scale the integer side by the pointed-to size
     if ((e.op === '+' || e.op === '-') && (lPtr !== rPtr)) {
-      const size = pointedSize(lPtr ? lt : rt);
+      const size = pointedSize(lPtr ? lt : rt, this.abi);
       const ptrSide = lPtr ? e.left : e.right;
       const intSide = lPtr ? e.right : e.left;
       if (!lPtr && e.op === '-') throw new Error('Compile error: cannot subtract a pointer from an integer');
@@ -2027,7 +2124,7 @@ class Codegen {
 
     // pointer difference: subtract, then divide by the pointed-to size
     if (e.op === '-' && lPtr && rPtr) {
-      const size = pointedSize(lt);
+      const size = pointedSize(lt, this.abi);
       this.emit('SUB', { rd, rs1: ra, rs2: rb, comment: 'pointer difference' });
       if (size === 4) this.emit('SRAI', { rd, rs1: rd, imm: 2 });
       this.pushDone();
@@ -2326,7 +2423,7 @@ function peepholePushPop(instrs, labels) {
       .map(x => x.line).find(x => x != null);
     if (src !== dst) {
       out.push({ op: 'ADDI', rd: dst, rs1: src, rs2: 0, imm: 0, targetLabel: null,
-        comment, line: line == null ? null : line });
+        comment, line: line == null ? null : line, addr: 0, targetIndex: null });
     }
     // src === dst: the whole run is a no-op and disappears entirely
     for (let k = 1; k < 4; k++) remap[i + k] = out.length;
@@ -2341,19 +2438,54 @@ function peepholePushPop(instrs, labels) {
 }
 
 /* =========================================================================
+   ADDRESS ASSIGNMENT
+   Stamps every instruction with its byte address and builds the maps the rest
+   of the app navigates by. RV32 could do this in closed form (instruction i
+   lives at i*4), and did - but AVR mixes one- and two-word instructions, so
+   the addresses have to be *walked*, and once they are walked nothing
+   downstream may assume a stride. That is why `pc >> 2` and `i * 4` no longer
+   appear outside the RV32 interpreter itself.
+
+   `addrs` deliberately has one extra entry: addrs[instrs.length] is the
+   address one past the last instruction, which is what a label sitting at the
+   very end of the program resolves to.
+   ========================================================================= */
+
+function assignAddresses(instrs, widthOf) {
+  const addrs = new Int32Array(instrs.length + 1);
+  const addrToIndex = new Map();
+  let addr = 0;
+  for (let i = 0; i < instrs.length; i++) {
+    addrs[i] = addr;
+    addrToIndex.set(addr, i);
+    instrs[i].addr = addr;
+    addr += widthOf(instrs[i]);
+  }
+  addrs[instrs.length] = addr;
+  return { addrs, addrToIndex, codeBytes: addr };
+}
+
+// Every RV32 instruction is exactly one 32-bit word.
+function rv32InstrBytes() { return 4; }
+
+/* =========================================================================
    LABEL RESOLUTION
-   Fills in each branch/jump's PC-relative immediate once every label's
-   instruction index is known (instruction i lives at byte address i*4).
+   Resolves each branch/jump's target once every label's instruction index is
+   known. Two forms are stamped, because the two consumers want different
+   things: `targetIndex` is what an interpreter jumps by (and the only form
+   that stays meaningful when instructions vary in width), while `imm` is the
+   PC-relative byte offset the encoder and the listing display.
    ========================================================================= */
 
 const BRANCH_OPS = new Set(['BEQ', 'BNE', 'BLT', 'BGE']);
 
-function resolveLabels(instrs, labels) {
+function resolveLabels(instrs, labels, addrs) {
   for (let i = 0; i < instrs.length; i++) {
     const ins = instrs[i];
     if (!ins.targetLabel) continue;
     if (!labels.has(ins.targetLabel)) throw new Error('Compile error: unresolved label ' + ins.targetLabel);
-    ins.imm = labels.get(ins.targetLabel) * 4 - i * 4;
+    ins.targetIndex = labels.get(ins.targetLabel);
+    ins.imm = addrs[ins.targetIndex] - addrs[i];
   }
 }
 
@@ -2386,10 +2518,17 @@ function executableLines(instrs) {
   return set;
 }
 
+// `opts.target` is a TARGETS entry; it decides which backend runs and carries
+// the ABI the frontend lays memory out with. Falls back to the same default the
+// UI starts on, so a caller that only cares about the C frontend need not name a
+// target and still gets what the app would have compiled.
 function compileC(src, opts) {
+  const target = (opts && opts.target) || TARGETS[DEFAULT_TARGET_ID];
   const ast = parseC(src);
-  const meta = buildProgramMeta(ast);
-  const cg = new Codegen(ast, meta, opts);
+  const meta = buildProgramMeta(ast, target.abi);
+  const cg = new target.Codegen(ast, meta, Object.assign({}, target.codegenOpts, {
+    memSize: opts && opts.memSize, target,
+  }));
   return cg.generate();
 }
 
@@ -2412,17 +2551,152 @@ const DEFAULT_MEM_SIZE = 1 << 20; // 1 MiB
 // garbage rather than a plausible zero.
 const POISON = 0xdeadbeef | 0;
 
-class RiscvSim {
+/* =========================================================================
+   Machinery every interpreter here needs, and none of which depends on the
+   instruction set: the run/step/resume loop, and the journal-and-rollback that
+   makes previewStep() possible.
+
+   The point of previewStep() living here rather than in each interpreter is the
+   same as before - there must be exactly ONE copy of the execute logic, so a
+   hand-written "what would this do" predictor can never start quietly lying.
+   Every subclass mutation must therefore funnel through setReg / setSreg /
+   writeByte, each of which records the old value when `journal` is non-null.
+
+   Subclasses supply: step(), snapshot(), currentIndex(), and the state fields
+   `regs`, `mem` and (optionally) `sreg`.
+   ========================================================================= */
+class SimBase {
+  constructor(opts) {
+    this.out = [];
+    this.finished = false;
+    this.error = null;
+    this.exitCode = 0;
+    this.steps = 0;
+    this.hitBreakpoint = false;
+    this.journal = null; // non-null during previewStep(), see setReg/writeByte
+    this.readLog = null; // non-null during previewStep(), see readByte
+    this.maxSteps = (opts && opts.maxSteps) || 200000;
+  }
+
+  // Runs until the program exits, a trap index is reached, an error occurs, or
+  // `maxSteps` instructions have been executed by *this* call. maxSteps is a
+  // per-call budget (matching the UI's "run for N steps"), so pressing Run again
+  // continues from wherever this left off.
+  runUntilBreak(traps, maxSteps) {
+    this.hitBreakpoint = false;
+    const budget = maxSteps == null ? this.maxSteps : maxSteps;
+    try {
+      let executed = 0;
+      while (!this.finished && executed < budget) {
+        this.steps++;
+        executed++;
+        this.step();
+        // Checked only *after* executing, so resuming from a breakpoint cannot
+        // immediately re-trap on the instruction it is parked on.
+        if (!this.finished && traps && traps.has(this.currentIndex())) {
+          this.hitBreakpoint = true;
+          break;
+        }
+      }
+    } catch (e) {
+      this.error = e.message;
+    }
+    return this.snapshot();
+  }
+
+  // Executes exactly one instruction.
+  stepOne() {
+    this.hitBreakpoint = false;
+    if (this.finished) return this.snapshot();
+    try {
+      this.steps++;
+      this.step();
+    } catch (e) {
+      this.error = e.message;
+    }
+    return this.snapshot();
+  }
+
+  run() {
+    return this.runUntilBreak(null, this.maxSteps);
+  }
+
+  // What the *next* instruction would do, without committing it: runs the real
+  // step() with every mutation journaled, harvests the resulting writes, then
+  // rolls the whole thing back. Returns
+  //   { regs: [{i, from, to}], sreg: {from,to}|null, mem: [{addr, from, to}],
+  //     reads: [addr], nextPc }
+  // or null if there is nothing to preview (finished, or the instruction faults).
+  // `regs` is a LIST rather than a single register because an instruction may
+  // write more than one - RV32 never does, but AVR's MOVW and post-increment
+  // addressing do, and one shape for both keeps the UI ISA-agnostic.
+  // `reads` lists every byte the instruction read; deciding which of those are
+  // worth showing is the UI's policy, not the simulator's.
+  previewStep() {
+    if (this.finished) return null;
+    const savedPc = this.pc, savedSteps = this.steps, savedFinished = this.finished;
+    const savedExit = this.exitCode, savedError = this.error, savedOutLen = this.out.length;
+    this.journal = [];
+    this.readLog = [];
+    let result = null;
+    try {
+      this.step();
+      const regs = [];
+      const byReg = new Map();
+      const mem = [];
+      let sreg = null;
+      for (const e of this.journal) {
+        if (e.kind === 'reg') {
+          // Last write wins, but the *first* entry holds the true `from` value,
+          // so an existing record is updated rather than replaced.
+          const prev = byReg.get(e.i);
+          if (prev) prev.to = this.regs[e.i] | 0;
+          else {
+            const rec = { i: e.i, from: e.old | 0, to: this.regs[e.i] | 0 };
+            byReg.set(e.i, rec);
+            regs.push(rec);
+          }
+        } else if (e.kind === 'sreg') {
+          sreg = { from: sreg ? sreg.from : e.old, to: this.sreg };
+        } else mem.push({ addr: e.addr, from: e.old, to: this.mem[e.addr] });
+      }
+      result = { regs, sreg, mem, reads: this.readLog.slice(), nextPc: this.pc };
+    } catch (e) {
+      result = null; // a preview must never surface an error of its own
+    } finally {
+      for (let k = this.journal.length - 1; k >= 0; k--) {
+        const e = this.journal[k];
+        if (e.kind === 'reg') this.regs[e.i] = e.old | 0;
+        else if (e.kind === 'sreg') this.sreg = e.old;
+        else this.mem[e.addr] = e.old;
+      }
+      this.journal = null;
+      this.readLog = null;
+      this.out.length = savedOutLen;
+      this.pc = savedPc;
+      this.steps = savedSteps;
+      this.finished = savedFinished;
+      this.exitCode = savedExit;
+      this.error = savedError;
+    }
+    return result;
+  }
+}
+
+class RiscvSim extends SimBase {
   constructor(program, opts) {
+    super(opts);
     this.instrs = program.instrs;
-    this.entry = (program.labels.get('_start') || 0) * 4;
+    this.addrs = program.addrs;
+    this.entry = program.addrs[program.labels.get('_start') || 0];
     this.memSize = program.memSize || (opts && opts.memSize) || DEFAULT_MEM_SIZE;
     // Checked here so the engine is self-protecting whatever the caller does:
     // otherwise mem.set() below throws a bare "offset is out of bounds"
     // RangeError that says nothing about what actually went wrong.
-    if (program.data.bytes.length > this.memSize) {
+    if (program.data.base + program.data.bytes.length > this.memSize) {
       throw new Error('data segment (' + program.data.bytes.length
-        + ' bytes) does not fit in ' + this.memSize + ' bytes of memory');
+        + ' bytes at 0x' + program.data.base.toString(16)
+        + ') does not fit in ' + this.memSize + ' bytes of memory');
     }
     this.mem = new Uint8Array(this.memSize);
     // Stack/heap bytes are undefined at reset on real hardware too - poison them
@@ -2434,7 +2708,8 @@ class RiscvSim {
     for (let i = 0; i < this.mem.length; i += 4) {
       this.mem[i] = 0xef; this.mem[i + 1] = 0xbe; this.mem[i + 2] = 0xad; this.mem[i + 3] = 0xde;
     }
-    this.mem.set(Uint8Array.from(program.data.bytes), 0);
+    this.mem.set(Uint8Array.from(program.data.bytes), program.data.base);
+    this.dataStart = program.data.base;
     this.dataSize = program.data.bytes.length;
     this.regs = new Int32Array(32);
     this.regs.fill(POISON);
@@ -2443,15 +2718,6 @@ class RiscvSim {
     // it, so the reset state is honest and the emitted program is self-contained.
     this.stackTop = this.memSize;
     this.pc = this.entry;
-    this.out = [];
-    this.finished = false;
-    this.error = null;
-    this.exitCode = 0;
-    this.steps = 0;
-    this.hitBreakpoint = false;
-    this.journal = null; // non-null during previewStep(), see setReg/writeByte/writeWord
-    this.readLog = null; // non-null during previewStep(), see readByte/readWord
-    this.maxSteps = (opts && opts.maxSteps) || 200000;
   }
 
   // Every state mutation funnels through setReg / writeByte / writeWord (and
@@ -2511,12 +2777,16 @@ class RiscvSim {
       regs: this.regs,
       mem: this.mem,
       pc: this.pc,
+      // The instruction index the pc corresponds to. Exposed so no caller has
+      // to know how this ISA maps addresses to indices (see indexOfPc).
+      index: this.currentIndex(),
       line: this.currentLine(),
       output: this.out.join(''),
       finished: this.finished,
       error: this.error,
       exitCode: this.exitCode,
       steps: this.steps,
+      dataStart: this.dataStart,
       dataSize: this.dataSize,
       stackTop: this.stackTop,
       memSize: this.memSize,
@@ -2525,106 +2795,24 @@ class RiscvSim {
     };
   }
 
+  // Address -> instruction index. RV32 has a closed-form mapping because every
+  // instruction is one word; an ISA with variable-width instructions needs a
+  // lookup table instead, which is exactly why callers go through this method
+  // rather than shifting the pc themselves.
+  indexOfPc(pc) { return pc >> 2; }
+  currentIndex() { return this.indexOfPc(this.pc); }
+
   // The C source line of the instruction about to execute, or null for the entry
   // stub, the compiler-generated helpers, and a finished program.
   currentLine() {
-    const idx = this.pc >> 2;
+    const idx = this.currentIndex();
     if (this.finished || idx < 0 || idx >= this.instrs.length) return null;
     const line = this.instrs[idx].line;
     return line == null ? null : line;
   }
 
-  // Runs until the program exits, a trap index is reached, an error occurs, or
-  // `maxSteps` instructions have been executed by *this* call. maxSteps is a
-  // per-call budget (matching the UI's "run for N steps"), so pressing Run again
-  // continues from wherever this left off.
-  runUntilBreak(traps, maxSteps) {
-    this.hitBreakpoint = false;
-    const budget = maxSteps == null ? this.maxSteps : maxSteps;
-    try {
-      let executed = 0;
-      while (!this.finished && executed < budget) {
-        this.steps++;
-        executed++;
-        this.step();
-        // Checked only *after* executing, so resuming from a breakpoint cannot
-        // immediately re-trap on the instruction it is parked on.
-        if (!this.finished && traps && traps.has(this.pc >> 2)) {
-          this.hitBreakpoint = true;
-          break;
-        }
-      }
-    } catch (e) {
-      this.error = e.message;
-    }
-    return this.snapshot();
-  }
-
-  // Executes exactly one instruction.
-  stepOne() {
-    this.hitBreakpoint = false;
-    if (this.finished) return this.snapshot();
-    try {
-      this.steps++;
-      this.step();
-    } catch (e) {
-      this.error = e.message;
-    }
-    return this.snapshot();
-  }
-
-  // What the *next* instruction would do, without committing it: runs the real
-  // step() with every mutation journaled, harvests the resulting writes, then
-  // rolls the whole thing back. Returns
-  //   { reg: {i, from, to} | null, mem: [{addr, from, to}], reads: [addr], nextPc }
-  // or null if there is nothing to preview (finished, or the instruction faults).
-  // `reads` lists every byte the instruction read; deciding which of those are
-  // worth showing is the UI's policy, not the simulator's.
-  // Rollback is exact and cheap because one instruction writes at most one
-  // register and at most four bytes, so no memory copying is involved.
-  previewStep() {
-    if (this.finished) return null;
-    const savedPc = this.pc, savedSteps = this.steps, savedFinished = this.finished;
-    const savedExit = this.exitCode, savedError = this.error, savedOutLen = this.out.length;
-    this.journal = [];
-    this.readLog = [];
-    let result = null;
-    try {
-      this.step();
-      let reg = null;
-      const mem = [];
-      for (const e of this.journal) {
-        // last write wins, though one instruction only ever writes one register
-        if (e.kind === 'reg') reg = { i: e.i, from: e.old | 0, to: this.regs[e.i] | 0 };
-        else mem.push({ addr: e.addr, from: e.old, to: this.mem[e.addr] });
-      }
-      result = { reg, mem, reads: this.readLog.slice(), nextPc: this.pc };
-    } catch (e) {
-      result = null; // a preview must never surface an error of its own
-    } finally {
-      for (let k = this.journal.length - 1; k >= 0; k--) {
-        const e = this.journal[k];
-        if (e.kind === 'reg') this.regs[e.i] = e.old | 0;
-        else this.mem[e.addr] = e.old;
-      }
-      this.journal = null;
-      this.readLog = null;
-      this.out.length = savedOutLen;
-      this.pc = savedPc;
-      this.steps = savedSteps;
-      this.finished = savedFinished;
-      this.exitCode = savedExit;
-      this.error = savedError;
-    }
-    return result;
-  }
-
-  run() {
-    return this.runUntilBreak(null, this.maxSteps);
-  }
-
   step() {
-    const idx = this.pc >> 2;
+    const idx = this.indexOfPc(this.pc);
     if (this.pc % 4 !== 0) throw new Error('misaligned pc 0x' + (this.pc >>> 0).toString(16));
     if (idx === this.instrs.length) { this.finished = true; return; } // ran off the end cleanly
     if (idx < 0 || idx > this.instrs.length) {
@@ -2927,14 +3115,2569 @@ function labelsByIndex(labels) {
 function formatAsm(program) {
   const byIndex = labelsByIndex(program.labels);
   const lines = [];
-  lines.push({ kind: 'header', text: '; target: ' + (program.useM ? 'RV32IM (hardware mul/div)' : 'RV32I (software mul/div)') });
+  lines.push({ kind: 'header', text: '; target: ' + program.target.asmLabel });
   for (let i = 0; i < program.instrs.length; i++) {
     for (const name of (byIndex.get(i) || [])) lines.push({ kind: 'label', text: name + ':' });
     const ins = program.instrs[i];
-    lines.push({ kind: 'instr', addr: i * 4, index: i, text: formatInstr(ins), comment: ins.comment, code: formatCode(ins) });
+    lines.push({ kind: 'instr', addr: program.addrs[i], index: i, text: formatInstr(ins), comment: ins.comment, code: formatCode(ins) });
   }
   return lines;
 }
+
+/* =========================================================================
+   AVR25 BACKEND: registers, ABI and machine constants
+
+   The target device is an ATmega644 (see the ATMEGA644 record below): 32 8-bit
+   registers, an SREG flag byte, and a Harvard split between 64 KB of flash and
+   4 KB of SRAM.
+
+   Note the part DOES have a hardware multiplier - it is an avr5 core. This
+   backend nonetheless generates a software multiply, the same deliberate
+   simplification the RV32I mode makes on a machine where RV32IM exists. No AVR
+   has a divide instruction, so software division is not a choice.
+
+   A 16-bit C value (int, pointer) lives in an even-aligned register PAIR
+   (lo, hi) = (rN, rN+1). That is the single fact that shapes this whole
+   backend: every value is two registers, so every operation is two
+   instructions, and the operand stack holds pairs rather than registers.
+   ========================================================================= */
+
+const AREG = {
+  scratch: 0,   // r0 - byte scratch; never holds a live C value
+  zero: 1,      // r1 - always 0, the avr-gcc convention
+  X: 26, Y: 28, Z: 30,
+};
+
+/* Operand-stack slot d lives in the pair starting at AOPREGS[d]. r2..r9 all sit
+   inside avr-gcc's callee-saved r2-r17 range, which buys the same decisive
+   property RV32's s1..s11 choice bought: a value parked in a slot survives a
+   nested call for free, so an expression containing a call needs no spill logic.
+
+   Four slots rather than RV32's eleven, because AVR's register budget is spent
+   on pairs. That is a speed difference and never a correctness one: anything
+   deeper spills to the memory stack (see memPush). */
+const AOPREGS = [2, 4, 6, 8];
+
+/* Argument pairs a0..a7, descending from r24 the way avr-gcc allocates them;
+   r24:r25 doubles as the return-value pair. Eight pairs is exactly enough for
+   the frontend's 8-parameter limit, so no argument ever goes on the stack.
+
+   Simplification worth naming: all eight are treated as CALL-CLOBBERED. The
+   real AVR ABI calls r10-r17 call-saved-but-argument-passing, but since this is
+   the only code generator here a self-consistent rule is enough - the same
+   latitude the RV32 backend takes with its RARS-style ecall convention. */
+const AARGS = [24, 22, 20, 18, 16, 14, 12, 10];
+const ARET = 24;
+
+/* The two scratch PAIRS. X and Z are both in the upper half, so LDI/SUBI/SBCI/
+   CPI/ADIW/SBIW - all of which can only target r16-r31 - are available on them,
+   which is exactly why constants are staged here before being moved into a slot.
+
+   ALIASING RULE, the AVR counterpart of the RV32 backend's pop/push trap: when
+   two popped values are both in scratch, the one that is about to become a
+   POINTER must be the one in Z, because materialising a pointer means `MOVW Z,
+   pair` and that would clobber a value sitting in Z. Every site that pops an
+   address and a value therefore pops the address into Z and the value into X. */
+const ASCRATCH_A = AREG.X;   // general scratch pair
+const ASCRATCH_B = AREG.Z;   // scratch pair that may become a pointer
+
+// Role labels for the register panel. AVR has no ABI mnemonics like RISC-V's, so
+// the useful thing to show is what this compiler uses each register for.
+const AVR_REG_NAMES = (() => {
+  const n = new Array(32).fill('-');
+  n[AREG.scratch] = 'scratch'; n[AREG.zero] = 'zero';
+  AOPREGS.forEach((r, i) => { n[r] = 'slot' + i + ' lo'; n[r + 1] = 'slot' + i + ' hi'; });
+  AARGS.forEach((r, i) => { n[r] = 'a' + i + ' lo'; n[r + 1] = 'a' + i + ' hi'; });
+  n[ARET] = 'a0/ret lo'; n[ARET + 1] = 'a0/ret hi';
+  n[26] = 'X lo'; n[27] = 'X hi';
+  n[28] = 'Y lo (fp)'; n[29] = 'Y hi (fp)';
+  n[30] = 'Z lo'; n[31] = 'Z hi';
+  return n;
+})();
+
+// SREG bit masks. C/Z/N/V/S are the ones codegen depends on; H and T are
+// maintained because the hardware does and a debugger that lied about them
+// would be worse than one that omitted them.
+const SF = { C: 1, Z: 2, N: 4, V: 8, S: 16, H: 32, T: 64, I: 128 };
+const SREG_FLAG_ORDER = ['I', 'T', 'H', 'S', 'V', 'N', 'Z', 'C'];
+
+/* The device, not the architecture. Every number here is a property of this
+   particular part and is attributable to its datasheet, which is exactly why it
+   is gathered in one record rather than scattered as loose constants.
+
+   `flashBytes` looks unused but is load-bearing documentation: the frame layout
+   assumes a TWO-byte return address, and that is only true because this part's
+   flash is at most 128 KB (32K words here, so the PC is 15 bits). A device above
+   that pushes three bytes and the frame diagram in genFunction would shift. */
+const ATMEGA644 = {
+  name: 'ATmega644',
+  sramStart: 0x100,   // above the 0x60-0xff extended I/O window
+  sramSize: 4096,     // RAMEND = 0x10ff
+  flashBytes: 65536,
+};
+
+/* Peripheral registers come in two kinds, and which kind a register is decides
+   how it may be reached - so they are kept in separate tables rather than one:
+
+     AVR_IO   low I/O addresses, reached with IN/OUT. Those instructions encode a
+              6-bit address, so they only reach I/O 0x00-0x3f (data 0x20-0x5f).
+     AVR_MEM  DATA addresses, reached with LDS/STS. Extended I/O (data 0x60-0xff)
+              is only reachable this way - UDR0's data address is 0xc6, whose
+              notional I/O address 0xa6 is far outside IN/OUT's range. */
+const AVR_IO = {
+  SPL: 0x3d, SPH: 0x3e, SREG: 0x3f,
+};
+const AVR_IO_BASE = 0x20;
+const AVR_IO_ADDR = io => io + AVR_IO_BASE;
+
+/* AVR has no ECALL, so output happens the way real AVR firmware does it: by
+   writing bytes to the USART data register. UDR0 is genuine silicon at this
+   address on this part.
+
+   SIM_ARG_L/H and SIM_CMD are NOT ATmega644 registers - they are a simulator
+   side channel, deliberately placed in reserved extended I/O so they collide
+   with no documented peripheral. They exist because a UART carries only bytes,
+   while `%d`, `%x` and exit need a value and a service selector; that pair
+   mirrors the RV32 side's a0/a7 ecall convention. Formatting `%d` in emitted AVR
+   code instead would remove them, and is noted as future work. */
+const AVR_MEM = {
+  UDR0: 0xc6,
+  SIM_ARG_L: 0xfd, SIM_ARG_H: 0xfe, SIM_CMD: 0xff,
+};
+
+/* The register file reads zero at reset, which is what most AVR simulators
+   present and what a real device usually settles to after a power-on reset -
+   the architecture itself leaves it undefined.
+
+   Note this is the opposite choice from RV32's 0xdeadbeef POISON, and it gives
+   up something: a program that reads a register before writing it now looks like
+   it legitimately read 0 rather than visibly reading garbage. Unwritten SRAM
+   still reads 0xff, so memory keeps that signal even though registers do not. */
+const AVR_REG_RESET = 0x00;
+const AVR_SRAM_POISON = 0xff;   // also what erased flash and unprogrammed EEPROM read as
+
+// Two-word (32-bit) instructions; everything else in this subset is one word.
+const AVR_TWO_WORD = new Set(['LDS', 'STS', 'CALL', 'JMP']);function avrInstrBytes(ins) { return AVR_TWO_WORD.has(ins.op) ? 4 : 2; }
+
+// Conditional branches, and how to invert each one - which is what lets an
+// out-of-range branch be rewritten as `BR<inverse> .skip / RJMP target`.
+const AVR_BRANCH_INVERSE = {
+  BREQ: 'BRNE', BRNE: 'BREQ', BRLT: 'BRGE', BRGE: 'BRLT',
+  BRCS: 'BRCC', BRCC: 'BRCS', BRMI: 'BRPL', BRPL: 'BRMI',
+};
+// A conditional branch reaches +-63 words; RJMP reaches +-2K words.
+const AVR_BRANCH_REACH = 63;
+
+/* =========================================================================
+   AVR25 INTERPRETER
+
+   Executes the same instruction objects AvrCodegen produced, exactly as the
+   RV32 interpreter does. Two things differ structurally:
+
+   1. Harvard. Flash (the instruction array) is not addressable as data at all -
+      there is no `lpm` in this subset - and SRAM is a separate, tiny byte array.
+   2. Variable instruction width. A pc is a byte address into flash, but one
+      instruction is 2 or 4 bytes, so pc -> index is a table lookup rather than
+      a shift. (Real AVR counts the pc in *words*; this counts bytes, which is
+      what avr-objdump displays and what keeps the listing's address column
+      honest.) Jumps carry `targetIndex`, so control flow never does address
+      arithmetic that a two-word instruction could invalidate.
+
+   SP is not a field: it lives in its real I/O registers (SPL/SPH) inside the
+   memory array, so a push is visible in the memory viewer and is journaled for
+   previewStep() with no extra plumbing.
+   ========================================================================= */
+
+class AvrSim extends SimBase {
+  constructor(program, opts) {
+    super(opts);
+    this.program = program;
+    this.instrs = program.instrs;
+    this.addrs = program.addrs;
+    this.addrToIndex = program.addrToIndex;
+    this.entry = program.addrs[program.labels.get('_start') || 0];
+
+    // memSize counts SRAM bytes. The array also covers the register window and
+    // I/O space below it, so a data address needs no translation - 96 wasted
+    // bytes in exchange for never having to offset an address.
+    this.sramStart = program.data.base;
+    this.memSize = program.memSize || (opts && opts.memSize)
+      || targetDefaultMemSize(program.target);
+    if (!Number.isFinite(this.memSize) || this.memSize <= 0) {
+      throw new Error('invalid SRAM size ' + this.memSize + ' for ' + program.target.label);
+    }
+    this.memTop = this.sramStart + this.memSize;
+    if (program.data.base + program.data.bytes.length > this.memTop) {
+      throw new Error('data segment (' + program.data.bytes.length + ' bytes at 0x'
+        + program.data.base.toString(16) + ') does not fit in ' + this.memSize
+        + ' bytes of SRAM');
+    }
+    this.mem = new Uint8Array(this.memTop);
+    // Uninitialised SRAM reads as AVR_SRAM_POISON, the same convention as
+    // unprogrammed flash - so a cell the program never wrote is visibly not a
+    // plausible zero. Must happen BEFORE the data segment lands, since that range
+    // (BSS included) genuinely is zero-initialised by the C standard.
+    this.mem.fill(AVR_SRAM_POISON, this.sramStart);
+    this.mem.set(Uint8Array.from(program.data.bytes), program.data.base);
+    this.dataStart = program.data.base;
+    this.dataSize = program.data.bytes.length;
+
+    /* The register file reads zero at reset (see AVR_REG_RESET). r1 is therefore
+       already zero before _start's `clr r1` runs - that instruction is still
+       emitted because the architecture does NOT guarantee this, and the zero
+       register is load-bearing for `cp` against a terminator and for 16-bit
+       carry handling. A Uint8Array is zero-filled on construction, so the fill
+       is written out only to keep the intent explicit rather than incidental. */
+    this.regs = new Uint8Array(32);
+    this.regs.fill(AVR_REG_RESET);
+    this.sreg = 0;
+    // SP resets to 0 on a real AVR; _start's `out SPL/SPH` is what makes it
+    // usable, so the reset state stays honest and the program self-contained.
+    this.stackTop = this.memTop - 1;
+    this.pc = this.entry;
+  }
+
+  /* ---- state mutation: everything funnels through these, so previewStep()
+          can journal and roll back without a second execute path ---- */
+  setReg(i, v) {
+    if (this.journal) this.journal.push({ kind: 'reg', i, old: this.regs[i] });
+    this.regs[i] = v & 0xff;
+  }
+  setSreg(v) {
+    if (this.journal) this.journal.push({ kind: 'sreg', old: this.sreg });
+    this.sreg = v & 0xff;
+  }
+  // A 16-bit value in an even register pair: lo in rN, hi in rN+1.
+  getPair(r) { return this.regs[r] | (this.regs[r + 1] << 8); }
+  setPair(r, v) { this.setReg(r, v & 0xff); this.setReg(r + 1, (v >> 8) & 0xff); }
+
+  checkAddr(addr) {
+    // The 0x00-0x1f register window is not modelled, so touching it is a fault
+    // rather than a silent alias.
+    if (addr >= AVR_IO_BASE && addr < this.sramStart) return;
+    if (addr >= this.sramStart && addr < this.memTop) return;
+    throw new Error('data access out of range at address 0x' + (addr >>> 0).toString(16));
+  }
+  readByte(addr) {
+    this.checkAddr(addr);
+    if (this.readLog) this.readLog.push(addr);
+    return this.mem[addr];
+  }
+  writeByte(addr, v) {
+    this.checkAddr(addr);
+    if (this.journal) this.journal.push({ kind: 'mem', addr, old: this.mem[addr] });
+    this.mem[addr] = v & 0xff;
+    // Writing the USART data register transmits a byte - this is how real AVR
+    // firmware prints, and the only way to do output on a machine with no trap
+    // instruction. The command port is the side channel for the services a UART
+    // cannot express (see AVR_MEM).
+    if (addr === AVR_MEM.UDR0) this.out.push(String.fromCharCode(v & 0xff));
+    else if (addr === AVR_MEM.SIM_CMD) this.service(v & 0xff);
+  }
+  read16(addr) { return this.readByte(addr) | (this.readByte(addr + 1) << 8); }
+
+  // SP is read straight out of its I/O bytes rather than through readByte, so a
+  // push does not light up the memory viewer's "this instruction read here"
+  // column - that column is for genuine data loads.
+  getSp() {
+    return this.mem[AVR_IO_ADDR(AVR_IO.SPL)] | (this.mem[AVR_IO_ADDR(AVR_IO.SPH)] << 8);
+  }
+  setSp(v) {
+    this.writeByte(AVR_IO_ADDR(AVR_IO.SPL), v & 0xff);
+    this.writeByte(AVR_IO_ADDR(AVR_IO.SPH), (v >> 8) & 0xff);
+  }
+  // PUSH writes AT sp and then decrements, so the initial sp is the last usable
+  // byte rather than one past it.
+  push8(v) { const sp = this.getSp(); this.writeByte(sp, v); this.setSp(sp - 1); }
+  pop8() { const sp = this.getSp() + 1; this.setSp(sp); return this.readByte(sp); }
+  push16(v) { this.push8(v & 0xff); this.push8((v >> 8) & 0xff); }
+  pop16() { const hi = this.pop8(); const lo = this.pop8(); return lo | (hi << 8); }
+
+  /* The side channel. Only the services a byte-wide UART cannot express live
+     here: characters and strings go through UDR0 as real output. Service numbers
+     still match the RV32 side deliberately, so both targets lower printf through
+     the same shape. */
+  service(which) {
+    const arg = this.mem[AVR_MEM.SIM_ARG_L] | (this.mem[AVR_MEM.SIM_ARG_H] << 8);
+    // int is 16-bit here, so %d must print the SIGNED 16-bit reading - which is
+    // why a value over 32767 legitimately prints negative on this target.
+    const signed = (arg << 16) >> 16;
+    switch (which) {
+      case SYSCALL.PRINT_INT: this.out.push(String(signed)); break;
+      case SYSCALL.PRINT_HEX: this.out.push((arg & 0xffff).toString(16)); break;
+      case SYSCALL.EXIT: this.finished = true; this.exitCode = signed; break;
+      default: throw new Error('unknown service ' + which + ' written to the command port');
+    }
+  }
+
+  indexOfPc(pc) {
+    const idx = this.addrToIndex.get(pc);
+    return idx === undefined ? -1 : idx;
+  }
+  currentIndex() { return this.indexOfPc(this.pc); }
+  currentLine() {
+    const idx = this.currentIndex();
+    if (this.finished || idx < 0 || idx >= this.instrs.length) return null;
+    const line = this.instrs[idx].line;
+    return line == null ? null : line;
+  }
+
+  snapshot() {
+    return {
+      regs: this.regs,
+      mem: this.mem,
+      sreg: this.sreg,
+      sp: this.getSp(),
+      pc: this.pc,
+      index: this.currentIndex(),
+      line: this.currentLine(),
+      output: this.out.join(''),
+      finished: this.finished,
+      error: this.error,
+      exitCode: this.exitCode,
+      steps: this.steps,
+      dataStart: this.dataStart,
+      dataSize: this.dataSize,
+      stackTop: this.stackTop,
+      memSize: this.memTop,   // highest addressable byte + 1, for the viewer
+      sramStart: this.sramStart,
+      hitBreakpoint: this.hitBreakpoint,
+      atStart: this.steps === 0,
+    };
+  }
+
+  /* ---- flag helpers ----
+     Each returns the new SREG. Written as the AVR manual states them, bit by
+     bit, because the branches depend on exactly these definitions: BRLT tests
+     S = N xor V, so getting V wrong silently breaks every signed comparison. */
+  setFlag(mask, on) { this.setSreg(on ? (this.sreg | mask) : (this.sreg & ~mask)); }
+
+  // Flags after an 8-bit add. `c` is the carry in (0 for ADD, C for ADC).
+  flagsAdd(d, r, cin, res) {
+    const d7 = (d >> 7) & 1, r7 = (r >> 7) & 1, R7 = (res >> 7) & 1;
+    const d3 = (d >> 3) & 1, r3 = (r >> 3) & 1, R3 = (res >> 3) & 1;
+    let s = this.sreg;
+    const C = (d + r + cin) > 0xff ? 1 : 0;
+    const V = (d7 & r7 & (R7 ^ 1)) | ((d7 ^ 1) & (r7 ^ 1) & R7);
+    const N = R7;
+    const H = (d3 & r3) | (r3 & (R3 ^ 1)) | ((R3 ^ 1) & d3);
+    s = C ? (s | SF.C) : (s & ~SF.C);
+    s = V ? (s | SF.V) : (s & ~SF.V);
+    s = N ? (s | SF.N) : (s & ~SF.N);
+    s = H ? (s | SF.H) : (s & ~SF.H);
+    s = (N ^ V) ? (s | SF.S) : (s & ~SF.S);
+    s = (res & 0xff) === 0 ? (s | SF.Z) : (s & ~SF.Z);
+    this.setSreg(s);
+  }
+
+  // Flags after an 8-bit subtract/compare. `carryChain` is true for SBC/SBCI/CPC,
+  // where Z must be ANDed with its previous value - that AND is precisely what
+  // makes a multi-byte CP/CPC comparison give the right answer for the whole
+  // value rather than just the high byte.
+  flagsSub(d, r, cin, res, carryChain) {
+    const d7 = (d >> 7) & 1, r7 = (r >> 7) & 1, R7 = (res >> 7) & 1;
+    const d3 = (d >> 3) & 1, r3 = (r >> 3) & 1, R3 = (res >> 3) & 1;
+    let s = this.sreg;
+    const C = (d - r - cin) < 0 ? 1 : 0;
+    const V = (d7 & (r7 ^ 1) & (R7 ^ 1)) | ((d7 ^ 1) & r7 & R7);
+    const N = R7;
+    const H = ((d3 ^ 1) & r3) | (r3 & R3) | (R3 & (d3 ^ 1));
+    s = C ? (s | SF.C) : (s & ~SF.C);
+    s = V ? (s | SF.V) : (s & ~SF.V);
+    s = N ? (s | SF.N) : (s & ~SF.N);
+    s = H ? (s | SF.H) : (s & ~SF.H);
+    s = (N ^ V) ? (s | SF.S) : (s & ~SF.S);
+    const zNow = (res & 0xff) === 0;
+    const z = carryChain ? (zNow && !!(this.sreg & SF.Z)) : zNow;
+    s = z ? (s | SF.Z) : (s & ~SF.Z);
+    this.setSreg(s);
+  }
+
+  // Flags after a logical op: V is cleared, C untouched.
+  flagsLogic(res) {
+    let s = this.sreg;
+    const N = (res >> 7) & 1;
+    s = s & ~SF.V;
+    s = N ? (s | SF.N) : (s & ~SF.N);
+    s = N ? (s | SF.S) : (s & ~SF.S); // S = N xor V, and V is 0
+    s = (res & 0xff) === 0 ? (s | SF.Z) : (s & ~SF.Z);
+    this.setSreg(s);
+  }
+
+  // Flags after a 16-bit ADIW/SBIW on a register pair.
+  flagsWord(before, res, isSub) {
+    let s = this.sreg;
+    const R15 = (res >> 15) & 1, B15 = (before >> 15) & 1;
+    const C = isSub ? (before - (before - res) < 0 ? 1 : 0) : (res > 0xffff ? 1 : 0);
+    const V = isSub ? (B15 & (R15 ^ 1)) : ((B15 ^ 1) & R15);
+    const N = R15;
+    s = C ? (s | SF.C) : (s & ~SF.C);
+    s = V ? (s | SF.V) : (s & ~SF.V);
+    s = N ? (s | SF.N) : (s & ~SF.N);
+    s = (N ^ V) ? (s | SF.S) : (s & ~SF.S);
+    s = (res & 0xffff) === 0 ? (s | SF.Z) : (s & ~SF.Z);
+    this.setSreg(s);
+  }
+
+  branchTaken(op) {
+    const s = this.sreg;
+    switch (op) {
+      case 'BREQ': return !!(s & SF.Z);
+      case 'BRNE': return !(s & SF.Z);
+      case 'BRLT': return !!(s & SF.S);
+      case 'BRGE': return !(s & SF.S);
+      case 'BRCS': return !!(s & SF.C);
+      case 'BRCC': return !(s & SF.C);
+      case 'BRMI': return !!(s & SF.N);
+      case 'BRPL': return !(s & SF.N);
+    }
+    throw new Error('unknown branch ' + op);
+  }
+
+  step() {
+    const idx = this.indexOfPc(this.pc);
+    if (idx === this.instrs.length) { this.finished = true; return; }
+    if (idx < 0) {
+      throw new Error('pc 0x' + (this.pc >>> 0).toString(16) + ' is not an instruction boundary');
+    }
+    const ins = this.instrs[idx];
+    const r = this.regs;
+    const imm = ins.imm | 0;
+    let nextPc = this.pc + avrInstrBytes(ins);
+    const jumpTo = () => { nextPc = this.addrs[ins.targetIndex]; };
+
+    switch (ins.op) {
+      /* --- moves and constants --- */
+      case 'MOV': this.setReg(ins.rd, r[ins.rs2]); break;
+      case 'MOVW':
+        this.setReg(ins.rd, r[ins.rs2]);
+        this.setReg(ins.rd + 1, r[ins.rs2 + 1]);
+        break;
+      case 'LDI': this.setReg(ins.rd, imm); break;
+
+      /* --- 8-bit arithmetic and logic (Rd <- Rd op Rr) --- */
+      case 'ADD': {
+        const d = r[ins.rd], b = r[ins.rs2], res = (d + b) & 0xff;
+        this.setReg(ins.rd, res); this.flagsAdd(d, b, 0, res);
+        break;
+      }
+      case 'ADC': {
+        const d = r[ins.rd], b = r[ins.rs2], cin = this.sreg & SF.C ? 1 : 0;
+        const res = (d + b + cin) & 0xff;
+        this.setReg(ins.rd, res); this.flagsAdd(d, b, cin, res);
+        break;
+      }
+      case 'SUB': {
+        const d = r[ins.rd], b = r[ins.rs2], res = (d - b) & 0xff;
+        this.setReg(ins.rd, res); this.flagsSub(d, b, 0, res, false);
+        break;
+      }
+      case 'SBC': {
+        const d = r[ins.rd], b = r[ins.rs2], cin = this.sreg & SF.C ? 1 : 0;
+        const res = (d - b - cin) & 0xff;
+        this.setReg(ins.rd, res); this.flagsSub(d, b, cin, res, true);
+        break;
+      }
+      case 'SUBI': {
+        const d = r[ins.rd], res = (d - imm) & 0xff;
+        this.setReg(ins.rd, res); this.flagsSub(d, imm & 0xff, 0, res, false);
+        break;
+      }
+      case 'SBCI': {
+        const d = r[ins.rd], cin = this.sreg & SF.C ? 1 : 0;
+        const res = (d - imm - cin) & 0xff;
+        this.setReg(ins.rd, res); this.flagsSub(d, imm & 0xff, cin, res, true);
+        break;
+      }
+      case 'AND': {
+        const res = r[ins.rd] & r[ins.rs2];
+        this.setReg(ins.rd, res); this.flagsLogic(res);
+        break;
+      }
+      case 'ANDI': {
+        const res = r[ins.rd] & imm;
+        this.setReg(ins.rd, res); this.flagsLogic(res);
+        break;
+      }
+      case 'OR': {
+        const res = r[ins.rd] | r[ins.rs2];
+        this.setReg(ins.rd, res); this.flagsLogic(res);
+        break;
+      }
+      case 'ORI': {
+        const res = r[ins.rd] | imm;
+        this.setReg(ins.rd, res); this.flagsLogic(res);
+        break;
+      }
+      case 'EOR': {
+        const res = r[ins.rd] ^ r[ins.rs2];
+        this.setReg(ins.rd, res); this.flagsLogic(res);
+        break;
+      }
+      case 'COM': {
+        const res = (~r[ins.rd]) & 0xff;
+        this.setReg(ins.rd, res); this.flagsLogic(res);
+        this.setFlag(SF.C, true); // COM always sets carry
+        break;
+      }
+      case 'NEG': {
+        const d = r[ins.rd], res = (-d) & 0xff;
+        this.setReg(ins.rd, res);
+        this.flagsSub(0, d, 0, res, false);
+        this.setFlag(SF.C, res !== 0);
+        this.setFlag(SF.V, res === 0x80);
+        break;
+      }
+      case 'INC': {
+        const res = (r[ins.rd] + 1) & 0xff;
+        const V = r[ins.rd] === 0x7f;
+        this.setReg(ins.rd, res);
+        this.flagsLogic(res); // N/Z/S the same way; V is special, C untouched
+        this.setFlag(SF.V, V);
+        this.setFlag(SF.S, (((res >> 7) & 1) ^ (V ? 1 : 0)) !== 0);
+        break;
+      }
+      case 'DEC': {
+        const res = (r[ins.rd] - 1) & 0xff;
+        const V = r[ins.rd] === 0x80;
+        this.setReg(ins.rd, res);
+        this.flagsLogic(res);
+        this.setFlag(SF.V, V);
+        this.setFlag(SF.S, (((res >> 7) & 1) ^ (V ? 1 : 0)) !== 0);
+        break;
+      }
+
+      /* --- 16-bit immediate add/sub on a pair --- */
+      case 'ADIW': {
+        const before = this.getPair(ins.rd), res = before + imm;
+        this.setPair(ins.rd, res & 0xffff); this.flagsWord(before, res, false);
+        break;
+      }
+      case 'SBIW': {
+        const before = this.getPair(ins.rd), res = before - imm;
+        this.setPair(ins.rd, res & 0xffff); this.flagsWord(before, res & 0xffff, true);
+        break;
+      }
+
+      /* --- shifts: one bit per instruction, which is why a variable shift
+             becomes a loop in the generated helpers --- */
+      case 'LSL': {
+        const d = r[ins.rd], res = (d << 1) & 0xff;
+        this.setReg(ins.rd, res); this.flagsAdd(d, d, 0, res);
+        break;
+      }
+      case 'LSR': {
+        const d = r[ins.rd], res = d >> 1;
+        this.setReg(ins.rd, res);
+        this.flagsLogic(res);
+        this.setFlag(SF.C, !!(d & 1));
+        this.setFlag(SF.V, ((res >> 7) & 1) !== (d & 1));
+        break;
+      }
+      case 'ASR': {
+        const d = r[ins.rd], res = (d >> 1) | (d & 0x80);
+        this.setReg(ins.rd, res);
+        this.flagsLogic(res);
+        this.setFlag(SF.C, !!(d & 1));
+        break;
+      }
+      case 'ROL': {
+        const d = r[ins.rd], cin = this.sreg & SF.C ? 1 : 0;
+        const res = ((d << 1) | cin) & 0xff;
+        this.setReg(ins.rd, res); this.flagsAdd(d, d, cin, res);
+        break;
+      }
+      case 'ROR': {
+        const d = r[ins.rd], cin = this.sreg & SF.C ? 0x80 : 0;
+        const res = (d >> 1) | cin;
+        this.setReg(ins.rd, res);
+        this.flagsLogic(res);
+        this.setFlag(SF.C, !!(d & 1));
+        break;
+      }
+
+      /* --- compares: write no register, only flags --- */
+      case 'CP': {
+        const d = r[ins.rd], b = r[ins.rs2];
+        this.flagsSub(d, b, 0, (d - b) & 0xff, false);
+        break;
+      }
+      case 'CPC': {
+        const d = r[ins.rd], b = r[ins.rs2], cin = this.sreg & SF.C ? 1 : 0;
+        this.flagsSub(d, b, cin, (d - b - cin) & 0xff, true);
+        break;
+      }
+      case 'CPI': {
+        const d = r[ins.rd];
+        this.flagsSub(d, imm & 0xff, 0, (d - imm) & 0xff, false);
+        break;
+      }
+
+      /* --- data memory --- */
+      case 'LDS': this.setReg(ins.rd, this.readByte(imm)); break;
+      case 'STS': this.writeByte(imm, r[ins.rs2]); break;
+      case 'LDD': this.setReg(ins.rd, this.readByte(this.getPair(ins.rs1) + imm)); break;
+      case 'STD': this.writeByte(this.getPair(ins.rs1) + imm, r[ins.rs2]); break;
+      case 'LD': this.setReg(ins.rd, this.readByte(this.getPair(ins.rs1))); break;
+      case 'ST': this.writeByte(this.getPair(ins.rs1), r[ins.rs2]); break;
+      case 'LDPI': { // ld rd, Z+  - writes Rd *and* the pointer pair
+        const p = this.getPair(ins.rs1);
+        this.setReg(ins.rd, this.readByte(p));
+        this.setPair(ins.rs1, (p + 1) & 0xffff);
+        break;
+      }
+      case 'STPI': { // st Z+, rr
+        const p = this.getPair(ins.rs1);
+        this.writeByte(p, r[ins.rs2]);
+        this.setPair(ins.rs1, (p + 1) & 0xffff);
+        break;
+      }
+
+      /* --- I/O space --- */
+      case 'IN': this.setReg(ins.rd, this.readByte(AVR_IO_ADDR(imm))); break;
+      case 'OUT': this.writeByte(AVR_IO_ADDR(imm), r[ins.rs2]); break;
+
+      /* --- stack --- */
+      case 'PUSH': this.push8(r[ins.rs2]); break;
+      case 'POP': this.setReg(ins.rd, this.pop8()); break;
+
+      /* --- control flow. Targets are instruction INDICES, so a two-word
+             instruction cannot skew them the way a byte offset could. --- */
+      case 'RJMP': case 'JMP': jumpTo(); break;
+      case 'RCALL': case 'CALL':
+        this.push16(nextPc);
+        jumpTo();
+        break;
+      case 'RET': nextPc = this.pop16(); break;
+      case 'BREQ': case 'BRNE': case 'BRLT': case 'BRGE':
+      case 'BRCS': case 'BRCC': case 'BRMI': case 'BRPL':
+        if (this.branchTaken(ins.op)) jumpTo();
+        break;
+      /* --- conditional skip. The distance skipped is the NEXT instruction's
+             width, so a two-word instruction is stepped over correctly. --- */
+      case 'SBRC': case 'SBRS': {
+        const bitSet = ((r[ins.rd] >> (imm & 7)) & 1) === 1;
+        const skip = ins.op === 'SBRS' ? bitSet : !bitSet;
+        if (skip) {
+          const nextIdx = this.indexOfPc(nextPc);
+          if (nextIdx >= 0 && nextIdx < this.instrs.length) {
+            nextPc += avrInstrBytes(this.instrs[nextIdx]);
+          }
+        }
+        break;
+      }
+
+      case 'NOP': break;
+
+      default: throw new Error('unimplemented instruction ' + ins.op);
+    }
+
+    this.pc = nextPc;
+  }
+}
+
+
+/* =========================================================================
+   AVR25 CODE GENERATOR
+
+   Same shape as the RV32 backend - a stack machine whose operand stack lives in
+   registers, with the depth known statically at every point - but every slot is
+   a register PAIR, so:
+
+     * a 16-bit binary op is two instructions (lo, then hi with carry), still
+       operating IN PLACE in the slot pair, which is what preserves the scheme's
+       payoff on a machine with no 16-bit ALU;
+     * a constant cannot go straight into a slot, because LDI only targets
+       r16-r31. Constants are staged in a scratch pair and MOVW'd across. That
+       one extra instruction is the honest cost of an 8-bit target;
+     * `char` is one register, so a char access is a single byte load plus an
+       explicit sign extension.
+
+   Local variables are addressed as Y+q with q in 1..63 (LDD/STD), which is the
+   only displacement addressing AVR has - and the reason Y, not X or Z, is the
+   frame pointer. A frame deeper than 63 bytes falls back to computing the
+   address into Z.
+   ========================================================================= */
+
+class AvrCodegen extends CodegenBase {
+  constructor(ast, meta, opts) {
+    super(ast, meta, opts);
+  }
+
+  /* ---- 16-bit emit helpers ---- */
+  // lo/hi register of a pair
+  lo(p) { return p; }
+  hi(p) { return p + 1; }
+
+  // A 16-bit constant into a pair. Only possible directly when the pair is in
+  // the upper half; the caller stages through scratch otherwise (see setConst).
+  emitLdiPair(pair, v, comment) {
+    this.emit('LDI', { rd: this.lo(pair), imm: v & 0xff, comment });
+    this.emit('LDI', { rd: this.hi(pair), imm: (v >> 8) & 0xff });
+  }
+  // LDI can only reach r16-r31.
+  canLdi(reg) { return reg >= 16; }
+
+  // Put a 16-bit constant into any pair, going through a scratch pair when the
+  // destination cannot take an immediate.
+  setConst(pair, v, comment) {
+    if (this.canLdi(this.lo(pair))) { this.emitLdiPair(pair, v, comment); return; }
+    const st = this.stagingPair(pair);
+    this.emitLdiPair(st, v, comment);
+    this.emit('MOVW', { rd: pair, rs2: st });
+  }
+  movwIf(dst, src) {
+    if (dst !== src) this.emit('MOVW', { rd: dst, rs2: src });
+  }
+
+  /* ---- operand stack: slot d is the PAIR at AOPREGS[d] ---- */
+  slotPair(d) { return d < this.opRegs ? AOPREGS[d] : null; }
+  pushTarget() {
+    const p = this.slotPair(this.depth);
+    return p === null ? ASCRATCH_A : p;
+  }
+  pushDone() {
+    if (this.slotPair(this.depth) === null) this.memPush(ASCRATCH_A);
+    this.depth++;
+  }
+  peekTop() { return this.slotPair(this.depth - 1); }
+  // Pop, returning the pair now holding the value. `scratch` is only touched if
+  // the slot had spilled. See the ALIASING RULE by ASCRATCH_B: a value destined
+  // to become a pointer must be popped into Z.
+  pop1(scratch) {
+    this.depth--;
+    const p = this.slotPair(this.depth);
+    if (p !== null) return p;
+    this.memPop(scratch);
+    return scratch;
+  }
+  popTo(pair) {
+    const p = this.pop1(pair);
+    this.movwIf(pair, p);
+  }
+  drop() {
+    this.depth--;
+    if (this.slotPair(this.depth) === null) this.adjustSp(2);
+  }
+  memPush(pair) {
+    this.emit('PUSH', { rs2: this.hi(pair), comment: 'spill operand slot ' + this.depth });
+    this.emit('PUSH', { rs2: this.lo(pair) });
+  }
+  memPop(pair) {
+    this.emit('POP', { rd: this.lo(pair), comment: 'reload operand slot ' + this.depth });
+    this.emit('POP', { rd: this.hi(pair) });
+  }
+  // AVR cannot add to SP directly; it goes through Y, which is why this is only
+  // used where Y is not already needed (dropping a spilled operand).
+  adjustSp(delta) {
+    this.emit('IN', { rd: AREG.Y, imm: AVR_IO.SPL });
+    this.emit('IN', { rd: AREG.Y + 1, imm: AVR_IO.SPH });
+    if (delta > 0) this.emit('ADIW', { rd: AREG.Y, imm: delta });
+    else this.emit('SBIW', { rd: AREG.Y, imm: -delta });
+    this.emit('OUT', { imm: AVR_IO.SPH, rs2: AREG.Y + 1 });
+    this.emit('OUT', { imm: AVR_IO.SPL, rs2: AREG.Y });
+  }
+
+  /* ---- local addressing ----
+     A slot's `offset` is a distance below the top of the frame; the frame itself
+     occupies Y+1..Y+fs, so the byte for that slot is at Y + fs - offset + 1. */
+  dispOf(offset) { return this.fn.frameSize - offset + 1; }
+  // True when LDD/STD can reach it directly (q must fit in 6 bits).
+  dispFits(offset, extra) { return this.dispOf(offset) + (extra || 0) <= 63; }
+
+  // Materialise a local's address into a pointer pair (Z by default).
+  addrOfLocal(offset, pair) {
+    this.emit('MOVW', { rd: pair, rs2: AREG.Y });
+    this.addConst(pair, this.dispOf(offset), 'frame + ' + this.dispOf(offset));
+  }
+
+  /* Add a 16-bit constant to a pair. Which instructions are legal depends
+     entirely on WHICH pair, and getting this wrong produces code a real AVR
+     would reject even though an interpreter would happily run it:
+       ADIW/SBIW  only r24, r26, r28, r30, and only 0..63
+       SUBI/SBCI  only r16..r31
+       ADD/ADC    any register, but the constant has to be staged in a pair first
+     So a slot pair (r2..r9) can use none of the immediate forms. */
+  canWordImm(pair) { return pair === 24 || pair === 26 || pair === 28 || pair === 30; }
+  addConst(pair, k, comment) {
+    if (k === 0) return;
+    if (this.canWordImm(pair) && k > 0 && k <= 63) {
+      this.emit('ADIW', { rd: pair, imm: k, comment });
+      return;
+    }
+    if (this.canWordImm(pair) && k < 0 && k >= -63) {
+      this.emit('SBIW', { rd: pair, imm: -k, comment });
+      return;
+    }
+    if (this.canLdi(this.lo(pair))) {
+      this.emit('SUBI', { rd: this.lo(pair), imm: (-k) & 0xff, comment });
+      this.emit('SBCI', { rd: this.hi(pair), imm: ((-k) >> 8) & 0xff });
+      return;
+    }
+    const st = this.stagingPair(pair);
+    this.emitLdiPair(st, k, comment);
+    this.emit('ADD', { rd: this.lo(pair), rs2: this.lo(st) });
+    this.emit('ADC', { rd: this.hi(pair), rs2: this.hi(st) });
+  }
+  // A scratch pair to stage a constant in, never the destination itself.
+  stagingPair(dst) { return dst === ASCRATCH_A ? ASCRATCH_B : ASCRATCH_A; }
+
+  /* ---- 16-bit load/store of a local ---- */
+  loadLocal(pair, v, comment) {
+    const bytes = elemSize(v.ctype, this.abi);
+    if (this.dispFits(v.offset, bytes - 1)) {
+      const q = this.dispOf(v.offset);
+      this.emit('LDD', { rd: this.lo(pair), rs1: AREG.Y, imm: q, comment });
+      if (bytes === 2) this.emit('LDD', { rd: this.hi(pair), rs1: AREG.Y, imm: q + 1 });
+      else this.signExtendInto(pair);
+      return;
+    }
+    this.addrOfLocal(v.offset, AREG.Z);
+    this.loadThroughZ(pair, bytes, comment);
+  }
+  storeLocal(pair, v, comment) {
+    const bytes = elemSize(v.ctype, this.abi);
+    if (this.dispFits(v.offset, bytes - 1)) {
+      const q = this.dispOf(v.offset);
+      this.emit('STD', { rs1: AREG.Y, imm: q, rs2: this.lo(pair), comment });
+      if (bytes === 2) this.emit('STD', { rs1: AREG.Y, imm: q + 1, rs2: this.hi(pair) });
+      return;
+    }
+    this.addrOfLocal(v.offset, AREG.Z);
+    this.storeThroughZ(pair, bytes, comment);
+  }
+
+  // `char` is one byte, so a load has to widen it. Signed, matching what this
+  // compiler does on RV32 (LB sign-extends) rather than avr-gcc's unsigned-char
+  // default - one language, one meaning, across targets.
+  signExtendInto(pair) {
+    this.emit('EOR', { rd: this.hi(pair), rs2: this.hi(pair), comment: 'sign-extend char' });
+    this.emit('SBRC', { rd: this.lo(pair), imm: 7 });
+    this.emit('COM', { rd: this.hi(pair) });
+  }
+
+  loadThroughZ(pair, bytes, comment) {
+    if (bytes === 2) {
+      this.emit('LDPI', { rd: this.lo(pair), rs1: AREG.Z, comment });
+      this.emit('LD', { rd: this.hi(pair), rs1: AREG.Z });
+    } else {
+      this.emit('LD', { rd: this.lo(pair), rs1: AREG.Z, comment });
+      this.signExtendInto(pair);
+    }
+  }
+  storeThroughZ(pair, bytes, comment) {
+    if (bytes === 2) {
+      this.emit('STPI', { rs1: AREG.Z, rs2: this.lo(pair), comment });
+      this.emit('ST', { rs1: AREG.Z, rs2: this.hi(pair) });
+    } else {
+      this.emit('ST', { rs1: AREG.Z, rs2: this.lo(pair), comment });
+    }
+  }
+
+  loadGlobal(pair, addr, bytes, comment) {
+    this.emit('LDS', { rd: this.lo(pair), imm: addr, comment });
+    if (bytes === 2) this.emit('LDS', { rd: this.hi(pair), imm: addr + 1 });
+    else this.signExtendInto(pair);
+  }
+  storeGlobal(pair, addr, bytes, comment) {
+    this.emit('STS', { imm: addr, rs2: this.lo(pair), comment });
+    if (bytes === 2) this.emit('STS', { imm: addr + 1, rs2: this.hi(pair) });
+  }
+
+  // Push whatever is in `pair` as the next operand.
+  push(pair) {
+    const pd = this.pushTarget();
+    this.movwIf(pd, pair);
+    this.pushDone();
+  }
+
+  /* ---- program ---- */
+  generate() {
+    this.curLine = null; // no C source corresponds to the entry stub or the helpers
+    this.label('_start');
+    // r1 must be zero before anything uses it; on real hardware the reset state
+    // is undefined and the startup code is what establishes it.
+    this.emit('EOR', { rd: AREG.zero, rs2: AREG.zero, comment: 'r1 = 0 (zero register)' });
+    // sp = top of SRAM. PUSH writes AT sp and then decrements, so the top byte
+    // really is usable and the initial sp is the last address, not one past it.
+    const top = this.abi.dataStart + this.memSize - 1;
+    this.emit('LDI', { rd: AREG.Z, imm: top & 0xff, comment: '__stack_top' });
+    this.emit('OUT', { imm: AVR_IO.SPL, rs2: AREG.Z });
+    this.emit('LDI', { rd: AREG.Z + 1, imm: (top >> 8) & 0xff });
+    this.emit('OUT', { imm: AVR_IO.SPH, rs2: AREG.Z + 1 });
+    this.emit('RCALL', { targetLabel: 'main', comment: 'call main()' });
+    // exit(main()): the return pair becomes the service argument.
+    this.emitService(SYSCALL.EXIT, ARET, 'exit(main())');
+
+    for (const d of this.ast.decls) {
+      if (d.type === 'FuncDecl') this.genFunction(this.meta.funcs.get(d.name));
+    }
+    this.genHelpers();
+    // Relaxation must precede address assignment, since it changes how many
+    // instructions there are - and label resolution reads those addresses.
+    avrRelaxBranches(this.instrs, this.labels);
+    const layout = assignAddresses(this.instrs, avrInstrBytes);
+    resolveLabels(this.instrs, this.labels, layout.addrs);
+    return {
+      instrs: this.instrs,
+      labels: this.labels,
+      addrs: layout.addrs,
+      addrToIndex: layout.addrToIndex,
+      codeBytes: layout.codeBytes,
+      data: this.meta.data,
+      globals: this.meta.globals,
+      funcs: this.meta.funcs,
+      target: this.target,
+      useM: false,
+      memSize: this.memSize,
+    };
+  }
+
+  /* ---- functions ----
+     Frame layout, all of it forced by AVR having only Y+q displacement
+     addressing and a push-based call:
+
+         Y+fs+4, Y+fs+3   return address (pushed by RCALL, lo at the higher one)
+         Y+fs+2           saved caller's Y lo
+         Y+fs+1           saved caller's Y hi
+         Y+fs .. Y+1      this frame: params, locals, saved slot pairs
+         Y                = sp
+
+     That fixed relationship is what makes the chain walkable by the debugger. */
+  genFunction(fnRec) {
+    this.fn = fnRec;
+    const d = fnRec.node;
+    const fs = fnRec.frameSize;
+    this.epilogueLabel = '.Lepi_' + d.name;
+    this.scopes = [new Map()];
+    this.curLine = d.line != null ? d.line : null;
+    this.depth = 0;
+    this.opRegs = fnRec.opRegSaves.length;
+    for (const p of fnRec.params) this.declareLocal(p.name, p.ctype, p.offset);
+
+    this.label(d.name);
+    this.emit('PUSH', { rs2: AREG.Y, comment: d.name + '(): prologue, frame = ' + fs + ' bytes' });
+    this.emit('PUSH', { rs2: AREG.Y + 1, comment: "save caller's frame pointer" });
+    this.emit('IN', { rd: AREG.Y, imm: AVR_IO.SPL });
+    this.emit('IN', { rd: AREG.Y + 1, imm: AVR_IO.SPH });
+    if (fs) this.addConst(AREG.Y, -fs, 'allocate frame');
+    this.emit('OUT', { imm: AVR_IO.SPH, rs2: AREG.Y + 1 });
+    this.emit('OUT', { imm: AVR_IO.SPL, rs2: AREG.Y, comment: 'sp = frame base' });
+
+    // Slot pairs are callee-saved, so save the ones this function will use. After
+    // Y is established, so they can be addressed off it.
+    for (const sv of fnRec.opRegSaves) {
+      const pair = AOPREGS[sv.slot];
+      this.storeWordAt(sv.offset, pair, 'save operand slot ' + sv.slot);
+    }
+    fnRec.params.forEach((p, i) => {
+      const bytes = elemSize(p.ctype, this.abi);
+      const q = this.dispOf(p.offset);
+      this.emit('STD', { rs1: AREG.Y, imm: q, rs2: this.lo(AARGS[i]), comment: 'param ' + p.name });
+      if (bytes === 2) this.emit('STD', { rs1: AREG.Y, imm: q + 1, rs2: this.hi(AARGS[i]) });
+    });
+
+    this.genStmt(d.body);
+    if (this.depth !== 0) throw new Error('Internal error: operand stack depth ' + this.depth + ' at end of ' + d.name + '()');
+
+    this.curLine = d.line != null ? d.line : null;
+    this.label(this.epilogueLabel);
+    // Restores first, while Y still points at this frame.
+    fnRec.opRegSaves.forEach((sv, i) => {
+      const pair = AOPREGS[sv.slot];
+      this.loadWordAt(sv.offset, pair, i === 0 ? d.name + '(): epilogue, restore slots' : null);
+    });
+    if (fs) this.addConst(AREG.Y, fs, 'discard frame');
+    this.emit('OUT', { imm: AVR_IO.SPH, rs2: AREG.Y + 1 });
+    this.emit('OUT', { imm: AVR_IO.SPL, rs2: AREG.Y });
+    this.emit('POP', { rd: AREG.Y + 1, comment: "restore caller's frame pointer" });
+    this.emit('POP', { rd: AREG.Y });
+    this.emit('RET', { comment: 'return' });
+    this.fn = null;
+    this.scopes = [];
+  }
+
+  // A 16-bit frame cell, used for the slot save area (always int-sized).
+  storeWordAt(offset, pair, comment) {
+    if (this.dispFits(offset, 1)) {
+      const q = this.dispOf(offset);
+      this.emit('STD', { rs1: AREG.Y, imm: q, rs2: this.lo(pair), comment });
+      this.emit('STD', { rs1: AREG.Y, imm: q + 1, rs2: this.hi(pair) });
+      return;
+    }
+    this.addrOfLocal(offset, AREG.Z);
+    this.storeThroughZ(pair, 2, comment);
+  }
+  loadWordAt(offset, pair, comment) {
+    if (this.dispFits(offset, 1)) {
+      const q = this.dispOf(offset);
+      this.emit('LDD', { rd: this.lo(pair), rs1: AREG.Y, imm: q, comment });
+      this.emit('LDD', { rd: this.hi(pair), rs1: AREG.Y, imm: q + 1 });
+      return;
+    }
+    this.addrOfLocal(offset, AREG.Z);
+    this.loadThroughZ(pair, 2, comment);
+  }
+
+  /* ---- statements ---- */
+  genStmt(s) {
+    if (s.line != null) this.curLine = s.line;
+    switch (s.type) {
+      case 'Block':
+        this.pushScope();
+        for (const c of s.stmts) this.genStmt(c);
+        this.popScope();
+        return;
+
+      case 'VarDecl': {
+        this.declareLocal(s.name, s.ctype, s.slotOffset);
+        if (!s.init) return;
+        if (s.ctype.arraySize != null) throw new Error('Compile error: array initializers are not supported (\'' + s.name + '\')');
+        this.genAssignTo({ type: 'Ident', name: s.name }, s.init, 'init ' + s.name, true);
+        return;
+      }
+
+      case 'ExprStmt': this.genExprDiscard(s.expr); return;
+
+      case 'Return':
+        if (s.expr) {
+          this.genExpr(s.expr);
+          this.popTo(ARET);
+        }
+        this.emit('RJMP', { targetLabel: this.epilogueLabel, comment: 'return' });
+        return;
+
+      case 'If': {
+        const elseL = this.freshLabel('else');
+        const endL = this.freshLabel('endif');
+        this.genBranchIfZero(s.cond, s.els ? elseL : endL);
+        this.genStmt(s.then);
+        if (s.els) {
+          this.emit('RJMP', { targetLabel: endL });
+          this.label(elseL);
+          this.genStmt(s.els);
+        }
+        this.label(endL);
+        return;
+      }
+
+      case 'While': {
+        const topL = this.freshLabel('while');
+        const endL = this.freshLabel('endwhile');
+        this.label(topL);
+        this.genBranchIfZero(s.cond, endL);
+        this.genStmt(s.body);
+        this.curLine = s.line != null ? s.line : this.curLine;
+        this.emit('RJMP', { targetLabel: topL });
+        this.label(endL);
+        return;
+      }
+
+      case 'For': {
+        const topL = this.freshLabel('for');
+        const endL = this.freshLabel('endfor');
+        this.pushScope();
+        if (s.init) this.genStmt(s.init);
+        this.label(topL);
+        // The header's own line, not the last body statement's - otherwise the
+        // cond/post/back-jump would be attributed to the wrong C line.
+        if (s.line != null) this.curLine = s.line;
+        if (s.cond) this.genBranchIfZero(s.cond, endL);
+        this.genStmt(s.body);
+        if (s.line != null) this.curLine = s.line;
+        if (s.post) this.genExprDiscard(s.post);
+        this.emit('RJMP', { targetLabel: topL });
+        this.label(endL);
+        this.popScope();
+        return;
+      }
+    }
+    throw new Error('Compile error: unsupported statement ' + s.type);
+  }
+
+  // Statement-position expressions never materialise a result to throw away.
+  genExprDiscard(e) {
+    if (e.type === 'Assign') { this.genAssignTo(e.target, e.value, null, true); return; }
+    if (e.type === 'IncDec') { this.genIncDec(e, true); return; }
+    if (e.type === 'Call') { this.genCall(e, true); return; }
+    this.genExpr(e);
+    this.drop();
+  }
+
+  /* ---- conditions ----
+     A 16-bit truth test ORs the two bytes together so Z reflects the whole
+     value; comparisons use CP/CPC, whose chained Z is what makes a two-byte
+     comparison answer for the value rather than for the high byte alone. */
+  testPairZero(pair) {
+    this.emit('MOV', { rd: AREG.scratch, rs2: this.lo(pair), comment: 'test 16-bit value' });
+    this.emit('OR', { rd: AREG.scratch, rs2: this.hi(pair) });
+  }
+
+  // Branch to `label` when `cond` is false. Comparisons and && / || are folded
+  // into the branch instead of being materialised as a 0/1 value first.
+  genBranchIfZero(cond, label) {
+    const relational = { '<': 'BRGE', '>': 'BRGE', '<=': 'BRLT', '>=': 'BRLT', '==': 'BRNE', '!=': 'BREQ' };
+    if (cond.type === 'Binary' && relational[cond.op]) {
+      // Emit the compare, then branch on the INVERSE condition.
+      this.genCompare(cond);
+      this.emit(relational[cond.op], { targetLabel: label, comment: 'if not (' + cond.op + ')' });
+      return;
+    }
+    if (cond.type === 'Binary' && cond.op === '&&') {
+      this.genBranchIfZero(cond.left, label);
+      this.genBranchIfZero(cond.right, label);
+      return;
+    }
+    if (cond.type === 'Binary' && cond.op === '||') {
+      const trueL = this.freshLabel('ortrue');
+      this.genBranchIfNonZero(cond.left, trueL);
+      this.genBranchIfZero(cond.right, label);
+      this.label(trueL);
+      return;
+    }
+    if (cond.type === 'Unary' && cond.op === '!') {
+      this.genBranchIfNonZero(cond.expr, label);
+      return;
+    }
+    this.genExpr(cond);
+    const p = this.pop1(ASCRATCH_A);
+    this.testPairZero(p);
+    this.emit('BREQ', { targetLabel: label });
+  }
+
+  genBranchIfNonZero(cond, label) {
+    const relational = { '<': 'BRLT', '>': 'BRLT', '<=': 'BRGE', '>=': 'BRGE', '==': 'BREQ', '!=': 'BRNE' };
+    if (cond.type === 'Binary' && relational[cond.op]) {
+      this.genCompare(cond);
+      this.emit(relational[cond.op], { targetLabel: label, comment: 'if (' + cond.op + ')' });
+      return;
+    }
+    if (cond.type === 'Unary' && cond.op === '!') {
+      this.genBranchIfZero(cond.expr, label);
+      return;
+    }
+    this.genExpr(cond);
+    const p = this.pop1(ASCRATCH_A);
+    this.testPairZero(p);
+    this.emit('BRNE', { targetLabel: label });
+  }
+
+  /* Emits CP/CPC for a relational operator, ordering the operands so that the
+     BRLT/BRGE family answers the question directly:
+        a <  b  and  a >= b   compare a against b
+        a >  b  and  a <= b   compare b against a
+     Equality is order-independent. */
+  genCompare(e) {
+    const swap = (e.op === '>' || e.op === '<=');
+    this.genExpr(swap ? e.right : e.left);
+    this.genExpr(swap ? e.left : e.right);
+    const pb = this.pop1(ASCRATCH_B);
+    const pa = this.pop1(ASCRATCH_A);
+    this.emit('CP', { rd: this.lo(pa), rs2: this.lo(pb), comment: 'compare' });
+    this.emit('CPC', { rd: this.hi(pa), rs2: this.hi(pb) });
+  }
+
+  /* ---- lvalue addresses (pushes the address) ---- */
+  genAddr(e) {
+    if (e.type === 'Ident') {
+      const v = this.lookupVar(e.name);
+      if (!v) throw new Error('Compile error: undefined variable \'' + e.name + '\'');
+      const pd = this.pushTarget();
+      if (v.kind === 'local') {
+        // Built in scratch because Y+disp needs an immediate add, which a slot
+        // pair cannot do; then moved into place.
+        const st = this.stagingPair(pd);
+        this.emit('MOVW', { rd: st, rs2: AREG.Y, comment: '&' + e.name });
+        this.addConst(st, this.dispOf(v.offset));
+        this.movwIf(pd, st);
+      } else {
+        this.setConst(pd, v.addr, '&' + e.name);
+      }
+      this.pushDone();
+      return;
+    }
+    if (e.type === 'Unary' && e.op === '*') { this.genExpr(e.expr); return; }
+    if (e.type === 'Index') {
+      const at = this.typeOf(e.array);
+      if (!isPtrLike(at)) throw new Error('Compile error: cannot index a non-array/non-pointer value');
+      const scale = pointedSize(at, this.abi);
+      this.genExpr(e.array);
+      this.genExpr(e.index);
+      const pi = this.pop1(ASCRATCH_B);
+      const pb = this.pop1(ASCRATCH_A);
+      if (scale === 2) {
+        this.emit('LSL', { rd: this.lo(pi), comment: 'index * 2' });
+        this.emit('ROL', { rd: this.hi(pi) });
+      }
+      const pd = this.pushTarget();
+      this.movwIf(pd, pb);
+      this.emit('ADD', { rd: this.lo(pd), rs2: this.lo(pi) });
+      this.emit('ADC', { rd: this.hi(pd), rs2: this.hi(pi) });
+      this.pushDone();
+      return;
+    }
+    throw new Error('Compile error: invalid assignment target (' + e.type + ')');
+  }
+
+  // A plain local addressed straight off Y, with no address materialised.
+  directLocal(target) {
+    if (target.type !== 'Ident') return null;
+    const v = this.lookupVar(target.name);
+    if (!v || v.kind !== 'local' || v.ctype.arraySize != null) return null;
+    return v;
+  }
+
+  genAssignTo(target, valueExpr, comment, discard) {
+    const tt = this.typeOf(target);
+    const v = this.directLocal(target);
+    if (v) {
+      this.genExpr(valueExpr);
+      const top = this.peekTop();
+      if (top !== null) {
+        this.storeLocal(top, v, comment);
+        if (discard) this.drop();
+        return;
+      }
+      const p = this.pop1(ASCRATCH_A);
+      this.storeLocal(p, v, comment);
+      if (!discard) this.push(p);
+      return;
+    }
+    const g = target.type === 'Ident' ? this.lookupVar(target.name) : null;
+    if (g && g.kind === 'global' && g.ctype.arraySize == null) {
+      this.genExpr(valueExpr);
+      const top = this.peekTop();
+      const p = top !== null ? top : this.pop1(ASCRATCH_A);
+      this.storeGlobal(p, g.addr, elemSize(tt, this.abi), comment);
+      if (top !== null) { if (discard) this.drop(); return; }
+      if (!discard) this.push(p);
+      return;
+    }
+    // General case. The ADDRESS is popped into Z and the VALUE into X, because
+    // making the pointer means `MOVW Z, addr` - which would clobber a value
+    // parked in Z. (The RV32 backend has the mirror-image trap around pushes.)
+    this.genAddr(target);
+    this.genExpr(valueExpr);
+    const pv = this.pop1(ASCRATCH_A);
+    const pa = this.pop1(ASCRATCH_B);
+    this.movwIf(AREG.Z, pa);
+    this.storeThroughZ(pv, elemSize(tt, this.abi), comment);
+    if (!discard) this.push(pv);
+  }
+
+  /* ---- expressions (each pushes exactly one result) ---- */
+  genExpr(e) {
+    switch (e.type) {
+      case 'Num': case 'CharLit': {
+        const pd = this.pushTarget();
+        const cmt = e.type === 'CharLit' ? '\'' + printableChar(e.value) + '\'' : undefined;
+        this.setConst(pd, e.value & 0xffff, cmt);
+        this.pushDone();
+        return;
+      }
+
+      case 'StringLit': {
+        const addr = this.meta.data.addString(e.value);
+        const pd = this.pushTarget();
+        this.setConst(pd, addr, 'string constant');
+        this.pushDone();
+        return;
+      }
+
+      case 'Ident': {
+        const v = this.lookupVar(e.name);
+        if (!v) throw new Error('Compile error: undefined variable \'' + e.name + '\'');
+        if (v.ctype.arraySize != null) { this.genAddr(e); return; } // arrays decay
+        const pd = this.pushTarget();
+        if (v.kind === 'local') this.loadLocal(pd, v, e.name);
+        else this.loadGlobal(pd, v.addr, elemSize(v.ctype, this.abi), e.name);
+        this.pushDone();
+        return;
+      }
+
+      case 'Index': {
+        const et = this.typeOf(e);
+        this.genAddr(e);
+        const pa = this.pop1(ASCRATCH_B);
+        this.movwIf(AREG.Z, pa);
+        const pd = this.pushTarget();
+        this.loadThroughZ(pd, elemSize(et, this.abi));
+        this.pushDone();
+        return;
+      }
+
+      case 'Assign': this.genAssignTo(e.target, e.value); return;
+      case 'Unary': return this.genUnary(e);
+      case 'IncDec': return this.genIncDec(e, false);
+      case 'Binary': return this.genBinary(e);
+      case 'Call': return this.genCall(e, false);
+    }
+    throw new Error('Compile error: unsupported expression ' + e.type);
+  }
+
+  genUnary(e) {
+    if (e.op === '&') { this.genAddr(e.expr); return; }
+    if (e.op === '*') {
+      const et = this.typeOf(e);
+      this.genExpr(e.expr);
+      const pa = this.pop1(ASCRATCH_B);
+      this.movwIf(AREG.Z, pa);
+      const pd = this.pushTarget();
+      this.loadThroughZ(pd, elemSize(et, this.abi), 'deref');
+      this.pushDone();
+      return;
+    }
+    if (e.op === '+') { this.genExpr(e.expr); return; }
+    if (e.op === '-') {
+      this.genExpr(e.expr);
+      const pa = this.pop1(ASCRATCH_B);
+      // 0 - v, built with SUB/SBC so it works on any register pair (SBCI would
+      // restrict the destination to the upper half).
+      this.emit('LDI', { rd: this.lo(ASCRATCH_A), imm: 0, comment: 'negate' });
+      this.emit('LDI', { rd: this.hi(ASCRATCH_A), imm: 0 });
+      this.emit('SUB', { rd: this.lo(ASCRATCH_A), rs2: this.lo(pa) });
+      this.emit('SBC', { rd: this.hi(ASCRATCH_A), rs2: this.hi(pa) });
+      const pd = this.pushTarget();
+      this.movwIf(pd, ASCRATCH_A);
+      this.pushDone();
+      return;
+    }
+    if (e.op === '~') {
+      this.genExpr(e.expr);
+      const pa = this.pop1(ASCRATCH_A);
+      const pd = this.pushTarget();
+      this.movwIf(pd, pa);
+      this.emit('COM', { rd: this.lo(pd), comment: 'bitwise not' });
+      this.emit('COM', { rd: this.hi(pd) });
+      this.pushDone();
+      return;
+    }
+    if (e.op === '!') {
+      this.genExpr(e.expr);
+      const pa = this.pop1(ASCRATCH_A);
+      this.testPairZero(pa);
+      const pd = this.pushTarget();
+      this.setBoolFromFlag(pd, 'BREQ', 'logical not');
+      this.pushDone();
+      return;
+    }
+    throw new Error('Compile error: unsupported unary operator ' + e.op);
+  }
+
+  // pd = 1 when the branch condition holds, else 0.
+  setBoolFromFlag(pd, brOp, comment) {
+    const trueL = this.freshLabel('true');
+    const endL = this.freshLabel('endcmp');
+    this.emit(brOp, { targetLabel: trueL, comment });
+    this.setConst(pd, 0);
+    this.emit('RJMP', { targetLabel: endL });
+    this.label(trueL);
+    this.setConst(pd, 1);
+    this.label(endL);
+  }
+
+  genIncDec(e, discard) {
+    const tt = this.typeOf(e.target);
+    const delta = (isPtrLike(tt) ? pointedSize(tt, this.abi) : 1) * (e.op === '++' ? 1 : -1);
+    const v = this.directLocal(e.target);
+    const cmt = (e.prefix ? e.op : '') + (e.target.name || '') + (e.prefix ? '' : e.op);
+    if (v) {
+      // Old value in X; the new value is computed there too, so the pair that
+      // gets pushed depends on which one this expression evaluates to.
+      this.loadLocal(ASCRATCH_A, v, cmt);
+      if (!e.prefix && !discard) this.emit('MOVW', { rd: ASCRATCH_B, rs2: ASCRATCH_A });
+      this.addConst(ASCRATCH_A, delta);
+      this.storeLocal(ASCRATCH_A, v);
+      if (discard) return;
+      const pd = this.pushTarget();
+      this.movwIf(pd, e.prefix ? ASCRATCH_A : ASCRATCH_B);
+      this.pushDone();
+      return;
+    }
+    // General lvalue: address in Z, value round-tripped through X.
+    this.genAddr(e.target);
+    const pa = this.pop1(ASCRATCH_B);
+    this.movwIf(AREG.Z, pa);
+    const bytes = elemSize(tt, this.abi);
+    // Z must survive the read-modify-write, so reload it rather than post-increment.
+    this.emit('LD', { rd: this.lo(ASCRATCH_A), rs1: AREG.Z, comment: cmt });
+    if (bytes === 2) {
+      this.emit('ADIW', { rd: AREG.Z, imm: 1 });
+      this.emit('LD', { rd: this.hi(ASCRATCH_A), rs1: AREG.Z });
+      this.emit('SBIW', { rd: AREG.Z, imm: 1 });
+    } else this.signExtendInto(ASCRATCH_A);
+    if (!e.prefix && !discard) {
+      this.emit('MOVW', { rd: AARGS[7], rs2: ASCRATCH_A }); // park the old value
+    }
+    this.addConst(ASCRATCH_A, delta);
+    this.storeThroughZ(ASCRATCH_A, bytes);
+    if (discard) return;
+    const pd = this.pushTarget();
+    this.movwIf(pd, e.prefix ? ASCRATCH_A : AARGS[7]);
+    this.pushDone();
+  }
+
+  genBinary(e) {
+    if (e.op === '&&' || e.op === '||') return this.genShortCircuit(e);
+
+    const relational = { '<': 'BRLT', '>': 'BRLT', '<=': 'BRGE', '>=': 'BRGE', '==': 'BREQ', '!=': 'BRNE' };
+    if (relational[e.op]) {
+      this.genCompare(e);
+      const pd = this.pushTarget();
+      this.setBoolFromFlag(pd, relational[e.op], e.op);
+      this.pushDone();
+      return;
+    }
+
+    const lt = this.typeOf(e.left), rt = this.typeOf(e.right);
+    const lPtr = isPtrLike(lt), rPtr = isPtrLike(rt);
+
+    // pointer arithmetic: scale the integer side by the pointed-to size
+    if ((e.op === '+' || e.op === '-') && (lPtr !== rPtr)) {
+      const size = pointedSize(lPtr ? lt : rt, this.abi);
+      if (!lPtr && e.op === '-') throw new Error('Compile error: cannot subtract a pointer from an integer');
+      this.genExpr(lPtr ? e.left : e.right);
+      this.genExpr(lPtr ? e.right : e.left);
+      const pi = this.pop1(ASCRATCH_B);
+      const pp = this.pop1(ASCRATCH_A);
+      if (size === 2) {
+        this.emit('LSL', { rd: this.lo(pi), comment: 'scale by sizeof(elem)' });
+        this.emit('ROL', { rd: this.hi(pi) });
+      }
+      const pd = this.pushTarget();
+      this.movwIf(pd, pp);
+      if (e.op === '+') {
+        this.emit('ADD', { rd: this.lo(pd), rs2: this.lo(pi) });
+        this.emit('ADC', { rd: this.hi(pd), rs2: this.hi(pi) });
+      } else {
+        this.emit('SUB', { rd: this.lo(pd), rs2: this.lo(pi) });
+        this.emit('SBC', { rd: this.hi(pd), rs2: this.hi(pi) });
+      }
+      this.pushDone();
+      return;
+    }
+
+    if (e.op === '*' || e.op === '/' || e.op === '%') return this.genMulDiv(e);
+    if (e.op === '<<' || e.op === '>>') return this.genShift(e);
+
+    this.genExpr(e.left);
+    this.genExpr(e.right);
+    const pb = this.pop1(ASCRATCH_B);
+    const pa = this.pop1(ASCRATCH_A);
+
+    // pointer difference: subtract, then divide by the pointed-to size
+    if (e.op === '-' && lPtr && rPtr) {
+      const size = pointedSize(lt, this.abi);
+      const pd0 = this.pushTarget();
+      this.movwIf(pd0, pa);
+      this.emit('SUB', { rd: this.lo(pd0), rs2: this.lo(pb), comment: 'pointer difference' });
+      this.emit('SBC', { rd: this.hi(pd0), rs2: this.hi(pb) });
+      if (size === 2) {
+        this.emit('ASR', { rd: this.hi(pd0) });
+        this.emit('ROR', { rd: this.lo(pd0) });
+      }
+      this.pushDone();
+      return;
+    }
+
+    const pd = this.pushTarget();
+    this.movwIf(pd, pa);
+    switch (e.op) {
+      case '+':
+        this.emit('ADD', { rd: this.lo(pd), rs2: this.lo(pb) });
+        this.emit('ADC', { rd: this.hi(pd), rs2: this.hi(pb) });
+        break;
+      case '-':
+        this.emit('SUB', { rd: this.lo(pd), rs2: this.lo(pb) });
+        this.emit('SBC', { rd: this.hi(pd), rs2: this.hi(pb) });
+        break;
+      case '&':
+        this.emit('AND', { rd: this.lo(pd), rs2: this.lo(pb) });
+        this.emit('AND', { rd: this.hi(pd), rs2: this.hi(pb) });
+        break;
+      case '|':
+        this.emit('OR', { rd: this.lo(pd), rs2: this.lo(pb) });
+        this.emit('OR', { rd: this.hi(pd), rs2: this.hi(pb) });
+        break;
+      case '^':
+        this.emit('EOR', { rd: this.lo(pd), rs2: this.lo(pb) });
+        this.emit('EOR', { rd: this.hi(pd), rs2: this.hi(pb) });
+        break;
+      default: throw new Error('Compile error: unsupported operator ' + e.op);
+    }
+    this.pushDone();
+  }
+
+  // Calls into a generated routine, exactly as RV32I does for mul/div. The
+  // helpers touch only argument pairs, X, Z and r0 - never r2..r9 - so operands
+  // still on the stack survive the call untouched.
+  callHelper(name, comment) {
+    this.usedHelpers.add(name);
+    this.emit('RCALL', { targetLabel: name, comment });
+  }
+
+  genMulDiv(e) {
+    this.genExpr(e.left);
+    this.genExpr(e.right);
+    const pb = this.pop1(ASCRATCH_B);
+    const pa = this.pop1(ASCRATCH_A);
+    // Operands into the helper's argument pairs. b first: a may be sitting in
+    // the pair b is destined for.
+    this.emit('MOVW', { rd: AARGS[1], rs2: pb });
+    this.emit('MOVW', { rd: AARGS[0], rs2: pa });
+    if (e.op === '*') {
+      this.callHelper('__mul16', 'software multiply');
+      this.push(AARGS[0]);
+    } else {
+      this.callHelper('__divmod16', 'software ' + (e.op === '/' ? 'divide' : 'remainder'));
+      this.push(e.op === '/' ? AARGS[0] : AARGS[1]);
+    }
+  }
+
+  // AVR shifts one bit per instruction, so a runtime count becomes a loop in a
+  // helper - the same trade the mul/div helpers make.
+  genShift(e) {
+    this.genExpr(e.left);
+    this.genExpr(e.right);
+    const pb = this.pop1(ASCRATCH_B);
+    const pa = this.pop1(ASCRATCH_A);
+    this.emit('MOVW', { rd: AARGS[1], rs2: pb });
+    this.emit('MOVW', { rd: AARGS[0], rs2: pa });
+    this.callHelper(e.op === '<<' ? '__shl16' : '__ashr16',
+      e.op === '<<' ? 'shift left' : 'arithmetic shift right');
+    this.push(AARGS[0]);
+  }
+
+  genShortCircuit(e) {
+    const isAnd = e.op === '&&';
+    const shortL = this.freshLabel(isAnd ? 'andfalse' : 'ortrue');
+    const endL = this.freshLabel('endlogic');
+    if (isAnd) {
+      this.genBranchIfZero(e.left, shortL);
+      this.genBranchIfZero(e.right, shortL);
+    } else {
+      this.genBranchIfNonZero(e.left, shortL);
+      this.genBranchIfNonZero(e.right, shortL);
+    }
+    // Both arms write the same pair: the depth is identical on both paths, so
+    // pushTarget resolves once, and the push completes only after the join so a
+    // spill is emitted once rather than twice.
+    const pd = this.pushTarget();
+    this.setConst(pd, isAnd ? 1 : 0);
+    this.emit('RJMP', { targetLabel: endL });
+    this.label(shortL);
+    this.setConst(pd, isAnd ? 0 : 1);
+    this.label(endL);
+    this.pushDone();
+  }
+
+  genCall(e, discard) {
+    if (e.name === 'printf') return this.genPrintf(e, discard);
+    const f = this.meta.funcs.get(e.name);
+    if (!f) throw new Error('Compile error: call to undefined function \'' + e.name + '\'');
+    if (e.args.length !== f.node.params.length) {
+      throw new Error('Compile error: ' + e.name + '() expects ' + f.node.params.length
+        + ' argument(s), got ' + e.args.length);
+    }
+    if (e.args.length > AARGS.length) {
+      throw new Error('Compile error: more than ' + AARGS.length + ' arguments to \'' + e.name + '\'');
+    }
+    for (const a of e.args) this.genExpr(a);
+    // Reverse order, so an argument still on the stack is never overwritten by
+    // one already moved into place.
+    for (let i = e.args.length - 1; i >= 0; i--) this.popTo(AARGS[i]);
+    this.emit('RCALL', { targetLabel: e.name, comment: e.name + '()' });
+    if (!discard) this.push(ARET);
+  }
+
+  /* printf is lowered at compile time into port writes - there is no libc here.
+     The format string must therefore be a literal. Each specifier becomes
+     [argument codegen] + a write of the 16-bit argument + a service selector,
+     which is the same shape as the RV32 side's a0/a7 ecall pair. */
+  genPrintf(e, discard) {
+    if (!e.args.length || e.args[0].type !== 'StringLit') {
+      throw new Error('Compile error: printf needs a literal format string');
+    }
+    const parts = parseFormatString(e.args[0].value);
+    let argi = 1;
+    for (const part of parts) {
+      if (part.kind === 'text') {
+        // Literal text really is transmitted a byte at a time, like firmware.
+        const addr = this.meta.data.addString(part.text);
+        this.setConst(AREG.Z, addr, 'printf literal');
+        this.callHelper('__puts', JSON.stringify(part.text));
+        continue;
+      }
+      if (argi >= e.args.length) throw new Error('Compile error: printf has more specifiers than arguments');
+      const arg = e.args[argi++];
+      this.genExpr(arg);
+      // Popped before the next specifier is evaluated, so printf arguments do
+      // not accumulate on the operand stack. %s must end up in Z, so it is popped
+      // straight there rather than moved afterwards.
+      const p = this.pop1(part.spec === 's' ? ASCRATCH_B : ASCRATCH_A);
+      if (part.spec === 'c') { this.emitPutchar(this.lo(p), '%c'); continue; }
+      if (part.spec === 's') { this.emitPuts(p, '%s'); continue; }
+      // Only %d and %x still need the side channel: formatting a number is more
+      // than a byte-wide UART can express.
+      this.emitService(part.spec === 'x' ? SYSCALL.PRINT_HEX : SYSCALL.PRINT_INT,
+        p, '%' + part.spec);
+    }
+    if (argi < e.args.length) throw new Error('Compile error: printf has more arguments than specifiers');
+    if (!discard) {
+      const pd = this.pushTarget();
+      this.setConst(pd, 0); // printf's return value is not modelled
+      this.pushDone();
+    }
+  }
+
+  /* Write the argument pair to the side-channel ports, then the service number;
+     the write to the command port is what performs the operation. STS rather
+     than OUT because these sit in extended I/O, which IN/OUT cannot reach.
+
+     Only for the services a UART cannot express - characters and strings go to
+     UDR0 instead (see emitPutchar / __puts). */
+  emitService(service, pair, comment) {
+    this.emit('STS', { imm: AVR_MEM.SIM_ARG_L, rs2: this.lo(pair), comment });
+    this.emit('STS', { imm: AVR_MEM.SIM_ARG_H, rs2: this.hi(pair) });
+    // Z is free here: the stores above have already consumed the argument, so
+    // even when `pair` IS Z its bytes were read out before this overwrites them.
+    this.emit('LDI', { rd: AREG.Z, imm: service });
+    this.emit('STS', { imm: AVR_MEM.SIM_CMD, rs2: AREG.Z });
+  }
+
+  // One character, straight out of the USART data register.
+  emitPutchar(reg, comment) {
+    this.emit('STS', { imm: AVR_MEM.UDR0, rs2: reg, comment });
+  }
+  // A NUL-terminated string at `pair`, transmitted byte by byte by __puts.
+  emitPuts(pair, comment) {
+    this.movwIf(AREG.Z, pair);
+    this.callHelper('__puts', comment);
+  }
+
+  /* ---- generated helper routines ----
+     Multiply is software by choice (this part has MUL; see the header comment);
+     divide has to be, since no AVR has a divide instruction.
+     Leaf routines: they need no frame, and they honour the contract that slot
+     pairs r2..r9 are never touched. */
+  genHelpers() {
+    this.curLine = null;
+    if (this.usedHelpers.has('__puts')) this.genPuts();
+    if (this.usedHelpers.has('__mul16')) this.genMul16();
+    if (this.usedHelpers.has('__divmod16')) this.genDivmod16();
+    if (this.usedHelpers.has('__shl16')) this.genShl16();
+    if (this.usedHelpers.has('__ashr16')) this.genAshr16();
+  }
+
+  /* Transmit a NUL-terminated string through the USART, which is what printing
+     on this machine actually is. Z holds the address and is consumed; r0 is the
+     byte in flight, and r1 (the zero register) is what the terminator is compared
+     against - a small but real use for keeping r1 at zero. */
+  genPuts() {
+    const loop = '.L__puts_loop', done = '.L__puts_done';
+    this.label('__puts');
+    this.label(loop);
+    this.emit('LDPI', { rd: AREG.scratch, rs1: AREG.Z, comment: '__puts: send *Z++ until NUL' });
+    this.emit('CP', { rd: AREG.scratch, rs2: AREG.zero });
+    this.emit('BREQ', { targetLabel: done });
+    this.emitPutchar(AREG.scratch);
+    this.emit('RJMP', { targetLabel: loop });
+    this.label(done);
+    this.emit('RET', {});
+  }
+
+  // 16x16 -> low 16 bits, shift-and-add. Logical shifts are correct whatever the
+  // signs, since two's-complement multiply mod 2^16 equals unsigned multiply
+  // mod 2^16 - the same argument the RV32I helper rests on.
+  genMul16() {
+    const A = AARGS[0], B = AARGS[1], T = AARGS[3]; // a, b, and the running addend
+    const loop = '.L__mul16_loop', noadd = '.L__mul16_noadd', done = '.L__mul16_done';
+    this.label('__mul16');
+    this.emit('MOVW', { rd: T, rs2: A, comment: '__mul16: software multiply (not using this core\'s MUL)' });
+    this.emit('LDI', { rd: this.lo(A), imm: 0 });
+    this.emit('LDI', { rd: this.hi(A), imm: 0 });
+    this.label(loop);
+    this.emit('MOV', { rd: AREG.scratch, rs2: this.lo(B), comment: 'while (b != 0)' });
+    this.emit('OR', { rd: AREG.scratch, rs2: this.hi(B) });
+    this.emit('BREQ', { targetLabel: done });
+    this.emit('SBRS', { rd: this.lo(B), imm: 0, comment: 'if (b & 1) product += a' });
+    this.emit('RJMP', { targetLabel: noadd });
+    this.emit('ADD', { rd: this.lo(A), rs2: this.lo(T) });
+    this.emit('ADC', { rd: this.hi(A), rs2: this.hi(T) });
+    this.label(noadd);
+    this.emit('LSL', { rd: this.lo(T), comment: 'a <<= 1' });
+    this.emit('ROL', { rd: this.hi(T) });
+    this.emit('LSR', { rd: this.hi(B), comment: 'b >>= 1' });
+    this.emit('ROR', { rd: this.lo(B) });
+    this.emit('RJMP', { targetLabel: loop });
+    this.label(done);
+    this.emit('RET', {});
+  }
+
+  /* Signed division by restoring division on magnitudes, then sign fixup:
+     the quotient takes sign(a)^sign(b) and the remainder takes sign(a), which is
+     C's truncate-toward-zero. Returning both results from one routine avoids
+     duplicating the loop. Divide-by-zero reproduces the RV32 results (quotient
+     -1, remainder = dividend) so the two targets agree. */
+  genDivmod16() {
+    const A = AARGS[0], B = AARGS[1], Q = AARGS[2], SGN = AARGS[3];
+    const L = n => '.L__divmod16_' + n;
+    this.label('__divmod16');
+    this.emit('MOV', { rd: AREG.scratch, rs2: this.lo(B), comment: '__divmod16: software divide' });
+    this.emit('OR', { rd: AREG.scratch, rs2: this.hi(B) });
+    this.emit('BREQ', { targetLabel: L('byzero') });
+    // remember the signs before taking magnitudes
+    this.emit('MOV', { rd: this.lo(SGN), rs2: this.hi(A), comment: 'sign(a)' });
+    this.emit('MOV', { rd: this.hi(SGN), rs2: this.hi(B), comment: 'sign(b)' });
+    this.emitAbs16(A, L('apos'));
+    this.emitAbs16(B, L('bpos'));
+    // restoring division: Q = 0; for 16 bits shift A left into R, compare, subtract
+    this.emit('LDI', { rd: this.lo(Q), imm: 0, comment: 'quotient = 0' });
+    this.emit('LDI', { rd: this.hi(Q), imm: 0 });
+    this.emit('EOR', { rd: this.lo(ASCRATCH_A), rs2: this.lo(ASCRATCH_A), comment: 'remainder = 0' });
+    this.emit('EOR', { rd: this.hi(ASCRATCH_A), rs2: this.hi(ASCRATCH_A) });
+    this.emit('LDI', { rd: AREG.Z, imm: 16, comment: 'loop 16 times' });
+    this.label(L('loop'));
+    // R = R:A << 1  (shift the dividend's top bit into the remainder)
+    this.emit('LSL', { rd: this.lo(A) });
+    this.emit('ROL', { rd: this.hi(A) });
+    this.emit('ROL', { rd: this.lo(ASCRATCH_A) });
+    this.emit('ROL', { rd: this.hi(ASCRATCH_A) });
+    // if (R >= B) { R -= B; quotient bit = 1 }
+    this.emit('CP', { rd: this.lo(ASCRATCH_A), rs2: this.lo(B) });
+    this.emit('CPC', { rd: this.hi(ASCRATCH_A), rs2: this.hi(B) });
+    this.emit('BRCS', { targetLabel: L('nosub') });
+    this.emit('SUB', { rd: this.lo(ASCRATCH_A), rs2: this.lo(B) });
+    this.emit('SBC', { rd: this.hi(ASCRATCH_A), rs2: this.hi(B) });
+    this.emit('ORI', { rd: this.lo(A), imm: 1, comment: 'set quotient bit' });
+    this.label(L('nosub'));
+    this.emit('DEC', { rd: AREG.Z });
+    this.emit('BRNE', { targetLabel: L('loop') });
+    // A now holds the quotient, ASCRATCH_A the remainder
+    this.emit('MOVW', { rd: Q, rs2: A, comment: 'quotient' });
+    this.emit('MOVW', { rd: B, rs2: ASCRATCH_A, comment: 'remainder' });
+    // quotient sign = sign(a) ^ sign(b)
+    this.emit('MOV', { rd: AREG.scratch, rs2: this.lo(SGN) });
+    this.emit('EOR', { rd: AREG.scratch, rs2: this.hi(SGN) });
+    this.emit('SBRS', { rd: AREG.scratch, imm: 7 });
+    this.emit('RJMP', { targetLabel: L('qpos') });
+    this.emitNeg16(Q);
+    this.label(L('qpos'));
+    // remainder sign = sign(a)
+    this.emit('SBRS', { rd: this.lo(SGN), imm: 7 });
+    this.emit('RJMP', { targetLabel: L('rpos') });
+    this.emitNeg16(B);
+    this.label(L('rpos'));
+    this.emit('MOVW', { rd: A, rs2: Q, comment: 'a0 = quotient, a1 = remainder' });
+    this.emit('RET', {});
+    // division by zero: same answers the RV32 side gives
+    this.label(L('byzero'));
+    this.emit('MOVW', { rd: B, rs2: A, comment: 'x/0: remainder = dividend' });
+    this.emit('LDI', { rd: this.lo(A), imm: 0xff, comment: 'x/0: quotient = -1' });
+    this.emit('LDI', { rd: this.hi(A), imm: 0xff });
+    this.emit('RET', {});
+  }
+
+  // |pair|, branching over the negate when already non-negative.
+  emitAbs16(pair, skipLabel) {
+    this.emit('SBRS', { rd: this.hi(pair), imm: 7, comment: 'take magnitude' });
+    this.emit('RJMP', { targetLabel: skipLabel });
+    this.emitNeg16(pair);
+    this.label(skipLabel);
+  }
+  // pair = -pair, via 0 - pair so no register-class restriction applies.
+  emitNeg16(pair) {
+    this.emit('EOR', { rd: this.lo(ASCRATCH_B), rs2: this.lo(ASCRATCH_B) });
+    this.emit('EOR', { rd: this.hi(ASCRATCH_B), rs2: this.hi(ASCRATCH_B) });
+    this.emit('SUB', { rd: this.lo(ASCRATCH_B), rs2: this.lo(pair) });
+    this.emit('SBC', { rd: this.hi(ASCRATCH_B), rs2: this.hi(pair) });
+    this.emit('MOVW', { rd: pair, rs2: ASCRATCH_B });
+  }
+
+  genShl16() {
+    const A = AARGS[0], B = AARGS[1];
+    const loop = '.L__shl16_loop', done = '.L__shl16_done';
+    this.label('__shl16');
+    this.emit('MOV', { rd: AREG.scratch, rs2: this.lo(B), comment: '__shl16: a << b, one bit per step' });
+    this.emit('OR', { rd: AREG.scratch, rs2: this.hi(B) });
+    this.label(loop);
+    this.emit('BREQ', { targetLabel: done });
+    this.emit('LSL', { rd: this.lo(A) });
+    this.emit('ROL', { rd: this.hi(A) });
+    this.addConst(B, -1);
+    this.emit('MOV', { rd: AREG.scratch, rs2: this.lo(B) });
+    this.emit('OR', { rd: AREG.scratch, rs2: this.hi(B) });
+    this.emit('RJMP', { targetLabel: loop });
+    this.label(done);
+    this.emit('RET', {});
+  }
+
+  genAshr16() {
+    const A = AARGS[0], B = AARGS[1];
+    const loop = '.L__ashr16_loop', done = '.L__ashr16_done';
+    this.label('__ashr16');
+    this.emit('MOV', { rd: AREG.scratch, rs2: this.lo(B), comment: '__ashr16: a >> b, sign-preserving' });
+    this.emit('OR', { rd: AREG.scratch, rs2: this.hi(B) });
+    this.label(loop);
+    this.emit('BREQ', { targetLabel: done });
+    this.emit('ASR', { rd: this.hi(A) });
+    this.emit('ROR', { rd: this.lo(A) });
+    this.addConst(B, -1);
+    this.emit('MOV', { rd: AREG.scratch, rs2: this.lo(B) });
+    this.emit('OR', { rd: AREG.scratch, rs2: this.hi(B) });
+    this.emit('RJMP', { targetLabel: loop });
+    this.label(done);
+    this.emit('RET', {});
+  }
+}
+
+
+
+/* =========================================================================
+   AVR BRANCH RELAXATION
+
+   A conditional branch reaches only +-63 words, far less than a loop body can
+   span. Any that does not fit is rewritten as
+
+       BR<inverse> .Lrelax_n
+       RJMP        target        ; reaches +-2K words
+     .Lrelax_n:
+
+   Iterated to a fixed point, because inserting instructions can push other
+   branches out of range.
+
+   Two obligations, both the same ones peepholePushPop has for the same reason -
+   labels here are instruction INDICES rather than array entries: this must run
+   before addresses are assigned and labels resolved, and it must remap the label
+   map itself.
+   ========================================================================= */
+
+function avrRelaxBranches(instrs, labels) {
+  let seq = 0;
+  for (let pass = 0; pass < 16; pass++) {
+    const layout = assignAddresses(instrs, avrInstrBytes);
+    const tooFar = new Set();
+    for (let i = 0; i < instrs.length; i++) {
+      const ins = instrs[i];
+      if (!AVR_BRANCH_INVERSE[ins.op] || !ins.targetLabel) continue;
+      const t = labels.get(ins.targetLabel);
+      if (t === undefined) continue;
+      // The offset a branch encodes is in words, counted from the instruction
+      // *after* it.
+      const words = (layout.addrs[t] - (layout.addrs[i] + 2)) / 2;
+      if (words > AVR_BRANCH_REACH || words < -(AVR_BRANCH_REACH + 1)) tooFar.add(i);
+    }
+    if (!tooFar.size) return;
+
+    const out = [];
+    const remap = new Int32Array(instrs.length + 1);
+    const added = [];
+    for (let i = 0; i < instrs.length; i++) {
+      remap[i] = out.length;
+      const ins = instrs[i];
+      if (!tooFar.has(i)) { out.push(ins); continue; }
+      const skip = '.Lrelax' + (seq++);
+      out.push(Object.assign({}, ins, { op: AVR_BRANCH_INVERSE[ins.op], targetLabel: skip }));
+      out.push({
+        op: 'RJMP', rd: 0, rs1: 0, rs2: 0, imm: 0, targetLabel: ins.targetLabel,
+        comment: 'branch out of range', line: ins.line, addr: 0, targetIndex: null,
+      });
+      added.push([skip, out.length]); // the label lands after the RJMP
+    }
+    remap[instrs.length] = out.length;
+    // Existing labels first, so the newly added ones are not remapped as well.
+    for (const [name, idx] of labels) labels.set(name, remap[idx]);
+    for (const [name, idx] of added) labels.set(name, idx);
+    instrs.length = 0;
+    for (const ins of out) instrs.push(ins);
+  }
+  throw new Error('Compile error: branch relaxation did not converge');
+}
+
+/* =========================================================================
+   AVR INSTRUCTION ENCODING
+
+   Display-only, exactly as on the RV32 side: the interpreter executes the
+   objects directly and never consults this, so an encoder bug can only put a
+   wrong number on screen. One-word instructions render as 4 hex digits and
+   two-word ones as 8.
+   ========================================================================= */
+
+// Two-operand register format: 0000 00rd dddd rrrr, with r's 5th bit at bit 9.
+function aEnc2(base, d, r) {
+  return (base | ((r & 0x10) << 5) | ((d & 0x1f) << 4) | (r & 0x0f)) & 0xffff;
+}
+// Register-immediate format: 0000 KKKK dddd KKKK, d relative to r16.
+function aEncK(base, d, k) {
+  return (base | ((k & 0xf0) << 4) | (((d - 16) & 0x0f) << 4) | (k & 0x0f)) & 0xffff;
+}
+// Single-register 1001 010d dddd xxxx group.
+function aEnc1(suffix, d) { return (0x9400 | ((d & 0x1f) << 4) | suffix) & 0xffff; }
+// ADIW/SBIW: 1001 011x KKdd KKKK over the four upper pairs.
+function aEncW(base, d, k) {
+  return (base | ((k & 0x30) << 2) | ((((d - 24) >> 1) & 3) << 4) | (k & 0x0f)) & 0xffff;
+}
+// IN/OUT: 1011 xAAr rrrr AAAA
+function aEncIO(base, r, a) {
+  return (base | ((a & 0x30) << 5) | ((r & 0x1f) << 4) | (a & 0x0f)) & 0xffff;
+}
+// LDD/STD displacement: 10q0 qq0d dddd 1qqq (bit 3 set selects Y, clear selects Z).
+function aEncQ(base, r, q) {
+  return (base | ((q & 0x20) << 8) | ((q & 0x18) << 7) | ((r & 0x1f) << 4) | (q & 0x07)) & 0xffff;
+}
+
+const AVR_2OP = { ADD: 0x0c00, ADC: 0x1c00, SUB: 0x1800, SBC: 0x0800, AND: 0x2000,
+  OR: 0x2800, EOR: 0x2400, CP: 0x1400, CPC: 0x0400, MOV: 0x2c00 };
+const AVR_KOP = { SUBI: 0x5000, SBCI: 0x4000, ANDI: 0x7000, ORI: 0x6000, CPI: 0x3000, LDI: 0xe000 };
+const AVR_1OP = { COM: 0x0, NEG: 0x1, SWAP: 0x2, INC: 0x3, ASR: 0x5, LSR: 0x6, ROR: 0x7, DEC: 0xa };
+// Conditional branches are BRBS/BRBC on one SREG bit.
+const AVR_BR_BIT = { BRCS: [0, 1], BRCC: [0, 0], BREQ: [1, 1], BRNE: [1, 0],
+  BRMI: [2, 1], BRPL: [2, 0], BRLT: [4, 1], BRGE: [4, 0] };
+
+// Word offset an RJMP/RCALL/branch encodes: from the instruction after it.
+function avrWordOffset(ins) {
+  return (ins.imm - avrInstrBytes(ins)) / 2;
+}
+
+function avrEncodeInstr(ins) {
+  const d = ins.rd, r = ins.rs2, base = ins.rs1, imm = ins.imm | 0;
+  if (AVR_2OP[ins.op] !== undefined) return aEnc2(AVR_2OP[ins.op], d, r);
+  if (AVR_KOP[ins.op] !== undefined) return aEncK(AVR_KOP[ins.op], d, imm);
+  if (AVR_1OP[ins.op] !== undefined) return aEnc1(AVR_1OP[ins.op], d);
+  if (AVR_BR_BIT[ins.op]) {
+    const [bit, set] = AVR_BR_BIT[ins.op];
+    const k = avrWordOffset(ins);
+    return ((set ? 0xf000 : 0xf400) | ((k & 0x7f) << 3) | bit) & 0xffff;
+  }
+  switch (ins.op) {
+    case 'NOP': return 0x0000;
+    case 'RET': return 0x9508;
+    case 'MOVW': return (0x0100 | (((d >> 1) & 0x0f) << 4) | ((r >> 1) & 0x0f)) & 0xffff;
+    // LSL/ROL are the same instruction as ADD/ADC with both operands equal.
+    case 'LSL': return aEnc2(AVR_2OP.ADD, d, d);
+    case 'ROL': return aEnc2(AVR_2OP.ADC, d, d);
+    case 'ADIW': return aEncW(0x9600, d, imm);
+    case 'SBIW': return aEncW(0x9700, d, imm);
+    case 'PUSH': return (0x920f | ((r & 0x1f) << 4)) & 0xffff;
+    case 'POP': return (0x900f | ((d & 0x1f) << 4)) & 0xffff;
+    case 'IN': return aEncIO(0xb000, d, imm);
+    case 'OUT': return aEncIO(0xb800, r, imm);
+    case 'SBRC': return (0xfc00 | ((d & 0x1f) << 4) | (imm & 7)) & 0xffff;
+    case 'SBRS': return (0xfe00 | ((d & 0x1f) << 4) | (imm & 7)) & 0xffff;
+    case 'RJMP': return (0xc000 | (avrWordOffset(ins) & 0x0fff)) & 0xffff;
+    case 'RCALL': return (0xd000 | (avrWordOffset(ins) & 0x0fff)) & 0xffff;
+    case 'LD': return base === AREG.X ? (0x900c | ((d & 0x1f) << 4)) & 0xffff
+      : aEncQ(base === AREG.Y ? 0x8008 : 0x8000, d, 0);
+    case 'LDPI': return base === AREG.X ? (0x900d | ((d & 0x1f) << 4)) & 0xffff
+      : ((base === AREG.Y ? 0x9009 : 0x9001) | ((d & 0x1f) << 4)) & 0xffff;
+    case 'ST': return base === AREG.X ? (0x920c | ((r & 0x1f) << 4)) & 0xffff
+      : aEncQ(base === AREG.Y ? 0x8208 : 0x8200, r, 0);
+    case 'STPI': return base === AREG.X ? (0x920d | ((r & 0x1f) << 4)) & 0xffff
+      : ((base === AREG.Y ? 0x9209 : 0x9201) | ((r & 0x1f) << 4)) & 0xffff;
+    case 'LDD': return aEncQ(base === AREG.Y ? 0x8008 : 0x8000, d, imm);
+    case 'STD': return aEncQ(base === AREG.Y ? 0x8208 : 0x8200, r, imm);
+    // Two-word: the second word is the absolute data address.
+    case 'LDS': return (((0x9000 | ((d & 0x1f) << 4)) & 0xffff) * 0x10000 + (imm & 0xffff));
+    case 'STS': return (((0x9200 | ((r & 0x1f) << 4)) & 0xffff) * 0x10000 + (imm & 0xffff));
+  }
+  return null;
+}
+
+function avrFormatCode(ins) {
+  const word = avrEncodeInstr(ins);
+  if (word == null) return AVR_TWO_WORD.has(ins.op) ? '--------' : '----';
+  return AVR_TWO_WORD.has(ins.op)
+    ? word.toString(16).padStart(8, '0')
+    : word.toString(16).padStart(4, '0');
+}
+
+/* =========================================================================
+   AVR ASSEMBLY LISTING FORMATTER
+   avr-objdump style, with bare rN register names - AVR has no ABI mnemonics of
+   the kind RISC-V's `sp`/`a0` provide, and inventing some would be misleading.
+   Pseudo-instruction display (clr/lsl/rol/tst) is derived from the real
+   instruction, so it can never disagree with what runs.
+   ========================================================================= */
+
+function avrPtrName(reg) {
+  return reg === AREG.X ? 'X' : reg === AREG.Y ? 'Y' : reg === AREG.Z ? 'Z' : 'r' + reg;
+}
+function avrHex(v, digits) { return '0x' + (v >>> 0).toString(16).padStart(digits || 2, '0'); }
+
+function avrFormatInstr(ins) {
+  const d = 'r' + ins.rd, r = 'r' + ins.rs2;
+  const target = ins.targetLabel || ins.imm;
+  const q = ins.imm | 0;
+  switch (ins.op) {
+    case 'MOV': return 'mov ' + d + ', ' + r;
+    case 'MOVW': return 'movw ' + d + ', ' + r;
+    case 'LDI': return 'ldi ' + d + ', ' + avrHex(ins.imm);
+    case 'EOR': return ins.rd === ins.rs2 ? 'clr ' + d : 'eor ' + d + ', ' + r;
+    case 'ADD': case 'ADC': case 'SUB': case 'SBC': case 'AND': case 'OR':
+    case 'CP': case 'CPC':
+      return ins.op.toLowerCase() + ' ' + d + ', ' + r;
+    case 'SUBI': case 'SBCI': case 'ANDI': case 'ORI': case 'CPI':
+      return ins.op.toLowerCase() + ' ' + d + ', ' + avrHex(ins.imm);
+    case 'COM': case 'NEG': case 'INC': case 'DEC': case 'LSL': case 'LSR':
+    case 'ASR': case 'ROL': case 'ROR': case 'SWAP':
+      return ins.op.toLowerCase() + ' ' + d;
+    case 'ADIW': case 'SBIW': return ins.op.toLowerCase() + ' ' + d + ', ' + ins.imm;
+    case 'PUSH': return 'push ' + r;
+    case 'POP': return 'pop ' + d;
+    case 'IN': return 'in ' + d + ', ' + avrHex(ins.imm);
+    case 'OUT': return 'out ' + avrHex(ins.imm) + ', ' + r;
+    case 'SBRC': return 'sbrc ' + d + ', ' + ins.imm;
+    case 'SBRS': return 'sbrs ' + d + ', ' + ins.imm;
+    case 'LDS': return 'lds ' + d + ', ' + avrHex(ins.imm, 4);
+    case 'STS': return 'sts ' + avrHex(ins.imm, 4) + ', ' + r;
+    case 'LDD': return q === 0 ? 'ld ' + d + ', ' + avrPtrName(ins.rs1)
+      : 'ldd ' + d + ', ' + avrPtrName(ins.rs1) + '+' + q;
+    case 'STD': return q === 0 ? 'st ' + avrPtrName(ins.rs1) + ', ' + r
+      : 'std ' + avrPtrName(ins.rs1) + '+' + q + ', ' + r;
+    case 'LD': return 'ld ' + d + ', ' + avrPtrName(ins.rs1);
+    case 'LDPI': return 'ld ' + d + ', ' + avrPtrName(ins.rs1) + '+';
+    case 'ST': return 'st ' + avrPtrName(ins.rs1) + ', ' + r;
+    case 'STPI': return 'st ' + avrPtrName(ins.rs1) + '+, ' + r;
+    case 'RJMP': return 'rjmp ' + target;
+    case 'RCALL': return 'rcall ' + target;
+    case 'RET': return 'ret';
+    case 'NOP': return 'nop';
+    case 'BREQ': case 'BRNE': case 'BRLT': case 'BRGE':
+    case 'BRCS': case 'BRCC': case 'BRMI': case 'BRPL':
+      return ins.op.toLowerCase() + ' ' + target;
+  }
+  return ins.op.toLowerCase();
+}
+
+function avrFormatAsm(program) {
+  const byIndex = labelsByIndex(program.labels);
+  const lines = [];
+  lines.push({ kind: 'header', text: '; target: ' + program.target.asmLabel });
+  for (let i = 0; i < program.instrs.length; i++) {
+    for (const name of (byIndex.get(i) || [])) lines.push({ kind: 'label', text: name + ':' });
+    const ins = program.instrs[i];
+    lines.push({
+      kind: 'instr', addr: program.addrs[i], index: i,
+      text: avrFormatInstr(ins), comment: ins.comment, code: avrFormatCode(ins),
+    });
+  }
+  return lines;
+}
+
+/* Which registers each AVR op genuinely READS. Needed for the debugger's amber
+   "this instruction reads here" highlight, and it has to be a table for the same
+   reason the RV32 one does: emit() defaults unused fields to 0, so reading
+   ins.rd/rs1/rs2 blindly would report r0 as an operand of half the program.
+
+   `pairs` lists fields whose register is the low half of a PAIR, so both halves
+   are reported - a pointer dereference genuinely reads both bytes of Z. */
+const AVR_SRC_FIELDS = {
+  ADD: { regs: ['rd', 'rs2'] }, ADC: { regs: ['rd', 'rs2'] },
+  SUB: { regs: ['rd', 'rs2'] }, SBC: { regs: ['rd', 'rs2'] },
+  AND: { regs: ['rd', 'rs2'] }, OR: { regs: ['rd', 'rs2'] },
+  EOR: { regs: ['rd', 'rs2'] }, CP: { regs: ['rd', 'rs2'] }, CPC: { regs: ['rd', 'rs2'] },
+  MOV: { regs: ['rs2'] }, MOVW: { pairs: ['rs2'] },
+  LDI: { regs: [] },
+  SUBI: { regs: ['rd'] }, SBCI: { regs: ['rd'] }, ANDI: { regs: ['rd'] },
+  ORI: { regs: ['rd'] }, CPI: { regs: ['rd'] },
+  COM: { regs: ['rd'] }, NEG: { regs: ['rd'] }, INC: { regs: ['rd'] }, DEC: { regs: ['rd'] },
+  SWAP: { regs: ['rd'] },
+  LSL: { regs: ['rd'] }, LSR: { regs: ['rd'] }, ASR: { regs: ['rd'] },
+  ROL: { regs: ['rd'] }, ROR: { regs: ['rd'] },
+  ADIW: { pairs: ['rd'] }, SBIW: { pairs: ['rd'] },
+  PUSH: { regs: ['rs2'] }, POP: { regs: [] },
+  IN: { regs: [] }, OUT: { regs: ['rs2'] },
+  SBRC: { regs: ['rd'] }, SBRS: { regs: ['rd'] },
+  LDS: { regs: [] }, STS: { regs: ['rs2'] },
+  LD: { pairs: ['rs1'] }, LDPI: { pairs: ['rs1'] },
+  LDD: { pairs: ['rs1'] },
+  ST: { regs: ['rs2'], pairs: ['rs1'] }, STPI: { regs: ['rs2'], pairs: ['rs1'] },
+  STD: { regs: ['rs2'], pairs: ['rs1'] },
+  RJMP: { regs: [] }, RCALL: { regs: [] }, RET: { regs: [] }, NOP: { regs: [] },
+  BREQ: { regs: [] }, BRNE: { regs: [] }, BRLT: { regs: [] }, BRGE: { regs: [] },
+  BRCS: { regs: [] }, BRCC: { regs: [] }, BRMI: { regs: [] }, BRPL: { regs: [] },
+};
+
+function avrSourceRegs(ins) {
+  const srcs = new Set();
+  const spec = AVR_SRC_FIELDS[ins.op];
+  if (!spec) return srcs;
+  for (const f of (spec.regs || [])) srcs.add(ins[f] & 31);
+  for (const f of (spec.pairs || [])) { srcs.add(ins[f] & 31); srcs.add((ins[f] + 1) & 31); }
+  return srcs;
+}
+
+// Loads, for the memory viewer's "this instruction reads this row" column.
+const AVR_LOAD_OPS = new Set(['LD', 'LDD', 'LDPI', 'LDS']);
+
+/* =========================================================================
+   DEBUGGER ANALYSIS
+   What each memory cell holds, and which function each live frame belongs to.
+   Pure functions over (program, machine state) with no DOM involvement, so they
+   sit with the engine rather than the UI and can be driven headlessly.
+   ========================================================================= */
+
+// Data segment: variable names (with array indices) and string constants.
+// Strings are laid down first so a named variable always wins for its own word -
+// a `char*` global's pointer word must read as the variable, while the string's
+// own bytes read as the text.
+function buildDataHints(program) {
+  const t = program.target;
+  const w = t.viewWordBytes;
+  const rowOf = a => a - (a % w);   // the row this address falls in
+  const hints = new Map();
+  for (const [text, addr] of program.data.stringCache) {
+    const shown = text.length > 16 ? text.slice(0, 16) + '…' : text;
+    const label = '"' + shown.replace(/\n/g, '\\n').replace(/\t/g, '\\t') + '"';
+    for (let a = addr; a < addr + text.length + 1; a += w) hints.set(rowOf(a), label);
+  }
+  for (const [name, g] of program.globals) {
+    if (g.ctype.arraySize == null) {
+      hints.set(rowOf(g.addr), name);
+      // a cell wider than a row spills into the next row(s)
+      for (let b = w; b < elemSize(g.ctype, t.abi); b += w) {
+        hints.set(rowOf(g.addr + b), name + ' (high byte)');
+      }
+      continue;
+    }
+    const esz = elemSize(g.ctype, t.abi);
+    const perRow = Math.max(1, Math.floor(w / esz));
+    if (perRow === 1) {
+      // one element per row, or an element spanning several rows
+      for (let i = 0; i < g.ctype.arraySize; i++) {
+        const base = g.addr + i * esz;
+        hints.set(rowOf(base), name + '[' + i + ']');
+        for (let b = w; b < esz; b += w) hints.set(rowOf(base + b), name + '[' + i + '] (high byte)');
+      }
+    } else {
+      // several elements share a row, so label the range rather than pretend one
+      // row is one element
+      for (let i = 0; i < g.ctype.arraySize; i += perRow) {
+        const last = Math.min(i + perRow - 1, g.ctype.arraySize - 1);
+        hints.set(g.addr + i * esz, name + '[' + i + (last > i ? '..' + last : '') + ']');
+      }
+    }
+  }
+  return hints;
+}
+
+// pc -> function, from the label map. Helpers (__mul/__divmod) are leaf routines
+// with no frame, so they are excluded: attributing a frame to one would derail
+// the chain walk.
+function buildFunctionIndex(program) {
+  const index = [];
+  for (const [name, idx] of program.labels) {
+    if (!program.funcs.has(name)) continue; // skips _start, .L labels and helpers
+    index.push({ start: program.addrs[idx], name });
+  }
+  index.sort((a, b) => a.start - b.start);
+  return index;
+}
+
+function functionContaining(index, pc) {
+  let found = null;
+  for (const e of index) { if (e.start <= pc) found = e.name; else break; }
+  return found;
+}
+
+/* Each function's instruction-index extent, [start, end). buildFunctionIndex
+   gives starts only, which is not enough: the compiler-generated helpers
+   (__mul, __divmod16, ...) are appended AFTER the last function and are
+   deliberately absent from the index, so resolving a pc inside one by "the
+   nearest preceding start" names whichever function happens to sit before them
+   and invents a frame that does not exist. An extent lets that case be
+   recognised instead of mislabelled. */
+function buildFunctionRanges(program) {
+  const ranges = [];
+  for (const [name] of program.funcs) {
+    const start = program.labels.get(name);
+    const epi = program.labels.get('.Lepi_' + name);
+    if (start == null || epi == null) continue;
+    // The function ends after the return that terminates its epilogue.
+    let end = epi;
+    for (let i = epi; i < program.instrs.length; i++) {
+      if (program.target.isReturn(program.instrs[i])) { end = i + 1; break; }
+    }
+    ranges.push({ name, start, end });
+  }
+  ranges.sort((a, b) => a.start - b.start);
+  return ranges;
+}
+
+// The function whose body contains this instruction index, or null when the pc is
+// in the entry stub or one of the frameless helpers.
+function functionContainingIndex(ranges, idx) {
+  for (const r of ranges) if (idx >= r.start && idx < r.end) return r.name;
+  return null;
+}
+
+// A prologue is `addi sp,sp,-fs / sw ra / sw s0 / addi s0,sp,fs`: s0 only becomes
+// *this* frame's base after the 4th instruction, so within that window the
+// innermost frame still belongs to the caller.
+const PROLOGUE_BYTES = 16;
+
+const MAX_FRAME_WALK = 64;
+
+// Walks the saved-fp chain to label every live frame. Each prologue stores
+// [fp-4] = saved ra and [fp-8] = the caller's fp, which is exactly what makes
+// the chain walkable.
+// `retired` (optional) is an addr -> {label, value} cache that survives across
+// renders. A word the walk can no longer explain - because fp has moved past
+// it, not just because sp has - would otherwise fall back to generic "operand
+// temp" the instant it retires, discarding real info (which frame/slot it was)
+// that's still sitting right there in memory, unread. If `retired` has an entry
+// for that address AND the word's bytes still match what they were when the
+// walk last explained it, nothing has actually touched it since - the old
+// label is still true, so it's kept (dimmed by the caller, not blanked out).
+// If the bytes differ, something legitimately reused the address (a new push,
+// a new frame), so the label is correctly dropped in favor of "operand temp".
+function buildStackHints(program, result, lo, hi, retired) {
+  const hints = new Map();
+  if (!program || !result) return hints;
+  const index = buildFunctionIndex(program);
+  const word = a => (a >= 0 && a + 3 < result.memSize)
+    ? ((result.mem[a] | (result.mem[a + 1] << 8) | (result.mem[a + 2] << 16) | (result.mem[a + 3] << 24)) | 0)
+    : null;
+
+  let fp = result.regs[REG.s0] | 0;
+  const ranges = buildFunctionRanges(program);
+  let fnName = functionContainingIndex(ranges, result.index);
+  if (!fnName) {
+    // Inside a helper or the entry stub. A helper is a leaf routine that never
+    // touches s0, so the frame under it belongs to whoever called the helper -
+    // and ra still points just after that call.
+    const callerRa = result.regs[REG.ra] | 0;
+    const owner = functionContainingIndex(ranges, (callerRa - 4) / 4);
+    if (!owner) return hints;   // the entry stub: no frames to describe yet
+    fnName = owner;
+  }
+  // Detect the prologue window by pc, not by comparing fp against sp: sp moves
+  // constantly as operands are pushed, so an sp-based test would keep flipping
+  // and relabel an established frame every time something was pushed.
+  if (fnName) {
+    const fnStart = index.find(e => e.name === fnName);
+    if (fnStart && result.pc < fnStart.start + PROLOGUE_BYTES) {
+      // s0 is still the caller's: attribute the innermost frame to whoever the
+      // saved ra points into, rather than to the function being entered.
+      const callerRa = result.regs[REG.ra] | 0;
+      fnName = functionContaining(index, callerRa - 4);
+    } else {
+      // Mirror image at the other end: the epilogue is
+      // `[restore slot regs] / lw ra,-4(s0) / mv sp,s0 / lw s0,-8(s0) / ret` (see
+      // genFunction). By the time the `lw s0` has run, s0 already holds the
+      // CALLER's frame base, but pc is still inside fnName - it hasn't reached
+      // `ret` yet. Same fix as the prologue case, same direction of travel: `ra`
+      // was reloaded with fnName's own return address just before, so
+      // functionContaining(ra-4) recovers who fp now actually belongs to. The
+      // slot-register restores come first, so `ret` sits that many words further on.
+      const epiIdx = program.labels.get('.Lepi_' + fnName);
+      const epiFn = program.funcs.get(fnName);
+      const retOff = 12 + (epiFn && epiFn.opRegSaves ? epiFn.opRegSaves.length * 4 : 0);
+      if (epiIdx != null && result.pc === program.addrs[epiIdx] + retOff) {
+        const callerRa = result.regs[REG.ra] | 0;
+        fnName = functionContaining(index, callerRa - 4);
+      }
+    }
+  }
+  const put = (a, text) => { if (a >= lo && a < hi && !hints.has(a)) hints.set(a, text); };
+
+  for (let depth = 0; depth < MAX_FRAME_WALK; depth++) {
+    // stop on anything implausible rather than guessing: poison before _start,
+    // a frame outside the live stack, or a chain that fails to move upward.
+    // Deliberately NOT fp <= sp: right after a `mv sp, s0` epilogue instruction,
+    // sp already equals fp for the frame that's mid-return, but fp is still a
+    // valid pointer - both to that frame's own (now-popped) slots and to the
+    // rest of the chain above it. Bailing out here would mislabel the entire
+    // caller chain as scratch, not just the one frame that's actually discarded.
+    if (!fnName || fp > result.memSize || (fp & 3) !== 0) break;
+    const fn = program.funcs.get(fnName);
+    if (!fn) break;
+    put(fp - 4, fnName + '() · saved ra');
+    put(fp - 8, fnName + '() · saved fp');
+    // Operand-slot registers are callee-saved, so each frame holds the caller's
+    // copy of every slot register this function uses.
+    for (const sv of (fn.opRegSaves || [])) {
+      put(fp - sv.offset, fnName + '() · saved ' + REG_NAMES[OPREGS[sv.slot]]);
+    }
+    for (const s of fn.slots) {
+      const base = fp - s.offset;
+      const n = s.ctype.arraySize != null ? s.ctype.arraySize : 1;
+      const esz = elemSize(s.ctype, program.target.abi);
+      if (s.ctype.arraySize != null && esz === 4) {
+        for (let i = 0; i < n; i++) put(base + i * 4, fnName + '() · ' + s.name + '[' + i + ']');
+      } else {
+        const bytes = s.ctype.arraySize != null ? n * esz : 4;
+        for (let b = 0; b < bytes; b += 4) {
+          put(base + b, fnName + '() · ' + s.name + (s.ctype.arraySize != null ? '[…]' : ''));
+        }
+      }
+    }
+    const callerFp = word(fp - 8);
+    const callerRa = word(fp - 4);
+    // Any word still unlabelled *inside this frame's own extent* is alignment
+    // padding (frameSize rounds the slots up to 16). Kept last so real slots
+    // always win, and bounded to the frame so it can never bleed onto pushes
+    // made below it.
+    for (let a = fp - fn.frameSize; a < fp; a += 4) put(a, fnName + '() · frame padding');
+    if (callerFp === null || callerRa === null || callerFp <= fp) break;
+    fnName = functionContaining(index, callerRa - 4); // ra points *after* the call
+    fp = callerFp;
+  }
+
+  // Anything still unlabelled is either operand-stack scratch, a word never
+  // written since reset (still holding the RiscvSim constructor's POISON fill
+  // - see the memory-poison comment there), or a retired frame's old label
+  // that still applies (see the doc comment above): same address, bytes
+  // unchanged since the walk last explained it.
+  for (let a = lo; a < hi; a += 4) {
+    if (hints.has(a)) continue;
+    const old = retired && retired.get(a);
+    if (old && old.value === word(a)) { hints.set(a, old.label); continue; }
+    hints.set(a, word(a) === POISON ? 'unused' : 'operand temp');
+  }
+  // Record what the walk positively explained this render, so a future render
+  // where fp has moved past these addresses can still recall what they held.
+  // Neither generic fallback is worth caching: 'unused' is always re-derivable
+  // from the value check above, and 'operand temp' already means "not a named
+  // slot" - keeping it would just let its captured value spuriously satisfy the
+  // old.value === word(a) check above, when a later render should call it
+  // 'unused' if it somehow reverted to POISON, not "restore the stale label".
+  if (retired) for (const [a, label] of hints) {
+    if (label !== 'operand temp' && label !== 'unused') retired.set(a, { label, value: word(a) });
+  }
+  return hints;
+}
+
+// One flat address space, so the card offers logical regions rather than the
+// named memories a Verilog design would declare. Global arrays are not listed
+// separately: they live inside the data segment, so showing it shows them too.
+// `memSize` is the *compiled* machine's size, since _start's baked-in stack top
+// must match the machine the addresses belong to.
+// The data segment's extent is fixed at compile time. The stack's is not - it
+// depends on the live sp - so it is computed per render by stackRange() below.
+/* =========================================================================
+   AVR FRAME WALK
+
+   The AVR counterpart of buildStackHints. The layout it relies on is fixed by
+   genFunction (see the diagram there):
+
+       Y+fs+4, Y+fs+3   return address (lo at the higher address)
+       Y+fs+2, Y+fs+1   saved caller's Y (lo at the higher address)
+       Y+fs .. Y+1      this frame
+       Y                = sp
+
+   Unlike RV32 there is no link register, so the return address is only ever on
+   the stack - which is also why the "is Y valid yet" question is answered by
+   instruction INDEX rather than by a byte offset from the function label: the
+   prologue's length varies (allocating the frame is one instruction for a small
+   frame and two for a large one), so a byte constant like PROLOGUE_BYTES would
+   be wrong for exactly the functions it matters most for.
+
+   Inside the prologue or epilogue windows, Y is not this frame's base and the
+   return address has not settled at a known offset. Rather than guess, the walk
+   labels nothing for that step - a blank column beats a confidently wrong one.
+   ========================================================================= */
+
+// name -> the instruction-index range over which Y really is that function's
+// frame base: from just after the prologue's `out SPL` to just before the
+// epilogue discards the frame.
+let avrFrameWindowCache = null;
+function avrFrameWindows(program) {
+  if (avrFrameWindowCache && avrFrameWindowCache.program === program) return avrFrameWindowCache.map;
+  const map = new Map();
+  for (const [name] of program.funcs) {
+    const start = program.labels.get(name);
+    const epi = program.labels.get('.Lepi_' + name);
+    if (start == null || epi == null) continue;
+    // Y becomes this frame's base once sp has been written from it.
+    let from = start;
+    for (let i = start; i < epi; i++) {
+      const ins = program.instrs[i];
+      if (ins.op === 'OUT' && ins.imm === AVR_IO.SPL) { from = i + 1; break; }
+    }
+    // ...and stops being it as soon as the epilogue starts unwinding.
+    map.set(name, { from, to: epi });
+  }
+  avrFrameWindowCache = { program, map };
+  return map;
+}
+
+function avrBuildStackHints(program, result, lo, hi, retired) {
+  const hints = new Map();
+  if (!program || !result) return hints;
+  const index = buildFunctionIndex(program);
+  const byte = a => (a >= 0 && a < result.memSize ? result.mem[a] : null);
+  const word = a => {
+    const l = byte(a + 1), h = byte(a); // saved pairs store lo at the HIGHER address
+    return (l == null || h == null) ? null : (l | (h << 8));
+  };
+
+  const ranges = buildFunctionRanges(program);
+  let fnName = functionContainingIndex(ranges, result.index);
+  const windows = avrFrameWindows(program);
+  const win = fnName ? windows.get(fnName) : null;
+  const idx = result.index;
+  // Mid-prologue or mid-epilogue: Y is not a frame base, so say nothing.
+  if (!fnName || !win || idx < win.from || idx >= win.to) return hints;
+
+  let fp = result.regs[AREG.Y] | (result.regs[AREG.Y + 1] << 8);
+  const put = (a, text) => { if (a >= lo && a < hi && !hints.has(a)) hints.set(a, text); };
+  const putCell = (a, bytes, text) => {
+    put(a, text);
+    for (let b = 1; b < bytes; b++) put(a + b, text + ' (high byte)');
+  };
+
+  for (let depth = 0; depth < MAX_FRAME_WALK && fnName; depth++) {
+    const rec = program.funcs.get(fnName);
+    if (!rec) break;
+    const fs = rec.frameSize;
+    if (fp <= 0 || fp + fs + 4 >= result.memSize) break;
+    // A slot at distance `offset` below the frame top starts at Y + fs - offset + 1.
+    const cellOf = offset => fp + fs - offset + 1;
+    for (const sl of rec.slots) {
+      const base = cellOf(sl.offset);
+      const bytes = sl.ctype.arraySize != null
+        ? sl.ctype.arraySize * elemSize(sl.ctype, program.target.abi)
+        : elemSize(sl.ctype, program.target.abi);
+      if (sl.ctype.arraySize != null) {
+        const esz = elemSize(sl.ctype, program.target.abi);
+        for (let i = 0; i < sl.ctype.arraySize; i++) {
+          putCell(base + i * esz, esz, fnName + '() · ' + sl.name + '[' + i + ']');
+        }
+      } else {
+        putCell(base, bytes, fnName + '() · ' + sl.name + (sl.param ? ' (param)' : ''));
+      }
+    }
+    for (const sv of rec.opRegSaves) {
+      putCell(cellOf(sv.offset), 2, fnName + '() · saved slot ' + sv.slot);
+    }
+    put(fp + fs + 1, fnName + "() · saved caller's Y (high byte)");
+    put(fp + fs + 2, fnName + "() · saved caller's Y");
+    put(fp + fs + 3, fnName + '() · return address (high byte)');
+    put(fp + fs + 4, fnName + '() · return address');
+
+    // Follow the chain: the caller's Y, and who its return address points into.
+    const callerFp = word(fp + fs + 1);
+    const ret = word(fp + fs + 3);
+    if (callerFp == null || ret == null || callerFp <= fp) break;
+    // The return address points at the instruction AFTER the call.
+    const caller = functionContaining(index, ret - 2);
+    if (!caller) break;
+    fp = callerFp;
+    fnName = caller;
+  }
+  return hints;
+}
+
+function buildMemoryRegions(program, memSize) {
+  const w = program.target.viewWordBytes;
+  return [
+    { key: '__data', label: 'data segment', lo: program.data.base,
+      hi: program.data.base + Math.max(w, Math.ceil(program.data.bytes.length / w) * w) },
+  ];
+}
+
+// AVR is Harvard: flash holds the code and is shown by the assembly listing, so
+// the only thing "memory" means here is SRAM - plus the I/O registers, which are
+// worth showing because sp and the print ports genuinely live there.
+function avrMemoryRegions(program, memSize) {
+  const w = program.target.viewWordBytes;
+  return [
+    { key: '__data', label: 'data segment (SRAM)', lo: program.data.base,
+      hi: program.data.base + Math.max(w, Math.ceil(program.data.bytes.length / w) * w) },
+  ];
+}
+
+
+/* =========================================================================
+   TARGET REGISTRY
+   One descriptor per selectable ISA. Everything that differs between targets
+   is reached through this table rather than through a flag, so adding a target
+   means adding an entry plus the classes it names - not threading a new
+   conditional through the compiler, the interpreter and the UI.
+
+   `abi` is what the *frontend* needs (C type sizes, where data starts, frame
+   alignment, how many operand slots live in registers); everything else is
+   what the backend and the UI need. The two RV32 modes differ only in whether
+   the M extension may be used, so they share one factory.
+   ========================================================================= */
+
+function rv32Target(id, label, asmLabel, useM) {
+  return {
+    id, label, asmLabel,
+    abi: { intSize: 4, ptrSize: 4, charSize: 1, dataStart: 0, dataAlign: 4,
+      slotAlign: 4, frameBase: 8, frameAlign: 16, slotCount: OPREGS.length },
+    Codegen, Sim: RiscvSim,
+    codegenOpts: { useM },
+    // register panel
+    regNames: REG_NAMES, regPrefix: 'x', regHexDigits: 8, pcHexDigits: 8,
+    zeroReg: 0, hasSreg: false,
+    // memory panel: one flat 4-byte-word address space
+    viewWordBytes: 4, wordLabel: 'Word (hex)',
+    mem: { unit: 'KB', min: 4, max: 65536, step: 256, default: 1024, minStack: 1024 },
+    // where the debugger finds the stack and frame pointers, and how it walks frames
+    stackPointer: r => r.regs[REG.sp] | 0,
+    framePointer: r => r.regs[REG.s0] | 0,
+    // sp points AT the lowest live word on RV32
+    stackFloor: r => r.regs[REG.sp] | 0,
+    buildStackHints,
+    memoryRegions: buildMemoryRegions,
+    isReturn: ins => ins.op === 'JALR' && ins.rd === REG.zero && ins.rs1 === REG.ra,
+    // listing + operand metadata
+    formatAsm, formatInstr, encodeInstr, sourceRegs, loadOps: LOAD_OPS,
+  };
+}
+
+// The target selected on load, and the fallback wherever an id is missing or
+// unrecognised. Named once so the dropdown's `selected`, the UI fallback and
+// compileC's default cannot drift apart.
+const DEFAULT_TARGET_ID = 'atmega644';
+
+const TARGETS = {
+  rv32im: rv32Target('rv32im', 'RV32IM', 'RV32IM (hardware mul/div)', true),
+  rv32i: rv32Target('rv32i', 'RV32I', 'RV32I (software mul/div)', false),
+  atmega644: {
+    id: 'atmega644', label: ATMEGA644.name,
+    /* The part has a hardware multiplier - it is an avr5 core, not avr25 - so
+       "software mul/div" here is a deliberate simplification of this compiler,
+       exactly like the RV32I mode on a machine where RV32IM exists. It is not a
+       limitation of the silicon, and the label should not imply otherwise. */
+    asmLabel: ATMEGA644.name + ' (8-bit AVR; software mul/div by choice)',
+    // int and pointers are 16-bit, char is 8-bit - the real avr-gcc model, and
+    // the reason this target's arithmetic wraps where RV32's does not.
+    abi: {
+      intSize: 2, ptrSize: 2, charSize: 1,
+      dataStart: ATMEGA644.sramStart,
+      dataAlign: 2,   // no alignment requirement on AVR; 2 keeps ints on even addresses
+      slotAlign: 2,
+      frameBase: 0,   // the return address and saved Y live OUTSIDE the frame
+      frameAlign: 2,
+      slotCount: AOPREGS.length,
+    },
+    Codegen: AvrCodegen, Sim: AvrSim,
+    codegenOpts: {},
+    regNames: AVR_REG_NAMES, regPrefix: 'r', regHexDigits: 2, pcHexDigits: 4,
+    zeroReg: null,  // AVR has no hardwired-zero register; r1 is a convention
+    hasSreg: true, sregOrder: SREG_FLAG_ORDER, sregBits: SF,
+    // One BYTE per row, not one 16-bit word: this is an 8-bit machine, its frame
+    // cells start at an odd address (Y+1), and a byte-per-row view is the only one
+    // in which every "Holds" label lands on exactly the cell it describes.
+    viewWordBytes: 1, wordLabel: 'Byte (hex)',
+    stackPointer: r => r.sp,
+    framePointer: r => r.regs[AREG.Y] | (r.regs[AREG.Y + 1] << 8),
+    // AVR's PUSH writes AT sp and then decrements, so sp is one BELOW the lowest
+    // live byte - the opposite of RV32's convention.
+    stackFloor: r => r.sp + 1,
+    buildStackHints: avrBuildStackHints,
+    memoryRegions: avrMemoryRegions,
+    isReturn: ins => ins.op === 'RET',
+    /* SRAM is a property of the device, not a setting: 4 KB at 0x0100-0x10FF.
+       `fixed` is what disables the input - see applyMemControl. */
+    mem: { unit: 'B', fixed: true, size: ATMEGA644.sramSize, minStack: 256 },
+    formatAsm: avrFormatAsm, formatInstr: avrFormatInstr, encodeInstr: avrEncodeInstr,
+    sourceRegs: avrSourceRegs, loadOps: AVR_LOAD_OPS,
+  },
+};
 
 /* =========================================================================
    EXAMPLES
@@ -3079,12 +5822,13 @@ int main() {
 const $ = id => document.getElementById(id);
 const codeInput = $('codeInput'), gutter = $('gutter'), consoleBox = $('consoleBox');
 const lineHighlight = $('lineHighlight');
-const exampleSelect = $('exampleSelect'), openBtn = $('openBtn'), saveBtn = $('saveBtn'), fileOpenInput = $('fileOpenInput');
+const exampleSelect = $('exampleSelect'), openBtn = $('openBtn'), fileOpenInput = $('fileOpenInput');
 const runBtn = $('runBtn'), stepBtn = $('stepBtn'), resetBtn = $('resetBtn');
 const compileBtn = $('compileBtn');
 const isaSelect = $('isaSelect'), maxStepsInput = $('maxStepsInput'), memSizeInput = $('memSizeInput');
 const asmListing = $('asmListing'), asmEmpty = $('asmEmpty'), regGrid = $('regGrid'), badgeRow = $('badgeRow');
-const regPc = $('regPc');
+const regPc = $('regPc'), regSreg = $('regSreg');
+const memUnitLabel = $('memUnitLabel'), asmCardTitle = $('asmCardTitle'), regCardNote = $('regCardNote');
 const regHexCheckbox = $('regHexCheckbox');
 const dataTableWrap = $('dataTableWrap'), dataEmpty = $('dataEmpty');
 const stackTableWrap = $('stackTableWrap'), stackEmpty = $('stackEmpty');
@@ -3281,12 +6025,55 @@ fileOpenInput.addEventListener('change', () => {
   };
   reader.readAsText(file);
 });
-saveBtn.addEventListener('click', () => {
+document.getElementById('editorSaveBtn').addEventListener('click', () => {
   const blob = new Blob([codeInput.value], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = currentFileName;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+function buildAsmDumpText() {
+  return shownTarget().formatAsm(lastProgram).map(line =>
+    line.kind === 'instr' ? line.code + ' // ' + line.text : line.text
+  ).join('\n');
+}
+document.getElementById('asmSaveBtn').addEventListener('click', () => {
+  if (!lastProgram) return;
+  const blob = new Blob([buildAsmDumpText()], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = currentFileName.replace(/\.c$/i, '') + '.s';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+function buildDataDumpText() {
+  const region = memoryRegions.find(r => r.key === '__data');
+  if (!region) return '';
+  const lines = [];
+  for (let addr = region.lo; addr < region.hi; addr += 4) {
+    const byteAt = k => lastResult.mem[addr + k];
+    const w = (byteAt(0) | (byteAt(1) << 8) | (byteAt(2) << 16) | (byteAt(3) << 24)) | 0;
+    let ascii = '';
+    for (let b = 0; b < 4; b++) {
+      const c = byteAt(b);
+      ascii += (c >= 32 && c < 127) ? String.fromCharCode(c) : '.';
+    }
+    lines.push((w >>> 0).toString(16).padStart(8, '0') + ' // ' + ascii);
+  }
+  return lines.join('\n');
+}
+document.getElementById('dataSaveBtn').addEventListener('click', () => {
+  if (!lastResult) return;
+  const blob = new Blob([buildDataDumpText()], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'data.txt';
   a.click();
   URL.revokeObjectURL(url);
 });
@@ -3404,22 +6191,42 @@ function readMaxSteps() {
   return Math.max(100, parseInt(maxStepsInput.value, 10) || 200000);
 }
 
-// Clamped so a typo cannot try to allocate a gigabyte Uint8Array and hang the
-// tab. KB granularity also keeps `sp = size - 16` 16-byte aligned for free.
-const MIN_MEM_KB = 4, MAX_MEM_KB = 65536;
-function readMemSize() {
-  const kb = Math.max(MIN_MEM_KB, Math.min(MAX_MEM_KB, parseInt(memSizeInput.value, 10) || 1024));
-  return kb * 1024;
+// The target the dropdown currently selects - what the next Compile will use.
+function selectedTarget() { return TARGETS[isaSelect.value] || TARGETS[DEFAULT_TARGET_ID]; }
+
+// The target the on-screen program was actually compiled for. Rendering must use
+// this and never the dropdown: changing the dropdown invalidates the compile but
+// deliberately leaves the listing and panels on screen, so they have to keep
+// being drawn the way the code that produced them expects.
+function shownTarget() { return (lastProgram && lastProgram.target) || selectedTarget(); }
+
+// Bounds and granularity belong to the target: RV32 counts in KB (its address
+// space is vast), while AVR counts in bytes (a real avr25 part has well under a
+// KB of SRAM). Clamped so a typo cannot try to allocate a gigabyte Uint8Array
+// and hang the tab.
+function readMemSize(target) {
+  const m = (target || selectedTarget()).mem;
+  // A real device's SRAM is not negotiable, so the input is not consulted at all.
+  if (m.fixed) return m.size;
+  const scale = m.unit === 'KB' ? 1024 : 1;
+  const n = Math.max(m.min, Math.min(m.max, parseInt(memSizeInput.value, 10) || m.default));
+  return n * scale;
 }
 
 // Shared by Compile and Reset - both build a machine, so both must refuse an
 // unusable size rather than let the constructor throw. Returns a message or null.
-const MIN_STACK_BYTES = 1024;
 function memSizeProblem(program, memSize) {
-  if (program.data.bytes.length + MIN_STACK_BYTES > memSize) {
-    return 'Memory too small: the data segment needs ' + program.data.bytes.length
-      + ' bytes plus at least ' + MIN_STACK_BYTES + ' for the stack, but memory is only '
-      + memSize + ' bytes (' + (memSize / 1024) + ' KB).';
+  const m = program.target.mem;
+  const minStack = m.minStack;
+  if (program.data.base + program.data.bytes.length + minStack > memSize) {
+    const need = 'the data segment needs ' + program.data.bytes.length
+      + ' bytes plus at least ' + minStack + ' for the stack';
+    // On a fixed-size device, "make memory bigger" is not an option the user has.
+    return m.fixed
+      ? program.target.label + ' has only ' + memSize + ' bytes of SRAM, but '
+        + need + '. Shrink the program\'s globals or arrays.'
+      : 'Memory too small: ' + need + ', but memory is only ' + memSize
+        + ' bytes (' + (memSize / 1024) + ' KB).';
   }
   return null;
 }
@@ -3433,6 +6240,9 @@ function invalidateCompile() {
 }
 codeInput.addEventListener('input', invalidateCompile);
 isaSelect.addEventListener('change', () => {
+  // The memory control's unit and bounds belong to the target, so they change
+  // even when there is nothing compiled yet.
+  applyMemControl();
   if (!lastProgram) return;
   compiledSource = null; // the ISA is a codegen input, so any prior compile is stale
   setRunEnabled(false);
@@ -3442,6 +6252,7 @@ isaSelect.addEventListener('change', () => {
 // Reset can no longer apply a new size on its own; a recompile is required.
 for (const ev of ['input', 'change']) {
   memSizeInput.addEventListener(ev, () => {
+    if (memSizeInput.disabled) return; // a fixed-size device: nothing can change
     if (!lastProgram) return;
     if (readMemSize() === lastProgram.memSize) return;
     compiledSource = null;
@@ -3451,7 +6262,7 @@ for (const ev of ['input', 'change']) {
 
 function compileProgram() {
   const src = codeInput.value;
-  const useM = isaSelect.value === 'rv32im';
+  const target = selectedTarget();
   sim = null;        // any previous machine state belongs to the previous program
   lastResult = null;
   retiredStackHints = new Map(); // old addresses mean nothing once the program changes
@@ -3463,10 +6274,10 @@ function compileProgram() {
   // lex -> parse -> meta -> codegen. Lex/parse and semantic errors both surface
   // here, already prefixed by whichever stage threw them. memSize is a codegen
   // input because _start bakes the stack top in as an immediate.
-  const memSize = readMemSize();
+  const memSize = readMemSize(target);
   let program;
   try {
-    program = compileC(src, { useM, memSize });
+    program = compileC(src, { target, memSize });
   } catch (e) {
     lastProgram = null;
     compiledSource = null;
@@ -3503,20 +6314,23 @@ function compileProgram() {
   memoryRegions = buildMemoryRegions(program, memSize);
   // Park the machine at the entry point rather than leaving it unbuilt, so
   // address 0 is highlighted and the register/memory panels show real state.
-  sim = new RiscvSim(program, { maxSteps: readMaxSteps(), memSize });
+  sim = new target.Sim(program, { maxSteps: readMaxSteps(), memSize });
   lastResult = sim.snapshot();
   setRunEnabled(true);
   renderAll();
   clearConsole();
+  const memText = target.mem.fixed
+    ? memSize + ' bytes of SRAM'
+    : (target.mem.unit === 'KB' ? (memSize / 1024) + ' KB' : memSize + ' bytes') + ' memory';
   logLine('<span class="info">Compiled ' + program.instrs.length + ' instructions for '
-    + (useM ? 'RV32IM' : 'RV32I') + ', ' + (memSize / 1024) + ' KB memory. Click Run or Step to execute.</span>');
+    + target.label + ', ' + memText + '. Click Run or Step to execute.</span>');
 }
 
 // Creates the live simulator on first use. Compile and Reset both build one
 // eagerly, so this is a defensive fallback. It uses the *compiled* size, since
 // _start's baked-in stack top must match the machine it runs on.
 function ensureSim() {
-  if (!sim) sim = new RiscvSim(lastProgram, { maxSteps: readMaxSteps() });
+  if (!sim) sim = new (shownTarget().Sim)(lastProgram, { maxSteps: readMaxSteps() });
   return sim;
 }
 
@@ -3557,7 +6371,7 @@ function resetMachine() {
   // Rebuilds at the *compiled* size, never the input's current value: _start's
   // baked-in stack top must match the machine, so a new size needs a recompile
   // (the input's change handler is what disables Run/Step until then).
-  sim = new RiscvSim(lastProgram, { maxSteps: readMaxSteps() });
+  sim = new (shownTarget().Sim)(lastProgram, { maxSteps: readMaxSteps() });
   lastResult = sim.snapshot();
   retiredStackHints = new Map(); // execution is restarting, so no frame has retired yet
   memoryRegions = buildMemoryRegions(lastProgram, lastProgram.memSize);
@@ -3580,13 +6394,14 @@ function initState() {
   setRunEnabled(false);
   renderAll();
   clearConsole();
-  logLine('<span class="info">Click Compile to generate RISC-V assembly…</span>');
+  logLine('<span class="info">Click Compile to generate assembly…</span>');
 }
 
 // Every panel is a pure function of (lastProgram, lastResult, breakpointLines),
 // so each action just repaints all of them. The pending-write preview is
 // computed once up front, before any panel reads it.
 function renderAll() {
+  renderTargetChrome();
   pendingWrite = (sim && lastResult && !lastResult.finished && !lastResult.error)
     ? sim.previewStep() : null;
   renderAsm();
@@ -3625,6 +6440,51 @@ function renderConsoleFromState() {
   }
 }
 
+// Card text that names the target. Driven from the shown program so it cannot
+// disagree with the listing beneath it.
+function renderTargetChrome() {
+  const t = shownTarget();
+  asmCardTitle.textContent = t.label + ' Assembly';
+  regCardNote.innerHTML = t.label + ' register file at the current position — a green '
+    + '<code>→</code> shows the value the highlighted instruction is about to write';
+}
+
+/* The memory control counts KB for RV32 and bytes for AVR, so its bounds, step
+   and unit label all follow the SELECTED target.
+
+   The value is reset whenever the UNIT changes, not merely when it falls out of
+   range. 1024 is a legal number of bytes of AVR SRAM, so a range check alone
+   would silently reinterpret "1024 KB" as "1024 B" - a thousandfold change the
+   user never asked for. Switching between the two RV32 modes shares a unit and
+   therefore keeps whatever was typed. */
+let memUnitApplied = null;
+function applyMemControl() {
+  const m = selectedTarget().mem;
+  memUnitLabel.textContent = m.unit;
+  // A named device reports its SRAM rather than offering a choice, so the box is
+  // shown filled in but disabled - more informative than hiding it.
+  memSizeInput.disabled = !!m.fixed;
+  if (m.fixed) {
+    memSizeInput.removeAttribute('min');
+    memSizeInput.removeAttribute('max');
+    memSizeInput.removeAttribute('step');
+    memSizeInput.value = m.size;
+    memSizeInput.title = selectedTarget().label + ' has ' + m.size + ' bytes of SRAM (fixed)';
+    memUnitApplied = m.unit;
+    return;
+  }
+  memSizeInput.min = m.min;
+  memSizeInput.max = m.max;
+  memSizeInput.step = m.step;
+  memSizeInput.title = '';
+  const cur = parseInt(memSizeInput.value, 10);
+  const unitChanged = memUnitApplied !== null && memUnitApplied !== m.unit;
+  if (unitChanged || !isFinite(cur) || cur < m.min || cur > m.max) {
+    memSizeInput.value = m.default;
+  }
+  memUnitApplied = m.unit;
+}
+
 function renderBadges() {
   badgeRow.innerHTML = '';
   if (compileFailed) {
@@ -3637,7 +6497,7 @@ function renderBadges() {
   if (!lastProgram) return;
   const stats = [
     ['instructions', lastProgram.instrs.length],
-    ['target', lastProgram.useM ? 'RV32IM' : 'RV32I'],
+    ['target', lastProgram.target.label],
   ];
   if (lastResult && lastResult.steps > 0) {
     stats.push(['executed', lastResult.steps]);
@@ -3668,10 +6528,10 @@ function renderAsm() {
   asmEmpty.style.display = 'none';
   // The instruction about to execute, so the listing tracks Step/Run and also
   // shows where a run that hit the step cap or an error came to rest.
-  const stopIndex = lastResult && !lastResult.finished ? (lastResult.pc >> 2) : -1;
+  const stopIndex = lastResult && !lastResult.finished ? lastResult.index : -1;
   const lineTraps = trapIndicesForLines(lastProgram.instrs, breakpointLines);
   let html = '';
-  for (const line of formatAsm(lastProgram)) {
+  for (const line of shownTarget().formatAsm(lastProgram)) {
     if (line.kind === 'header') {
       html += '<div class="asm-line"><span class="asm-comment" style="margin:0">' + escapeHtml(line.text) + '</span></div>';
     } else if (line.kind === 'label') {
@@ -3719,23 +6579,34 @@ function scrollAsmIntoView() {
 /* ---- register file ---- */
 regHexCheckbox.addEventListener('change', renderRegisters);
 
-// 32-bit hex when the box is checked, signed decimal otherwise. The title
-// attribute always carries the other form, so hovering never loses information.
-// Hex without the '0x' prefix - the 8 digits are unambiguous in context and the
-// reclaimed width matters once cells are narrow. The title keeps its prefix,
-// since a tooltip gains nothing from being shorter.
-function formatRegValue(v) {
-  return regHexCheckbox.checked ? (v >>> 0).toString(16).padStart(8, '0') : String(v | 0);
+// Hex when the box is checked, signed decimal otherwise. The title attribute
+// always carries the other form, so hovering never loses information. Hex without
+// the '0x' prefix - the digits are unambiguous in context and the reclaimed width
+// matters once cells are narrow. The title keeps its prefix, since a tooltip
+// gains nothing from being shorter.
+// The digit count is the target's (8 for a 32-bit register, 2 for an 8-bit one);
+// pass `digits` explicitly for anything that is not a general register, such as pc.
+function formatRegValue(v, digits) {
+  const d = digits || shownTarget().regHexDigits;
+  return regHexCheckbox.checked ? (v >>> 0).toString(16).padStart(d, '0') : String(v | 0);
 }
-function formatRegTitle(v) {
-  return regHexCheckbox.checked ? String(v | 0) : '0x' + (v >>> 0).toString(16).padStart(8, '0');
+function formatRegTitle(v, digits) {
+  const d = digits || shownTarget().regHexDigits;
+  return regHexCheckbox.checked ? String(v | 0) : '0x' + (v >>> 0).toString(16).padStart(d, '0');
 }
 
 // The instruction the machine is parked on (the one about to execute), or null.
 function currentInstr() {
   if (!lastProgram || !lastResult || lastResult.finished) return null;
-  const idx = lastResult.pc >> 2;
+  const idx = lastResult.index;
   return idx >= 0 && idx < lastProgram.instrs.length ? lastProgram.instrs[idx] : null;
+}
+
+// pc and sreg are stacked under the grid; only the bottom-most VISIBLE one gets
+// the rounded corners that close the block off.
+function markLastRegRow(sregShown) {
+  regPc.classList.toggle('reg-pc-last', !sregShown);
+  regSreg.classList.toggle('reg-pc-last', sregShown);
 }
 
 function renderRegisters() {
@@ -3743,22 +6614,30 @@ function renderRegisters() {
     regGrid.innerHTML = '<div class="reg-cell" style="grid-column:1/-1; justify-content:center; color:#8e8e93">'
       + 'Compile to see the register file.</div>';
     regPc.innerHTML = '';
+    regSreg.style.display = 'none';
+    regSreg.innerHTML = '';
+    markLastRegRow(false);
     return;
   }
-  const pendReg = pendingWrite && pendingWrite.reg ? pendingWrite.reg : null;
+  // An instruction may write more than one register (see previewStep), so the
+  // pending writes are indexed rather than compared one at a time.
+  const pendRegs = new Map();
+  if (pendingWrite) for (const r of pendingWrite.regs) pendRegs.set(r.i, r.to | 0);
+  const t = shownTarget();
   const ins = currentInstr();
-  const srcs = ins ? sourceRegs(ins) : new Set();
+  const srcs = ins ? t.sourceRegs(ins) : new Set();
   let html = '';
-  // Emitted in plain x0..x31 order; the column-major arrangement is purely a
+  // Emitted in plain register order; the column-major arrangement is purely a
   // CSS concern, so DOM order stays the natural reading order.
-  for (let i = 0; i < 32; i++) {
+  for (let i = 0; i < t.regNames.length; i++) {
     const v = lastResult.regs[i] | 0;
-    // x0 is hardwired, so a write to it is never shown as pending
-    const pend = pendReg && pendReg.i === i && i !== 0 ? pendReg.to | 0 : null;
+    // A hardwired-zero register (RV32's x0) can never be written, so a write to
+    // it is never shown as pending. AVR has no such register.
+    const pend = i !== t.zeroReg && pendRegs.has(i) ? pendRegs.get(i) : null;
     const cls = 'reg-cell' + (pend !== null ? ' pending' : '') + (srcs.has(i) ? ' src' : '');
     html += '<div class="' + cls + '" title="' + formatRegTitle(v) + '">'
-      + '<span class="reg-name"><span class="reg-xnum">x' + i + '</span> '
-      + '<span class="reg-abi">(' + REG_NAMES[i] + ')</span></span>'
+      + '<span class="reg-name"><span class="reg-xnum">' + t.regPrefix + i + '</span> '
+      + '<span class="reg-abi">(' + t.regNames[i] + ')</span></span>'
       + '<span class="reg-value">' + formatRegValue(v)
       + (pend !== null ? ' <span class="reg-next">→ ' + formatRegValue(pend) + '</span>' : '')
       + '</span></div>';
@@ -3767,8 +6646,33 @@ function renderRegisters() {
 
   const nextPc = pendingWrite ? pendingWrite.nextPc : null;
   regPc.innerHTML = '<span class="reg-name">pc</span>'
-    + '<span class="reg-value">' + formatRegValue(lastResult.pc)
-    + (nextPc !== null ? ' <span class="reg-next">→ ' + formatRegValue(nextPc) + '</span>' : '')
+    + '<span class="reg-value">' + formatRegValue(lastResult.pc, t.pcHexDigits)
+    + (nextPc !== null ? ' <span class="reg-next">→ ' + formatRegValue(nextPc, t.pcHexDigits) + '</span>' : '')
+    + '</span>';
+
+  // SREG is not a general register, so it gets its own row beside pc - shown as
+  // the flag letters, lit when set, because that is how the branches read it.
+  // A pending change is shown the same way a register write is.
+  if (!t.hasSreg) {
+    regSreg.style.display = 'none';
+    regSreg.innerHTML = '';
+    markLastRegRow(false);
+    return;
+  }
+  regSreg.style.display = '';
+  markLastRegRow(true);
+  const cur = lastResult.sreg | 0;
+  const pend = pendingWrite && pendingWrite.sreg ? pendingWrite.sreg.to | 0 : null;
+  const letters = t.sregOrder.map(f => {
+    const on = (cur & t.sregBits[f]) !== 0;
+    const willChange = pend !== null && ((pend & t.sregBits[f]) !== 0) !== on;
+    return '<span class="sreg-flag' + (on ? ' on' : '')
+      + (willChange ? ' changing' : '') + '">' + f + '</span>';
+  }).join('');
+  regSreg.innerHTML = '<span class="reg-name">sreg</span>'
+    + '<span class="reg-value">' + letters
+    + ' <span class="sreg-hex">' + formatRegValue(cur, 2) + '</span>'
+    + (pend !== null ? ' <span class="reg-next">→ ' + formatRegValue(pend, 2) + '</span>' : '')
     + '</span>';
 }
 
@@ -3777,193 +6681,6 @@ function renderRegisters() {
 /* Hint columns: what each word actually holds. Both maps are address -> text,
    and a blank entry is always preferred to a confidently wrong one. */
 
-// Data segment: variable names (with array indices) and string constants.
-// Strings are laid down first so a named variable always wins for its own word -
-// a `char*` global's pointer word must read as the variable, while the string's
-// own bytes read as the text.
-function buildDataHints(program) {
-  const hints = new Map();
-  for (const [text, addr] of program.data.stringCache) {
-    const shown = text.length > 16 ? text.slice(0, 16) + '…' : text;
-    const label = '"' + shown.replace(/\n/g, '\\n').replace(/\t/g, '\\t') + '"';
-    for (let a = addr; a < addr + text.length + 1; a += 4) hints.set(a & ~3, label);
-  }
-  for (const [name, g] of program.globals) {
-    if (g.ctype.arraySize == null) { hints.set(g.addr & ~3, name); continue; }
-    const esz = elemSize(g.ctype);
-    if (esz === 4) {
-      for (let i = 0; i < g.ctype.arraySize; i++) hints.set(g.addr + i * 4, name + '[' + i + ']');
-    } else {
-      // char[]: four elements per word, so label the range rather than pretend
-      // one word is one element
-      for (let i = 0; i < g.ctype.arraySize; i += 4) {
-        const last = Math.min(i + 3, g.ctype.arraySize - 1);
-        hints.set(g.addr + i, name + '[' + i + (last > i ? '..' + last : '') + ']');
-      }
-    }
-  }
-  return hints;
-}
-
-// pc -> function, from the label map. Helpers (__mul/__divmod) are leaf routines
-// with no frame, so they are excluded: attributing a frame to one would derail
-// the chain walk.
-function buildFunctionIndex(program) {
-  const index = [];
-  for (const [name, idx] of program.labels) {
-    if (!program.funcs.has(name)) continue; // skips _start, .L labels and helpers
-    index.push({ start: idx * 4, name });
-  }
-  index.sort((a, b) => a.start - b.start);
-  return index;
-}
-
-function functionContaining(index, pc) {
-  let found = null;
-  for (const e of index) { if (e.start <= pc) found = e.name; else break; }
-  return found;
-}
-
-// A prologue is `addi sp,sp,-fs / sw ra / sw s0 / addi s0,sp,fs`: s0 only becomes
-// *this* frame's base after the 4th instruction, so within that window the
-// innermost frame still belongs to the caller.
-const PROLOGUE_BYTES = 16;
-
-const MAX_FRAME_WALK = 64;
-
-// Walks the saved-fp chain to label every live frame. Each prologue stores
-// [fp-4] = saved ra and [fp-8] = the caller's fp, which is exactly what makes
-// the chain walkable.
-// `retired` (optional) is an addr -> {label, value} cache that survives across
-// renders. A word the walk can no longer explain - because fp has moved past
-// it, not just because sp has - would otherwise fall back to generic "operand
-// temp" the instant it retires, discarding real info (which frame/slot it was)
-// that's still sitting right there in memory, unread. If `retired` has an entry
-// for that address AND the word's bytes still match what they were when the
-// walk last explained it, nothing has actually touched it since - the old
-// label is still true, so it's kept (dimmed by the caller, not blanked out).
-// If the bytes differ, something legitimately reused the address (a new push,
-// a new frame), so the label is correctly dropped in favor of "operand temp".
-function buildStackHints(program, result, lo, hi, retired) {
-  const hints = new Map();
-  if (!program || !result) return hints;
-  const index = buildFunctionIndex(program);
-  const word = a => (a >= 0 && a + 3 < result.memSize)
-    ? ((result.mem[a] | (result.mem[a + 1] << 8) | (result.mem[a + 2] << 16) | (result.mem[a + 3] << 24)) | 0)
-    : null;
-
-  let fp = result.regs[REG.s0] | 0;
-  let fnName = functionContaining(index, result.pc);
-  // Detect the prologue window by pc, not by comparing fp against sp: sp moves
-  // constantly as operands are pushed, so an sp-based test would keep flipping
-  // and relabel an established frame every time something was pushed.
-  if (fnName) {
-    const fnStart = index.find(e => e.name === fnName);
-    if (fnStart && result.pc < fnStart.start + PROLOGUE_BYTES) {
-      // s0 is still the caller's: attribute the innermost frame to whoever the
-      // saved ra points into, rather than to the function being entered.
-      const callerRa = result.regs[REG.ra] | 0;
-      fnName = functionContaining(index, callerRa - 4);
-    } else {
-      // Mirror image at the other end: the epilogue is
-      // `[restore slot regs] / lw ra,-4(s0) / mv sp,s0 / lw s0,-8(s0) / ret` (see
-      // genFunction). By the time the `lw s0` has run, s0 already holds the
-      // CALLER's frame base, but pc is still inside fnName - it hasn't reached
-      // `ret` yet. Same fix as the prologue case, same direction of travel: `ra`
-      // was reloaded with fnName's own return address just before, so
-      // functionContaining(ra-4) recovers who fp now actually belongs to. The
-      // slot-register restores come first, so `ret` sits that many words further on.
-      const epiIdx = program.labels.get('.Lepi_' + fnName);
-      const epiFn = program.funcs.get(fnName);
-      const retOff = 12 + (epiFn && epiFn.opRegSaves ? epiFn.opRegSaves.length * 4 : 0);
-      if (epiIdx != null && result.pc === epiIdx * 4 + retOff) {
-        const callerRa = result.regs[REG.ra] | 0;
-        fnName = functionContaining(index, callerRa - 4);
-      }
-    }
-  }
-  const put = (a, text) => { if (a >= lo && a < hi && !hints.has(a)) hints.set(a, text); };
-
-  for (let depth = 0; depth < MAX_FRAME_WALK; depth++) {
-    // stop on anything implausible rather than guessing: poison before _start,
-    // a frame outside the live stack, or a chain that fails to move upward.
-    // Deliberately NOT fp <= sp: right after a `mv sp, s0` epilogue instruction,
-    // sp already equals fp for the frame that's mid-return, but fp is still a
-    // valid pointer - both to that frame's own (now-popped) slots and to the
-    // rest of the chain above it. Bailing out here would mislabel the entire
-    // caller chain as scratch, not just the one frame that's actually discarded.
-    if (!fnName || fp > result.memSize || (fp & 3) !== 0) break;
-    const fn = program.funcs.get(fnName);
-    if (!fn) break;
-    put(fp - 4, fnName + '() · saved ra');
-    put(fp - 8, fnName + '() · saved fp');
-    // Operand-slot registers are callee-saved, so each frame holds the caller's
-    // copy of every slot register this function uses.
-    for (const sv of (fn.opRegSaves || [])) {
-      put(fp - sv.offset, fnName + '() · saved ' + REG_NAMES[sv.reg]);
-    }
-    for (const s of fn.slots) {
-      const base = fp - s.offset;
-      const n = s.ctype.arraySize != null ? s.ctype.arraySize : 1;
-      const esz = elemSize(s.ctype);
-      if (s.ctype.arraySize != null && esz === 4) {
-        for (let i = 0; i < n; i++) put(base + i * 4, fnName + '() · ' + s.name + '[' + i + ']');
-      } else {
-        const bytes = s.ctype.arraySize != null ? n * esz : 4;
-        for (let b = 0; b < bytes; b += 4) {
-          put(base + b, fnName + '() · ' + s.name + (s.ctype.arraySize != null ? '[…]' : ''));
-        }
-      }
-    }
-    const callerFp = word(fp - 8);
-    const callerRa = word(fp - 4);
-    // Any word still unlabelled *inside this frame's own extent* is alignment
-    // padding (frameSize rounds the slots up to 16). Kept last so real slots
-    // always win, and bounded to the frame so it can never bleed onto pushes
-    // made below it.
-    for (let a = fp - fn.frameSize; a < fp; a += 4) put(a, fnName + '() · frame padding');
-    if (callerFp === null || callerRa === null || callerFp <= fp) break;
-    fnName = functionContaining(index, callerRa - 4); // ra points *after* the call
-    fp = callerFp;
-  }
-
-  // Anything still unlabelled is either operand-stack scratch, a word never
-  // written since reset (still holding the RiscvSim constructor's POISON fill
-  // - see the memory-poison comment there), or a retired frame's old label
-  // that still applies (see the doc comment above): same address, bytes
-  // unchanged since the walk last explained it.
-  for (let a = lo; a < hi; a += 4) {
-    if (hints.has(a)) continue;
-    const old = retired && retired.get(a);
-    if (old && old.value === word(a)) { hints.set(a, old.label); continue; }
-    hints.set(a, word(a) === POISON ? 'unused' : 'operand temp');
-  }
-  // Record what the walk positively explained this render, so a future render
-  // where fp has moved past these addresses can still recall what they held.
-  // Neither generic fallback is worth caching: 'unused' is always re-derivable
-  // from the value check above, and 'operand temp' already means "not a named
-  // slot" - keeping it would just let its captured value spuriously satisfy the
-  // old.value === word(a) check above, when a later render should call it
-  // 'unused' if it somehow reverted to POISON, not "restore the stale label".
-  if (retired) for (const [a, label] of hints) {
-    if (label !== 'operand temp' && label !== 'unused') retired.set(a, { label, value: word(a) });
-  }
-  return hints;
-}
-
-// One flat address space, so the card offers logical regions rather than the
-// named memories a Verilog design would declare. Global arrays are not listed
-// separately: they live inside the data segment, so showing it shows them too.
-// `memSize` is the *compiled* machine's size, since _start's baked-in stack top
-// must match the machine the addresses belong to.
-// The data segment's extent is fixed at compile time. The stack's is not - it
-// depends on the live sp - so it is computed per render by stackRange() below.
-function buildMemoryRegions(program, memSize) {
-  return [
-    { key: '__data', label: 'data segment', lo: 0,
-      hi: Math.max(4, Math.ceil(program.data.bytes.length / 4) * 4) },
-  ];
-}
 
 // Rendering more than this many rows makes deep recursion hang the tab, so the
 // view keeps the words nearest sp (the active frames) and says so.
@@ -3998,20 +6715,24 @@ stackRowsInput.addEventListener('input', () => {
 // value, which as a signed int is negative and would produce a nonsensical range.
 function stackRange() {
   if (!lastResult) return null;
+  const t = shownTarget();
+  const w = t.viewWordBytes;
   const top = lastResult.memSize;
-  const sp = lastResult.regs[REG.sp] | 0;
+  const sp = t.stackPointer(lastResult);
   if (sp < 0 || sp > top) return null; // uninitialised (poison) or out of range
+  // The lowest LIVE byte, which is sp itself on RV32 but sp+1 on AVR.
+  const floor = t.stackFloor(lastResult);
 
   const fixedRows = readStackRows();
   if (fixedRows) {
     // clamp at 0 so a large N cannot address below the start of memory
-    const lo = Math.max(0, top - fixedRows * 4);
+    const lo = Math.max(0, top - fixedRows * w);
     return { lo, hi: top, truncated: false, empty: false, fixed: true };
   }
 
-  const lo = sp & ~3;                  // round down so rows stay 4-byte aligned
+  const lo = floor - (floor % w);      // round down so rows stay aligned
   if (lo >= top) return { lo: top, hi: top, truncated: false, empty: true };
-  const maxBytes = MAX_STACK_ROWS * 4;
+  const maxBytes = MAX_STACK_ROWS * w;
   // When capped, the window stays anchored at sp and extends *upward*, keeping
   // the active frames. Clamping `lo` up to `top - maxBytes` instead would show
   // the oldest frames and push sp out of view entirely - defeating the point.
@@ -4031,7 +6752,7 @@ function renderMemoryTable() {
   // up every row holding that string.
   const readBytes = new Set();
   const curIns = currentInstr();
-  if (pendingWrite && curIns && LOAD_OPS.has(curIns.op)) {
+  if (pendingWrite && curIns && shownTarget().loadOps.has(curIns.op)) {
     for (const a of pendingWrite.reads) readBytes.add(a);
   }
 
@@ -4072,20 +6793,22 @@ function renderMemoryTable() {
       if (addr < sr.lo || addr >= sr.hi) return;
       marks.set(addr, marks.has(addr) ? marks.get(addr) + '/' + name : name);
     };
-    addMark(lastResult.regs[REG.sp] & ~3, 'sp');
-    const fp = lastResult.regs[REG.s0] | 0;
-    const fpRow = fp & ~3;
-    if (fp >= 0) addMark(fpRow, 'fp');
-    const spVal = (lastResult.regs[REG.sp] | 0) >>> 0;
+    const tgt = shownTarget();
+    const vw = tgt.viewWordBytes;
+    const rowOf = a => a - (a % vw);
+    addMark(rowOf(tgt.stackPointer(lastResult)), 'sp');
+    const fp = tgt.framePointer(lastResult);
+    if (fp >= 0) addMark(rowOf(fp), 'fp');
+    const spVal = tgt.stackPointer(lastResult) >>> 0;
     // The caption always states sp, so its value is never lost when a fixed
     // window leaves it off-screen.
     const label = 'stack · sp = ' + spVal.toString(16).padStart(5, '0')
       + (sr.fixed
-        ? ' · fixed ' + ((sr.hi - sr.lo) / 4) + ' rows from the top'
+        ? ' · fixed ' + ((sr.hi - sr.lo) / vw) + ' rows from the top'
           + (spVal < sr.lo ? ' · sp is below this window' : spVal >= sr.hi ? ' · sp is above this window' : '')
-        : sr.truncated ? ' · showing the ' + MAX_STACK_ROWS + ' words from sp upward; older frames omitted' : '');
+        : sr.truncated ? ' · showing the ' + MAX_STACK_ROWS + ' rows from sp upward; older frames omitted' : '');
     stackTableWrap.innerHTML = regionTableHtml({ lo: sr.lo, hi: sr.hi, label }, pendBytes, readBytes, marks,
-      buildStackHints(lastProgram, lastResult, sr.lo, sr.hi, retiredStackHints), lastResult.regs[REG.sp] | 0);
+      tgt.buildStackHints(lastProgram, lastResult, sr.lo, sr.hi, retiredStackHints), sr.lo);
   }
 }
 
@@ -4106,32 +6829,37 @@ function showPanel(wrap, empty, show, message) {
 // window can show them at all, since the dynamic window starts at sp.
 function regionTableHtml(region, pendBytes, readBytes, marks, hints, deadBelow) {
   const isStack = !!marks;
+  const t = shownTarget();
+  const rowBytes = t.viewWordBytes;      // 4 on RV32, 1 on AVR
+  const digits = rowBytes * 2;
   let html = '<table class="memory-table' + (isStack ? ' stack-table' : '') + '"><caption>' + escapeHtml(region.label) + '</caption>'
     + '<thead><tr><th>Address</th>'
-    + '<th class="mem-word">Word (hex)</th>'
-    + (isStack ? '' : '<th>Bytes as ASCII</th>')
+    + '<th class="mem-word">' + escapeHtml(t.wordLabel) + '</th>'
+    + (isStack ? '' : '<th>' + (rowBytes > 1 ? 'Bytes as ASCII' : 'ASCII') + '</th>')
     + '<th>Holds</th></tr></thead><tbody>';
-  for (let addr = region.lo; addr < region.hi; addr += 4) {
+  for (let addr = region.lo; addr < region.hi; addr += rowBytes) {
     const byteAt = k => lastResult.mem[addr + k];
-    const w = (byteAt(0) | (byteAt(1) << 8) | (byteAt(2) << 16) | (byteAt(3) << 24)) | 0;
+    let w = 0;
+    for (let b = rowBytes - 1; b >= 0; b--) w = (w << 8) | (byteAt(b) & 0xff);
+    w = w >>> 0;
     let ascii = '';
     if (!isStack) {
-      for (let b = 0; b < 4; b++) {
+      for (let b = 0; b < rowBytes; b++) {
         const c = byteAt(b);
         ascii += (c >= 32 && c < 127) ? String.fromCharCode(c) : '.';
       }
     }
-    // recompute this word with the pending bytes applied, if any land in it
+    // recompute this row with the pending bytes applied, if any land in it
     let pending = false;
     let reading = false;
     let pw = 0;
-    for (let b = 0; b < 4; b++) {
+    for (let b = rowBytes - 1; b >= 0; b--) {
       const nb = pendBytes.has(addr + b) ? pendBytes.get(addr + b) : byteAt(b);
       if (pendBytes.has(addr + b) && nb !== byteAt(b)) pending = true;
       if (readBytes.has(addr + b)) reading = true;
-      pw |= (nb & 0xff) << (8 * b);
+      pw = (pw << 8) | (nb & 0xff);
     }
-    pw = pw | 0;
+    pw = pw >>> 0;
     const dead = deadBelow != null && addr < deadBelow;
     const cls = [pending ? 'pending' : reading ? 'reading' : '', dead ? 'mem-dead' : '']
       .filter(Boolean).join(' ');
@@ -4139,8 +6867,8 @@ function regionTableHtml(region, pendBytes, readBytes, marks, hints, deadBelow) 
       + '<td class="mem-addr">' + addr.toString(16).padStart(5, '0')
       + (isStack && marks.has(addr) ? ' <span class="mem-mark">◀ ' + marks.get(addr) + '</span>' : '')
       + '</td>'
-      + '<td class="mem-word">' + (w >>> 0).toString(16).padStart(8, '0')
-      + (pending ? ' <span class="mem-next">→ ' + (pw >>> 0).toString(16).padStart(8, '0') + '</span>' : '')
+      + '<td class="mem-word">' + w.toString(16).padStart(digits, '0')
+      + (pending ? ' <span class="mem-next">→ ' + pw.toString(16).padStart(digits, '0') + '</span>' : '')
       + '</td>'
       + (isStack ? '' : '<td>' + escapeHtml(ascii) + '</td>')
       + '<td class="mem-hint">' + escapeHtml((hints && hints.get(addr)) || '') + '</td>'
@@ -4151,6 +6879,7 @@ function regionTableHtml(region, pendBytes, readBytes, marks, hints, deadBelow) 
 
 /* ---- initial state ---- */
 loadExample(Object.keys(EXAMPLES)[0]);
+applyMemControl();
 stackRowsInput.value = localStorage.getItem('compilerStackRows') || '';
 initState();
 

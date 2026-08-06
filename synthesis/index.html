@@ -253,7 +253,10 @@
     .btn:hover { background: #0066d6; }
     .btn.secondary { background: #f2f2f7; color: #1c1c1e; }
     .btn.secondary:hover { background: #e5e5ea; }
+    .btn.outline { background: #fff; color: #007aff; border: 1.5px solid #007aff; }
+    .btn.outline:hover { background: #f0f7ff; }
     .btn:disabled { background: #c7c7cc; cursor: default; }
+    .time-label { font-size: 12px; color: #8e8e93; margin-right: -2px; }
     .bundle-toggle {
       display: flex;
       align-items: center;
@@ -331,6 +334,48 @@
       color: #ff8a80;
       margin-bottom: 12px;
     }
+    .help-wrap {
+      position: relative;
+      display: inline-flex;
+    }
+    .help-icon {
+      cursor: pointer;
+      font-size: 9px;
+      font-weight: 700;
+      color: #8e8e93;
+      user-select: none;
+      flex-shrink: 0;
+      width: 13px;
+      height: 13px;
+      border: 1px solid #8e8e93;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: 2px;
+    }
+    .help-icon:hover { border-color: #3a3a3c; color: #3a3a3c; }
+    .help-popup {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: 6px;
+      width: max-content;
+      max-width: 420px;
+      background: #1c1c1e;
+      color: #e5e5ea;
+      font-size: 11px;
+      font-weight: 400;
+      line-height: 1.5;
+      padding: 8px 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      z-index: 10;
+      white-space: nowrap;
+      cursor: default;
+    }
+    .help-popup.visible { display: block; }
     .console-box {
       height: 360px;
       overflow-y: auto;
@@ -523,16 +568,26 @@
 <body>
 
 <h1><a href="https://jeremyjbae.github.io/Baerilog">Baerilog</a>: Verilog Synthesizer</h1>
-<div class="subtitle">gate-level synthesis of a small behavioral Verilog subset, with an interactive netlist viewer</div>
+<div class="subtitle">gate-level synthesis of a behavioral Verilog subset, with an interactive netlist viewer</div>
 
 <div class="grid">
 
   <div class="card layout-pair" id="card-source">
-    <h2><span class="card-collapse-btn" data-collapse>▾</span>Verilog Source
+    <h2><span class="card-collapse-btn" data-collapse>▾</span>Verilog Source Editor
+      <span class="help-wrap">
+        <span class="help-icon">?</span>
+        <div class="help-popup">· always@(posedge clk or negedge resetn) → dff<br>· assign with &amp; | ^ ~ ~^ → gates<br>· assign with + / - → adder/subtractor (fa)<br>· assign with &lt; &gt; &lt;= &gt;= → comparator (reuses the subtractor's borrow-out)<br>· always@(*) if/case/casex, ?:, ==, &amp;&amp;/||, reduction ops, {concat} → mux2 chains</div>
+      </span>
       <span class="header-controls">
         <span class="layout-toggle">
-          <span class="layout-btn" id="sourceHeightDec" title="Decrease height">−</span>
-          <span class="layout-btn" id="sourceHeightInc" title="Increase height">+</span>
+          <span class="layout-btn" id="sourceHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
+          <span class="layout-btn" id="sourceHeightInc" title="Increase height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
+          <span class="layout-btn" id="sourceCopyBtn" title="Copy to clipboard">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3" width="8" height="8" rx="1"/><rect x="6.5" y="0.7" width="8" height="8" rx="1"/></svg>
+          </span>
+          <span class="layout-btn" id="sourceSaveBtn" title="Save to file">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 0.8 V7.5 M5 4.5 L8 7.5 L11 4.5"/><path d="M1.5 8.5 V10.2 a1 1 0 0 0 1 1 H13.5 a1 1 0 0 0 1-1 V8.5"/></svg>
+          </span>
         </span>
         <span class="layout-toggle">
           <span class="layout-btn" data-layout-btn="side" title="Side by side">
@@ -549,10 +604,13 @@
         </span>
       </span>
     </h2>
-    <p>always@(posedge clk or negedge resetn) → dff · assign with &amp; | ^ ~ ~^ → gates · assign with + / - → adder/subtractor (fa) · always@(*) if/case/casex, ?:, ==, &amp;&amp;/||, reduction ops, {concat} → mux2 chains</p>
+    <p>Synthesizable subset (click (?) for the detail)</p>
     <div class="toolbar">
-      <select id="exampleSelect"></select>
+      <button class="btn outline" id="openBtn">Import File</button>
       <button class="btn" id="synthBtn">Synthesize</button>
+      <span class="time-label">Select from Examples:</span>
+      <select id="exampleSelect"></select>
+      <input type="file" id="fileOpenInput" accept=".v,.sv,.vh,.txt" style="display:none">
     </div>
     <div id="editorSyncWarning" class="editor-sync-warning" style="display:none"></div>
     <div class="editor-hierarchy-row hierarchy-collapsed" id="editorHierarchyRow">
@@ -568,8 +626,8 @@
     <h2><span class="card-collapse-btn" data-collapse>▾</span>Synthesis Log
       <span class="header-controls">
         <span class="layout-toggle">
-          <span class="layout-btn" id="logHeightDec" title="Decrease height">−</span>
-          <span class="layout-btn" id="logHeightInc" title="Increase height">+</span>
+          <span class="layout-btn" id="logHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
+          <span class="layout-btn" id="logHeightInc" title="Increase height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
         </span>
         <span class="layout-toggle">
           <span class="layout-btn" data-layout-btn="side" title="Side by side">
@@ -583,15 +641,20 @@
     </h2>
     <p>parse / elaboration messages</p>
     <div class="console-box" id="logBox"></div>
-    <div class="badge-row" id="statsBadges"></div>
   </div>
 
   <div class="card full">
-    <h2><span class="card-collapse-btn" data-collapse>▾</span>Structural Netlist (Verilog)
+    <h2><span class="card-collapse-btn" data-collapse>▾</span>Synthesized Gate-level Verilog Netlist (Read-only)
       <span class="header-controls">
         <span class="layout-toggle">
-          <span class="layout-btn" id="netlistHeightDec" title="Decrease height">−</span>
-          <span class="layout-btn" id="netlistHeightInc" title="Increase height">+</span>
+          <span class="layout-btn" id="netlistHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
+          <span class="layout-btn" id="netlistHeightInc" title="Increase height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
+          <span class="layout-btn" id="netlistCopyBtn" title="Copy to clipboard">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3" width="8" height="8" rx="1"/><rect x="6.5" y="0.7" width="8" height="8" rx="1"/></svg>
+          </span>
+          <span class="layout-btn" id="netlistSaveBtn" title="Save to file">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 0.8 V7.5 M5 4.5 L8 7.5 L11 4.5"/><path d="M1.5 8.5 V10.2 a1 1 0 0 0 1 1 H13.5 a1 1 0 0 0 1-1 V8.5"/></svg>
+          </span>
         </span>
         <span class="layout-toggle">
           <span class="layout-btn" id="codeOutHierarchyToggleBtn" title="Show/hide module hierarchy">
@@ -762,7 +825,7 @@ endmodule`,
 };
 
 /* ---------------- Lexer ---------------- */
-const KEYWORDS = new Set(['module','endmodule','input','output','wire','reg','assign','always','begin','end','if','else','posedge','negedge','or','case','casex','endcase','default']);
+const KEYWORDS = new Set(['module','endmodule','input','output','wire','reg','assign','always','begin','end','if','else','posedge','negedge','or','case','casex','endcase','default','parameter']);
 
 function lex(src) {
   const toks = [];
@@ -801,8 +864,8 @@ function lex(src) {
       continue;
     }
     const two = src.slice(i, i+2);
-    if (['==','!=','<=','~^','^~','&&','||'].includes(two)) { toks.push({ type: two, value: two, line, start: i, end: i + 2 }); i += 2; continue; }
-    if ('()[]{};,.@=&|^~!+-:*?'.includes(c)) { toks.push({ type: c, value: c, line, start: i, end: i + 1 }); i++; continue; }
+    if (['==','!=','<=','>=','~^','^~','&&','||'].includes(two)) { toks.push({ type: two, value: two, line, start: i, end: i + 2 }); i += 2; continue; }
+    if ('()[]{};,.@=&|^~!+-:*?<>'.includes(c)) { toks.push({ type: c, value: c, line, start: i, end: i + 1 }); i++; continue; }
     throw new Error(`Lex error: unexpected character '${c}' at line ${line}`);
   }
   toks.push({ type: 'eof', value: null, line, start: i, end: i });
@@ -811,7 +874,7 @@ function lex(src) {
 
 /* ---------------- Parser (recursive descent) ---------------- */
 class Parser {
-  constructor(toks) { this.toks = toks; this.pos = 0; }
+  constructor(toks) { this.toks = toks; this.pos = 0; this.params = {}; }
   peek(o=0) { return this.toks[this.pos+o]; }
   at(type) { return this.peek().type === type; }
   next() { return this.toks[this.pos++]; }
@@ -822,6 +885,7 @@ class Parser {
   parseModule() {
     const modTok = this.expect('module');
     const name = this.expect('ident').value;
+    this.params = {}; // parameters are module-scoped; a later module starts with a clean table
     const ports = [];
     const decls = [];
     if (this.at('(')) {
@@ -837,6 +901,8 @@ class Parser {
     while (!this.at('endmodule')) {
       if (this.at('input') || this.at('output') || this.at('wire') || this.at('reg')) {
         decls.push(this.parseDecl());
+      } else if (this.at('parameter')) {
+        this.parseParameterDecl();
       } else if (this.at('assign')) {
         assigns.push(this.parseAssign());
       } else if (this.at('always')) {
@@ -849,6 +915,26 @@ class Parser {
     }
     const endTok = this.expect('endmodule');
     return { name, ports, decls, assigns, always, instances, srcStart: modTok.start, srcEnd: endTok.end };
+  }
+  // `parameter NAME = expr;` (comma-separated for multiple per statement). The value must
+  // fold to a literal `Num` — either a plain literal, or a reference to an earlier parameter
+  // in this module, which by the time we get here has already been substituted into a `Num`
+  // by parsePrimary (see there). Resolution happens eagerly at parse time, so a parameter
+  // must be declared before its first use, same restriction the simulator's parameters have.
+  parseParameterDecl() {
+    this.expect('parameter');
+    this.parseOneParameter();
+    while (this.at(',')) { this.next(); this.parseOneParameter(); }
+    this.expect(';');
+  }
+  parseOneParameter() {
+    const name = this.expect('ident').value;
+    if (this.params[name]) throw new Error(`Parse error: parameter '${name}' declared more than once (line ${this.peek().line})`);
+    this.expect('=');
+    const line = this.peek().line;
+    const value = this.parseExpr();
+    if (value.type !== 'Num') throw new Error(`Parse error: parameter '${name}' value must be a constant literal, got '${exprToStr(value)}' (line ${line})`);
+    this.params[name] = value;
   }
   // A port-list item is either the old style, a bare name whose input/output/wire/reg
   // declaration appears later in the module body (`module m(a, b);`), or ANSI style,
@@ -879,16 +965,22 @@ class Parser {
     }
     this.expect(')');
     this.expect(';');
-    return { type: 'Instance', modType, instName, conns, line };
+    const named = conns.length > 0 && conns[0].port !== null;
+    if (conns.some(c => (c.port !== null) !== named)) {
+      throw new Error(`Parse error: cannot mix named (.port(...)) and positional port connections on instance '${instName}' (line ${line})`);
+    }
+    return { type: 'Instance', modType, instName, conns, named, line };
   }
   parsePortConn() {
-    if (!this.at('.')) throw new Error(`Parse error: module instantiation only supports named port connections like '.port(signal)', not positional (line ${this.peek().line})`);
-    this.next();
-    const port = this.expect('ident').value;
-    this.expect('(');
-    const expr = this.parseExpr();
-    this.expect(')');
-    return { port, expr };
+    if (this.at('.')) {
+      this.next();
+      const port = this.expect('ident').value;
+      this.expect('(');
+      const expr = this.parseExpr();
+      this.expect(')');
+      return { port, expr };
+    }
+    return { port: null, expr: this.parseExpr() };
   }
   parseRange() {
     if (!this.at('[')) return null;
@@ -1046,8 +1138,16 @@ class Parser {
     return l;
   }
   parseEquality() {
-    let l = this.parseAdd();
+    let l = this.parseRelational();
     while (this.at('==') || this.at('!=')) {
+      const op = this.next().type;
+      l = { type: 'Binary', op, l, r: this.parseRelational() };
+    }
+    return l;
+  }
+  parseRelational() {
+    let l = this.parseAdd();
+    while (this.at('<') || this.at('>') || this.at('<=') || this.at('>=')) {
       const op = this.next().type;
       l = { type: 'Binary', op, l, r: this.parseAdd() };
     }
@@ -1069,11 +1169,29 @@ class Parser {
     if (this.at('~') || this.at('!')) { this.next(); return { type: 'Unary', op: '~', expr: this.parseUnary() }; }
     return this.parsePrimary();
   }
+  // One comma-separated slot inside {...}: a plain expression (1 item), or
+  // Verilog's replication form {N{expr}} - N must fold to a constant Num
+  // (a literal, or a parameter reference - parsePrimary already substitutes
+  // those into a Num node before this ever sees them) - expanded to N
+  // copies of expr right here so every other Concat consumer only ever
+  // sees a plain Concat, never a replication node.
+  parseConcatItem() {
+    const first = this.parseExpr();
+    if (this.at('{')) {
+      this.next();
+      const inner = this.parseExpr();
+      this.expect('}');
+      if (first.type !== 'Num') throw new Error(`Parse error: replication count must be a constant, got '${exprToStr(first)}' (line ${this.peek().line})`);
+      const n = parseInt(first.value.digits, 10);
+      return Array(Math.max(0, n)).fill(inner);
+    }
+    return [first];
+  }
   parsePrimary() {
     if (this.at('{')) {
       this.next();
-      const elems = [this.parseExpr()];
-      while (this.at(',')) { this.next(); elems.push(this.parseExpr()); }
+      let elems = this.parseConcatItem();
+      while (this.at(',')) { this.next(); elems = elems.concat(this.parseConcatItem()); }
       this.expect('}');
       return { type: 'Concat', elems };
     }
@@ -1087,6 +1205,7 @@ class Parser {
       this.expect(']');
       return { type: 'Index', name, bit: hi };
     }
+    if (this.params[name]) return { type: 'Num', value: this.params[name].value };
     return { type: 'Ident', name };
   }
 }
@@ -1166,6 +1285,11 @@ function numToBits(numVal, width) {
 }
 
 /* ---------------- Elaborator / Synthesizer ---------------- */
+// cap on how wide a case/casex/casez selection may be before _synthPriorityTree's balanced
+// mux2 tree is used in place of the plain linear priority chain (see there) — an arbitrary
+// but generous bound; beyond it the linear chain (still fully correct, just O(N) deep instead
+// of O(log N)) is used instead, so no design is ever put at risk by this cap.
+const MAX_PRIORITY_MUX_FANIN = 32;
 class Synthesizer {
   constructor(ast, interfaces, adderRegistry) {
     this.ast = ast;
@@ -1250,7 +1374,7 @@ class Synthesizer {
         if (['redand', 'redor', 'redxor', 'redxnor'].includes(node.op)) return 1;
         return this.naturalWidth(node.expr);
       case 'Binary':
-        if (['==', '!=', '&&', '||'].includes(node.op)) return 1;
+        if (['==', '!=', '&&', '||', '<', '>', '<=', '>='].includes(node.op)) return 1;
         return Math.max(this.naturalWidth(node.l), this.naturalWidth(node.r));
       case 'Ternary':
         return Math.max(this.naturalWidth(node.then), this.naturalWidth(node.else));
@@ -1268,17 +1392,28 @@ class Synthesizer {
     return out;
   }
 
-  // fold an array of bit-nets down to one net via a chain of 2-input gates of the given type
+  // fold an array of bit-nets down to one net via a balanced binary tree of 2-input gates of
+  // the given type (depth O(log N) instead of a linear O(N) chain) — safe for any N since
+  // every caller passes and/or/xor, which are fully associative and commutative, so no
+  // particular grouping changes the result. Odd-length levels carry their leftover net
+  // forward unchanged to the next level (same recursive-halving idea used by
+  // _synthPriorityTree/_synthAddressDecodeTree, just iterative/bottom-up here since there's
+  // no left/right priority distinction to preserve).
   _reduceChain(gateOp, nets) {
-    let acc = nets[0];
-    for (let i = 1; i < nets.length; i++) {
-      const id = this.newId(gateOp);
-      const y = `w_${id}`;
-      this.cells.push({ id, type: gateOp, ports: { a: acc, b: nets[i], y } });
-      this.markDriven(y, id);
-      acc = y;
+    let cur = nets;
+    while (cur.length > 1) {
+      const next = [];
+      for (let i = 0; i < cur.length; i += 2) {
+        if (i + 1 >= cur.length) { next.push(cur[i]); continue; }
+        const id = this.newId(gateOp);
+        const y = `w_${id}`;
+        this.cells.push({ id, type: gateOp, ports: { a: cur[i], b: cur[i + 1], y } });
+        this.markDriven(y, id);
+        next.push(y);
+      }
+      cur = next;
     }
-    return acc;
+    return cur[0];
   }
 
   // reduce an expression of any natural width down to a single boolean net (nonzero test),
@@ -1289,8 +1424,24 @@ class Synthesizer {
     return this._reduceChain('or', this.synthExpr(node, w));
   }
 
+  // An unsized decimal literal (plain `0`, not `8'b0`) has no declared width of its
+  // own - naturalWidth defaults it to 32, which is correct in isolation but wasteful
+  // as a COMPARISON width: forcing a whole comparator/subtractor to 32 bits just
+  // because one side is a bare literal builds far more hardware than the common case
+  // (`results > 0`) needs. So when exactly one side is an unsized literal, borrow the
+  // OTHER (sized) side's natural width instead; when both sides are unsized (no
+  // signal to borrow from) or both already have a real width, fall back to the
+  // ordinary max-of-both-sides rule.
+  _binaryWidth(lNode, rNode) {
+    const lUnsized = lNode.type === 'Num' && !lNode.value.width;
+    const rUnsized = rNode.type === 'Num' && !rNode.value.width;
+    if (lUnsized && !rUnsized) return this.naturalWidth(rNode);
+    if (rUnsized && !lUnsized) return this.naturalWidth(lNode);
+    return Math.max(this.naturalWidth(lNode), this.naturalWidth(rNode));
+  }
+
   _synthEquality(lNode, rNode, invert, srcNode) {
-    const w = Math.max(this.naturalWidth(lNode), this.naturalWidth(rNode));
+    const w = this._binaryWidth(lNode, rNode);
     const a = this.synthExpr(lNode, w);
     const b = this.synthExpr(rNode, w);
     const busGroup = w > 1 ? this.newId('busg') : null;
@@ -1308,6 +1459,53 @@ class Synthesizer {
     this.cells.push({ id, type: 'not', ports: { a: allEqual, y }, comment: exprToStr(srcNode) });
     this.markDriven(y, id);
     return y;
+  }
+
+  // Small shared helper for "one NOT gate on this net" - used by both
+  // equality's != case (inline above, kept as-is) and the relational
+  // operators below, which need it twice each (>=/<= are both defined as
+  // the inverse of a swapped-operand < comparison).
+  _invert(net, srcNode) {
+    const id = this.newId('not');
+    const y = `w_${id}`;
+    this.cells.push({ id, type: 'not', ports: { a: net, y }, comment: srcNode ? exprToStr(srcNode) : null });
+    this.markDriven(y, id);
+    return y;
+  }
+
+  // Unsigned "lNode < rNode", built on top of the SAME subtractor machinery
+  // '-' already uses (_getOrBuildAdderModule(width, true) - a two's-
+  // complement a + ~b + 1) rather than a separate comparator circuit, so
+  // there's only one piece of arithmetic hardware to keep correct. The
+  // subtractor's cout is 1 exactly when there's no borrow (a >= b
+  // unsigned), so a < b is simply NOT(cout); the difference (sum) bits
+  // themselves are wired up (the sub-module's interface requires it) but
+  // never read by anything - unlike '-' itself, nothing is being discarded
+  // from the user's point of view here, so this doesn't log the "carry-out
+  // discarded" info message _synthAdder logs for actual subtraction.
+  _synthLessThan(lNode, rNode, srcNode) {
+    const width = this._binaryWidth(lNode, rNode);
+    const a = this.synthExpr(lNode, width);
+    const b = this.synthExpr(rNode, width);
+    const modResult = this._getOrBuildAdderModule(width, true);
+    const id = this.newId('cmp');
+    const ports = { cin: this.constNet(1) };
+    for (let i = 0; i < width; i++) { ports[width === 1 ? 'a' : `a[${i}]`] = a[i]; ports[width === 1 ? 'b' : `b[${i}]`] = b[i]; }
+    const sumNets = Array.from({ length: width }, (_, i) => `w_${id}_sum${i}`);
+    sumNets.forEach((net, i) => { ports[width === 1 ? 'sum' : `sum[${i}]`] = net; });
+    const coutNet = `w_${id}_cout`;
+    ports.cout = coutNet;
+    const portWidths = { a: width, b: width, cin: 1, sum: width, cout: 1 };
+    const portDirs = { a: 'input', b: 'input', cin: 'input', sum: 'output', cout: 'output' };
+    this.cells.push({
+      id, type: 'instance', modType: modResult.moduleName, isAdder: true, isSub: true,
+      portOrder: ['a', 'b', 'cin', 'cout', 'sum'], portDirs, portWidths, ports,
+      portExprText: { a: exprToStr(lNode), b: exprToStr(rNode), cin: null, sum: null, cout: null },
+      comment: `${modResult.moduleName} ${id} (comparator: ${exprToStr(srcNode)})`,
+    });
+    for (const net of sumNets) this.markDriven(net, id);
+    this.markDriven(coutNet, id);
+    return this._invert(coutNet, srcNode);
   }
 
   _synthLogical(op, lNode, rNode) {
@@ -1372,9 +1570,40 @@ class Synthesizer {
         return out;
       }
       case 'Binary': {
-        if (node.op === '+') return this._synthAdder(node.l, node.r, width, node, false);
+        if (node.op === '+') {
+          // `a + b + cin` (any order) parses as a left-associated chain, same shape as the
+          // and/or/xor chains above — but unlike those, + isn't flattened into a balanced
+          // tree of pairwise adders here: when the chain is exactly two full operands plus
+          // one naturally-1-bit "carry-in" operand, it's synthesized as a single width-wide
+          // full-adder chain with that real signal seeded into the bottom fa's cin (see
+          // _getOrBuildAdderModule/_synthAdder), matching the textbook a+b+cin idiom used to
+          // cascade adders, instead of two separate adder instances (the second of which
+          // would silently discard the first's own carry-out). Any other operand count/shape
+          // (no operand is naturally 1 bit, or more than one is) falls through unchanged.
+          const operands = this._flattenAssocChain(node, '+');
+          if (operands.length === 3) {
+            const scalarIdxs = operands.map((o, i) => this.naturalWidth(o) === 1 ? i : -1).filter(i => i >= 0);
+            if (scalarIdxs.length === 1) {
+              const [cinNode] = operands.splice(scalarIdxs[0], 1);
+              return this._synthAdder(operands[0], operands[1], width, node, false, cinNode);
+            }
+          }
+          return this._synthAdder(node.l, node.r, width, node, false);
+        }
         if (node.op === '-') return this._synthAdder(node.l, node.r, width, node, true);
         if (node.op === '==' || node.op === '!=') return this._fitWidth([this._synthEquality(node.l, node.r, node.op === '!=', node)], width);
+        if (node.op === '<' || node.op === '>' || node.op === '<=' || node.op === '>=') {
+          // > and <= are both defined in terms of < with the operands
+          // swapped (a > b === b < a), and <=/>= are the logical inverse
+          // of the strict comparison the other way round - so only one
+          // comparator circuit (_synthLessThan) is ever built here.
+          let bit;
+          if (node.op === '<') bit = this._synthLessThan(node.l, node.r, node);
+          else if (node.op === '>') bit = this._synthLessThan(node.r, node.l, node);
+          else if (node.op === '>=') bit = this._invert(this._synthLessThan(node.l, node.r, node), node);
+          else bit = this._invert(this._synthLessThan(node.r, node.l, node), node);
+          return this._fitWidth([bit], width);
+        }
         if (node.op === '&&' || node.op === '||') return this._fitWidth([this._synthLogical(node.op, node.l, node.r)], width);
         const gateOp = { '&': 'and', '|': 'or', '^': 'xor', 'xnor': 'xnor' }[node.op];
         return this._synthBinaryGate(gateOp, node.l, node.r, width, node);
@@ -1407,25 +1636,71 @@ class Synthesizer {
     }
   }
 
+  // Flattens a left-associated chain of the same bitwise operator (`a & b & c & ... & h`
+  // parses as deeply left-nested Binary nodes) into its flat operand list, so the caller can
+  // build a balanced tree (depth O(log N)) instead of one gate per level of AST nesting
+  // (depth O(N)). Only ever called with '&'/'|'/'^' — the operators where any regrouping of
+  // the chain gives the exact same result, unlike e.g. '~^' chained more than once (see
+  // _synthBinaryGate's own doc comment for why that one is deliberately left alone).
+  _flattenAssocChain(node, op) {
+    if (node.type === 'Binary' && node.op === op) {
+      return [...this._flattenAssocChain(node.l, op), ...this._flattenAssocChain(node.r, op)];
+    }
+    return [node];
+  }
+
+  // and/or/xor chains of any length (`a & b & c & ... & h`) build a balanced tree of 2-input
+  // gates instead of one gate per operand (see _flattenAssocChain) — safe because and/or/xor
+  // are fully associative and commutative, so no grouping changes the result. nand/nor/xnor
+  // (only reached via the '~' + Binary fusion in synthExpr's Unary case, e.g. `~(a & b & c)`)
+  // get the exact same tree, built with the un-fused gate type throughout, with only the
+  // single root gate of each bit's tree relabeled to the fused type — since NOT(AND(x,y))
+  // only needs one inversion no matter how many operands fed into computing x and y.
+  // Chains of the *direct* '~^'/'^~' operator (`a ~^ b ~^ c`) are deliberately NOT flattened
+  // here: unlike xor, repeated xnor is not simply "xor-tree then one invert" — its parity
+  // depends on how many '~^' tokens were chained, which regrouping could silently change.
   _synthBinaryGate(gateOp, lNode, rNode, width, srcNode) {
-    const a = this.synthExpr(lNode, width);
-    const b = this.synthExpr(rNode, width);
+    const CHAIN_OP = { and: '&', or: '|', xor: '^', nand: '&', nor: '|', xnor: '^' };
+    const INTERNAL_GATE = { and: 'and', or: 'or', xor: 'xor', nand: 'and', nor: 'or', xnor: 'xor' };
+    const chainOp = CHAIN_OP[gateOp];
+    const internalGate = INTERNAL_GATE[gateOp];
+    const operandNodes = [...this._flattenAssocChain(lNode, chainOp), ...this._flattenAssocChain(rNode, chainOp)];
+    const operandNets = operandNodes.map(n => this.synthExpr(n, width));
     const out = [];
-    const busGroup = width > 1 ? this.newId('busg') : null;
+    const busGroups = new Map();
     for (let i = 0; i < width; i++) {
-      const id = this.newId(gateOp);
-      const y = `w_${id}`;
-      this.cells.push({ id, type: gateOp, ports: { a: a[i], b: b[i], y }, comment: i === 0 ? exprToStr(srcNode) : null, busGroup, busBit: i, busWidth: width });
-      this.markDriven(y, id);
-      out.push(y);
+      let nets = operandNets.map(bits => bits[i]);
+      let rootCell = null;
+      for (let level = 0; nets.length > 1; level++) {
+        const next = [];
+        for (let j = 0; j < nets.length; j += 2) {
+          if (j + 1 >= nets.length) { next.push(nets[j]); continue; }
+          const id = this.newId(internalGate);
+          const y = `w_${id}`;
+          const busGroup = width > 1 ? this._busGroupId(busGroups, `${level}:${j / 2}`) : null;
+          const cell = { id, type: internalGate, ports: { a: nets[j], b: nets[j + 1], y }, busGroup, busBit: i, busWidth: width };
+          this.cells.push(cell);
+          this.markDriven(y, id);
+          next.push(y);
+          rootCell = cell; // the last gate created for this bit is always the tree's root
+        }
+        nets = next;
+      }
+      if (gateOp !== internalGate) rootCell.type = gateOp;
+      if (i === 0) rootCell.comment = exprToStr(srcNode);
+      out.push(nets[0]);
     }
     return out;
   }
 
   // Lazily builds (and caches, per-run, in this.adderRegistry) a standalone `addN`/`subN`
-  // module — a, b, cout in; sum out — with its own internal per-bit fa chain, so that every
-  // +/- use at a given width shares one drillable sub-module instead of each inlining its
-  // own copy of the ripple-carry chain into the calling module's cell list.
+  // module — a, b, cin in; cout, sum out — with its own internal per-bit fa chain, so that
+  // every +/- use at a given width shares one drillable sub-module instead of each inlining
+  // its own copy of the ripple-carry chain into the calling module's cell list. cin is a
+  // real port (not hardwired inside) so the same module shape serves both a plain a+b/a-b
+  // (caller wires cin to a constant 0/1, exactly as this used to be hardwired internally)
+  // and a real a+b+cin chain (caller wires cin to the actual third operand) — see
+  // _synthAdder's cinNode parameter.
   _getOrBuildAdderModule(width, isSub) {
     const modName = `FUNC_${isSub ? 'sub' : 'add'}${width}`;
     if (this.adderRegistry.has(modName)) return this.adderRegistry.get(modName);
@@ -1434,9 +1709,10 @@ class Synthesizer {
     }
     const range = width > 1 ? { hi: width - 1, lo: 0 } : null;
     const fakeAst = {
-      name: modName, ports: ['a', 'b', 'cout', 'sum'], assigns: [], always: [], instances: [],
+      name: modName, ports: ['a', 'b', 'cin', 'cout', 'sum'], assigns: [], always: [], instances: [],
       decls: [
         { kind: 'input', isReg: false, range, names: ['a', 'b'] },
+        { kind: 'input', isReg: false, range: null, names: ['cin'] },
         { kind: 'output', isReg: false, range: null, names: ['cout'] },
         { kind: 'output', isReg: false, range, names: ['sum'] },
       ],
@@ -1452,7 +1728,7 @@ class Synthesizer {
         return y;
       });
     }
-    let cin = sub.constNet(isSub ? 1 : 0);
+    let cin = sub.netName('cin', 0);
     for (let i = 0; i < width; i++) {
       const id = sub.newId('fa');
       const sumBit = sub.netName('sum', i);
@@ -1467,28 +1743,33 @@ class Synthesizer {
     return result;
   }
 
-  _synthAdder(lNode, rNode, width, srcNode, isSub) {
+  _synthAdder(lNode, rNode, width, srcNode, isSub, cinNode, coutCaptured) {
     const a = this.synthExpr(lNode, width);
     const b = this.synthExpr(rNode, width);
+    const cinNet = cinNode ? this.synthExpr(cinNode, 1)[0] : this.constNet(isSub ? 1 : 0);
     const modResult = this._getOrBuildAdderModule(width, isSub);
     const id = this.newId(isSub ? 'sub' : 'add');
-    const ports = {};
+    const ports = { cin: cinNet };
     for (let i = 0; i < width; i++) { ports[width === 1 ? 'a' : `a[${i}]`] = a[i]; ports[width === 1 ? 'b' : `b[${i}]`] = b[i]; }
     const sumNets = Array.from({ length: width }, (_, i) => `w_${id}_sum${i}`);
     sumNets.forEach((net, i) => { ports[width === 1 ? 'sum' : `sum[${i}]`] = net; });
     const coutNet = `w_${id}_cout`;
     ports.cout = coutNet;
-    const portWidths = { a: width, b: width, sum: width, cout: 1 };
-    const portDirs = { a: 'input', b: 'input', sum: 'output', cout: 'output' };
+    const portWidths = { a: width, b: width, cin: 1, sum: width, cout: 1 };
+    const portDirs = { a: 'input', b: 'input', cin: 'input', sum: 'output', cout: 'output' };
     this.cells.push({
       id, type: 'instance', modType: modResult.moduleName, isAdder: true, isSub,
-      portOrder: ['a', 'b', 'cout', 'sum'], portDirs, portWidths, ports,
-      portExprText: { a: exprToStr(lNode), b: exprToStr(rNode), sum: exprToStr(srcNode), cout: null },
+      portOrder: ['a', 'b', 'cin', 'cout', 'sum'], portDirs, portWidths, ports,
+      portExprText: { a: exprToStr(lNode), b: exprToStr(rNode), cin: cinNode ? exprToStr(cinNode) : null, sum: exprToStr(srcNode), cout: null },
       comment: `${modResult.moduleName} ${id}`,
     });
     for (const net of sumNets) this.markDriven(net, id);
     this.markDriven(coutNet, id);
-    this.info(`carry-out of the ${isSub ? 'subtractor' : 'adder'} for '${exprToStr(srcNode)}' beyond bit ${width - 1} is discarded (width truncated to the target's declared width)`);
+    // coutCaptured: the caller (_synthAdderConcatAssign) is wiring this adder's own native
+    // cout straight into a real signal, so nothing is actually being thrown away here — skip
+    // the "discarded" note that's accurate for every other caller, where cout genuinely is.
+    if (!coutCaptured) this.info(`carry-out of the ${isSub ? 'subtractor' : 'adder'} for '${exprToStr(srcNode)}' beyond bit ${width - 1} is discarded (width truncated to the target's declared width)`);
+    sumNets.coutNet = coutNet;
     return sumNets;
   }
 
@@ -1526,26 +1807,73 @@ class Synthesizer {
   }
 
   synthAssign(a) {
+    if (this._synthAdderConcatAssign(a)) return;
     const width = this._lvalueWidth(a.lhs);
     const nets = this.synthExpr(a.rhs, width);
     this._driveLvalue(a.lhs, nets);
+  }
+
+  // Recognizes `assign {cout, sum} = a + b;` or `assign {cout, sum} = a + b + cin;` — an LHS
+  // ConcatLvalue of exactly a 1-bit MSB element (the intended carry-out) followed by one
+  // element whose width matches the addition's own two main operands. When it matches, the
+  // add is synthesized at that natural width (not the concat's inflated total width), so the
+  // adder's own already-computed cout drives the concat's high bit directly — instead of
+  // zero-extending both operands by one extra bit and splitting a wider sum apart. With no
+  // explicit third operand, cinNode is left null, so _synthAdder ties the adder's cin to
+  // ground itself (same as any plain a+b) — still just one FUNC_add<width> module either way,
+  // never the FUNC_add<width+1> the old width-inflation trick would have built.
+  // Returns false (having synthesized nothing) for any assign that doesn't match, so
+  // synthAssign falls back to the ordinary generic path.
+  _synthAdderConcatAssign(a) {
+    const lv = a.lhs;
+    if (lv.type !== 'ConcatLvalue' || lv.elems.length !== 2) return false;
+    if (a.rhs.type !== 'Binary' || a.rhs.op !== '+') return false;
+    const [coutElem, sumElem] = lv.elems;
+    const coutWidth = coutElem.bit !== null ? 1 : this._sigWidth(coutElem.name);
+    const sumWidth = sumElem.bit !== null ? 1 : this._sigWidth(sumElem.name);
+    if (coutWidth !== 1) return false;
+    const operands = this._flattenAssocChain(a.rhs, '+');
+    let opA, opB, cinNode = null;
+    if (operands.length === 3) {
+      const scalarIdxs = operands.map((o, i) => this.naturalWidth(o) === 1 ? i : -1).filter(i => i >= 0);
+      if (scalarIdxs.length !== 1) return false;
+      cinNode = operands[scalarIdxs[0]];
+      [opA, opB] = operands.filter((_, i) => i !== scalarIdxs[0]);
+    } else if (operands.length === 2) {
+      [opA, opB] = operands;
+    } else {
+      return false;
+    }
+    if (this.naturalWidth(opA) !== sumWidth || this.naturalWidth(opB) !== sumWidth) return false;
+    const sumNets = this._synthAdder(opA, opB, sumWidth, a.rhs, false, cinNode, true);
+    this._alias(this._lvalueBitNet(lv, sumWidth), sumNets.coutNet);
+    for (let i = 0; i < sumWidth; i++) this._alias(this._lvalueBitNet(lv, i), sumNets[i]);
+    return true;
   }
 
   // rename the just-synthesized driving net to the target signal's net name — but if
   // sourceNet has no cell output to rename (e.g. a bare passthrough like `assign y = a;`,
   // where 'a' is a primary input with no driving cell at all), insert an explicit buffer
   // cell instead so the connection still shows up as a real edge in the netlist.
+  // Deliberately never renames a constant net's identity (const_0/const_1 are memoized and
+  // shared — see constNet() — across every use in the whole module): doing so used to steal
+  // the canonical net out from under whichever OTHER touched-key/bit also happened to resolve
+  // to that same bare constant (e.g. two different output bits both collapsing to constant-0),
+  // leaving that other alias's buf cell pointing at a now-driverless net. Constants always
+  // fall through to the buf-insertion branch below instead, which is safe no matter how many
+  // times the same constant gets aliased.
   _alias(targetNet, sourceNet) {
     if (targetNet === sourceNet) return;
     let rewrote = false;
-    for (const c of this.cells) {
-      for (const p of Object.keys(c.ports)) {
-        if (c.ports[p] !== sourceNet) continue;
-        const base = p.split('[')[0]; // e.g. an addN/subN instance's bit-indexed 'sum[3]' output
-        if (['y', 'sum', 'cout'].includes(base)) { c.ports[p] = targetNet; rewrote = true; }
+    if (!Object.values(this.constNets).includes(sourceNet)) {
+      for (const c of this.cells) {
+        for (const p of Object.keys(c.ports)) {
+          if (c.ports[p] !== sourceNet) continue;
+          const base = p.split('[')[0]; // e.g. an addN/subN instance's bit-indexed 'sum[3]' output
+          if (['y', 'sum', 'cout'].includes(base)) { c.ports[p] = targetNet; rewrote = true; }
+        }
       }
     }
-    for (const k of Object.keys(this.constNets)) if (this.constNets[k] === sourceNet) { this.constNets[k] = targetNet; rewrote = true; }
     if (!rewrote) {
       const id = this.newId('buf');
       this.cells.push({ id, type: 'buf', ports: { a: sourceNet, y: targetNet } });
@@ -1664,11 +1992,40 @@ class Synthesizer {
     return { mask, value };
   }
 
+  // Returns an array of length 2^selWidth (address -> index into `items`, or null meaning
+  // "no explicit item covers this address, use the default/hold fallback"), or null if this
+  // case doesn't qualify for the raw-bit address-decode fast path (_synthAddressDecodeTree).
+  // Qualifies when the addressable space is within MAX_PRIORITY_MUX_FANIN (same cap and same
+  // reason as _synthPriorityTree) and every item has exactly one pattern that is a literal
+  // with no wildcard bits and no value shared with another item. This works identically for
+  // case, casex, and casez: casex/casez's wildcard handling only ever differs from plain case
+  // when a pattern actually contains a wildcard bit, which this already excludes — so a
+  // wildcard-free casex/casez is byte-for-byte equivalent to plain case here.
+  _caseAddressDecodeMap(items, selWidth) {
+    if ((1 << selWidth) > MAX_PRIORITY_MUX_FANIN) return null;
+    const itemForValue = new Array(1 << selWidth).fill(null);
+    for (let i = 0; i < items.length; i++) {
+      const { patterns } = items[i];
+      if (patterns.length !== 1) return null;
+      const p = patterns[0];
+      if (p.type !== 'Num') return null;
+      if (p.value.base === 'b' && /[?xXzZ]/.test(p.value.digits)) return null;
+      const { value } = this._patternBits(p, selWidth); // mask is guaranteed full since no wildcard
+      if (itemForValue[value] !== null) return null; // duplicate value — not a clean bijection
+      itemForValue[value] = i;
+    }
+    return itemForValue;
+  }
+
   _synthCombCase(stmt, cv) {
     const selWidth = this.naturalWidth(stmt.selector);
     const selNets = this.synthExpr(stmt.selector, selWidth);
+    // computed before itemCvs so the match-condition comparator chain below can be skipped
+    // entirely when it is (the fast path never reads matchNet, so building it would just be
+    // dead hardware)
+    const addrMap = this._caseAddressDecodeMap(stmt.items, selWidth);
     const itemCvs = stmt.items.map(item => ({
-      matchNet: this._synthCasePatternMatch(item.patterns, selNets, selWidth),
+      matchNet: addrMap ? null : this._synthCasePatternMatch(item.patterns, selNets, selWidth),
       cv: this._synthCombSeq(item.body.type === 'Block' ? item.body.stmts : [item.body], cv),
     }));
     if (!itemCvs.length) this.error('case statement has no items');
@@ -1689,30 +2046,43 @@ class Synthesizer {
       for (const { cv: icv } of itemCvs) {
         if (icv.get(key) === undefined) this.error(`signal driving net '${key}' is not assigned by every case item inside a combinational always block — add a default branch or assign it in every item, to avoid inferring a latch`);
       }
-      let acc, startIdx;
+      const { base, idx: bitIdx } = parseNet(key);
+      const s = this.sig[base];
+      // fast path: every item is a distinct, non-wildcard literal, so the selector's own raw
+      // bits already say which leaf to pick — no comparators, no OR-propagated priority tree
+      if (addrMap) {
+        const leavesByAddress = addrMap.map(idx => idx === null ? defaultCv.get(key) : itemCvs[idx].cv.get(key));
+        result.set(key, this._synthAddressDecodeTree(leavesByAddress, selNets, busGroups, base, bitIdx, s));
+        continue;
+      }
+      let alternatives, fallbackNet;
       if (hasDefault) {
-        acc = defaultCv.get(key);
-        if (acc === undefined) this.error(`signal driving net '${key}' is not assigned by the default branch inside a combinational always block — add it there too, or remove the default and ensure every item covers this signal, to avoid inferring a latch`);
-        startIdx = itemCvs.length - 1;
+        fallbackNet = defaultCv.get(key);
+        if (fallbackNet === undefined) this.error(`signal driving net '${key}' is not assigned by the default branch inside a combinational always block — add it there too, or remove the default and ensure every item covers this signal, to avoid inferring a latch`);
+        alternatives = itemCvs.map(({ matchNet, cv: icv }) => ({ matchNet, valueNet: icv.get(key) }));
       } else {
         // no default given: the last-listed item doubles as the implicit catch-all baseline
         // (this assumes the item patterns are exhaustive; we don't attempt to prove that)
-        acc = itemCvs[itemCvs.length - 1].cv.get(key);
-        startIdx = itemCvs.length - 2;
+        fallbackNet = itemCvs[itemCvs.length - 1].cv.get(key);
+        alternatives = itemCvs.slice(0, -1).map(({ matchNet, cv: icv }) => ({ matchNet, valueNet: icv.get(key) }));
       }
-      const { base, idx: bitIdx } = parseNet(key);
-      const s = this.sig[base];
+      if (alternatives.length <= MAX_PRIORITY_MUX_FANIN - 1) {
+        result.set(key, this._synthPriorityTree(alternatives, fallbackNet, busGroups, base, bitIdx, s));
+        continue;
+      }
+      // beyond the cap: keep the plain linear priority chain (still correct, just O(N) deep)
       // walk remaining items in reverse so the FIRST-listed item ends up with top priority,
       // matching Verilog's case-statement priority (first match wins)
-      for (let idx = startIdx; idx >= 0; idx--) {
-        const itemNet = itemCvs[idx].cv.get(key);
+      let acc = fallbackNet;
+      for (let idx = alternatives.length - 1; idx >= 0; idx--) {
+        const itemNet = alternatives[idx].valueNet;
         if (itemNet === acc) continue;
         const id = this.newId('mux2');
         const y = `w_${id}`;
         // group by (signal, priority level) so each level of the ladder bundles into its
         // own bus box — bits of unrelated signals, or of different levels, never merge
         const busGroup = bitIdx !== null && s && s.width > 1 ? this._busGroupId(busGroups, `${base}:${idx}`) : null;
-        this.cells.push({ id, type: 'mux2', ports: { sel: itemCvs[idx].matchNet, a: acc, b: itemNet, y }, busGroup, busBit: bitIdx, busWidth: busGroup ? s.width : null, busBase: busGroup ? base : null });
+        this.cells.push({ id, type: 'mux2', ports: { sel: alternatives[idx].matchNet, a: acc, b: itemNet, y }, busGroup, busBit: bitIdx, busWidth: busGroup ? s.width : null, busBase: busGroup ? base : null });
         this.markDriven(y, id);
         acc = y;
       }
@@ -1723,6 +2093,73 @@ class Synthesizer {
 
   _synthCasePatternMatch(patterns, selNets, selWidth) {
     return this._reduceChain('or', patterns.map(p => this._synthOnePatternMatch(p, selNets, selWidth)));
+  }
+
+  // Resolves a priority-ordered list of alternatives (each an independent, arbitrary
+  // {matchNet, valueNet} — not a raw address, so this works uniformly for plain case,
+  // casex, and casez) plus one unconditional fallback into a single net, using a
+  // balanced binary tree of mux2 instead of a linear chain: depth becomes O(log N)
+  // instead of O(N). The fallback is treated as an implicit lowest-priority leaf whose
+  // own "match" is hardwired true — this mirrors the linear fold's own semantics
+  // (`acc` starts at the fallback, then each alternative from lowest to highest
+  // priority overrides it) and is what makes the "no alternative matched" case resolve
+  // correctly: that path only exists in the tree via this extra leaf, not as some
+  // out-of-range base case. Every non-leaf node also has to report whether *anything
+  // in its own subtree* matched, purely so its parent can pick left-vs-right — that
+  // report is itself just another 'or' gate (via _reduceChain, e.g. index.html:1913),
+  // never a raw address bit, which is why this needs no "is this case dense/exhaustive"
+  // detection: it composes correctly for any N and any set of arbitrary conditions.
+  _synthPriorityTree(alternatives, fallbackNet, busGroups, base, bitIdx, s) {
+    if (!alternatives.length) return fallbackNet;
+    const leaves = alternatives.concat([{ matchNet: this.constNet(1), valueNet: fallbackNet }]);
+    const resolve = (lo, hi, needsAnyMatch) => {
+      if (lo === hi) return { value: leaves[lo].valueNet, anyMatch: leaves[lo].matchNet };
+      const mid = lo + Math.floor((hi - lo) / 2);
+      // left's anyMatch is always needed (it's this node's own mux2 sel below), but right's
+      // anyMatch is only ever read via the `or` just below — so right only needs to bother
+      // computing it if *this* node's own anyMatch is itself needed by our parent. Getting
+      // this wrong (i.e. always passing true to both) leaves a dangling, unread 'or' gate
+      // wherever a subtree's own anyMatch has no consumer — which is guaranteed to happen at
+      // least once per bit, since the fallback leaf sits on the tree's rightmost spine by
+      // construction, and the root never needs its own combined anyMatch (no parent to give it to).
+      const left = resolve(lo, mid, true);
+      const right = resolve(mid + 1, hi, needsAnyMatch);
+      const anyMatch = needsAnyMatch ? this._reduceChain('or', [left.anyMatch, right.anyMatch]) : null;
+      if (left.value === right.value) return { value: left.value, anyMatch };
+      const id = this.newId('mux2');
+      const y = `w_${id}`;
+      const busGroup = bitIdx !== null && s && s.width > 1 ? this._busGroupId(busGroups, `${base}:${lo}-${hi}`) : null;
+      this.cells.push({ id, type: 'mux2', ports: { sel: left.anyMatch, a: right.value, b: left.value, y }, busGroup, busBit: bitIdx, busWidth: busGroup ? s.width : null, busBase: busGroup ? base : null });
+      this.markDriven(y, id);
+      return { value: y, anyMatch };
+    };
+    return resolve(0, leaves.length - 1, false).value;
+  }
+
+  // The address-decode counterpart of _synthPriorityTree: leavesByAddress has length
+  // 2^selWidth, leavesByAddress[v] = the net that should drive the output when the selector
+  // equals v (built by the caller via _caseAddressDecodeMap). selNets is the selector's own
+  // per-bit nets, LSB-first. Unlike _synthPriorityTree, no per-item match condition or
+  // OR-propagated "did anything match" signal is needed at all — the selector's own raw bits
+  // already say exactly which leaf to pick, so this just recursively pairs adjacent
+  // addresses one selector bit per level: log2(N) mux2, nothing else.
+  _synthAddressDecodeTree(leavesByAddress, selNets, busGroups, base, bitIdx, s) {
+    let nets = leavesByAddress;
+    for (let level = 0; nets.length > 1; level++) {
+      const next = [];
+      for (let i = 0; i < nets.length; i += 2) {
+        const a = nets[i], b = nets[i + 1];
+        if (a === b) { next.push(a); continue; }
+        const id = this.newId('mux2');
+        const y = `w_${id}`;
+        const busGroup = bitIdx !== null && s && s.width > 1 ? this._busGroupId(busGroups, `${base}:addr${level}:${i / 2}`) : null;
+        this.cells.push({ id, type: 'mux2', ports: { sel: selNets[level], a, b, y }, busGroup, busBit: bitIdx, busWidth: busGroup ? s.width : null, busBase: busGroup ? base : null });
+        this.markDriven(y, id);
+        next.push(y);
+      }
+      nets = next;
+    }
+    return nets[0];
   }
 
   _eqConst(net, bitVal) {
@@ -1845,8 +2282,9 @@ class Synthesizer {
   _synthSeqCase(stmt, cv) {
     const selWidth = this.naturalWidth(stmt.selector);
     const selNets = this.synthExpr(stmt.selector, selWidth);
+    const addrMap = this._caseAddressDecodeMap(stmt.items, selWidth);
     const itemCvs = stmt.items.map(item => ({
-      matchNet: this._synthCasePatternMatch(item.patterns, selNets, selWidth),
+      matchNet: addrMap ? null : this._synthCasePatternMatch(item.patterns, selNets, selWidth),
       cv: this._synthSeqSeq(item.body.type === 'Block' ? item.body.stmts : [item.body], cv),
     }));
     if (!itemCvs.length) this.error('case statement has no items');
@@ -1859,16 +2297,30 @@ class Synthesizer {
     const result = new Map(cv);
     const busGroups = new Map();
     for (const key of touched) {
-      let acc = defaultCv ? (defaultCv.has(key) ? defaultCv.get(key) : key) : key;
+      const fallbackNet = defaultCv ? (defaultCv.has(key) ? defaultCv.get(key) : key) : key;
       const { base, idx: bitIdx } = parseNet(key);
       const s = this.sig[base];
-      for (let idx = itemCvs.length - 1; idx >= 0; idx--) {
-        const itemNet = itemCvs[idx].cv.has(key) ? itemCvs[idx].cv.get(key) : key;
+      // fast path: every item is a distinct, non-wildcard literal, so the selector's own raw
+      // bits already say which leaf to pick — no comparators, no OR-propagated priority tree
+      if (addrMap) {
+        const leavesByAddress = addrMap.map(idx => idx === null ? fallbackNet : (itemCvs[idx].cv.has(key) ? itemCvs[idx].cv.get(key) : key));
+        result.set(key, this._synthAddressDecodeTree(leavesByAddress, selNets, busGroups, base, bitIdx, s));
+        continue;
+      }
+      const alternatives = itemCvs.map(({ matchNet, cv: icv }) => ({ matchNet, valueNet: icv.has(key) ? icv.get(key) : key }));
+      if (alternatives.length <= MAX_PRIORITY_MUX_FANIN - 1) {
+        result.set(key, this._synthPriorityTree(alternatives, fallbackNet, busGroups, base, bitIdx, s));
+        continue;
+      }
+      // beyond the cap: keep the plain linear priority chain (still correct, just O(N) deep)
+      let acc = fallbackNet;
+      for (let idx = alternatives.length - 1; idx >= 0; idx--) {
+        const itemNet = alternatives[idx].valueNet;
         if (itemNet === acc) continue;
         const id = this.newId('mux2');
         const y = `w_${id}`;
         const busGroup = bitIdx !== null && s && s.width > 1 ? this._busGroupId(busGroups, `${base}:${idx}`) : null;
-        this.cells.push({ id, type: 'mux2', ports: { sel: itemCvs[idx].matchNet, a: acc, b: itemNet, y }, busGroup, busBit: bitIdx, busWidth: busGroup ? s.width : null, busBase: busGroup ? base : null });
+        this.cells.push({ id, type: 'mux2', ports: { sel: alternatives[idx].matchNet, a: acc, b: itemNet, y }, busGroup, busBit: bitIdx, busWidth: busGroup ? s.width : null, busBase: busGroup ? base : null });
         this.markDriven(y, id);
         acc = y;
       }
@@ -1946,11 +2398,16 @@ class Synthesizer {
   synthInstance(inst) {
     const iface = this.interfaces[inst.modType];
     if (!iface) this.error(`Unknown module type '${inst.modType}' instantiated as '${inst.instName}' (line ${inst.line})`);
+    let conns = inst.conns;
+    if (!inst.named) {
+      if (conns.length !== iface.ports.length) this.error(`Module '${inst.modType}' expects ${iface.ports.length} port connection${iface.ports.length === 1 ? '' : 's'}, got ${conns.length} (instance '${inst.instName}')`);
+      conns = conns.map((c, i) => ({ port: iface.ports[i], expr: c.expr }));
+    }
     const seenPorts = new Set();
     const ports = {}; // flat: 'a' or 'a[2]' -> single net string, same convention as every other cell type
     const portExprText = {};
     const portWidths = {};
-    for (const conn of inst.conns) {
+    for (const conn of conns) {
       const portSig = iface.sig[conn.port];
       if (!portSig) this.error(`Module '${inst.modType}' has no port '${conn.port}' (instance '${inst.instName}')`);
       if (seenPorts.has(conn.port)) this.error(`Port '${conn.port}' connected more than once on instance '${inst.instName}'`);
@@ -2399,15 +2856,21 @@ function genModuleVerilog(result) {
   }
   const portNets = new Set();
   for (const name of ports) { const s = sig[name]; for (let i = 0; i < s.width; i++) portNets.add(s.width === 1 ? name : `${name}[${s.lo + i}]`); }
-  const declaredWires = [];
+  // Verilog's wire/reg declaration syntax allows only one range for the whole
+  // comma-separated name list in a statement — a `[hi:lo]` can't appear mid-list to
+  // re-scope only the names after it — so signals must be grouped by their exact range
+  // (including "no range" for 1-bit signals) into one `wire` statement per group, rather
+  // than joining every non-port signal into a single statement regardless of width.
+  const wireGroups = new Map(); // rangeStr -> [name, ...]
   const knownNets = new Set(portNets);
   for (const [name, s] of Object.entries(sig)) {
     if (ports.includes(name)) continue;
     const rangeStr = s.width > 1 ? `[${s.lo + s.width - 1}:${s.lo}] ` : '';
-    declaredWires.push(`${rangeStr}${name}`.trim());
+    if (!wireGroups.has(rangeStr)) wireGroups.set(rangeStr, []);
+    wireGroups.get(rangeStr).push(name);
     for (let i = 0; i < s.width; i++) knownNets.add(s.width === 1 ? name : `${name}[${s.lo + i}]`);
   }
-  if (declaredWires.length) lines.push(`  wire ${declaredWires.join(', ')};`);
+  for (const [rangeStr, names] of wireGroups) lines.push(`  wire ${rangeStr}${names.join(', ')};`);
   const anonNets = new Set();
   for (const c of cells) for (const p of Object.values(c.ports)) { if (p && !knownNets.has(p) && !CONST_LIT[p]) anonNets.add(p); }
   if (anonNets.size) lines.push(`  wire ${[...anonNets].join(', ')};`);
@@ -2429,7 +2892,12 @@ function genModuleVerilog(result) {
   for (const c of cells) {
     if (c.type === 'const') continue; // inlined as a literal at each use site, not a real cell
     if (c.type === 'instance') {
-      const portList = c.portOrder.map(p => `.${p}(${c.portDirs[p] === 'output' ? outputConnExpr(c, p) : c.portExprText[p]})`).join(', ');
+      // an input port with no source-level expression to show (e.g. a bare cin tied to a
+      // constant, not a real chained operand) falls back to its actual wired net — never
+      // print portExprText[p] verbatim when it's null, or the connection reads as literally
+      // the text "null" instead of e.g. "1'b0"
+      const inputConnExpr = p => c.portExprText[p] ?? netExpr(c.ports[p]);
+      const portList = c.portOrder.map(p => `.${p}(${c.portDirs[p] === 'output' ? outputConnExpr(c, p) : inputConnExpr(p)})`).join(', ');
       lines.push(`  ${c.modType} ${c.id} (${portList});`);
       continue;
     }
@@ -2547,9 +3015,11 @@ const editorHierarchyPanel = document.getElementById('editorHierarchyPanel');
 const editorSyncWarning = document.getElementById('editorSyncWarning');
 let editorFullSource = '';
 let editorSelectedModule = '(all)';
+let currentFileName = 'design.v';
 const exampleSelect = document.getElementById('exampleSelect');
+const openBtn = document.getElementById('openBtn');
+const fileOpenInput = document.getElementById('fileOpenInput');
 const logBox = document.getElementById('logBox');
-const statsBadges = document.getElementById('statsBadges');
 const codeOut = document.getElementById('codeOut');
 const codeOutHierarchyPanel = document.getElementById('codeOutHierarchyPanel');
 let netlistFullText = '';
@@ -2557,6 +3027,28 @@ let netlistSegments = [];
 let netlistSelectedModule = '(all)';
 const breadcrumbRow = document.getElementById('breadcrumbRow');
 const hierarchyTree = document.getElementById('hierarchyTree');
+
+function copyTextToClipboard(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+}
+
+document.getElementById('netlistCopyBtn').addEventListener('click', () => copyTextToClipboard(netlistFullText));
+document.getElementById('netlistSaveBtn').addEventListener('click', () => {
+  const blob = new Blob([netlistFullText], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (currentAll && currentAll.top ? currentAll.top.name : 'netlist') + '_netlist.v';
+  a.click();
+  URL.revokeObjectURL(url);
+});
 
 for (const name of Object.keys(EXAMPLES)) {
   const opt = document.createElement('option');
@@ -2566,10 +3058,27 @@ for (const name of Object.keys(EXAMPLES)) {
 }
 function loadExample(name) {
   codeInput.value = EXAMPLES[name];
+  currentFileName = name.replace(/[^A-Za-z0-9_-]+/g, '_') + '.v';
   updateGutter();
   resetEditorHierarchyState();
 }
 exampleSelect.addEventListener('change', () => loadExample(exampleSelect.value));
+
+openBtn.addEventListener('click', () => fileOpenInput.click());
+fileOpenInput.addEventListener('change', () => {
+  const file = fileOpenInput.files[0];
+  fileOpenInput.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    codeInput.value = reader.result;
+    currentFileName = file.name;
+    exampleSelect.selectedIndex = -1;
+    updateGutter();
+    resetEditorHierarchyState();
+  };
+  reader.readAsText(file);
+});
 
 function updateGutter() {
   const lines = codeInput.value.split('\n').length;
@@ -2712,29 +3221,120 @@ codeInput.addEventListener('blur', () => {
   if (res.ok) renderEditorHierarchyList();
 });
 
+document.getElementById('sourceCopyBtn').addEventListener('click', () => {
+  const res = spliceEditorChangesBack();
+  showEditorSyncWarning(res.ok ? null : res.reason);
+  if (res.ok) renderEditorHierarchyList();
+  copyTextToClipboard(editorFullSource);
+});
+document.getElementById('sourceSaveBtn').addEventListener('click', () => {
+  const res = spliceEditorChangesBack();
+  showEditorSyncWarning(res.ok ? null : res.reason);
+  if (res.ok) renderEditorHierarchyList();
+  const blob = new Blob([editorFullSource], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = currentFileName;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
 function logLine(level, msg) {
   const div = document.createElement('div');
   div.className = level;
   div.textContent = msg;
   logBox.appendChild(div);
+  logBox.scrollTop = logBox.scrollHeight;
 }
 
-function setStats(cells) {
-  statsBadges.innerHTML = '';
+// Approximate relative cell area, in units of a 2-input NAND (the smallest
+// static-CMOS gate at 4 transistors, so it's the natural baseline). Simple
+// gates are estimated from their usual static-CMOS transistor count relative
+// to that baseline (NOT/BUF need half or one inverter stage, AND/OR are a
+// NAND/NOR plus an inverter, XOR/XNOR need roughly 2.5x the transistors of a
+// NAND for a compact implementation, DFF and MUX2 are standard textbook
+// figures for a reset-capable flip-flop and a transmission-gate 2:1 mux).
+// FA is deliberately NOT an independent guess - this app's own `fa` PRIMITIVE_SRC
+// is itself built from 2 XOR2 + 2 AND2 + 1 OR2 (see PRIMITIVE_SRC.fa), so its
+// area is derived by composing those same weights, keeping the two
+// consistent with each other instead of picking a second unrelated number.
+const GATE_AREA = (() => {
+  const a = { nand: 1, nor: 1, not: 0.5, buf: 1, mux2: 2, dff: 6, const: 0, instance: 0 };
+  a.and = a.nand + a.not;
+  a.or = a.nor + a.not;
+  a.xor = 2.5;
+  a.xnor = a.xor;
+  a.fa = 2 * a.xor + 2 * a.and + 1 * a.or;
+  return a;
+})();
+const GATE_DISPLAY_NAME = { and: 'AND', or: 'OR', nand: 'NAND', nor: 'NOR', xor: 'XOR', xnor: 'XNOR', not: 'NOT', buf: 'BUF', mux2: 'MUX2', fa: 'FA', dff: 'DFF', const: 'const', instance: 'sub-module' };
+const GATE_REPORT_ORDER = ['and', 'or', 'nand', 'nor', 'xor', 'xnor', 'not', 'buf', 'mux2', 'fa', 'dff', 'const', 'instance'];
+
+// Counts and areas every cell across the WHOLE design (every module actually
+// synthesized - currentAll.results already covers the top module, every
+// sub-module, and every auto-generated adder), matching the same
+// whole-design scope the existing "N cells total" summary line already
+// uses, not just whatever the diagram happens to be drilled into right now.
+// Counts every cell ONCE PER ACTUAL INSTANTIATION SITE, not once per
+// distinct module definition. `currentAll.results` holds exactly one
+// synthesis result per module TYPE - synthesizeAll synthesizes each module
+// definition once, keyed by name, regardless of how many places instantiate
+// it - so summing Object.values(all.results) directly silently undercounts
+// any module instantiated more than once (an 8-bit adder instantiated
+// twice would only contribute its 8 FAs once instead of 16). Recursing
+// from the real top module and re-walking a child's cells at every
+// 'instance' cell that references it - rather than caching a single
+// "multiplicity" per module name - is also what keeps this correct when
+// the SAME module is reused from more than one place in the hierarchy,
+// not just instantiated repeatedly from one place.
+function collectWholeDesignCellCounts(all) {
   const counts = {};
-  for (const c of cells) counts[c.type] = (counts[c.type] || 0) + 1;
-  const LABELS = { and: 'AND', or: 'OR', nand: 'NAND', nor: 'NOR', xor: 'XOR', xnor: 'XNOR', not: 'NOT', fa: 'FA', dff: 'DFF', const: 'const', instance: 'sub-module' };
-  for (const [type, label] of Object.entries(LABELS)) {
-    if (!counts[type]) continue;
-    const b = document.createElement('div');
-    b.className = 'badge';
-    b.innerHTML = `${label}: <span>${counts[type]}</span>`;
-    statsBadges.appendChild(b);
+  let totalCells = 0;
+  function walk(moduleName) {
+    const result = all.results[moduleName];
+    if (!result) return;
+    for (const c of result.cells) {
+      counts[c.type] = (counts[c.type] || 0) + 1;
+      totalCells++;
+      if (c.type === 'instance') walk(c.modType);
+    }
   }
-  const total = document.createElement('div');
-  total.className = 'badge';
-  total.innerHTML = `total cells: <span>${cells.length}</span>`;
-  statsBadges.appendChild(total);
+  walk(all.top.name);
+  return { counts, totalCells };
+}
+
+function buildAreaReport(all) {
+  const { counts, totalCells } = collectWholeDesignCellCounts(all);
+  const dffCount = counts.dff || 0;
+  const instanceCount = counts.instance || 0;
+  const physicalCells = totalCells - instanceCount; // a sub-module 'instance' cell is a hierarchy pointer, not a gate - its own gates are counted when THAT module's results are processed
+  const combCells = physicalCells - dffCount;
+
+  const pad = (label, value) => label.padEnd(32) + value;
+  const lines = [];
+  lines.push(pad('Number of cells:', physicalCells));
+  lines.push(pad('Number of combinational cells:', combCells));
+  lines.push(pad('Number of sequential cells:', dffCount));
+  if (instanceCount) lines.push(pad('Number of sub-module instances:', instanceCount));
+  lines.push('');
+  lines.push('Gate counts:');
+  const areaLines = [];
+  let totalArea = 0;
+  for (const type of GATE_REPORT_ORDER) {
+    const n = counts[type];
+    if (!n) continue;
+    lines.push(pad('  ' + GATE_DISPLAY_NAME[type] + ':', n));
+    const area = n * GATE_AREA[type];
+    totalArea += area;
+    if (GATE_AREA[type]) areaLines.push(pad('  ' + GATE_DISPLAY_NAME[type] + ':', area.toFixed(2)));
+  }
+  lines.push('');
+  lines.push('Approx. area (2-input NAND = 1.00):');
+  lines.push(...areaLines);
+  lines.push('');
+  lines.push(pad('Total cell area:', totalArea.toFixed(2)));
+  return lines.join('\n');
 }
 
 function pushGraph(nodes, edges) {
@@ -2853,7 +3453,6 @@ function showCurrentView() {
   const modName = viewStack[viewStack.length - 1];
   try {
     const { result, graph, layout } = synthesizeModuleView(currentAll, modName);
-    setStats(result.cells);
     // structural text always starts from the actual top module, regardless of which sub-module is being viewed in the graph
     const topResult = currentAll.results[currentAll.top.name];
     const gen = genVerilog([topResult, ...Object.entries(currentAll.results).filter(([k]) => k !== currentAll.top.name).map(([, v]) => v)]);
@@ -2885,7 +3484,6 @@ window.__drillInto = drillInto;
 
 function runSynthesis() {
   logBox.innerHTML = '';
-  statsBadges.innerHTML = '';
   codeOut.textContent = '';
   breadcrumbRow.innerHTML = '';
   const splice = spliceEditorChangesBack();
@@ -2896,8 +3494,8 @@ function runSynthesis() {
   try {
     currentAll = synthesizeAll(src);
     for (const l of currentAll.log) logLine(l.level, `[${l.level}] ${l.msg}`);
-    const cellCount = Object.values(currentAll.results).reduce((n, r) => n + r.cells.length, 0);
-    logLine('ok', `synthesized top module '${currentAll.top.name}'${currentAll.modules.length > 1 ? ` (+${currentAll.modules.length - 1} sub-module${currentAll.modules.length > 2 ? 's' : ''})` : ''} — ${cellCount} cells total`);
+    logLine('ok', `synthesized top module '${currentAll.top.name}'${currentAll.modules.length > 1 ? ` (+${currentAll.modules.length - 1} sub-module${currentAll.modules.length > 2 ? 's' : ''})` : ''}`);
+    logLine('info', buildAreaReport(currentAll));
     viewStack = [currentAll.top.name];
     renderHierarchyTree();
     showCurrentView();
@@ -2930,6 +3528,12 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
   URL.revokeObjectURL(url);
 });
 
+// bundle multi-bit logic toggle (mux2/dff/gate chains collapsed into one N-bit box vs shown
+// as N individual 1-bit cells) — read by synthesizeModuleView on every re-render. Declared
+// here (before the initial loadExample/runSynthesis below) rather than down by its checkbox
+// wiring, since synthesizeModuleView's very first call already needs it initialized.
+let bundleMultibitLogic = localStorage.getItem('netlistBundleMultibit') !== '0';
+
 loadExample(Object.keys(EXAMPLES)[0]);
 runSynthesis();
 
@@ -2940,6 +3544,20 @@ document.querySelectorAll('[data-collapse]').forEach(btn => {
     card.classList.toggle('collapsed');
     btn.textContent = card.classList.contains('collapsed') ? '▸' : '▾';
   });
+});
+
+/* ---- help icon popups (generic, works for any .help-icon) ---- */
+document.querySelectorAll('.help-icon').forEach(btn => {
+  const popup = btn.nextElementSibling;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const willShow = !popup.classList.contains('visible');
+    document.querySelectorAll('.help-popup.visible').forEach(p => p.classList.remove('visible'));
+    if (willShow) popup.classList.add('visible');
+  });
+});
+document.addEventListener('click', () => {
+  document.querySelectorAll('.help-popup.visible').forEach(p => p.classList.remove('visible'));
 });
 
 /* ---- source/log layout toggle (side-by-side vs stacked) ---- */
@@ -3030,9 +3648,8 @@ document.querySelectorAll('[data-collapse]').forEach(btn => {
   apply(localStorage.getItem('netlistTextHierarchyVisible') === '1');
 })();
 
-/* ---- bundle multi-bit logic toggle (mux2/dff/gate chains collapsed into one N-bit box vs
-   shown as N individual 1-bit cells) — read by synthesizeModuleView on every re-render */
-let bundleMultibitLogic = localStorage.getItem('netlistBundleMultibit') !== '0';
+/* ---- bundle multi-bit logic toggle checkbox wiring (variable declared earlier, above the
+   initial loadExample/runSynthesis, since that first render already reads it) ---- */
 (() => {
   const checkbox = document.getElementById('bundleMultibitCheckbox');
   checkbox.checked = bundleMultibitLogic;
@@ -3225,19 +3842,26 @@ function FaNode({ data }) {
     </div>`;
 }
 
-// The compact black-box view of an auto-generated addN/subN sub-module: only a/b/sum are
-// exposed (cin/cout are internal-only, tied to 0/1 and discarded inside the generated
-// module), plus double-click drill-down like any other sub-module instance.
+// The compact black-box view of an auto-generated addN/subN sub-module: a/b/cin/sum/cout
+// are all exposed as real handles, since cin (like cout before it) is a real port now, not
+// tied to a constant inside the generated module — every caller wires it explicitly (either
+// to the actual carry-in signal for a real a+b+cin chain, or to a constant 0/1 net for a
+// plain a+b/a-b, see _synthAdder) — and a relational comparator (<, >, <=, >=) genuinely
+// wires cout to something external too. Any port present in the cell's data but missing a
+// handle here has nothing for React Flow to attach that edge to, and the edge is silently
+// dropped rather than erroring, so every real port needs one.
 function AdderNode({ data }) {
   const kind = data.op === 'sub' ? 'sub' : 'add';
   const def = GATE_DEFS[kind];
   return html`
     <div class="rf-node rf-node-fa" style=${{ width: def.width + 'px', height: def.height + 'px', cursor: 'pointer' }} onDoubleClick=${() => window.__drillInto && window.__drillInto(data.modType)} title="${data.modType} (${data.width}-bit) — double-click to view internals">
       <${Handle} type="target" position=${Position.Left} id="a" style=${{ top: '18.75%' }} />
+      <${Handle} type="target" position=${Position.Left} id="cin" style=${{ top: '50%' }} />
       <${Handle} type="target" position=${Position.Left} id="b" style=${{ top: '81.25%' }} />
       <${GateSymbol} kind=${kind} />
       <div class="rf-node-range">[${data.width - 1}:0]</div>
       <${Handle} type="source" position=${Position.Right} id="sum" style=${{ top: '37.5%' }} />
+      <${Handle} type="source" position=${Position.Right} id="cout" style=${{ top: '62.5%' }} />
     </div>`;
 }
 

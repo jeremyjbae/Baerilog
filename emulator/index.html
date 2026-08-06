@@ -1,0 +1,2779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Uzebox Emulator</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+      background: #f2f2f7;
+      color: #1c1c1e;
+      padding: 24px;
+    }
+    h1 {
+      text-align: center;
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: #1c1c1e;
+    }
+    h1 a { color: inherit; text-decoration: none; }
+    h1 a:hover { text-decoration: underline; }
+    .subtitle {
+      text-align: center;
+      font-size: 13px;
+      color: #8e8e93;
+      margin-bottom: 24px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 20px 22px 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    }
+    .card.full { grid-column: 1 / -1; }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #1c1c1e;
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+    }
+    .card-collapse-btn {
+      cursor: pointer;
+      font-size: 8px;
+      font-weight: 600;
+      color: #1c1c1e;
+      user-select: none;
+      flex-shrink: 0;
+      margin-right: 6px;
+      width: 13px;
+      height: 13px;
+      border: 1px solid #1c1c1e;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .card-collapse-btn:hover { border-color: #3a3a3c; color: #3a3a3c; }
+    .card.collapsed > *:not(:first-child) { display: none !important; }
+    .card.collapsed { padding-bottom: 20px; }
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+    .layout-toggle {
+      display: flex;
+      gap: 4px;
+    }
+    .layout-btn {
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 18px;
+      border: 1px solid #c7c7cc;
+      border-radius: 5px;
+      color: #8e8e93;
+      background: #fff;
+    }
+    .layout-btn:hover { border-color: #8e8e93; color: #3a3a3c; }
+    .layout-btn.active { border-color: #007aff; color: #007aff; }
+    .layout-btn svg { width: 13px; height: 13px; display: block; }
+    .grid.stack-editor-console .layout-pair { grid-column: 1 / -1; }
+    .card p {
+      font-size: 12px;
+      color: #8e8e93;
+      margin-bottom: 14px;
+    }
+    canvas { width: 100% !important; }
+    .legend-row {
+      display: flex;
+      gap: 18px;
+      justify-content: center;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #3a3a3c;
+    }
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .badge-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 2px;
+    }
+    .badge {
+      background: #f2f2f7;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: #3a3a3c;
+    }
+    .badge span { font-weight: 700; color: #007aff; }
+    .badge.error span { color: #ff3b30; }
+
+    /* --- toolbar groups (zoom controls, range inputs) --- */
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #f2f2f7;
+      border-radius: 10px;
+      padding: 5px 8px;
+    }
+    .toolbar-group .btn.secondary { background: #fff; }
+    .toolbar-group .btn.secondary:hover { background: #e5e5ea; }
+    .toolbar-group .num-input { background: #fff; width: 84px; }
+    .icon-btn { padding: 6px 11px; font-weight: 700; }
+    .zoom-level {
+      font-size: 11px;
+      color: #8e8e93;
+      font-variant-numeric: tabular-nums;
+      min-width: 40px;
+      text-align: center;
+    }
+    .num-input.error { box-shadow: 0 0 0 1.5px #ff3b30 inset; }
+
+    /* --- radix picker popup for waveform value column --- */
+    .radix-popup {
+      position: fixed;
+      display: none;
+      background: #fff;
+      border-radius: 12px;
+      padding: 8px;
+      font-size: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      z-index: 1000;
+      min-width: 130px;
+    }
+    .radix-popup-title {
+      font-weight: 700;
+      font-size: 12px;
+      color: #1c1c1e;
+      padding: 4px 8px 6px;
+    }
+    .radix-opt {
+      padding: 6px 8px;
+      border-radius: 8px;
+      color: #8e8e93;
+      cursor: pointer;
+    }
+    .radix-opt:hover { background: #f2f2f7; }
+    .radix-opt.selected {
+      color: #007aff;
+      border: 1.5px solid #007aff;
+      font-weight: 600;
+    }
+
+    /* --- module hierarchy browser card (sits left of the waveform/netlist viewer) --- */
+    .split-row {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 18px;
+      align-items: flex-start;
+    }
+    .split-row > .card:first-child { flex: 0 0 220px; width: 220px; }
+    .split-row > .card:last-child { flex: 1 1 auto; min-width: 0; }
+    .split-row.hierarchy-collapsed > .card:first-child { display: none; }
+    .hierarchy-tree { font-size: 12px; }
+    .hierarchy-node-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 6px;
+      border-radius: 6px;
+      cursor: pointer;
+      color: #3a3a3c;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .hierarchy-node-row:hover { background: #f2f2f7; }
+    .hierarchy-node-row.active { background: #e8f1ff; color: #007aff; font-weight: 600; }
+    .hierarchy-node-type { color: #8e8e93; font-size: 10px; }
+    .hierarchy-node-icon {
+      width: 13px;
+      height: 13px;
+      color: #8e8e93;
+      flex-shrink: 0;
+    }
+    .hierarchy-children { margin-left: 12px; border-left: 1px solid #e5e5ea; padding-left: 6px; }
+
+/* --- additions for the Uzebox emulator --- */
+
+/* The subtitle carries an attribution link, which the shared block styles only
+   for h1. Keep it in the subtitle's own grey rather than browser blue, and
+   underline on hover exactly as `h1 a` does. Emulator-only, so style.css and
+   the other three apps need no re-sync. */
+.subtitle a { color: inherit; text-decoration: none; }
+.subtitle a:hover { text-decoration: underline; }
+
+/* --- controls, copied from compiler/index.html's additions. These are not in
+   the shared style.css, so each app carries its own copy; the markup here
+   already used .btn / .btn.secondary but the rules were missing, which left
+   the buttons rendering as plain browser chrome. --- */
+select, .btn, .num-input {
+  font-family: inherit; font-size: 12px; border: none; border-radius: 8px;
+  padding: 7px 12px; background: #f2f2f7; color: #1c1c1e; cursor: pointer;
+}
+.btn { background: #007aff; color: #fff; font-weight: 600; transition: background 0.15s ease; }
+.btn:hover { background: #0066d6; }
+.btn.secondary { background: #f2f2f7; color: #1c1c1e; }
+.btn.secondary:hover { background: #e5e5ea; }
+.btn:disabled { background: #c7c7cc; cursor: default; }
+
+.rom-info { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; font-size: 13px; }
+.rom-info dt { color: #6e6e73; }
+/* The value stays in the card's UI font, the same one its `name`/`author` label
+   uses - a monospace face made each row read as two unrelated typefaces, the
+   same mismatch the Core card's stat tiles had. No tabular-nums either, for the
+   reason given there: it swaps in a different-looking figure set. */
+.rom-info dd { margin: 0; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.stat { background: #f5f5f7; border-radius: 10px; padding: 8px 10px; }
+.stat .k { display: block; font-size: 11px; color: #6e6e73; text-transform: uppercase; letter-spacing: .04em; }
+/* The value stays in the card's UI font at the same 13px the ROM card's rows
+   use, so a data value is one size everywhere in the app - the .k label above
+   it stays 11px uppercase, which is enough to separate caption from value
+   without a second type size doing the job. A monospace face here made each
+   tile read as two unrelated typefaces, and no tabular-nums either: on SF that
+   swaps in the alternate figure set, whose digits visibly differ from the
+   proportional ones in the label right above, which is the same inconsistency
+   in another guise. The tiles are fixed grid cells with left-aligned text, so
+   proportional digits changing width as a counter ticks moves nothing. */
+.stat .v { display: block; font-size: 13px; }
+
+/* --- register file and disassembly, matching compiler/index.html's panels ---
+   Copied from that file's additions block so the two apps read identically.
+   Two rules are load-bearing rather than cosmetic:
+   - .asm-mnem carries a 2px transparent left border on EVERY row, coloured in
+     only on .current-pc. Adding a border on the current row instead would
+     shift the row's layout as the highlight moves.
+   - .card:not(.full) .reg-grid must set BOTH 2 columns and 16 rows: under
+     grid-auto-flow: column it is the row count that drives the wrap, so
+     changing only the column count leaves items flowing 8-per-column and the
+     arrangement silently wrong. */
+.asm-listing {
+  max-height: 420px;
+  overflow-y: auto;
+  /* rows are white-space:pre, so at half width they run wider than the card -
+     scroll rather than clip them */
+  overflow-x: auto;
+  background: #1c1c1e;
+  border-radius: 12px;
+  padding: 8px 0;
+  font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+}
+.asm-line { display: flex; gap: 10px; padding: 2px 14px; white-space: pre; }
+.asm-line.current-pc { background: rgba(90,200,250,0.16); }
+.asm-addr {
+  position: relative;
+  color: #5a5a5e;
+  flex-shrink: 0;
+  width: 132px;
+  padding-left: 14px;
+  cursor: pointer;
+}
+.asm-line:hover .asm-code { color: #8e8e93; }
+.asm-line:hover .asm-addr { color: #e5e5ea; }
+.asm-line:hover .asm-addr .bp-dot { background: rgba(255,59,48,0.4); }
+.asm-line.bp-explicit .asm-addr .bp-dot,
+.asm-line.bp-explicit:hover .asm-addr .bp-dot { background: #ff3b30; }
+.bp-dot {
+  position: absolute; left: 2px; top: 50%; transform: translateY(-50%);
+  width: 8px; height: 8px; border-radius: 50%; box-sizing: border-box;
+}
+.asm-mnem { border-left: 2px solid transparent; padding-left: 8px; color: #e5e5ea; }
+.asm-line.current-pc .asm-mnem { border-left-color: #5ac8fa; }
+.asm-data { color: #5a5a5e; }
+.reg-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(8, auto);
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: #1c1c1e;
+  border-radius: 12px 12px 0 0;
+  overflow: hidden;
+  font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+}
+.card:not(.full) .reg-grid {
+  grid-template-rows: repeat(16, auto);
+  grid-template-columns: repeat(2, 1fr);
+}
+/* With no ROM loaded the grid has no cells, so it would collapse to nothing.
+   Keep it as a thin rounded strip standing in for where the register file will
+   appear - and round all four corners, since the pc/sp/sreg rows that normally
+   close off the stack are hidden in this state. */
+.reg-grid.empty-state { padding: 8px 0; border-radius: 12px; }
+.reg-cell { display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; background: #232326; }
+.reg-cell.current { background: #2c2c2e; }
+/* the value the highlighted (not yet executed) instruction is about to write */
+.reg-cell.pending { background: #2c2c2e; }
+.reg-next { color: #30d158; }
+/* a register the highlighted instruction READS - name only, amber, so it stays
+   distinct from the green "about to be written" arrow */
+.reg-cell.src .reg-xnum, .reg-cell.src .reg-abi { color: #ffd60a; }
+.reg-name { color: #5ac8fa; }
+.reg-xnum { display: inline-block; width: 3ch; }
+.reg-abi { color: #8e8e93; }
+.reg-value { color: #e5e5ea; }
+.reg-pc {
+  display: flex; justify-content: space-between; gap: 8px;
+  padding: 6px 12px; margin-top: 1px; background: #2c2c2e; border-radius: 0;
+  font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+}
+/* Only the LAST row closes off the stack, so pc/sp/sreg read as one block
+   continuing the grid rather than as three separate pills. */
+.reg-pc.reg-pc-last { border-radius: 0 0 12px 12px; }
+/* SREG is a bitfield, so it reads as flag letters rather than a number: lit
+   when set, dimmed when clear, and outlined when this instruction is about to
+   change it. The border is transparent on every flag so outlining one cannot
+   shift the row's layout. */
+.sreg-flag {
+  display: inline-block; width: 15px; text-align: center; font-weight: 600;
+  color: #c7c7cc; border-radius: 3px; border: 1px solid transparent;
+}
+.sreg-flag.on { color: #0a84ff; background: rgba(10,132,255,0.12); }
+.sreg-flag.changing { border-color: #34c759; }
+.sreg-hex { color: #8e8e93; margin-left: 4px; }
+.radix-toggle {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: #3a3a3c; cursor: pointer; user-select: none; flex-shrink: 0;
+}
+.radix-toggle input { cursor: pointer; }
+.panel-empty { font-size: 12px; color: #8e8e93; text-align: center; padding: 40px 0; }
+.toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+/* A grid item defaults to min-width:auto and refuses to shrink below its
+   content's min-content width. The listing is white-space:pre, so without this
+   a half-width card balloons its column and steals space from its neighbour. */
+.card:not(.full) { min-width: 0; }
+@media (max-width: 760px) {
+  .reg-grid { grid-template-rows: repeat(16, auto); grid-template-columns: repeat(2, 1fr); }
+}
+/* --- console, adopting compiler/index.html's structure: the box's default
+   colour IS the program's output colour, and emulator messages are explicitly
+   marked down to grey. That way anything unlabelled came from the ROM. --- */
+.console-box {
+  height: 260px; overflow-y: auto; background: #1c1c1e; border-radius: 12px;
+  padding: 12px 14px; font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+  color: #b6f2b6; white-space: pre-wrap; word-break: break-word;
+}
+.console-box .err { color: #ff8a80; }
+.console-box .info { color: #8e8e93; }
+.console-box .prog { color: #b6f2b6; }
+.empty { color: #86868b; font-size: 13px; }
+
+/* --- the TV card ---
+   #tvWrap is dark so blanking and the letterboxing either side of the
+   picture read as black rather than as card white.
+   Three things about #tvCanvas are load-bearing:
+   - `width: auto !important` overrides `canvas { width: 100% !important }` in
+     the shared block above, which would otherwise stretch the picture to the
+     full card and destroy the aspect ratio. An id beats a type selector, so
+     this wins without editing style.css.
+   - `aspect-ratio` derives the width from the height, which is what lets the
+     zoom control set one property (height) and keep 4:3 for free - and what
+     lets it reuse the compiler's wireHeight discipline unchanged.
+   - `image-rendering: pixelated` keeps the upscale crisp; the buffer is
+     720x224 of genuinely non-square samples being stretched into a 4:3 box,
+     and smoothing turns that into mush. */
+#tvWrap { background: #000; border-radius: 10px; padding: 10px; display: flex; justify-content: center; }
+#tvCanvas { width: auto !important; height: 480px; aspect-ratio: 4 / 3; image-rendering: pixelated; display: block; }
+
+/* --- the keyboard/pad mapping strip under the TV.
+   Centred under the picture, and one line: the four directions share a single
+   D-Pad chip rather than taking a chip each, which is both how a pad is drawn
+   and what keeps the strip from wrapping.
+   Each key lights up while it is held, so the legend doubles as a live input
+   monitor - which is the quickest way to tell "the game ignores this button"
+   apart from "the browser never gave us the key". */
+.pad-map { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 12px; }
+.pad-item {
+  display: flex; align-items: center; gap: 5px;
+  background: #f5f5f7; border-radius: 8px; padding: 4px 8px; font-size: 11px; color: #6e6e73;
+}
+.pad-item .pb { font-weight: 700; color: #1c1c1e; }
+.pad-item .pk {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #fff; border: 1px solid #d2d2d7; border-radius: 4px;
+  padding: 1px 5px; color: #3a3a3c;
+}
+/* A chip holding several buttons (the D-Pad) lights the pressed KEY, not the
+   whole chip, or one direction would claim all four. A chip holding one button
+   lights whole, as before - so .down is carried by whichever element stands
+   for a single PAD_KEYS entry. */
+.pad-keys { display: flex; gap: 4px; }
+.pad-item.down { background: #0071e3; color: #fff; }
+.pad-item.down .pb { color: #fff; }
+.pad-item.down .pk { background: rgba(255,255,255,.18); border-color: rgba(255,255,255,.5); color: #fff; }
+.pad-keys.down .pk { background: #0071e3; border-color: #0071e3; color: #fff; }
+/* The zoom readout and the stat badges sit inside the h2 (so they share the
+   heading's row, like every other card's controls), and h2 is font-weight 600 -
+   which neither .zoom-level nor .badge in the shared block overrides. The
+   badges' VALUE spans set 700 themselves, so they stay bold. Kept here rather
+   than in style.css so the other three apps need no re-sync. */
+#tvZoomLevel, #tvBadges .badge { font-weight: 400; }
+</style>
+</head>
+<body>
+<h1><a href="https://jeremyjbae.github.io/Baerilog">Baerilog</a>: Emulator</h1>
+<div class="subtitle">Use ROM images from Uzebox (<a href="https://github.com/Uzebox/uzebox/blob/master/tools/packrom/Test/arkanoid.uze">https://github.com/Uzebox/uzebox</a>)</div>
+
+<div class="grid">
+  <div class="card layout-pair">
+    <h2><span class="card-collapse-btn" data-collapse>▾</span>ROM
+      <span class="header-controls">
+        <span class="layout-toggle">
+          <span class="layout-btn" data-layout-btn="side" title="Side by side">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="6.6" height="10.6" rx="1.3"/><rect x="8.7" y="0.7" width="6.6" height="10.6" rx="1.3"/></svg>
+          </span>
+          <span class="layout-btn" data-layout-btn="stack" title="Stacked">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
+          </span>
+        </span>
+      </span>
+    </h2>
+    <div class="toolbar">
+      <input type="file" id="romFile" accept=".uze,.hex">
+    </div>
+    <div id="romInfo"><p class="empty">Load a <code>.uze</code> or <code>.hex</code> ROM &mdash; e.g. <code>compiler/uzebox/tools/packrom/Test/arkanoid.uze</code>.</p></div>
+  </div>
+
+  <div class="card layout-pair">
+    <h2><span class="card-collapse-btn" data-collapse>▾</span>Console
+      <span class="header-controls">
+        <span class="layout-toggle">
+          <span class="layout-btn" id="consoleHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
+          <span class="layout-btn" id="consoleHeightInc" title="Increase height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
+        </span>
+        <span class="layout-toggle">
+          <span class="layout-btn" data-layout-btn="side" title="Side by side">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="6.6" height="10.6" rx="1.3"/><rect x="8.7" y="0.7" width="6.6" height="10.6" rx="1.3"/></svg>
+          </span>
+          <span class="layout-btn" data-layout-btn="stack" title="Stacked">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
+          </span>
+        </span>
+      </span>
+    </h2>
+    <p>Program output on <code>UDR0</code> in green &mdash; the USART is where Uzebox firmware sends <code>printf</code>. Emulator messages are grey.</p>
+    <div class="console-box" id="console"></div>
+  </div>
+
+  <div class="card full">
+    <h2><span class="card-collapse-btn" data-collapse>▾</span>Core</h2>
+    <p>Progress counters for the running machine &mdash; pc, SP and SREG live in the Registers card</p>
+    <div class="stat-grid" id="stats"></div>
+  </div>
+
+  <div class="card full" id="card-asm">
+    <h2><span class="card-collapse-btn" data-collapse>▾</span>Disassembly
+      <span class="header-controls">
+        <span class="layout-toggle">
+          <span class="layout-btn" id="asmHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
+          <span class="layout-btn" id="asmHeightInc" title="Increase height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
+          <span class="layout-btn" id="asmSaveBtn" title="Save to file">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 0.8 V7.5 M5 4.5 L8 7.5 L11 4.5"/><path d="M1.5 8.5 V10.2 a1 1 0 0 0 1 1 H13.5 a1 1 0 0 0 1-1 V8.5"/></svg>
+          </span>
+        </span>
+        <span class="layout-toggle">
+          <span class="layout-btn" data-width-btn="half" data-width-card="card-asm" title="Half width">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="6.6" height="10.6" rx="1.3"/><rect x="8.7" y="0.7" width="6.6" height="10.6" rx="1.3"/></svg>
+          </span>
+          <span class="layout-btn" data-width-btn="full" data-width-card="card-asm" title="Full width">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
+          </span>
+        </span>
+      </span>
+    </h2>
+    <p>Instructions decoded from flash &mdash; a window around the current pc, since the ROM is 28,479 words. Click an address to set a breakpoint.</p>
+    <div class="toolbar">
+      <button class="btn" id="runBtn" disabled>▶ Run</button>
+      <button class="btn secondary" id="stopBtn" disabled>Stop</button>
+      <button class="btn secondary" id="stepBtn" disabled title="Execute one instruction">⤼ Step</button>
+      <button class="btn secondary" id="runFrameBtn" disabled>Run 1 frame</button>
+      <button class="btn secondary" id="resetBtn" disabled>Reset</button>
+    </div>
+    <div class="asm-listing" id="asmListing"></div>
+    <div class="panel-empty" id="asmEmpty">Load a ROM to see its disassembly.</div>
+  </div>
+
+  <div class="card full" id="card-regs">
+    <h2><span class="card-collapse-btn" data-collapse>▾</span>Registers
+      <span class="header-controls">
+        <span class="layout-toggle">
+          <span class="layout-btn" data-width-btn="half" data-width-card="card-regs" title="Half width">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="6.6" height="10.6" rx="1.3"/><rect x="8.7" y="0.7" width="6.6" height="10.6" rx="1.3"/></svg>
+          </span>
+          <span class="layout-btn" data-width-btn="full" data-width-card="card-regs" title="Full width">
+            <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
+          </span>
+        </span>
+      </span>
+    </h2>
+    <p id="regCardNote">ATmega644 register file at the current position &mdash; a green <code>→</code> shows the value the highlighted instruction is about to write, and an amber name a register it reads</p>
+    <div class="toolbar" style="justify-content:flex-end;">
+      <label class="radix-toggle"><input type="checkbox" id="regHexCheckbox" checked> Hexadecimal</label>
+    </div>
+    <!-- Starts in the empty state (see renderRegs): nothing renders these until
+         a ROM is loaded, and three blank dark bars at load would read as a
+         broken panel rather than as an empty one. -->
+    <div class="reg-grid empty-state" id="regGrid"></div>
+    <div class="reg-pc" id="regPc" style="display:none"></div>
+    <div class="reg-pc" id="regSp" style="display:none"></div>
+    <div class="reg-pc reg-pc-last" id="regSreg" style="display:none"></div>
+    <div class="panel-empty" id="regEmpty">Load a ROM to see the register file.</div>
+  </div>
+
+  <div class="card full" id="tvCard">
+    <h2><span class="card-collapse-btn" data-collapse>▾</span>TV
+      <span class="header-controls">
+        <span class="badge-row" id="tvBadges"></span>
+        <span class="toolbar-group">
+          <span class="layout-btn" id="tvZoomDec" title="Decrease size"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
+          <span class="layout-btn" id="tvZoomInc" title="Increase size"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
+          <span class="zoom-level" id="tvZoomLevel"></span>
+        </span>
+      </span>
+    </h2>
+    <div id="tvWrap"><canvas id="tvCanvas" width="720" height="224"></canvas></div>
+    <div class="pad-map" id="padMap"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* =====================================================================
+   Uzebox emulator engine.
+
+   This is a ROM-driven emulator, not a compiler: it loads a real
+   Uzebox .uze/.hex image and interprets the ATmega644 binary in it.
+   Nothing here shares code with compiler/index.html's AvrCodegen or
+   AvrSim - that sim executes decoded instruction *objects* produced by
+   its own codegen, has no cycle counting, no interrupts, and no
+   flash-as-data. A Uzebox ROM needs all three, so this is a separate
+   engine with its own binary decoder.
+
+   The reference implementation is uzebox/tools/uzem (avr8.cpp/avr8.h),
+   whose cycle model is what makes the video signal come out right; the
+   opcode masks and the timer model below are ported from it, and the
+   comments name the uzem construct wherever behaviour is non-obvious.
+
+   Everything above the UI WIRING banner is DOM-free so the whole engine
+   can be extracted and run headlessly under Node, same convention as
+   compiler/index.html.
+   ===================================================================== */
+
+/* ============================ THE DEVICE ============================ */
+
+// ATmega644, the part every Uzebox is built around. Kept in one record so
+// each number is attributable to the datasheet rather than inlined as a
+// magic constant.
+const ATMEGA644 = {
+  name: 'ATmega644',
+  flashBytes: 65536,
+  sramBytes: 4096,
+  eepromBytes: 2048,
+  // Flat data address space: registers, then I/O, then SRAM. Addressing
+  // SRAM from 0x100 means a data address needs no translation anywhere.
+  regBase: 0x0000, ioBase: 0x0020, sramBase: 0x0100,
+  ramEnd: 0x10ff,
+  clockHz: 28636360,   // NTSC colour burst x 8, the Uzebox master clock
+};
+const FLASH_BYTES = ATMEGA644.flashBytes;
+const FLASH_WORDS = FLASH_BYTES >> 1;
+const DATA_END = ATMEGA644.ramEnd + 1;      // 0x1100
+const SRAM_BASE = ATMEGA644.sramBase;
+const SRAM_MASK = ATMEGA644.sramBytes - 1;
+const IO_BASE = ATMEGA644.ioBase;
+
+// I/O registers by *data* address, so `mem[IO.PORTC]` is directly the
+// address the ISA uses. Verified against the ATmega644 datasheet register
+// summary - a wrong address here is silent and near-impossible to spot
+// from behaviour, so this table is worth checking rather than trusting.
+const IO = {
+  PINA: 0x20, DDRA: 0x21, PORTA: 0x22,
+  PINB: 0x23, DDRB: 0x24, PORTB: 0x25,
+  PINC: 0x26, DDRC: 0x27, PORTC: 0x28,
+  PIND: 0x29, DDRD: 0x2a, PORTD: 0x2b,
+  TIFR1: 0x36,
+  SPCR: 0x4c, SPSR: 0x4d, SPDR: 0x4e,
+  SPL: 0x5d, SPH: 0x5e, SREG: 0x5f,
+  WDTCSR: 0x60,
+  TIMSK1: 0x6f,
+  TCCR1A: 0x80, TCCR1B: 0x81, TCCR1C: 0x82,
+  TCNT1L: 0x84, TCNT1H: 0x85,
+  ICR1L: 0x86, ICR1H: 0x87,
+  OCR1AL: 0x88, OCR1AH: 0x89, OCR1BL: 0x8a, OCR1BH: 0x8b,
+  TCCR2A: 0xb0, TCCR2B: 0xb1, TCNT2: 0xb2, OCR2A: 0xb3, OCR2B: 0xb4,
+  UDR0: 0xc6,
+};
+
+// Interrupt vectors, in *words* (the ISA's unit for a pc). Each entry in
+// the real vector table is a 2-word JMP, so the vector addresses are 2
+// words apart.
+const VECT = { RESET: 0x000, WDT: 0x010, TIMER1_COMPA: 0x01a, TIMER1_COMPB: 0x01c, TIMER1_OVF: 0x01e, SPI_STC: 0x026 };
+
+// TIFR1 / TIMSK1 / TCCR1B bit masks.
+const TOV1 = 1, OCF1A = 2, OCF1B = 4;
+const TOIE1 = 1, OCIE1A = 2, OCIE1B = 4;
+const WGM12 = 8;
+const WDE = 8, WDIE = 0x40, WDIF = 0x80;
+
+// SREG bit positions.
+const S_C = 0, S_Z = 1, S_N = 2, S_V = 3, S_S = 4, S_H = 5, S_T = 6, S_I = 7;
+
+// Controller bits, in the order the pad's shift register clocks them out:
+// B, Y, Select, Start, Up, Down, Left, Right, A, X, L, R. PORTA bit 2 is
+// LATCH and bit 3 is CLOCK, both acted on at their falling edge; the two
+// pads' serial data comes back on PINA bits 0 and 1.
+//
+// A NES pad stops after eight bits, and its A/B occupy the same first two
+// positions a SNES pad uses for B/Y - so bit 0 is SNES **B** and NES **A**.
+// That collision is real hardware, not a naming accident, which is exactly
+// why the two are spelled out separately here: an earlier version of this
+// table called bit 0 "A", and on a SNES pad that is simply the wrong button.
+const PAD_LATCH = 1 << 2, PAD_CLOCK = 1 << 3;
+const BTN = {
+  B: 0, Y: 1, SELECT: 2, START: 3, UP: 4, DOWN: 5, LEFT: 6, RIGHT: 7,
+  A: 8, X: 9, L: 10, R: 11,
+  NES_A: 0, NES_B: 1,
+};
+
+// Video timing, in CPU cycles. The Uzebox generates NTSC sync in
+// software, so these are properties of the kernel's timing loop, not of
+// the AVR: one scanline is 1820 cycles, and vsync is signalled by sync
+// pulses at twice that rate.
+const HSYNC_PERIOD = 1820;
+const HSYNC_HALF_PERIOD = 910;
+const FRAME_LINES = 224;          // visible lines uzem renders per frame
+const SCANLINE_TOP = -33 - 5;     // uzem's scanline_top: lines before line 0
+const SCANLINE_IDLE = -999;       // uzem's "not in a frame" sentinel
+
+// Display geometry. The CPU drives one new pixel every two cycles, so a
+// visible line is 720 samples spanning 1440 of its 1820 cycles, starting
+// VIDEO_LEFT_EDGE cycles after the sync edge. That offset is uzem's
+// VIDEO_LEFT_EDGE, tuned so the image sits centred on a real TV as well as
+// in the emulator; 168 + 1440 = 1608 stays inside the 2048-byte scanline
+// ring buffer, which is why nothing here has to handle wraparound.
+const VIDEO_LEFT_EDGE = 168;
+const VIDEO_DISP_WIDTH = 720;
+const CYCLES_PER_PIXEL = 2;
+
+// PORTC is a 3-3-2 RGB DAC: bits 0-2 red, 3-5 green, 6-7 blue. Packed here
+// as little-endian RGBA words so a whole pixel is one store into the
+// Uint32Array view of an ImageData.
+//
+// This is uzem's palette exactly, deliberately with no NTSC/CRT treatment -
+// uzem's own "should build some NTSC compensation magic in here too" is an
+// unimplemented TODO, so plain RGB is the only thing a rendered frame can be
+// diffed against pixel-for-pixel.
+function buildPalette() {
+  const pal = new Uint32Array(256);
+  for (let v = 0; v < 256; v++) {
+    // Truncating division, NOT rounding: uzem computes these with C integer
+    // division, and the two disagree for three of the eight levels
+    // (2 -> 72 not 73, 4 -> 145 not 146, 6 -> 218 not 219). Rounding here
+    // makes every colour slightly wrong and breaks the pixel-for-pixel diff.
+    const r = ((v >> 0) & 7) * 255 / 7 | 0;
+    const g = ((v >> 3) & 7) * 255 / 7 | 0;
+    const b = ((v >> 6) & 3) * 255 / 3 | 0;
+    pal[v] = (255 << 24) | (b << 16) | (g << 8) | r;   // RGBA, little-endian
+  }
+  return pal;
+}
+
+// Turn one captured scanline into pixels. `dest` is the Uint32Array view of
+// an ImageData; `buf` is the core's cycle-indexed sample ring;
+// `leftEdgeCycle` is the cycle of the sync edge that began this line.
+// Ported from uzem's render_line, and kept in the engine rather than the UI
+// so the harness can render frames headlessly and diff them.
+function renderScanline(dest, destOffset, buf, leftEdgeCycle, pal) {
+  const spos = VIDEO_LEFT_EDGE + leftEdgeCycle;
+  for (let i = 0; i < VIDEO_DISP_WIDTH; i++) {
+    dest[destOffset + i] = pal[buf[((i * CYCLES_PER_PIXEL) + spos) & 0x7ff]];
+  }
+}
+
+/* ============================ ROM LOADING ============================ */
+
+// packrom's RomHeader (uzebox/tools/uzem/uzerom.h). Note the struct as
+// declared there sums to 517 bytes while packrom writes exactly 512 and
+// the payload starts at 512 - its trailing reserved[112] overruns the
+// space actually written. So the payload offset is hardcoded at 512
+// rather than derived from the field list, and nothing past `jamma`
+// (offset 404) can be trusted to be header at all.
+const UZE_HEADER_BYTES = 512;
+const AVR_TARGET_NAMES = { 0: 'ATmega644', 1: 'ATmega1284' };
+
+function u16le(b, o) { return b[o] | (b[o + 1] << 8); }
+function u32le(b, o) { return (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0; }
+function cstr(b, o, n) {
+  let s = '';
+  for (let i = 0; i < n; i++) { const c = b[o + i]; if (!c) break; s += String.fromCharCode(c); }
+  return s;
+}
+
+let CRC32_TABLE = null;
+function crc32(bytes, from, to) {
+  if (!CRC32_TABLE) {
+    CRC32_TABLE = new Int32Array(256);
+    for (let i = 0; i < 256; i++) {
+      let c = i;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+      CRC32_TABLE[i] = c;
+    }
+  }
+  let c = 0xffffffff;
+  for (let i = from; i < to; i++) c = CRC32_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+// Unprogrammed flash reads 0xff, so a ROM smaller than the part leaves
+// 0xff behind rather than a plausible-looking zero.
+function blankFlash() { return new Uint8Array(FLASH_BYTES).fill(0xff); }
+
+function parseUzeRom(bytes) {
+  if (bytes.length < UZE_HEADER_BYTES) throw new Error('not a .uze file: shorter than the 512-byte header');
+  const marker = cstr(bytes, 0, 6);
+  if (marker !== 'UZEBOX') throw new Error('not a .uze file: marker is "' + marker + '", expected "UZEBOX"');
+  const h = {
+    format: 'uze',
+    marker,
+    version: bytes[6],
+    target: bytes[7],
+    targetName: AVR_TARGET_NAMES[bytes[7]] || ('unknown (' + bytes[7] + ')'),
+    progSize: u32le(bytes, 8),
+    year: u16le(bytes, 12),
+    name: cstr(bytes, 14, 32),
+    author: cstr(bytes, 46, 32),
+    crc32: u32le(bytes, 334),
+    psupport: bytes[338],
+    description: cstr(bytes, 339, 64),
+    pdefault: bytes[403],
+    jamma: bytes[404],
+  };
+  const payload = bytes.subarray(UZE_HEADER_BYTES);
+  if (h.progSize > payload.length) {
+    throw new Error('truncated .uze: header claims ' + h.progSize + ' program bytes, file holds ' + payload.length);
+  }
+  if (h.progSize > FLASH_BYTES) {
+    throw new Error('program is ' + h.progSize + ' bytes, larger than the ' + FLASH_BYTES + '-byte flash');
+  }
+  h.crc32Actual = crc32(payload, 0, h.progSize);
+  const flash = blankFlash();
+  flash.set(payload.subarray(0, h.progSize));
+  return { header: h, flash };
+}
+
+function parseIntelHex(text) {
+  const flash = blankFlash();
+  let maxAddr = 0, base = 0, bytesRead = 0, line = 0;
+  for (const raw of text.split(/\r?\n/)) {
+    line++;
+    const s = raw.trim();
+    if (!s) continue;
+    if (s[0] !== ':') throw new Error('line ' + line + ': Intel HEX record must start with ":"');
+    const n = parseInt(s.substr(1, 2), 16);
+    const addr = parseInt(s.substr(3, 4), 16);
+    const type = parseInt(s.substr(7, 2), 16);
+    // Checksum: all bytes of the record sum to 0 mod 256.
+    let sum = 0;
+    for (let i = 1; i + 1 < s.length; i += 2) sum = (sum + parseInt(s.substr(i, 2), 16)) & 0xff;
+    if (sum !== 0) throw new Error('line ' + line + ': bad Intel HEX checksum');
+    if (type === 0) {
+      for (let i = 0; i < n; i++) {
+        const a = base + addr + i;
+        if (a >= FLASH_BYTES) throw new Error('line ' + line + ': address 0x' + a.toString(16) + ' past end of flash');
+        flash[a] = parseInt(s.substr(9 + i * 2, 2), 16);
+        if (a + 1 > maxAddr) maxAddr = a + 1;
+      }
+      bytesRead += n;
+    } else if (type === 1) {
+      break;                                       // EOF record
+    } else if (type === 2) {
+      base = parseInt(s.substr(9, 4), 16) << 4;     // extended segment address
+    } else if (type === 4) {
+      base = parseInt(s.substr(9, 4), 16) << 16;    // extended linear address
+    }
+  }
+  return {
+    header: { format: 'hex', name: '', author: '', progSize: maxAddr, bytesRead, targetName: ATMEGA644.name },
+    flash,
+  };
+}
+
+// Dispatch on content, not on filename - a .uze is identifiable by its
+// marker and a .hex by its first character, so a misnamed file still loads.
+function parseRom(bytes) {
+  if (bytes.length >= 6 && cstr(bytes, 0, 6) === 'UZEBOX') return parseUzeRom(bytes);
+  if (bytes[0] === 0x3a /* ':' */) {
+    let text = '';
+    for (let i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
+    return parseIntelHex(text);
+  }
+  throw new Error('unrecognised ROM: not a UZEBOX image and not Intel HEX');
+}
+
+/* ========================= INSTRUCTION DECODER ========================= */
+
+/*
+   Table-driven decoder, ported from uzem's `instructionList`. An entry
+   matches a flash word when (word & ~(a1Mask|a2Mask)) === mask; the
+   argument masks name the scattered bits of each operand, which
+   decodeArg() gathers into a contiguous value (low bit first), optionally
+   sign-extends, then scales by mul and adds off. That scaling is what
+   encodes each opcode's register class: ADIW's `mul 2, off 24` yields
+   r24/r26/r28/r30, LDI's `off 16` yields r16-r31.
+
+   `cycles` here is the ATmega644 (avr5) count taken from uzem's *execute*
+   path - i.e. how many update_hardware() calls each case makes - NOT from
+   the `clocks` column of uzem's own table, which is unused by its
+   interpreter and disagrees with it (that table says LD is 3 cycles; the
+   part and the interpreter both say 2). Ops whose cost depends on the
+   data (branches, skips) carry their untaken cost here and add the rest
+   at execute time.
+*/
+const OPS = [
+  /* op          mask                a1Mask              a1Mul a1Off a1Neg  a2Mask              a2Mul a2Off a2Neg  words cycles */
+  ['ADC',    0b0001110000000000, 0b0000000111110000, 1, 0, 0, 0b0000001000001111, 1, 0, 0, 1, 1],
+  ['ADD',    0b0000110000000000, 0b0000000111110000, 1, 0, 0, 0b0000001000001111, 1, 0, 0, 1, 1],
+  ['ADIW',   0b1001011000000000, 0b0000000000110000, 2, 24, 0, 0b0000000011001111, 1, 0, 0, 1, 2],
+  ['AND',    0b0010000000000000, 0b0000000111110000, 1, 0, 0, 0b0000001000001111, 1, 0, 0, 1, 1],
+  ['ANDI',   0b0111000000000000, 0b0000000011110000, 1, 16, 0, 0b0000111100001111, 1, 0, 0, 1, 1],
+  ['ASR',    0b1001010000000101, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 1],
+  ['BCLR',   0b1001010010001000, 0b0000000001110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 1],
+  ['BLD',    0b1111100000000000, 0b0000000111110000, 1, 0, 0, 0b0000000000000111, 1, 0, 0, 1, 1],
+  ['BRBC',   0b1111010000000000, 0b0000000000000111, 1, 0, 0, 0b0000001111111000, 1, 0, 1, 1, 1],
+  ['BRBS',   0b1111000000000000, 0b0000000000000111, 1, 0, 0, 0b0000001111111000, 1, 0, 1, 1, 1],
+  ['BREAK',  0b1001010110011000, 0b0000000000000000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 1],
+  ['BSET',   0b1001010000001000, 0b0000000001110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 1],
+  ['BST',    0b1111101000000000, 0b0000000111110000, 1, 0, 0, 0b0000000000000111, 1, 0, 0, 1, 1],
+  ['CALL',   0b1001010000001110, 0b0000000000000000, 1, 0, 0, 0b0000000111110001, 1, 0, 0, 2, 4],
+  ['CBI',    0b1001100000000000, 0b0000000011111000, 1, 0, 0, 0b0000000000000111, 1, 0, 0, 1, 2],
+  ['COM',    0b1001010000000000, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 1],
+  ['CP',     0b0001010000000000, 0b0000000111110000, 1, 0, 0, 0b0000001000001111, 1, 0, 0, 1, 1],
+  ['CPC',    0b0000010000000000, 0b0000000111110000, 1, 0, 0, 0b0000001000001111, 1, 0, 0, 1, 1],
+  ['CPI',    0b0011000000000000, 0b0000000011110000, 1, 16, 0, 0b0000111100001111, 1, 0, 0, 1, 1],
+  ['CPSE',   0b0001000000000000, 0b0000000111110000, 1, 0, 0, 0b0000001000001111, 1, 0, 0, 1, 1],
+  ['DEC',    0b1001010000001010, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 1],
+  ['EOR',    0b0010010000000000, 0b0000000111110000, 1, 0, 0, 0b0000001000001111, 1, 0, 0, 1, 1],
+  ['FMUL',   0b0000001100001000, 0b0000000001110000, 1, 16, 0, 0b0000000000000111, 1, 16, 0, 1, 2],
+  ['FMULS',  0b0000001110000000, 0b0000000001110000, 1, 16, 0, 0b0000000000000111, 1, 16, 0, 1, 2],
+  ['FMULSU', 0b0000001110001000, 0b0000000001110000, 1, 16, 0, 0b0000000000000111, 1, 16, 0, 1, 2],
+  ['ICALL',  0b1001010100001001, 0b0000000000000000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 3],
+  ['IJMP',   0b1001010000001001, 0b0000000000000000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['IN',     0b1011000000000000, 0b0000000111110000, 1, 0, 0, 0b0000011000001111, 1, 0, 0, 1, 1],
+  ['INC',    0b1001010000000011, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 1],
+  ['JMP',    0b1001010000001100, 0b0000000000000000, 1, 0, 0, 0b0000000111110001, 1, 0, 0, 2, 3],
+  ['LD_DEC_X', 0b1001000000001110, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['LD_DEC_Y', 0b1001000000001010, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['LD_DEC_Z', 0b1001000000000010, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['LD_X',     0b1001000000001100, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['LD_X_INC', 0b1001000000001101, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['LD_Y_INC', 0b1001000000001001, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['LDD_Y',    0b1000000000001000, 0b0000000111110000, 1, 0, 0, 0b0010110000000111, 1, 0, 0, 1, 2],
+  ['LD_Z_INC', 0b1001000000000001, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['LDD_Z',    0b1000000000000000, 0b0000000111110000, 1, 0, 0, 0b0010110000000111, 1, 0, 0, 1, 2],
+  ['LDI',    0b1110000000000000, 0b0000000011110000, 1, 16, 0, 0b0000111100001111, 1, 0, 0, 1, 1],
+  ['LDS',    0b1001000000000000, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 2, 2],
+  ['LPM_R0', 0b1001010111001000, 0b0000000000000000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 3],
+  ['LPM_Z',  0b1001000000000100, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 3],
+  ['LPM_Z_INC', 0b1001000000000101, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 3],
+  ['LSR',    0b1001010000000110, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 1],
+  ['MOV',    0b0010110000000000, 0b0000000111110000, 1, 0, 0, 0b0000001000001111, 1, 0, 0, 1, 1],
+  ['MOVW',   0b0000000100000000, 0b0000000011110000, 2, 0, 0, 0b0000000000001111, 2, 0, 0, 1, 1],
+  ['MUL',    0b1001110000000000, 0b0000000111110000, 1, 0, 0, 0b0000001000001111, 1, 0, 0, 1, 2],
+  ['MULS',   0b0000001000000000, 0b0000000011110000, 1, 16, 0, 0b0000000000001111, 1, 16, 0, 1, 2],
+  ['MULSU',  0b0000001100000000, 0b0000000001110000, 1, 16, 0, 0b0000000000000111, 1, 16, 0, 1, 2],
+  ['NEG',    0b1001010000000001, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 1],
+  ['NOP',    0b0000000000000000, 0b0000000000000000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 1],
+  ['OR',     0b0010100000000000, 0b0000000111110000, 1, 0, 0, 0b0000001000001111, 1, 0, 0, 1, 1],
+  ['ORI',    0b0110000000000000, 0b0000000011110000, 1, 16, 0, 0b0000111100001111, 1, 0, 0, 1, 1],
+  ['OUT',    0b1011100000000000, 0b0000011000001111, 1, 0, 0, 0b0000000111110000, 1, 0, 0, 1, 1],
+  ['POP',    0b1001000000001111, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['PUSH',   0b1001001000001111, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['RCALL',  0b1101000000000000, 0b0000000000000000, 1, 0, 0, 0b0000111111111111, 1, 0, 1, 1, 3],
+  ['RET',    0b1001010100001000, 0b0000000000000000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 4],
+  ['RETI',   0b1001010100011000, 0b0000000000000000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 4],
+  ['RJMP',   0b1100000000000000, 0b0000000000000000, 1, 0, 0, 0b0000111111111111, 1, 0, 1, 1, 2],
+  ['ROR',    0b1001010000000111, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 1],
+  ['SBC',    0b0000100000000000, 0b0000000111110000, 1, 0, 0, 0b0000001000001111, 1, 0, 0, 1, 1],
+  ['SBCI',   0b0100000000000000, 0b0000000011110000, 1, 16, 0, 0b0000111100001111, 1, 0, 0, 1, 1],
+  ['SBI',    0b1001101000000000, 0b0000000011111000, 1, 0, 0, 0b0000000000000111, 1, 0, 0, 1, 2],
+  ['SBIC',   0b1001100100000000, 0b0000000011111000, 1, 0, 0, 0b0000000000000111, 1, 0, 0, 1, 1],
+  ['SBIS',   0b1001101100000000, 0b0000000011111000, 1, 0, 0, 0b0000000000000111, 1, 0, 0, 1, 1],
+  ['SBIW',   0b1001011100000000, 0b0000000000110000, 2, 24, 0, 0b0000000011001111, 1, 0, 0, 1, 2],
+  ['SBRC',   0b1111110000000000, 0b0000000111110000, 1, 0, 0, 0b0000000000000111, 1, 0, 0, 1, 1],
+  ['SBRS',   0b1111111000000000, 0b0000000111110000, 1, 0, 0, 0b0000000000000111, 1, 0, 0, 1, 1],
+  ['SLEEP',  0b1001010110001000, 0b0000000000000000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 1],
+  ['SPM',    0b1001010111101000, 0b0000000000000000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 4],
+  ['ST_DEC_X', 0b1001001000001110, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['ST_DEC_Y', 0b1001001000001010, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['ST_DEC_Z', 0b1001001000000010, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['ST_X',     0b1001001000001100, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['ST_X_INC', 0b1001001000001101, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['ST_Y_INC', 0b1001001000001001, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['STD_Y',    0b1000001000001000, 0b0000000111110000, 1, 0, 0, 0b0010110000000111, 1, 0, 0, 1, 2],
+  ['ST_Z_INC', 0b1001001000000001, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 2],
+  ['STD_Z',    0b1000001000000000, 0b0000000111110000, 1, 0, 0, 0b0010110000000111, 1, 0, 0, 1, 2],
+  ['STS',    0b1001001000000000, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 2, 2],
+  ['SUB',    0b0001100000000000, 0b0000000111110000, 1, 0, 0, 0b0000001000001111, 1, 0, 0, 1, 1],
+  ['SUBI',   0b0101000000000000, 0b0000000011110000, 1, 16, 0, 0b0000111100001111, 1, 0, 0, 1, 1],
+  ['SWAP',   0b1001010000000010, 0b0000000111110000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 1],
+  ['WDR',    0b1001010110101000, 0b0000000000000000, 1, 0, 0, 0b0000000000000000, 1, 0, 0, 1, 1],
+];
+
+// opNum 0 is reserved for "undecodable word", so table index 0 becomes
+// opNum 1 and a never-executed region of flash faults rather than
+// silently running as NOP.
+const OP_UNDEF = 0;
+const OPNUM = {};          // mnemonic -> opNum
+const OPNAME = [null];     // opNum -> mnemonic
+const OP_WORDS = new Uint8Array(OPS.length + 1);
+const OP_CYCLES = new Uint8Array(OPS.length + 1);
+OPS.forEach((e, i) => {
+  const n = i + 1;
+  OPNUM[e[0]] = n;
+  OPNAME[n] = e[0];
+  OP_WORDS[n] = e[10];
+  OP_CYCLES[n] = e[11];
+});
+
+// Gather the bits selected by argMask into a contiguous value, lowest
+// selected bit becoming bit 0, then sign-extend if this operand is signed
+// and its top gathered bit is set. Ported from uzem's decodeArg.
+function decodeArg(word, argMask, argNeg) {
+  let arg = 0, out = 0;
+  for (let bit = 0; bit < 15; bit++) {
+    if (argMask & (1 << bit)) {
+      if (word & (1 << bit)) arg |= (1 << out);
+      out++;
+    }
+  }
+  if (argNeg && out > 0 && (arg & (1 << (out - 1)))) arg |= ~((1 << out) - 1);   // sign-extend
+  return arg;
+}
+
+// Decode the whole flash up front into parallel typed arrays indexed by
+// word address, so the interpreter never touches an object per step.
+function decodeFlash(prog) {
+  const n = FLASH_WORDS;
+  const opNum = new Uint8Array(n), arg1 = new Uint8Array(n), arg2 = new Int32Array(n);
+  for (let a = 0; a < n; a++) {
+    const w = prog[a];
+    for (let i = 0; i < OPS.length; i++) {
+      const e = OPS[i];
+      const free = (e[2] | e[6]) & 0xffff;
+      if ((w & ~free & 0xffff) !== e[1]) continue;
+      opNum[a] = i + 1;
+      arg1[a] = (decodeArg(w, e[2], e[5]) * e[3] + e[4]) & 0xff;
+      // A 2-word instruction's second operand IS the following word
+      // (CALL/JMP target, LDS/STS address), not a field of the first.
+      arg2[a] = e[10] === 2 ? prog[(a + 1) & (n - 1)]
+                            : (decodeArg(w, e[6], e[9]) * e[7] + e[8]);
+      break;
+    }
+  }
+  return { opNum, arg1, arg2 };
+}
+
+/* ============================== THE CORE ============================== */
+
+class AvrCore {
+  constructor(rom) {
+    this.header = rom.header;
+    this.flash = rom.flash;
+    this.prog = new Uint16Array(FLASH_WORDS);
+    for (let i = 0; i < FLASH_WORDS; i++) this.prog[i] = this.flash[i * 2] | (this.flash[i * 2 + 1] << 8);
+    const d = decodeFlash(this.prog);
+    this.opNum = d.opNum; this.arg1 = d.arg1; this.arg2 = d.arg2;
+    // Bytes transmitted on UDR0, i.e. the program's own output.
+    //
+    // OWNERSHIP: the engine APPENDS, the UI DRAINS. So this is "bytes not yet
+    // consumed by the display", not "everything the program ever printed" -
+    // draining is what stops a chatty program growing it without bound. Use
+    // `outTotal` for the how-much-has-it-printed question.
+    this.out = [];
+    this.reset();
+  }
+
+  reset() {
+    // A real AVR leaves registers and SRAM undefined at reset; uzem's
+    // state is a zero-initialised global, and the kernel's startup code
+    // clears what it relies on either way. Zeroing matches uzem, which is
+    // what makes a cross-check against it meaningful.
+    this.mem = new Uint8Array(DATA_END);
+    this.regs = this.mem.subarray(0, 32);   // registers ARE memory-mapped at 0-31
+    this.pc = VECT.RESET;                   // word address
+    this.cycles = 0;
+    this.steps = 0;
+    this.irqs = 0;
+    this.finished = false;
+    this.error = null;
+    this.out.length = 0;
+    this.outTotal = 0;      // bytes ever transmitted, survives draining
+
+    // Timer1. TCNT1 is kept as a counter variable rather than in
+    // mem[TCNT1L/H], because reads of it have to be reconstructed from
+    // the cycle skip below.
+    this.tcnt1 = 0;
+    // timer1_next: cycles until the next event that could change a timer
+    // flag. While it is nonzero update_hardware can skip the whole timer
+    // and just decrement, which is the only reason a 28 MHz core is
+    // tractable in JS. timer1_base remembers what it was set from, so a
+    // TCNT1 read can add back the skipped cycles.
+    this.timer1Next = 0;
+    this.timer1Base = 0;
+    this.itdTifr1 = 0;      // timer flags raised this cycle, applied on the next
+    this.t16Latch = 0;      // the 16-bit temp register shared by TCNT1H reads/writes
+
+    // Delayed I/O writes. Writing TCCR1B or TCNT1 takes effect on the
+    // cycle *after* the instruction, and the video kernel depends on
+    // that one-cycle lag.
+    this.dlyTccr1b = -1;
+    this.dlyTcnt1 = -1;
+
+    this.watchdogTimer = 0;
+    this.cycleCtrIns = 0;
+
+    // Video sampling. pixelRaw is what PORTC last drove through DDRC;
+    // it is latched every cycle into the scanline buffer, which is how a
+    // software-generated NTSC signal gets turned back into pixels.
+    this.pixelRaw = 0;
+    this.scanlineBuf = new Uint8Array(2048);
+    this.scanlineCount = SCANLINE_IDLE;
+    this.leftEdgeCycle = 0;
+    this.prevSyncCycle = 0;
+    this.frames = 0;
+    this.lines = 0;
+    // onScanline/onFrame are deliberately NOT cleared here. They are UI wiring,
+    // not machine state, and a CPU reset has no business unhooking the display:
+    // clearing them meant pressing Reset left the machine running with nothing
+    // painting, which looked like a dead emulator rather than a blank screen.
+    // (previewStep() detaches and restores them itself, so it is unaffected.)
+    if (this.onScanline === undefined) this.onScanline = null;   // (line, buf, leftEdgeCycle) -> void
+    if (this.onFrame === undefined) this.onFrame = null;
+
+    // Controllers. A SET bit means NOT pressed, because the pad's data line
+    // idles high through a pull-up - which is why the reset value is all
+    // ones. This is not cosmetic: a core that leaves PINA at zero has the
+    // kernel read every button as held down, and the game then runs a
+    // completely different code path from the real machine.
+    this.buttons = [0xffffffff, 0xffffffff];
+    this.latched = [0xffffffff, 0xffffffff];
+    // The kernel has two generations of pad-reading code. The older one
+    // expects the data line to follow the port write immediately, the newer
+    // one samples on the clock edge. uzem distinguishes them by watching how
+    // far the shift register has been clocked, and so do we.
+    this.newInputMode = false;
+    this.mem[IO.PINA] = 3;
+  }
+
+  // pad: 0 or 1, btn: a BTN.* bit, down: boolean.
+  setButton(pad, btn, down) {
+    if (down) this.buttons[pad] = (this.buttons[pad] & ~(1 << btn)) >>> 0;
+    else this.buttons[pad] = (this.buttons[pad] | (1 << btn)) >>> 0;
+  }
+
+  /* ---- SREG helpers. SREG lives at its real I/O address so IN/OUT/LDS
+          on it work with no special case. ---- */
+  get sreg() { return this.mem[IO.SREG]; }
+  set sreg(v) { this.mem[IO.SREG] = v & 0xff; }
+  flag(b) { return (this.mem[IO.SREG] >> b) & 1; }
+
+  /* ---- 16-bit register pairs ---- */
+  get X() { return this.regs[26] | (this.regs[27] << 8); }
+  get Y() { return this.regs[28] | (this.regs[29] << 8); }
+  get Z() { return this.regs[30] | (this.regs[31] << 8); }
+  setX(v) { this.regs[26] = v; this.regs[27] = v >> 8; }
+  setY(v) { this.regs[28] = v; this.regs[29] = v >> 8; }
+  setZ(v) { this.regs[30] = v; this.regs[31] = v >> 8; }
+
+  /* ---- Stack pointer. Not a field: it lives in its real SPL/SPH I/O
+          registers, so a push shows up in a memory view for free and the
+          reset value of 0 is honest (it is _start's `out SPL/SPH` that
+          makes the stack usable). ---- */
+  get sp() { return this.mem[IO.SPL] | (this.mem[IO.SPH] << 8); }
+  setSp(v) { this.mem[IO.SPL] = v & 0xff; this.mem[IO.SPH] = (v >> 8) & 0xff; }
+
+  /* ---- Data space access.
+          readData/writeData are the full path used by LD/ST: registers at
+          0-31, I/O at 0x20-0xff, SRAM at 0x100+. sramRead/sramWrite are
+          the stack path, which bypasses I/O exactly as uzem's
+          read_sram/write_sram do. ---- */
+  sramRead(addr) { return this.mem[SRAM_BASE + ((addr - SRAM_BASE) & SRAM_MASK)]; }
+  sramWrite(addr, v) { this.mem[SRAM_BASE + ((addr - SRAM_BASE) & SRAM_MASK)] = v; }
+
+  readData(addr) {
+    addr &= 0xffff;
+    if (addr >= SRAM_BASE) return this.mem[SRAM_BASE + ((addr - SRAM_BASE) & SRAM_MASK)];
+    if (addr >= IO_BASE) return this.readIo(addr);
+    return this.mem[addr];
+  }
+  writeData(addr, v) {
+    addr &= 0xffff;
+    if (addr >= SRAM_BASE) { this.mem[SRAM_BASE + ((addr - SRAM_BASE) & SRAM_MASK)] = v; return; }
+    if (addr >= IO_BASE) { this.writeIo(addr, v); return; }
+    this.mem[addr] = v & 0xff;
+  }
+
+  // Flash as data. This is what LPM reads and what every tile, map and
+  // song in a Uzebox game lives in - a byte address into the 64 KB flash,
+  // low byte of a word first.
+  readProgmem(byteAddr) { return this.flash[byteAddr & (FLASH_BYTES - 1)]; }
+
+  readIo(addr) {
+    // p106 of the 644 manual: the 16-bit timer registers are latched, so
+    // reading TCNT1L captures the high byte for the following TCNT1H read.
+    // The video kernel reads TCNT1L to measure interrupt jitter, so this
+    // has to reconstruct the cycles skipped by the timer1Next fast path.
+    if (addr === IO.TCNT1L) {
+      const cur = (this.tcnt1 + this.timer1Base - this.timer1Next) & 0xffff;
+      this.t16Latch = (cur >> 8) & 0xff;
+      return cur & 0xff;
+    }
+    if (addr === IO.TCNT1H) return this.t16Latch;
+    return this.mem[addr];
+  }
+
+  writeIo(addr, v) {
+    v &= 0xff;
+    switch (addr) {
+      case IO.PORTC:
+        // The video DAC. Only bits configured as outputs reach the pins,
+        // and this value is what the per-cycle sampler latches.
+        this.mem[addr] = v;
+        this.pixelRaw = v & this.mem[IO.DDRC];
+        return;
+      case IO.PORTB:
+        this.mem[addr] = v;
+        this.syncWrite(v);
+        return;
+      case IO.OCR2A:
+        // Audio: the kernel drives 8-bit PCM out of this PWM register at
+        // ~15.7 kHz. Captured only when the timer is running, as uzem does.
+        this.mem[addr] = v;
+        if (this.mem[IO.TCCR2B]) this.onAudioSample && this.onAudioSample(v);
+        return;
+      case IO.UDR0:
+        // The USART data register. Uzebox firmware prints here, so this is
+        // the emulator's stdout - genuinely one byte at a time. Any store that
+        // reaches this data address arrives here, whether the program used STS
+        // or a pointer, because writeData routes the whole I/O range through
+        // writeIo.
+        this.out.push(v);
+        this.outTotal++;
+        return;
+      case IO.PORTD:
+        this.mem[addr] = v & this.mem[IO.DDRD];
+        return;
+      case IO.PORTA: {
+        // Gamepad clock/latch. Both act on the FALLING edge, so the previous
+        // port value is needed to spot one.
+        const prev = this.mem[addr];
+        const wentLow = (v ^ prev) & prev;
+        this.mem[addr] = v;
+        if (wentLow === PAD_LATCH) {
+          for (let i = 0; i < 2; i++) {
+            let b = this.buttons[i] >>> 0;
+            // The pad cannot physically report both directions of an axis;
+            // force one off rather than letting a game see an impossible input.
+            if ((b & ((1 << BTN.LEFT) | (1 << BTN.RIGHT))) === 0) b = (b | (1 << BTN.RIGHT)) >>> 0;
+            if ((b & ((1 << BTN.UP) | (1 << BTN.DOWN))) === 0) b = (b | (1 << BTN.DOWN)) >>> 0;
+            this.latched[i] = b >>> 0;
+          }
+        } else if (wentLow === PAD_CLOCK) {
+          if (this.newInputMode) {
+            this.mem[IO.PINA] = (this.latched[0] & 1) | ((this.latched[1] & 1) << 1);
+          }
+          this.latched[0] = this.latched[0] >>> 1;
+          this.latched[1] = this.latched[1] >>> 1;
+          // Once more than 20 bits have been clocked out, this is the newer
+          // reading routine, which samples on the clock edge only.
+          if (this.latched[1] < 0xfffff && !this.newInputMode) this.newInputMode = true;
+        }
+        if (!this.newInputMode) {
+          this.mem[IO.PINA] = (this.latched[0] & 1) | ((this.latched[1] & 1) << 1);
+        }
+        return;
+      }
+      case IO.TCNT1H:
+        this.t16Latch = v;                 // high byte staged, not written yet
+        return;
+      case IO.TCNT1L:
+        this.dlyTcnt1 = (this.t16Latch << 8) | v;   // takes effect next cycle
+        return;
+      case IO.TCCR1B:
+        this.dlyTccr1b = v;                          // ditto
+        return;
+      case IO.TIFR1:
+        this.mem[addr] &= ~v;              // flags are cleared by writing a one
+        return;
+      case IO.OCR1AL: case IO.OCR1AH: case IO.OCR1BL: case IO.OCR1BH:
+        this.mem[addr] = v;
+        // Changing a compare value invalidates the "cycles until the next
+        // timer event" shortcut, so fold the skipped cycles back into
+        // TCNT1 and force a full recompute on the next cycle.
+        this.tcnt1 = (this.tcnt1 + this.timer1Base - this.timer1Next) & 0xffff;
+        this.timer1Base = 0;
+        this.timer1Next = 0;
+        return;
+      default:
+        this.mem[addr] = v;
+        return;
+    }
+  }
+
+  // PB0 is the composite sync pin. The kernel emits one pulse per
+  // scanline during the visible field and pulses at twice that rate
+  // during vsync, so measuring the gap between rising edges is how a
+  // frame boundary is recovered - there is no frame signal to read.
+  syncWrite(v) {
+    if (!(v & 1)) return;
+    const elapsed = this.cycles - this.prevSyncCycle;
+    if (this.scanlineCount === SCANLINE_IDLE) {
+      if (elapsed >= HSYNC_HALF_PERIOD - 10 && elapsed <= HSYNC_HALF_PERIOD + 10) {
+        this.scanlineCount = SCANLINE_TOP;      // vsync seen: a frame starts
+      }
+    } else {
+      if (this.scanlineCount >= 0) {
+        this.lines++;
+        if (this.onScanline) this.onScanline(this.scanlineCount, this.scanlineBuf, this.leftEdgeCycle);
+      }
+      this.scanlineCount++;
+      this.leftEdgeCycle = this.cycles;
+      if (this.scanlineCount === FRAME_LINES) {
+        this.frames++;
+        if (this.onFrame) this.onFrame(this.frames);
+        this.scanlineCount = SCANLINE_IDLE;
+      }
+    }
+    this.prevSyncCycle = this.cycles;
+  }
+
+  /* ---- The cycle. Everything that has to happen at cycle precision
+          happens here, and instruction timing is expressed as the number
+          of times an opcode calls it - which is why the interpreter below
+          calls tick() explicitly rather than adding a cycle count. ---- */
+  tick() {
+    this.cycles++;
+
+    if (this.timer1Next !== 0) {
+      // Fast path: nothing can happen to the timer this cycle.
+      this.timer1Next--;
+      this.scanlineBuf[this.cycles & 0x7ff] = this.pixelRaw;
+      return;
+    }
+
+    this.tcnt1 = (this.tcnt1 + this.timer1Base) & 0xffff;
+
+    // Timer flags raised on the previous cycle become visible now.
+    this.mem[IO.TIFR1] |= this.itdTifr1;
+    this.itdTifr1 = 0;
+
+    if ((this.mem[IO.TCCR1B] & 7) !== 0) {                 // timer running
+      const ocr1a = this.mem[IO.OCR1AL] | (this.mem[IO.OCR1AH] << 8);
+      const ocr1b = this.mem[IO.OCR1BL] | (this.mem[IO.OCR1BH] << 8);
+      if (this.mem[IO.TCCR1B] & WGM12) {
+        // CTC: count to OCR1A, then wrap to zero.
+        if (this.tcnt1 === 0xffff) this.itdTifr1 |= TOV1;
+        if (this.tcnt1 === ocr1b) this.itdTifr1 |= OCF1B;
+        if (this.tcnt1 === ocr1a) { this.tcnt1 = 0; this.itdTifr1 |= OCF1A; }
+        else this.tcnt1 = (this.tcnt1 + 1) & 0xffff;
+        if (this.itdTifr1 === 0) {
+          let next = 0xffff - this.tcnt1;
+          if (this.tcnt1 <= ocr1b && next > ocr1b - this.tcnt1) next = ocr1b - this.tcnt1;
+          if (this.tcnt1 <= ocr1a && next > ocr1a - this.tcnt1) next = ocr1a - this.tcnt1;
+          this.timer1Next = next;
+        }
+      } else {
+        // Normal mode: free-running to 0xffff.
+        if (this.tcnt1 === 0xffff) this.itdTifr1 |= TOV1;
+        this.tcnt1 = (this.tcnt1 + 1) & 0xffff;
+        if (this.itdTifr1 === 0) this.timer1Next = 0xffff - this.tcnt1;
+      }
+    }
+    this.timer1Base = this.timer1Next;
+    this.scanlineBuf[this.cycles & 0x7ff] = this.pixelRaw;
+  }
+
+  /* ---- Per-instruction work: apply delayed I/O, run the watchdog, and
+          poll for interrupts. Interrupts are only ever taken between
+          instructions, which is what makes a 3-cycle entry cost correct. ---- */
+  perInstruction() {
+    if (this.dlyTccr1b >= 0) {
+      this.mem[IO.TCCR1B] = this.dlyTccr1b;
+      this.dlyTccr1b = -1;
+      this.tcnt1 = (this.tcnt1 + this.timer1Base - this.timer1Next) & 0xffff;
+      this.timer1Base = 0;
+      this.timer1Next = 0;
+    }
+    if (this.dlyTcnt1 >= 0) {
+      this.tcnt1 = this.dlyTcnt1 & 0xffff;
+      this.dlyTcnt1 = -1;
+      this.timer1Base = 0;
+      this.timer1Next = 0;
+    }
+
+    const elapsed = this.cycles - this.cycleCtrIns;
+    this.cycleCtrIns = this.cycles;
+
+    // Bare-minimum watchdog: enough for the kernel's PRNG seeding, which
+    // times the watchdog oscillator against the CPU clock.
+    if (this.mem[IO.WDTCSR] & WDE) {
+      this.watchdogTimer += elapsed;
+      if (this.watchdogTimer >= 457142 && (this.mem[IO.WDTCSR] & WDIE)) {
+        this.watchdogTimer = 0;
+        this.mem[IO.WDTCSR] |= WDIF;
+      }
+    }
+
+    if (!(this.mem[IO.SREG] & (1 << S_I))) return;      // interrupts globally off
+
+    // Priority order, highest first.
+    if ((this.mem[IO.SPCR] & 0x80) && (this.mem[IO.SPSR] & 0x80)) {
+      this.mem[IO.SPSR] ^= 0x80;
+      this.interrupt(VECT.SPI_STC);
+    } else if ((this.mem[IO.WDTCSR] & (WDIF | WDIE)) === (WDIF | WDIE)) {
+      this.mem[IO.WDTCSR] &= ~WDIF;
+      this.interrupt(VECT.WDT);
+    } else {
+      const tifr = this.mem[IO.TIFR1], timsk = this.mem[IO.TIMSK1];
+      if ((tifr & OCF1A) && (timsk & OCIE1A)) {
+        this.mem[IO.TIFR1] &= ~OCF1A;
+        this.interrupt(VECT.TIMER1_COMPA);
+      } else if ((tifr & OCF1B) && (timsk & OCIE1B)) {
+        this.mem[IO.TIFR1] &= ~OCF1B;
+        this.interrupt(VECT.TIMER1_COMPB);
+      } else if ((tifr & TOV1) && (timsk & TOIE1)) {
+        this.mem[IO.TIFR1] &= ~TOV1;
+        this.interrupt(VECT.TIMER1_OVF);
+      }
+    }
+  }
+
+  interrupt(vector) {
+    this.mem[IO.SREG] &= ~(1 << S_I);       // interrupts off until RETI
+    let sp = this.sp;
+    this.sramWrite(sp, this.pc & 0xff); sp = (sp - 1) & 0xffff;
+    this.sramWrite(sp, (this.pc >> 8) & 0xff); sp = (sp - 1) & 0xffff;
+    this.setSp(sp);
+    this.pc = vector;
+    // 3 cycles, not the 5 the ATmega644 datasheet states - the datasheet
+    // is wrong here (see avrfreaks "interrupt timing conundrum"), and on
+    // a machine whose display is made of counted cycles the difference
+    // is visible.
+    this.tick(); this.tick(); this.tick();
+    this.irqs++;
+  }
+
+  /* ---- Flag helpers. Written as the ISA manual states them, because a
+          wrong V in particular breaks every signed branch silently
+          (BRLT tests S = N xor V). ---- */
+  flagsAdd(Rd, Rr, R) {
+    const carries = (Rd & Rr) | (Rr & ~R) | (~R & Rd);
+    let s = this.mem[IO.SREG] & ~0b00111111;
+    s |= ((carries >> 7) & 1) << S_C;
+    s |= ((carries >> 3) & 1) << S_H;
+    const v = (((Rd & Rr & ~R) | (~Rd & ~Rr & R)) >> 7) & 1;
+    const n = (R >> 7) & 1;
+    s |= v << S_V; s |= n << S_N; s |= (n ^ v) << S_S;
+    if ((R & 0xff) === 0) s |= 1 << S_Z;
+    this.mem[IO.SREG] = s;
+  }
+  flagsSub(Rd, Rr, R, keepZ) {
+    const borrows = (~Rd & Rr) | (Rr & R) | (R & ~Rd);
+    let s = this.mem[IO.SREG] & ~(keepZ ? 0b00111101 : 0b00111111);
+    s |= ((borrows >> 7) & 1) << S_C;
+    s |= ((borrows >> 3) & 1) << S_H;
+    const v = (((Rd & ~Rr & ~R) | (~Rd & Rr & R)) >> 7) & 1;
+    const n = (R >> 7) & 1;
+    s |= v << S_V; s |= n << S_N; s |= (n ^ v) << S_S;
+    // SBC/SBCI/CPC only ever *clear* Z: ANDing the previous Z into the new
+    // one is precisely what makes a multi-byte CP/CPC answer for the whole
+    // value rather than for the high byte alone.
+    if ((R & 0xff) === 0) { if (!keepZ) s |= 1 << S_Z; }
+    else s &= ~(1 << S_Z);
+    this.mem[IO.SREG] = s;
+  }
+  flagsLogic(R) {
+    let s = this.mem[IO.SREG] & ~0b00011110;
+    const n = (R >> 7) & 1;
+    s |= n << S_N; s |= n << S_S;          // V is cleared, so S == N
+    if ((R & 0xff) === 0) s |= 1 << S_Z;
+    this.mem[IO.SREG] = s;
+  }
+  flagsWord(Rd16, R16, isSub) {
+    let s = this.mem[IO.SREG] & ~0b00011111;
+    const v = isSub ? ((Rd16 & ~R16 & 0x8000) >> 15) : ((~Rd16 & R16 & 0x8000) >> 15);
+    const c = isSub ? ((R16 & ~Rd16 & 0x8000) >> 15) : ((~R16 & Rd16 & 0x8000) >> 15);
+    const n = (R16 >> 15) & 1;
+    s |= c << S_C; s |= v << S_V; s |= n << S_N; s |= (n ^ v) << S_S;
+    if ((R16 & 0xffff) === 0) s |= 1 << S_Z;
+    this.mem[IO.SREG] = s;
+  }
+  flagsMul(res) {
+    let s = this.mem[IO.SREG] & ~0b00000011;
+    s |= ((res >> 15) & 1) << S_C;
+    if ((res & 0xffff) === 0) s |= 1 << S_Z;
+    this.mem[IO.SREG] = s;
+  }
+
+  // How many words the instruction at word address `a` occupies - needed
+  // by the skip instructions, which must step over a 2-word target whole.
+  insnWords(a) {
+    const w = OP_WORDS[this.opNum[a]];
+    return w === 0 ? 1 : w;
+  }
+
+  // Skip the next instruction (CPSE/SBRC/SBRS/SBIC/SBIS), paying one
+  // cycle per word skipped.
+  skipNext() {
+    const n = this.insnWords(this.pc);
+    this.pc = (this.pc + n) & (FLASH_WORDS - 1);
+    for (let i = 0; i < n; i++) this.tick();
+  }
+
+  /* ---- One instruction. Cycle cost is expressed by how many times each
+          case calls tick(): one unconditional tick happens at the end, so
+          only multi-cycle ops tick explicitly. ---- */
+  step() {
+    if (this.finished) return 0;
+    const start = this.cycles;
+    const a = this.pc;
+    const op = this.opNum[a];
+    const d = this.arg1[a];
+    const k = this.arg2[a];
+    this.pc = (a + 1) & (FLASH_WORDS - 1);
+    const r = this.regs;
+    let Rd, Rr, R, R16, Rd16, res, sp;
+
+    switch (op) {
+      case OP_UNDEF:
+        this.error = 'undecodable instruction 0x' + this.prog[a].toString(16).padStart(4, '0')
+          + ' at word address 0x' + a.toString(16);
+        this.finished = true;
+        return 0;
+
+      case OPNUM.ADC:
+        Rd = r[d]; Rr = r[k]; R = (Rd + Rr + (this.mem[IO.SREG] & 1)) & 0xff;
+        this.flagsAdd(Rd, Rr, R); r[d] = R; break;
+      case OPNUM.ADD:
+        Rd = r[d]; Rr = r[k]; R = (Rd + Rr) & 0xff;
+        this.flagsAdd(Rd, Rr, R); r[d] = R; break;
+      case OPNUM.ADIW:
+        Rd16 = r[d] | (r[d + 1] << 8); R16 = (Rd16 + k) & 0xffff;
+        r[d] = R16; r[d + 1] = R16 >> 8;
+        this.flagsWord(Rd16, R16, false); this.tick(); break;
+      case OPNUM.SBIW:
+        Rd16 = r[d] | (r[d + 1] << 8); R16 = (Rd16 - k) & 0xffff;
+        r[d] = R16; r[d + 1] = R16 >> 8;
+        this.flagsWord(Rd16, R16, true); this.tick(); break;
+      case OPNUM.AND:
+        R = r[d] & r[k]; this.flagsLogic(R); r[d] = R; break;
+      case OPNUM.ANDI:
+        R = r[d] & k; this.flagsLogic(R); r[d] = R; break;
+      case OPNUM.OR:
+        R = r[d] | r[k]; this.flagsLogic(R); r[d] = R; break;
+      case OPNUM.ORI:
+        R = r[d] | k; this.flagsLogic(R); r[d] = R; break;
+      case OPNUM.EOR:
+        R = r[d] ^ r[k]; this.flagsLogic(R); r[d] = R; break;
+      case OPNUM.COM:
+        R = (~r[d]) & 0xff; this.flagsLogic(R);
+        this.mem[IO.SREG] |= 1 << S_C; r[d] = R; break;
+      case OPNUM.NEG:
+        Rr = r[d]; R = (0 - Rr) & 0xff;
+        this.flagsSub(0, Rr, R, false); r[d] = R; break;
+      case OPNUM.SUB:
+        Rd = r[d]; Rr = r[k]; R = (Rd - Rr) & 0xff;
+        this.flagsSub(Rd, Rr, R, false); r[d] = R; break;
+      case OPNUM.SUBI:
+        Rd = r[d]; Rr = k; R = (Rd - Rr) & 0xff;
+        this.flagsSub(Rd, Rr, R, false); r[d] = R; break;
+      case OPNUM.SBC:
+        Rd = r[d]; Rr = r[k]; R = (Rd - Rr - (this.mem[IO.SREG] & 1)) & 0xff;
+        this.flagsSub(Rd, Rr, R, true); r[d] = R; break;
+      case OPNUM.SBCI:
+        Rd = r[d]; Rr = k; R = (Rd - Rr - (this.mem[IO.SREG] & 1)) & 0xff;
+        this.flagsSub(Rd, Rr, R, true); r[d] = R; break;
+      case OPNUM.CP:
+        Rd = r[d]; Rr = r[k]; R = (Rd - Rr) & 0xff;
+        this.flagsSub(Rd, Rr, R, false); break;
+      case OPNUM.CPI:
+        Rd = r[d]; Rr = k; R = (Rd - Rr) & 0xff;
+        this.flagsSub(Rd, Rr, R, false); break;
+      case OPNUM.CPC:
+        Rd = r[d]; Rr = r[k]; R = (Rd - Rr - (this.mem[IO.SREG] & 1)) & 0xff;
+        this.flagsSub(Rd, Rr, R, true); break;
+      case OPNUM.INC:
+        R = (r[d] + 1) & 0xff; r[d] = R;
+        this.setNzvsFromUnary(R, R === 0x80); break;
+      case OPNUM.DEC:
+        R = (r[d] - 1) & 0xff; r[d] = R;
+        this.setNzvsFromUnary(R, R === 0x7f); break;
+
+      case OPNUM.ASR:
+        Rd = r[d]; R = ((Rd >> 1) | (Rd & 0x80)) & 0xff; r[d] = R;
+        this.setShiftFlags(R, Rd & 1, ((R >> 7) & 1) ^ (Rd & 1)); break;
+      case OPNUM.LSR:
+        Rd = r[d]; R = (Rd >> 1) & 0xff; r[d] = R;
+        this.setShiftFlags(R, Rd & 1, Rd & 1); break;
+      case OPNUM.ROR:
+        Rd = r[d]; R = ((Rd >> 1) | ((this.mem[IO.SREG] & 1) << 7)) & 0xff; r[d] = R;
+        this.setShiftFlags(R, Rd & 1, ((R >> 7) & 1) ^ (Rd & 1)); break;
+      case OPNUM.SWAP:
+        Rd = r[d]; r[d] = ((Rd >> 4) | (Rd << 4)) & 0xff; break;
+
+      case OPNUM.MOV: r[d] = r[k]; break;
+      case OPNUM.MOVW: r[d] = r[k]; r[d + 1] = r[k + 1]; break;
+      case OPNUM.LDI: r[d] = k; break;
+
+      case OPNUM.MUL:
+        res = r[d] * r[k]; r[0] = res & 0xff; r[1] = (res >> 8) & 0xff;
+        this.flagsMul(res); this.tick(); break;
+      case OPNUM.MULS:
+        res = ((r[d] << 24) >> 24) * ((r[k] << 24) >> 24);
+        r[0] = res & 0xff; r[1] = (res >> 8) & 0xff;
+        this.flagsMul(res); this.tick(); break;
+      case OPNUM.MULSU:
+        res = ((r[d] << 24) >> 24) * r[k];
+        r[0] = res & 0xff; r[1] = (res >> 8) & 0xff;
+        this.flagsMul(res); this.tick(); break;
+      case OPNUM.FMUL:
+        res = (r[d] * r[k]) << 1; r[0] = res & 0xff; r[1] = (res >> 8) & 0xff;
+        this.flagsMul(res >> 1); this.tick(); break;
+      case OPNUM.FMULS:
+        res = (((r[d] << 24) >> 24) * ((r[k] << 24) >> 24)) << 1;
+        r[0] = res & 0xff; r[1] = (res >> 8) & 0xff;
+        this.flagsMul(res >> 1); this.tick(); break;
+      case OPNUM.FMULSU:
+        res = (((r[d] << 24) >> 24) * r[k]) << 1;
+        r[0] = res & 0xff; r[1] = (res >> 8) & 0xff;
+        this.flagsMul(res >> 1); this.tick(); break;
+
+      /* ---- bit ops on SREG and registers ---- */
+      case OPNUM.BSET: this.mem[IO.SREG] |= (1 << d); break;
+      case OPNUM.BCLR: this.mem[IO.SREG] &= ~(1 << d); break;
+      case OPNUM.BST:
+        this.mem[IO.SREG] = (this.mem[IO.SREG] & ~(1 << S_T)) | (((r[d] >> k) & 1) << S_T);
+        break;
+      case OPNUM.BLD:
+        r[d] = (r[d] & ~(1 << k)) | (this.flag(S_T) << k); break;
+
+      /* ---- branches ---- */
+      case OPNUM.BRBC:
+        if (!(this.mem[IO.SREG] & (1 << d))) { this.tick(); this.pc = (this.pc + k) & (FLASH_WORDS - 1); }
+        break;
+      case OPNUM.BRBS:
+        if (this.mem[IO.SREG] & (1 << d)) { this.tick(); this.pc = (this.pc + k) & (FLASH_WORDS - 1); }
+        break;
+
+      /* ---- skips ---- */
+      case OPNUM.CPSE: if (r[d] === r[k]) this.skipNext(); break;
+      case OPNUM.SBRC: if (((r[d] >> k) & 1) === 0) this.skipNext(); break;
+      case OPNUM.SBRS: if (((r[d] >> k) & 1) === 1) this.skipNext(); break;
+      case OPNUM.SBIC: if (!(this.readIo(IO_BASE + d) & (1 << k))) this.skipNext(); break;
+      case OPNUM.SBIS: if (this.readIo(IO_BASE + d) & (1 << k)) this.skipNext(); break;
+
+      /* ---- jumps and calls. Return addresses are pushed high byte
+              first (at the lower address), matching the AVR stack. ---- */
+      case OPNUM.RJMP: this.tick(); this.pc = (this.pc + k) & (FLASH_WORDS - 1); break;
+      case OPNUM.IJMP: this.tick(); this.pc = this.Z & (FLASH_WORDS - 1); break;
+      case OPNUM.JMP: this.tick(); this.tick(); this.pc = k & (FLASH_WORDS - 1); break;
+      case OPNUM.RCALL:
+        this.tick(); this.tick();
+        sp = this.sp;
+        this.sramWrite(sp, this.pc & 0xff); sp = (sp - 1) & 0xffff;
+        this.sramWrite(sp, (this.pc >> 8) & 0xff); sp = (sp - 1) & 0xffff;
+        this.setSp(sp);
+        this.pc = (this.pc + k) & (FLASH_WORDS - 1);
+        break;
+      case OPNUM.ICALL:
+        this.tick(); this.tick();
+        sp = this.sp;
+        this.sramWrite(sp, this.pc & 0xff); sp = (sp - 1) & 0xffff;
+        this.sramWrite(sp, (this.pc >> 8) & 0xff); sp = (sp - 1) & 0xffff;
+        this.setSp(sp);
+        this.pc = this.Z & (FLASH_WORDS - 1);
+        break;
+      case OPNUM.CALL:
+        this.tick(); this.tick(); this.tick();
+        sp = this.sp;
+        // pc already points at the second word, so the return address is pc+1.
+        this.sramWrite(sp, (this.pc + 1) & 0xff); sp = (sp - 1) & 0xffff;
+        this.sramWrite(sp, ((this.pc + 1) >> 8) & 0xff); sp = (sp - 1) & 0xffff;
+        this.setSp(sp);
+        this.pc = k & (FLASH_WORDS - 1);
+        break;
+      case OPNUM.RET:
+      case OPNUM.RETI:
+        this.tick(); this.tick(); this.tick();
+        sp = (this.sp + 1) & 0xffff;
+        R16 = this.sramRead(sp) << 8;
+        sp = (sp + 1) & 0xffff;
+        R16 |= this.sramRead(sp);
+        this.setSp(sp);
+        this.pc = R16 & (FLASH_WORDS - 1);
+        if (op === OPNUM.RETI) this.mem[IO.SREG] |= 1 << S_I;
+        break;
+
+      /* ---- loads and stores ---- */
+      case OPNUM.LD_X: this.tick(); r[d] = this.readData(this.X); break;
+      case OPNUM.LD_X_INC: this.tick(); r[d] = this.readData(this.X); this.setX(this.X + 1); break;
+      case OPNUM.LD_DEC_X: this.tick(); this.setX(this.X - 1); r[d] = this.readData(this.X); break;
+      case OPNUM.LD_Y_INC: this.tick(); r[d] = this.readData(this.Y); this.setY(this.Y + 1); break;
+      case OPNUM.LD_DEC_Y: this.tick(); this.setY(this.Y - 1); r[d] = this.readData(this.Y); break;
+      case OPNUM.LDD_Y: this.tick(); r[d] = this.readData(this.Y + k); break;
+      case OPNUM.LD_Z_INC: this.tick(); r[d] = this.readData(this.Z); this.setZ(this.Z + 1); break;
+      case OPNUM.LD_DEC_Z: this.tick(); this.setZ(this.Z - 1); r[d] = this.readData(this.Z); break;
+      case OPNUM.LDD_Z: this.tick(); r[d] = this.readData(this.Z + k); break;
+      case OPNUM.LDS: this.tick(); r[d] = this.readData(k); this.pc = (this.pc + 1) & (FLASH_WORDS - 1); break;
+
+      case OPNUM.ST_X: this.tick(); this.writeData(this.X, r[d]); break;
+      case OPNUM.ST_X_INC: this.tick(); this.writeData(this.X, r[d]); this.setX(this.X + 1); break;
+      case OPNUM.ST_DEC_X: this.tick(); this.setX(this.X - 1); this.writeData(this.X, r[d]); break;
+      case OPNUM.ST_Y_INC: this.tick(); this.writeData(this.Y, r[d]); this.setY(this.Y + 1); break;
+      case OPNUM.ST_DEC_Y: this.tick(); this.setY(this.Y - 1); this.writeData(this.Y, r[d]); break;
+      case OPNUM.STD_Y: this.tick(); this.writeData(this.Y + k, r[d]); break;
+      case OPNUM.ST_Z_INC: this.tick(); this.writeData(this.Z, r[d]); this.setZ(this.Z + 1); break;
+      case OPNUM.ST_DEC_Z: this.tick(); this.setZ(this.Z - 1); this.writeData(this.Z, r[d]); break;
+      case OPNUM.STD_Z: this.tick(); this.writeData(this.Z + k, r[d]); break;
+      case OPNUM.STS: this.tick(); this.writeData(k, r[d]); this.pc = (this.pc + 1) & (FLASH_WORDS - 1); break;
+
+      case OPNUM.PUSH:
+        this.tick(); sp = this.sp;
+        this.sramWrite(sp, r[d]); this.setSp((sp - 1) & 0xffff); break;
+      case OPNUM.POP:
+        this.tick(); sp = (this.sp + 1) & 0xffff;
+        r[d] = this.sramRead(sp); this.setSp(sp); break;
+
+      case OPNUM.IN: r[d] = this.readIo(IO_BASE + k); break;
+      case OPNUM.OUT: this.writeIo(IO_BASE + d, r[k]); break;
+      case OPNUM.SBI:
+        this.tick(); this.writeIo(IO_BASE + d, this.readIo(IO_BASE + d) | (1 << k)); break;
+      case OPNUM.CBI:
+        this.tick(); this.writeIo(IO_BASE + d, this.readIo(IO_BASE + d) & ~(1 << k)); break;
+
+      /* ---- flash as data ---- */
+      case OPNUM.LPM_R0: this.tick(); this.tick(); r[0] = this.readProgmem(this.Z); break;
+      case OPNUM.LPM_Z: this.tick(); this.tick(); r[d] = this.readProgmem(this.Z); break;
+      case OPNUM.LPM_Z_INC:
+        this.tick(); this.tick(); r[d] = this.readProgmem(this.Z); this.setZ(this.Z + 1); break;
+
+      case OPNUM.NOP: break;
+      case OPNUM.BREAK: break;
+      case OPNUM.SLEEP: break;
+      case OPNUM.WDR: this.watchdogTimer = 0; break;
+      case OPNUM.SPM:
+        this.error = 'SPM (self-programming flash) at word address 0x' + a.toString(16)
+          + ' is not emulated';
+        this.finished = true;
+        return this.cycles - start;
+
+      default:
+        this.error = 'unimplemented opcode ' + (OPNAME[op] || op) + ' at word address 0x' + a.toString(16);
+        this.finished = true;
+        return this.cycles - start;
+    }
+
+    this.tick();               // every instruction's last cycle
+    this.perInstruction();
+    this.steps++;
+    return this.cycles - start;
+  }
+
+  // INC/DEC share a flag shape that is neither add nor sub: C and H are
+  // untouched, and V is set only at the one wrapping value.
+  setNzvsFromUnary(R, overflow) {
+    let s = this.mem[IO.SREG] & ~0b00011110;
+    const n = (R >> 7) & 1, v = overflow ? 1 : 0;
+    s |= n << S_N; s |= v << S_V; s |= (n ^ v) << S_S;
+    if (R === 0) s |= 1 << S_Z;
+    this.mem[IO.SREG] = s;
+  }
+  setShiftFlags(R, carry, v) {
+    let s = this.mem[IO.SREG] & ~0b00011111;
+    const n = (R >> 7) & 1;
+    s |= (carry & 1) << S_C; s |= v << S_V; s |= n << S_N; s |= (n ^ v) << S_S;
+    if (R === 0) s |= 1 << S_Z;
+    this.mem[IO.SREG] = s;
+  }
+
+  /* ---- previewStep: what would the next instruction do?
+          Answered by running the REAL step() and undoing it, so there is
+          deliberately no second copy of the execute logic to drift out of
+          sync with the interpreter.
+
+          The compiler's AvrSim does this by journaling each mutation, which
+          works there because every write funnels through setReg/writeByte.
+          This core writes state directly at 73 sites in the switch (r[d] = R,
+          mem[IO.SREG] = s, timer and video fields), so journaling would mean
+          rewriting the one piece of code that is verified cycle-exact against
+          uzem - and adding work to a hot path that is already the bottleneck.
+          Snapshot and restore instead: the whole mutable state is ~6.4 KB, and
+          this is called once per render rather than once per step. ---- */
+
+  // Every field step() can touch. If a new piece of mutable state is added to
+  // the core, it MUST be listed here or a preview will silently leak it.
+  static SCALARS = [
+    'pc', 'cycles', 'steps', 'irqs', 'finished', 'error',
+    'tcnt1', 'timer1Next', 'timer1Base', 'itdTifr1', 't16Latch', 'dlyTccr1b', 'dlyTcnt1',
+    'watchdogTimer', 'cycleCtrIns',
+    'pixelRaw', 'scanlineCount', 'leftEdgeCycle', 'prevSyncCycle', 'frames', 'lines',
+    'newInputMode', 'outTotal',
+  ];
+
+  snapshotState() {
+    const s = { mem: this.mem.slice(), scanlineBuf: this.scanlineBuf.slice(),
+                buttons: this.buttons.slice(), latched: this.latched.slice(),
+                outLen: this.out.length };
+    for (const k of AvrCore.SCALARS) s[k] = this[k];
+    return s;
+  }
+
+  restoreState(s) {
+    this.mem.set(s.mem);
+    this.scanlineBuf.set(s.scanlineBuf);
+    this.buttons = s.buttons.slice();
+    this.latched = s.latched.slice();
+    this.out.length = s.outLen;
+    for (const k of AvrCore.SCALARS) this[k] = s[k];
+  }
+
+  previewStep() {
+    if (this.finished) return null;
+    const before = this.snapshotState();
+    // The frame/scanline callbacks paint the canvas. A preview that fired them
+    // would draw a phantom frame, so they are detached for the duration.
+    const savedScan = this.onScanline, savedFrame = this.onFrame;
+    this.onScanline = null; this.onFrame = null;
+    let result = null;
+    try {
+      this.step();
+      // A faulting instruction must not surface an error of its own from a
+      // preview - the caller only asked what would happen.
+      if (this.error === before.error) {
+        const regs = [];
+        for (let i = 0; i < 32; i++) {
+          if (this.mem[i] !== before.mem[i]) regs.push({ i, from: before.mem[i], to: this.mem[i] });
+        }
+        const mem = [];
+        for (let a = IO_BASE; a < this.mem.length; a++) {
+          if (this.mem[a] !== before.mem[a]) mem.push({ addr: a, from: before.mem[a], to: this.mem[a] });
+        }
+        result = {
+          regs,
+          sreg: this.mem[IO.SREG] !== before.mem[IO.SREG]
+            ? { from: before.mem[IO.SREG], to: this.mem[IO.SREG] } : null,
+          mem,
+          nextPc: this.pc,
+          out: this.out.slice(before.outLen).map(c => String.fromCharCode(c)).join(''),
+        };
+      }
+    } finally {
+      this.restoreState(before);
+      this.onScanline = savedScan; this.onFrame = savedFrame;
+    }
+    return result;
+  }
+
+  /* ---- run loops ---- */
+
+  // Run until `budget` cycles have elapsed (a per-call budget, not a
+  // session cap, so calling again continues).
+  runCycles(budget) {
+    const target = this.cycles + budget;
+    while (this.cycles < target && !this.finished) this.step();
+    return this.cycles;
+  }
+
+  // Run until the frame counter advances, or the cycle budget runs out.
+  // A frame that never completes means the sync detector never saw a
+  // vsync pattern, which is the first thing to check if the timer model
+  // is wrong.
+  runFrame(maxCycles) {
+    const startFrames = this.frames;
+    const limit = this.cycles + (maxCycles || HSYNC_PERIOD * 400);
+    while (this.frames === startFrames && this.cycles < limit && !this.finished) this.step();
+    return this.frames > startFrames;
+  }
+
+  snapshot() {
+    return {
+      pc: this.pc, pcByte: this.pc * 2, cycles: this.cycles, steps: this.steps,
+      sp: this.sp, sreg: this.mem[IO.SREG], regs: Array.from(this.regs),
+      frames: this.frames, lines: this.lines, scanline: this.scanlineCount,
+      irqs: this.irqs, tcnt1: (this.tcnt1 + this.timer1Base - this.timer1Next) & 0xffff,
+      finished: this.finished, error: this.error,
+      out: this.out.map(c => String.fromCharCode(c)).join(''),
+    };
+  }
+}
+
+/* =========================== DISASSEMBLY =========================== */
+
+/* UDR0 carries a raw byte stream, not text, so it cannot simply be handed to
+   String.fromCharCode: a firmware bug that transmits junk would then render as
+   nothing at all, and an escape sequence would silently move the cursor around
+   the console. Printable ASCII and newline pass through, CR is dropped (firmware
+   commonly sends CRLF, and a bare CR blanks the line in a pre-wrap box), and
+   everything else shows as \xNN so it is visible but harmless.
+
+   HTML-escaping happens here too rather than in the caller, so a program that
+   transmits markup cannot inject nodes into the console. */
+function formatUartBytes(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) {
+    const b = bytes[i];
+    if (b === 0x0a) s += '\n';
+    else if (b === 0x0d) continue;
+    else if (b >= 0x20 && b <= 0x7e) {
+      s += b === 0x26 ? '&amp;' : b === 0x3c ? '&lt;' : b === 0x3e ? '&gt;'
+         : b === 0x22 ? '&quot;' : String.fromCharCode(b);
+    } else {
+      s += '\\x' + b.toString(16).padStart(2, '0');
+    }
+  }
+  return s;
+}
+
+// Register role annotations, following **avr-gcc's** ABI - which is the one
+// that matters, because this app loads ROMs built by avr-gcc.
+//
+// Deliberately NOT the same table as compiler/index.html's AVR_REG_NAMES: that
+// one says things like "slot0 lo" and "a0/ret lo", which describe that
+// compiler's own operand-stack allocation. A ROM built by real avr-gcc does not
+// follow it, so reusing those names would label registers confidently wrong.
+const AVR_ABI_NAMES = (() => {
+  const n = new Array(32);
+  n[0] = 'tmp';                                            // avr-gcc scratch
+  n[1] = 'zero';                                           // held at 0 by convention
+  for (let i = 2; i <= 17; i++) n[i] = 'saved';            // callee-saved
+  for (let i = 18; i <= 25; i++) n[i] = 'clobber';         // call-clobbered
+  n[26] = 'X lo'; n[27] = 'X hi';
+  n[28] = 'Y lo (fp)'; n[29] = 'Y hi (fp)';                // frame pointer
+  n[30] = 'Z lo'; n[31] = 'Z hi';
+  return n;
+})();
+
+/* Which registers an instruction READS.
+
+   This table has to exist rather than reading arg1/arg2 directly: the decoder
+   stores 0 in unused fields, so a naive read would report r0 as an operand of
+   every LDI, IN and RET. Grouped by opcode class - the distinctions that
+   matter are that LDI/LDS/IN read no register at all, MOV reads only its
+   source, the word ops read a pair, and the LD/ST forms read a pointer pair
+   (plus the data register, for stores). */
+const SRC_NONE = new Set([
+  'LDI', 'LDS', 'IN', 'NOP', 'RET', 'RETI', 'RJMP', 'JMP', 'CALL', 'RCALL',
+  'BREAK', 'SLEEP', 'WDR', 'BSET', 'BCLR', 'SBI', 'CBI', 'SBIC', 'SBIS', 'SPM',
+]);
+const SRC_D = new Set([              // reads arg1 only
+  'ANDI', 'ORI', 'SUBI', 'SBCI', 'CPI', 'COM', 'NEG', 'INC', 'DEC',
+  'ASR', 'LSR', 'ROR', 'SWAP', 'BST', 'BLD', 'SBRC', 'SBRS', 'PUSH', 'STS',
+]);
+const SRC_D_R = new Set([            // reads arg1 and arg2
+  'ADC', 'ADD', 'AND', 'SUB', 'SBC', 'OR', 'EOR', 'CP', 'CPC', 'CPSE',
+  'MUL', 'MULS', 'MULSU', 'FMUL', 'FMULS', 'FMULSU',
+]);
+const SRC_PAIR_D = new Set(['ADIW', 'SBIW']);       // reads arg1, arg1+1
+const SRC_PAIR_R = new Set(['MOVW']);               // reads arg2, arg2+1
+const SRC_R_ONLY = new Set(['MOV', 'OUT']);         // reads arg2 only
+// Pointer-pair readers. The value is the low register of the pair; stores also
+// read arg1, the byte being written.
+const SRC_PTR = {
+  LD_X: 26, LD_X_INC: 26, LD_DEC_X: 26,
+  LD_Y_INC: 28, LD_DEC_Y: 28, LDD_Y: 28,
+  LD_Z_INC: 30, LD_DEC_Z: 30, LDD_Z: 30,
+  LPM_R0: 30, LPM_Z: 30, LPM_Z_INC: 30, ICALL: 30, IJMP: 30,
+  ST_X: 26, ST_X_INC: 26, ST_DEC_X: 26,
+  ST_Y_INC: 28, ST_DEC_Y: 28, STD_Y: 28,
+  ST_Z_INC: 30, ST_DEC_Z: 30, STD_Z: 30,
+};
+const SRC_PTR_STORES = new Set([
+  'ST_X', 'ST_X_INC', 'ST_DEC_X', 'ST_Y_INC', 'ST_DEC_Y', 'STD_Y',
+  'ST_Z_INC', 'ST_DEC_Z', 'STD_Z',
+]);
+// POP reads no general register; the branches read SREG, not a register.
+const SRC_SPECIAL = new Set(['POP', 'BRBC', 'BRBS']);
+
+function srcRegs(core, wordAddr) {
+  const op = core.opNum[wordAddr];
+  const name = OPNAME[op];
+  const out = new Set();
+  if (!name || SRC_NONE.has(name) || SRC_SPECIAL.has(name)) return out;
+  const d = core.arg1[wordAddr], r = core.arg2[wordAddr];
+  if (SRC_PTR[name] !== undefined) {
+    out.add(SRC_PTR[name]); out.add(SRC_PTR[name] + 1);
+    if (SRC_PTR_STORES.has(name)) out.add(d);
+    return out;
+  }
+  if (SRC_D_R.has(name)) { out.add(d); out.add(r); return out; }
+  if (SRC_D.has(name)) { out.add(d); return out; }
+  if (SRC_R_ONLY.has(name)) { out.add(r); return out; }
+  if (SRC_PAIR_D.has(name)) { out.add(d); out.add(d + 1); return out; }
+  if (SRC_PAIR_R.has(name)) { out.add(r); out.add(r + 1); return out; }
+  return out;
+}
+
+// Display only - the interpreter never consults this, so a formatting bug
+// can put a wrong string on screen but cannot change behaviour.
+const BRANCH_NAMES_SET = ['BRCS', 'BREQ', 'BRMI', 'BRVS', 'BRLT', 'BRHS', 'BRTS', 'BRIE'];
+const BRANCH_NAMES_CLR = ['BRCC', 'BRNE', 'BRPL', 'BRVC', 'BRGE', 'BRHC', 'BRTC', 'BRID'];
+const SREG_NAMES_SET = ['SEC', 'SEZ', 'SEN', 'SEV', 'SES', 'SEH', 'SET', 'SEI'];
+const SREG_NAMES_CLR = ['CLC', 'CLZ', 'CLN', 'CLV', 'CLS', 'CLH', 'CLT', 'CLI'];
+
+function disasm(core, a) {
+  const op = core.opNum[a], d = core.arg1[a], k = core.arg2[a];
+  const name = OPNAME[op];
+  if (op === OP_UNDEF) return '.word 0x' + core.prog[a].toString(16).padStart(4, '0');
+  const rel = (off) => '.' + (off >= 0 ? '+' : '-') + Math.abs(off * 2) + '  ; 0x' + (((a + 1 + off) * 2) & 0xffff).toString(16);
+  switch (name) {
+    case 'BRBS': return BRANCH_NAMES_SET[d] + ' ' + rel(k);
+    case 'BRBC': return BRANCH_NAMES_CLR[d] + ' ' + rel(k);
+    case 'BSET': return SREG_NAMES_SET[d];
+    case 'BCLR': return SREG_NAMES_CLR[d];
+    case 'RJMP': case 'RCALL': return name.toLowerCase() + ' ' + rel(k);
+    case 'JMP': case 'CALL': return name.toLowerCase() + ' 0x' + ((k * 2) & 0xffff).toString(16);
+    case 'LDS': return 'lds r' + d + ', 0x' + k.toString(16);
+    case 'STS': return 'sts 0x' + k.toString(16) + ', r' + d;
+    case 'IN': return 'in r' + d + ', 0x' + k.toString(16);
+    case 'OUT': return 'out 0x' + d.toString(16) + ', r' + k;
+    case 'SBI': case 'CBI': case 'SBIC': case 'SBIS':
+      return name.toLowerCase() + ' 0x' + d.toString(16) + ', ' + k;
+    case 'LPM_R0': return 'lpm';
+    case 'LPM_Z': return 'lpm r' + d + ', Z';
+    case 'LPM_Z_INC': return 'lpm r' + d + ', Z+';
+    case 'NOP': case 'RET': case 'RETI': case 'SLEEP': case 'WDR': case 'BREAK':
+    case 'ICALL': case 'IJMP': case 'SPM':
+      return name.toLowerCase();
+    default: break;
+  }
+  // LD/ST addressing modes are separate opNums, so their names carry the
+  // mode and have to be un-mangled for display.
+  const m = /^(LD|ST)(_DEC_([XYZ])|_([XYZ])_INC|_([XYZ])|D_([XYZ]))$/.exec(name);
+  if (m) {
+    const isLd = m[1] === 'LD';
+    let addr;
+    if (m[3]) addr = '-' + m[3];
+    else if (m[4]) addr = m[4] + '+';
+    else if (m[5]) addr = m[5];
+    else addr = m[6] + '+' + k;
+    return (m[6] ? (isLd ? 'ldd' : 'std') : (isLd ? 'ld' : 'st')) + ' '
+      + (isLd ? ('r' + d + ', ' + addr) : (addr + ', r' + d));
+  }
+  const e = OPS[op - 1];
+  const imm = ['ANDI', 'ORI', 'SUBI', 'SBCI', 'CPI', 'LDI', 'ADIW', 'SBIW'].includes(name);
+  const oneArg = e[6] === 0 && !imm;
+  if (oneArg) return name.toLowerCase() + ' r' + d;
+  return name.toLowerCase() + ' r' + d + ', ' + (imm ? '0x' + (k & 0xff).toString(16) : 'r' + k);
+}
+
+/* ========================= UI WIRING ========================= */
+
+// Everything below needs a DOM. The headless harness extracts the engine by
+// cutting the script at this banner, so nothing here has to guard against
+// `document` being absent - and keeping these as plain function declarations
+// (not consts in a block) is what lets a driver script call them.
+
+const $ = (id) => document.getElementById(id);
+let core = null, running = false, rafId = 0;
+
+/* ---- the console.
+   Two kinds of text share this panel: the ROM's own UDR0 output, which is the
+   point of it, and the emulator's diagnostics. They are told apart by colour -
+   the box's default is green, so anything the emulator says is explicitly
+   marked down to grey (.info) or red (.err), and anything unlabelled came from
+   the program. Same arrangement as compiler/index.html's console. ---- */
+
+// Keep the panel bounded: a program printing in a loop can emit well over a
+// million bytes a second, and an unbounded DOM would take the tab down with it.
+const CONSOLE_MAX_CHARS = 200000;
+let consoleChars = 0;      // running total of what is currently displayed
+let droppedChars = 0;      // characters evicted, so the notice can be honest
+
+function logLine(html, cls) {
+  const box = $('console');
+  const div = document.createElement('div');
+  if (cls) div.className = cls;
+  div.innerHTML = html;
+  box.appendChild(div);
+  consoleChars += div.textContent.length;
+  trimConsole();
+  box.scrollTop = box.scrollHeight;
+}
+
+// Diagnostics are grey by default; failures are red.
+function log(s) { logLine(escapeHtml(s), 'info'); }
+function logErr(s) { logLine(escapeHtml(s), 'err'); }
+
+function clearConsole() {
+  $('console').innerHTML = '';
+  consoleChars = 0;
+  droppedChars = 0;
+}
+
+/* Drop the program's output but keep the emulator's messages. Not the same as
+   clearConsole(): a load logs "loaded …" and "decoded …" BEFORE activating, so
+   wiping the whole panel would throw away the lines just written. */
+function clearProgramOutput() {
+  const box = $('console');
+  for (const node of [...box.querySelectorAll('.prog')]) node.remove();
+  consoleChars = 0;
+  for (const node of box.children) consoleChars += node.textContent.length;
+}
+
+// Evict whole leading nodes until back under the cap, then keep exactly one
+// notice at the top saying how much went. Nodes rather than characters, because
+// slicing text out of a node would leave a half line with no indication.
+function trimConsole() {
+  const box = $('console');
+  while (consoleChars > CONSOLE_MAX_CHARS && box.firstChild) {
+    const first = box.firstChild;
+    if (first.classList && first.classList.contains('dropped')) {
+      // the notice itself; skip past it by removing the next node instead
+      if (!first.nextSibling) break;
+      const victim = first.nextSibling;
+      consoleChars -= victim.textContent.length;
+      droppedChars += victim.textContent.length;
+      victim.remove();
+    } else {
+      consoleChars -= first.textContent.length;
+      droppedChars += first.textContent.length;
+      first.remove();
+    }
+  }
+  if (droppedChars > 0) {
+    let notice = box.firstChild;
+    if (!notice || !notice.classList || !notice.classList.contains('dropped')) {
+      notice = document.createElement('div');
+      notice.className = 'info dropped';
+      box.insertBefore(notice, box.firstChild);
+    }
+    notice.textContent = '… ' + droppedChars.toLocaleString() + ' earlier characters dropped';
+  }
+}
+
+/* Move whatever the program has transmitted into the panel.
+   Cheap to call often thanks to the early return, so the run loop does it every
+   animation frame rather than at the 4 Hz panel rate - output that appears a
+   quarter of a second late reads as a stuck program. */
+function drainProgramOutput() {
+  if (!core || core.out.length === 0) return;
+  const bytes = core.out.splice(0, core.out.length);
+  const text = formatUartBytes(bytes);
+  if (!text) return;
+  const box = $('console');
+  const last = box.lastChild;
+  // Continue the previous run of program output if it is still the last thing
+  // in the panel, so a line split across two drains stays one line. A
+  // diagnostic arriving in between therefore visibly interrupts it, which is
+  // the truthful ordering.
+  if (last && last.classList && last.classList.contains('prog')) {
+    last.innerHTML += text;
+    consoleChars += text.length;
+    trimConsole();
+    box.scrollTop = box.scrollHeight;
+  } else {
+    logLine(text, 'prog');
+  }
+}
+
+function hex(v, n) { return v.toString(16).toUpperCase().padStart(n, '0'); }
+
+function renderRomInfo(h) {
+  const rows = [];
+  const add = (k, v) => rows.push('<dt>' + k + '</dt><dd>' + v + '</dd>');
+  if (h.format === 'uze') {
+    add('name', h.name || '&mdash;');
+    add('author', h.author || '&mdash;');
+    add('year', h.year);
+    add('target', h.targetName);
+    add('header version', h.version);
+    add('program size', h.progSize + ' bytes (' + (h.progSize / FLASH_BYTES * 100).toFixed(1) + '% of flash)');
+    const crcOk = h.crc32 === h.crc32Actual;
+    add('crc32', '0x' + hex(h.crc32, 8) + (crcOk ? ' &check; matches payload'
+      : ' &mdash; payload computes 0x' + hex(h.crc32Actual, 8)));
+    if (h.description) add('description', h.description);
+  } else {
+    add('format', 'Intel HEX');
+    add('target', h.targetName + ' (assumed &mdash; HEX carries no target field)');
+    add('program size', h.progSize + ' bytes');
+  }
+  $('romInfo').innerHTML = '<dl class="rom-info">' + rows.join('') + '</dl>';
+}
+
+function renderStats() {
+  if (!core) { $('stats').innerHTML = ''; return; }
+  const s = core.snapshot();
+  const secs = s.cycles / ATMEGA644.clockHz;
+  // pc, sp and SREG deliberately live in the Registers card instead, so each
+  // value has exactly one home to read and one place to keep in sync.
+  const items = [
+    ['cycles', s.cycles.toLocaleString()],
+    ['emulated time', (secs * 1000).toFixed(2) + ' ms'],
+    ['instructions', s.steps.toLocaleString()],
+    ['interrupts', s.irqs.toLocaleString()],
+    ['tcnt1', '0x' + hex(s.tcnt1, 4)],
+    ['scanlines', s.lines.toLocaleString()],
+    ['frames', s.frames.toLocaleString()],
+  ];
+  $('stats').innerHTML = items.map(([k, v]) =>
+    '<div class="stat"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>').join('');
+}
+
+/* ---- the register file ----
+   Values are shown in the checkbox's radix with the other one in the title, so
+   both are always one hover away. */
+function formatRegValue(v, digits) {
+  return $('regHexCheckbox').checked ? (v >>> 0).toString(16).toUpperCase().padStart(digits || 2, '0')
+                                     : String(v >>> 0);
+}
+function formatRegTitle(v, digits) {
+  return $('regHexCheckbox').checked ? String(v >>> 0)
+                                     : '0x' + (v >>> 0).toString(16).toUpperCase().padStart(digits || 2, '0');
+}
+
+// The pc/sp/sreg rows are hidden rather than left empty when there is no core:
+// three blank dark bars read as a broken panel, where one strip plus the
+// standard .panel-empty message reads as "nothing loaded yet" - the same
+// empty-state shape the Disassembly card uses.
+const REG_TAIL_ROWS = ['regPc', 'regSp', 'regSreg'];
+
+function renderRegs() {
+  if (!core) {
+    $('regGrid').innerHTML = '';
+    $('regGrid').classList.add('empty-state');
+    for (const id of REG_TAIL_ROWS) { $(id).innerHTML = ''; $(id).style.display = 'none'; }
+    $('regEmpty').style.display = 'block';
+    return;
+  }
+  $('regGrid').classList.remove('empty-state');
+  for (const id of REG_TAIL_ROWS) $(id).style.display = 'flex';
+  $('regEmpty').style.display = 'none';
+  // An instruction can write more than one register (MOVW, and the
+  // post-increment addressing modes), so pending writes are indexed rather
+  // than compared one at a time.
+  const pend = new Map();
+  if (pendingWrite) for (const r of pendingWrite.regs) pend.set(r.i, r.to);
+  const srcs = core.finished ? new Set() : srcRegs(core, core.pc);
+
+  let html = '';
+  // Emitted in plain register order; the column-major arrangement is purely a
+  // CSS concern, so DOM order stays the natural reading order and index-based
+  // lookups keep working.
+  for (let i = 0; i < 32; i++) {
+    const v = core.regs[i];
+    const p = pend.has(i) ? pend.get(i) : null;
+    const cls = 'reg-cell' + (p !== null ? ' pending' : '') + (srcs.has(i) ? ' src' : '');
+    html += '<div class="' + cls + '" title="' + formatRegTitle(v) + '">'
+      + '<span class="reg-name"><span class="reg-xnum">r' + i + '</span> '
+      + '<span class="reg-abi">(' + AVR_ABI_NAMES[i] + ')</span></span>'
+      + '<span class="reg-value">' + formatRegValue(v)
+      + (p !== null ? ' <span class="reg-next">→ ' + formatRegValue(p) + '</span>' : '')
+      + '</span></div>';
+  }
+  $('regGrid').innerHTML = html;
+
+  // pc is a WORD address in this core; show the byte address the listing uses.
+  const nextPc = pendingWrite ? pendingWrite.nextPc : null;
+  $('regPc').innerHTML = '<span class="reg-name">pc</span><span class="reg-value">'
+    + formatRegValue(core.pc * 2, 4)
+    + (nextPc !== null && nextPc !== core.pc
+        ? ' <span class="reg-next">→ ' + formatRegValue(nextPc * 2, 4) + '</span>' : '')
+    + '</span>';
+
+  const spPend = pendingWrite
+    ? pendingWrite.mem.filter(m => m.addr === IO.SPL || m.addr === IO.SPH) : [];
+  let spNext = null;
+  if (spPend.length) {
+    let lo = core.mem[IO.SPL], hi = core.mem[IO.SPH];
+    for (const m of spPend) { if (m.addr === IO.SPL) lo = m.to; else hi = m.to; }
+    spNext = lo | (hi << 8);
+  }
+  $('regSp').innerHTML = '<span class="reg-name">sp</span><span class="reg-value">'
+    + formatRegValue(core.sp, 4)
+    + (spNext !== null ? ' <span class="reg-next">→ ' + formatRegValue(spNext, 4) + '</span>' : '')
+    + '</span>';
+
+  // SREG shown as its flag letters rather than a number, because that is how
+  // the branches read it, with the raw byte alongside. A flag the next
+  // instruction will change is outlined in green, matching the compiler.
+  const cur = core.mem[IO.SREG];
+  const sregNext = pendingWrite && pendingWrite.sreg ? pendingWrite.sreg.to : null;
+  const ORDER = [['I', S_I], ['T', S_T], ['H', S_H], ['S', S_S], ['V', S_V], ['N', S_N], ['Z', S_Z], ['C', S_C]];
+  const letters = ORDER.map(([label, bit]) => {
+    const on = ((cur >> bit) & 1) !== 0;
+    const changing = sregNext !== null && (((sregNext >> bit) & 1) !== 0) !== on;
+    return '<span class="sreg-flag' + (on ? ' on' : '') + (changing ? ' changing' : '')
+      + '">' + label + '</span>';
+  }).join('');
+  $('regSreg').innerHTML = '<span class="reg-name">sreg</span><span class="reg-value">'
+    + letters
+    + ' <span class="sreg-hex">' + formatRegValue(cur) + '</span>'
+    + (sregNext !== null ? ' <span class="reg-next">→ ' + formatRegValue(sregNext) + '</span>' : '')
+    + '</span>';
+}
+
+/* ---- the disassembly ----
+   A window around pc, not the whole program: the compiler renders every
+   instruction, but this ROM is 28,479 words and rebuilding that much innerHTML
+   on each refresh is not viable. A breakpoint outside the window is still set
+   and still traps; it just is not on screen. */
+const ASM_WINDOW = 200;
+
+function renderAsm() {
+  if (!core) {
+    $('asmListing').style.display = 'none';
+    $('asmEmpty').style.display = 'block';
+    $('asmListing').innerHTML = '';
+    return;
+  }
+  $('asmListing').style.display = 'block';
+  $('asmEmpty').style.display = 'none';
+
+  // Back up far enough to fill the window above pc. Instruction lengths vary,
+  // so stepping back is approximate - decoding forward from a slightly wrong
+  // start would desynchronise, so begin at a word boundary and let the walk
+  // resynchronise naturally.
+  let a = Math.max(0, core.pc - Math.floor(ASM_WINDOW / 2));
+  const rows = [];
+  for (let n = 0; n < ASM_WINDOW && a < FLASH_WORDS; n++) {
+    const isCur = a === core.pc;
+    const bp = breakpoints.has(a) ? ' bp-explicit' : '';
+    const undecoded = core.opNum[a] === OP_UNDEF;
+    rows.push('<div class="asm-line' + (isCur ? ' current-pc' : '') + bp + '">'
+      + '<span class="asm-addr" data-word="' + a + '" title="Click to toggle a breakpoint here">'
+      + '<span class="bp-dot"></span>' + hex(a * 2, 4) + ': '
+      + '<span class="asm-code">(' + hex(core.prog[a], 4) + ')</span></span>'
+      + '<span class="asm-mnem' + (undecoded ? ' asm-data' : '') + '">'
+      + escapeHtml(disasm(core, a)) + '</span></div>');
+    a += core.insnWords(a);
+  }
+  $('asmListing').innerHTML = rows.join('');
+
+  // Scroll the LISTING, not the document. scrollIntoView() walks every
+  // scrollable ancestor, so it drags the whole page to the disassembly on
+  // every render, yanking whatever the user was looking at out of view.
+  const box = $('asmListing');
+  const el = box.querySelector('.current-pc');
+  if (el) {
+    box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top
+      - box.clientHeight / 2 + el.offsetHeight / 2;
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Instruction breakpoints, keyed by WORD address (the core's pc unit).
+const breakpoints = new Set();
+
+$('asmListing').addEventListener('click', (e) => {
+  const addr = e.target.closest ? e.target.closest('.asm-addr[data-word]') : null;
+  if (!addr) return;
+  const w = parseInt(addr.dataset.word, 10);
+  if (breakpoints.has(w)) breakpoints.delete(w); else breakpoints.add(w);
+  renderAsm();
+});
+
+// Computed once per render, before any panel draws, so every panel reads the
+// same prediction rather than each calling previewStep() and possibly
+// disagreeing.
+let pendingWrite = null;
+
+function renderAll() {
+  pendingWrite = core && !core.finished ? core.previewStep() : null;
+  renderStats(); renderRegs(); renderAsm();
+  if (core && core.error) logErr('error: ' + core.error);
+}
+
+/* ---- the TV ----
+   The core hands over one captured scanline at a time; this side only turns
+   samples into pixels and paints once per completed frame. Keeping the frame
+   buffer here (rather than drawing straight to the canvas per line) means one
+   putImageData per frame instead of 224 draw calls. */
+const TV_PALETTE = buildPalette();
+const tvCanvas = $('tvCanvas');
+const tvCtx = tvCanvas.getContext('2d');
+const tvImage = tvCtx.createImageData(VIDEO_DISP_WIDTH, FRAME_LINES);
+const tvPixels = new Uint32Array(tvImage.data.buffer);
+
+// Speed accounting. The core runs well below real time, so rather than
+// pretend otherwise the card reports what it actually achieved.
+let tvFrameTimes = [], tvSpeedCycles = 0, tvSpeedWallMs = 0;
+
+function tvBlank() {
+  tvPixels.fill(TV_PALETTE[0]);
+  tvCtx.putImageData(tvImage, 0, 0);
+}
+
+function tvOnScanline(line, buf, leftEdgeCycle) {
+  if (line < 0 || line >= FRAME_LINES) return;
+  renderScanline(tvPixels, line * VIDEO_DISP_WIDTH, buf, leftEdgeCycle, TV_PALETTE);
+}
+
+function tvOnFrame() {
+  tvCtx.putImageData(tvImage, 0, 0);
+  const now = performance.now();
+  tvFrameTimes.push(now);
+  // Keep a one-second window, so the fps figure reflects now rather than an
+  // average since load.
+  while (tvFrameTimes.length && now - tvFrameTimes[0] > 1000) tvFrameTimes.shift();
+}
+
+function renderTvBadges() {
+  if (!core) { $('tvBadges').innerHTML = ''; return; }
+  const fps = tvFrameTimes.length;
+  // <span>, not <div>: the badge row now lives inside the card's h2, whose
+  // content model is phrasing content. .badge-row is a flex container, so its
+  // children are blockified either way and nothing about the look changes.
+  const badge = (label, v, cls) => '<span class="badge' + (cls ? ' ' + cls : '') + '">'
+    + label + ' <span>' + v + '</span></span>';
+  // Speed is only measured by the Run loop, so after Step or Run-1-frame there
+  // is genuinely nothing to report - say so rather than showing a confident
+  // "0.00x".
+  const measured = tvSpeedWallMs > 0;
+  const speed = measured ? (tvSpeedCycles / (tvSpeedWallMs / 1000)) / ATMEGA644.clockHz : 0;
+  // The target is NTSC's ~60 fields/second; anything less is honest slow motion,
+  // not a dropped-frame problem to hide.
+  $('tvBadges').innerHTML =
+    badge('frames', core.frames.toLocaleString())
+    + badge('fps', fps + ' / 60', fps < 30 ? 'error' : '')
+    + badge('speed', measured ? speed.toFixed(2) + '&times; real time' : '&mdash;',
+            measured && speed < 0.5 ? 'error' : '')
+    + badge('scanlines', core.lines.toLocaleString());
+}
+
+function setEnabled(on) {
+  for (const id of ['stepBtn', 'runFrameBtn', 'runBtn', 'resetBtn']) $(id).disabled = !on;
+  $('stopBtn').disabled = true;
+}
+
+/* Everything that has to be true before a core is live. Both entry points -
+   loading a file and pressing Reset - go through here, so this list exists
+   once. It existing in two places is exactly how Reset came to leave the TV
+   callbacks unhooked, with the machine running and nothing painting. */
+function activateCore() {
+  core.onScanline = tvOnScanline;
+  core.onFrame = tvOnFrame;
+  // Both entry points clear core.out, so the panel has to drop what it was
+  // showing or old output would look like this run's.
+  clearProgramOutput();
+  tvFrameTimes = []; tvSpeedCycles = 0; tvSpeedWallMs = 0;
+  tvBlank();
+  releasePadKeys();
+  setEnabled(true);
+  renderAll();
+  renderTvBadges();
+}
+
+// Separate from the file-input handler so a test driver can load a ROM
+// without needing to synthesise a file-picker event.
+function loadRomBytes(bytes, label) {
+  try {
+    const rom = parseRom(bytes);
+    core = new AvrCore(rom);
+    renderRomInfo(rom.header);
+    log('loaded ' + label + ': ' + rom.header.progSize + ' program bytes');
+    let undecodable = 0;
+    const words = Math.ceil(rom.header.progSize / 2);
+    for (let i = 0; i < words; i++) if (core.opNum[i] === OP_UNDEF) undecodable++;
+    log('decoded ' + words + ' flash words; ' + undecodable
+      + ' did not match any opcode (expected: constant data lives in flash too)');
+    // A different binary makes old flash addresses meaningless, so breakpoints
+    // go. This is the one way Reset is deliberately NOT equivalent to a load:
+    // a reset keeps the same program, so its breakpoints stay valid.
+    breakpoints.clear();
+    activateCore();
+    return true;
+  } catch (e) {
+    logErr('load failed: ' + e.message);
+    $('romInfo').innerHTML = '<p class="empty">' + e.message + '</p>';
+    return false;
+  }
+}
+
+$('romFile').addEventListener('change', async (ev) => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  loadRomBytes(new Uint8Array(await f.arrayBuffer()), f.name);
+});
+
+$('stepBtn').addEventListener('click', () => {
+  core.step(); drainProgramOutput(); renderAll(); renderTvBadges();
+});
+
+$('runFrameBtn').addEventListener('click', () => {
+  const ok = core.runFrame();
+  if (!ok) log('no frame completed within the budget'
+    + (core.frames === 0 ? ' - the sync detector has not seen a vsync pattern yet' : ''));
+  drainProgramOutput();
+  renderAll();
+  renderTvBadges();
+});
+
+// How long to spend emulating per animation frame. This is a WALL CLOCK
+// budget, not a fixed number of cycles: at 0.19x real time a full 60 Hz
+// frame's worth of cycles takes ~85ms, which would block the tab and make
+// the page feel broken. Falling behind visibly (and saying so in the speed
+// badge) is better than freezing.
+const TV_BUDGET_MS = 12;
+// The register grid, stats and 40-row disassembly are all rebuilt via
+// innerHTML, so refreshing them every animation frame would compete with the
+// emulator for the very time it is short of. The canvas repaints per frame;
+// these follow at a rate a human can read anyway.
+const PANEL_REFRESH_MS = 250;
+
+// Run in chunks, stopping if a breakpoint is reached. Checked between chunks
+// and stepped one at a time inside a chunk, so a breakpoint traps on the exact
+// instruction rather than "somewhere in the last 20,000 cycles".
+function runChunk(cycleBudget) {
+  if (breakpoints.size === 0) { core.runCycles(cycleBudget); return false; }
+  const target = core.cycles + cycleBudget;
+  while (core.cycles < target && !core.finished) {
+    core.step();
+    // Checked AFTER stepping, so resuming from a breakpoint does not
+    // immediately re-trap on the instruction it is parked on.
+    if (breakpoints.has(core.pc)) return true;
+  }
+  return false;
+}
+
+$('runBtn').addEventListener('click', () => {
+  running = true;
+  $('runBtn').disabled = true; $('stopBtn').disabled = false;
+  let lastPanels = 0;
+  const tickLoop = () => {
+    if (!running || !core || core.finished) { stopRun(); return; }
+    const startCycles = core.cycles;
+    const t0 = performance.now();
+    let hitBp = false;
+    // Step in modest chunks so the budget is checked often without paying for
+    // a performance.now() call per instruction.
+    do {
+      hitBp = runChunk(20000);
+    } while (!hitBp && performance.now() - t0 < TV_BUDGET_MS && !core.finished);
+    const wall = performance.now() - t0;
+
+    // Exponential decay, so the speed figure tracks recent throughput rather
+    // than averaging away a slowdown.
+    tvSpeedCycles = tvSpeedCycles * 0.9 + (core.cycles - startCycles);
+    tvSpeedWallMs = tvSpeedWallMs * 0.9 + wall;
+
+    if (hitBp) {
+      log('stopped at breakpoint 0x' + hex(core.pc * 2, 4));
+      stopRun();
+      return;
+    }
+    drainProgramOutput();
+    renderTvBadges();
+    if (performance.now() - lastPanels > PANEL_REFRESH_MS) {
+      lastPanels = performance.now();
+      renderAll();
+    }
+    rafId = requestAnimationFrame(tickLoop);
+  };
+  rafId = requestAnimationFrame(tickLoop);
+});
+
+function stopRun() {
+  running = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = 0;
+  if (core) $('runBtn').disabled = false;
+  $('stopBtn').disabled = true;
+  drainProgramOutput();
+  renderAll();
+  renderTvBadges();
+}
+$('stopBtn').addEventListener('click', stopRun);
+
+$('resetBtn').addEventListener('click', () => {
+  stopRun();
+  core.reset();
+  // Breakpoints deliberately survive: the program has not changed, so their
+  // flash addresses are still meaningful and reset-then-run-to-breakpoint
+  // remains the useful debugging loop.
+  log('reset');
+  activateCore();
+});
+
+/* ---- collapse buttons (generic, works for any .card-collapse-btn).
+   Copied from compiler/index.html so the behaviour matches, including that the
+   state is deliberately NOT persisted - a collapsed card on next load would
+   look like a missing feature.
+
+   This relies on the shared rule `.card.collapsed > *:not(:first-child)`, which
+   is why every card puts its controls INSIDE the <h2> and none of them wrap the
+   header in an extra div: with a wrapper, the h2 and the body would be siblings
+   inside it and collapsing would hide nothing. */
+document.querySelectorAll('[data-collapse]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const card = btn.closest('.card');
+    card.classList.toggle('collapsed');
+    btn.textContent = card.classList.contains('collapsed') ? '▸' : '▾';
+  });
+});
+
+/* ---- per-card full/half width.
+   These are .card.full, so "half" simply drops that class and lets the card
+   occupy one cell of the existing 1fr 1fr grid; two adjacent half cards then
+   pair up by normal grid auto-placement. Uses data-width-btn, distinct from
+   the ROM/Console pair's data-layout-btn, so neither toggle's
+   querySelectorAll picks up the other's buttons. */
+(() => {
+  const CARDS = [
+    { id: 'card-asm', key: 'emulatorAsmWidth' },
+    { id: 'card-regs', key: 'emulatorRegsWidth' },
+  ];
+  for (const { id, key } of CARDS) {
+    const card = document.getElementById(id);
+    const btns = document.querySelectorAll('[data-width-card="' + id + '"]');
+    const apply = (mode) => {
+      card.classList.toggle('full', mode !== 'half');
+      btns.forEach(b => b.classList.toggle('active', b.dataset.widthBtn === mode));
+    };
+    btns.forEach(b => b.addEventListener('click', () => {
+      localStorage.setItem(key, b.dataset.widthBtn);
+      apply(b.dataset.widthBtn);
+    }));
+    apply(localStorage.getItem(key) === 'half' ? 'half' : 'full');
+  }
+})();
+
+/* ---- listing and console heights.
+   The listing is capped by max-height, so `prop` must be maxHeight there:
+   writing style.height under such a cap is silently overridden (height:800px
+   still renders at 420px under max-height:420px). The console is sized by
+   height instead. Either way the current value is read from getComputedStyle
+   rather than the bounding box - a capped panel whose content is short renders
+   far below its cap, so a box-based read would make '+' shrink it. */
+(() => {
+  const MIN_H = 200, MAX_H = 1000, STEP = 80;
+  function wireHeight(key, el, decBtn, incBtn, prop) {
+    const saved = parseInt(localStorage.getItem(key), 10);
+    if (!isNaN(saved)) el.style[prop] = saved + 'px';
+    const adjust = (delta) => {
+      let cur = parseFloat(getComputedStyle(el)[prop]);
+      if (!isFinite(cur)) cur = el.getBoundingClientRect().height;
+      const next = Math.max(MIN_H, Math.min(MAX_H, cur + delta));
+      el.style[prop] = next + 'px';
+      localStorage.setItem(key, next);
+    };
+    decBtn.addEventListener('click', () => adjust(-STEP));
+    incBtn.addEventListener('click', () => adjust(STEP));
+  }
+  wireHeight('emulatorAsmHeight', $('asmListing'), $('asmHeightDec'), $('asmHeightInc'), 'maxHeight');
+  wireHeight('emulatorConsoleHeight', $('console'), $('consoleHeightDec'), $('consoleHeightInc'), 'height');
+})();
+
+// Radix affects both the value and the title (which carries the other form).
+$('regHexCheckbox').addEventListener('change', () => { renderAll(); });
+
+// Save the visible listing. Uses a Blob rather than the File System Access
+// API, since the app runs over file://.
+$('asmSaveBtn').addEventListener('click', () => {
+  if (!core) return;
+  const lines = [];
+  for (let a = 0; a < FLASH_WORDS; ) {
+    if (core.opNum[a] === OP_UNDEF && core.prog[a] === 0xffff) { a++; continue; }
+    lines.push(hex(a * 2, 4) + ': (' + hex(core.prog[a], 4) + ')  ' + disasm(core, a));
+    a += core.insnWords(a);
+  }
+  const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = (core.header && core.header.name ? core.header.name : 'rom') + '.lss';
+  link.click();
+  URL.revokeObjectURL(url);
+});
+
+/* ---- zoom.
+   A sibling of compiler/index.html's wireHeight, and deliberately the same
+   discipline: clamp, persist, and read the CSS PROPERTY rather than the
+   rendered box - a box-based read makes '+' shrink things whenever the
+   element renders away from the value being adjusted. Only the height is
+   set; #tvCanvas's `aspect-ratio: 4/3` derives the width, which is what
+   keeps the picture TV-shaped at every size. */
+const TV_MIN_H = 240, TV_MAX_H = 960, TV_STEP = 80;   // default 480 => the classic 640x480
+function wireZoom(storageKey, el, decBtn, incBtn, readout) {
+  function show() {
+    const h = parseFloat(getComputedStyle(el).height);
+    readout.textContent = Math.round(h * 4 / 3) + '×' + Math.round(h);
+  }
+  const saved = parseInt(localStorage.getItem(storageKey), 10);
+  if (!isNaN(saved)) el.style.height = saved + 'px';
+  function adjust(delta) {
+    let cur = parseFloat(getComputedStyle(el).height);
+    if (!isFinite(cur)) cur = el.getBoundingClientRect().height;
+    const next = Math.max(TV_MIN_H, Math.min(TV_MAX_H, cur + delta));
+    el.style.height = next + 'px';
+    localStorage.setItem(storageKey, next);
+    show();
+  }
+  decBtn.addEventListener('click', () => adjust(-TV_STEP));
+  incBtn.addEventListener('click', () => adjust(TV_STEP));
+  show();
+}
+wireZoom('emulatorTvHeight', tvCanvas, $('tvZoomDec'), $('tvZoomInc'), $('tvZoomLevel'));
+
+/* ---- keyboard as game controller.
+   Keyed on event.code (the physical key) rather than event.key, so the
+   mapping does not move around under a non-US layout and is unaffected by
+   Shift changing what a key produces.
+
+   Note Shift is Select, not L. The mapping as specified offered Shift for
+   both, which cannot be honoured at once, so L takes Q and Select takes
+   Shift or Tab. */
+const PAD_KEYS = [
+  { btn: 'UP',     codes: ['ArrowUp'],    keys: ['↑'] },
+  { btn: 'DOWN',   codes: ['ArrowDown'],  keys: ['↓'] },
+  { btn: 'LEFT',   codes: ['ArrowLeft'],  keys: ['←'] },
+  { btn: 'RIGHT',  codes: ['ArrowRight'], keys: ['→'] },
+  { btn: 'A',      codes: ['KeyX'],       keys: ['X'] },
+  { btn: 'B',      codes: ['KeyZ'],       keys: ['Z'] },
+  { btn: 'X',      codes: ['KeyS'],       keys: ['S'] },
+  { btn: 'Y',      codes: ['KeyA'],       keys: ['A'] },
+  { btn: 'L',      codes: ['KeyQ'],       keys: ['Q'] },
+  { btn: 'R',      codes: ['KeyE'],       keys: ['E'] },
+  { btn: 'SELECT', codes: ['ShiftLeft', 'ShiftRight', 'Tab'], keys: ['Shift', 'Tab'] },
+  { btn: 'START',  codes: ['Enter'],      keys: ['Enter'] },
+];
+
+// code -> index into PAD_KEYS.
+const PAD_BY_CODE = {};
+PAD_KEYS.forEach((e, i) => e.codes.forEach(c => { PAD_BY_CODE[c] = i; }));
+
+/* How the strip is GROUPED on screen, as indices into PAD_KEYS. Purely a
+   display concern - the four directions read as one D-Pad chip rather than
+   four, which is how a pad is drawn and what keeps the strip on one line -
+   so the mapping above stays the single source of truth for what each key
+   does, and `label` here is the chip's caption rather than per-button text. */
+const PAD_GROUPS = [
+  { label: 'D-Pad', items: [0, 1, 2, 3] },
+  { label: 'A',      items: [4] },
+  { label: 'B',      items: [5] },
+  { label: 'X',      items: [6] },
+  { label: 'Y',      items: [7] },
+  { label: 'L',      items: [8] },
+  { label: 'R',      items: [9] },
+  { label: 'Select', items: [10] },
+  { label: 'Start',  items: [11] },
+];
+
+/* `padItem<i>` is whatever element stands for PAD_KEYS[i], so the highlight
+   path does not care how the chips are grouped: in a one-button chip that is
+   the chip itself, and in the D-Pad it is the wrapper around that direction's
+   keycap - otherwise pressing one direction would light all four. */
+function renderPadMap() {
+  $('padMap').innerHTML = PAD_GROUPS.map(g => {
+    const single = g.items.length === 1;
+    const caps = g.items.map(i => {
+      const keys = PAD_KEYS[i].keys.map(k => '<span class="pk">' + k + '</span>').join('');
+      return single ? keys : '<span class="pad-keys" id="padItem' + i + '">' + keys + '</span>';
+    }).join('');
+    return '<span class="pad-item"' + (single ? ' id="padItem' + g.items[0] + '"' : '') + '>'
+      + '<span class="pb">' + g.label + '</span>' + caps + '</span>';
+  }).join('');
+}
+
+function setPadKey(code, down) {
+  const i = PAD_BY_CODE[code];
+  if (i === undefined) return false;
+  if (core) core.setButton(0, BTN[PAD_KEYS[i].btn], down);
+  const chip = $('padItem' + i);
+  if (chip) chip.classList.toggle('down', down);
+  return true;
+}
+
+function padKeyHandler(down) {
+  return (ev) => {
+    // Never steal keys from a form control: the ROM file input has to stay
+    // reachable, and Tab is one of the mapped keys.
+    const t = ev.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;   // leave browser shortcuts alone
+    if (!setPadKey(ev.code, down)) return;
+    // Arrows would scroll the page, Tab would move focus, Enter would
+    // re-activate the focused button - all of which fight the game.
+    ev.preventDefault();
+  };
+}
+window.addEventListener('keydown', padKeyHandler(true));
+window.addEventListener('keyup', padKeyHandler(false));
+// Release everything if the window loses focus mid-press, or a held key stays
+// stuck down and the game sees a button held forever.
+// Release every held button and unlight its chip. Used on window blur (a key
+// held when focus leaves would otherwise stay down forever) and on activation,
+// where core.reset() has already released the buttons but a physically-held key
+// would leave its chip lit, so the UI would claim a button the machine has not.
+function releasePadKeys() {
+  for (let i = 0; i < PAD_KEYS.length; i++) {
+    if (core) core.setButton(0, BTN[PAD_KEYS[i].btn], false);
+    const chip = $('padItem' + i);
+    if (chip) chip.classList.remove('down');
+  }
+}
+window.addEventListener('blur', releasePadKeys);
+renderPadMap();
+
+/* ---- ROM/Console layout toggle (side-by-side vs stacked).
+   Wiring copied unchanged from synthesis/index.html: the shared style.css
+   rule targets the generic `.layout-pair` class rather than per-app ids, so
+   the same CSS works here with no addition - the two cards just carry the
+   class. Both cards get a toggle, and either one drives the pair. */
+(() => {
+  const grid = document.querySelector('.grid');
+  const sideBtns = document.querySelectorAll('[data-layout-btn="side"]');
+  const stackBtns = document.querySelectorAll('[data-layout-btn="stack"]');
+  function applyLayout(mode) {
+    grid.classList.toggle('stack-editor-console', mode === 'stack');
+    sideBtns.forEach(b => b.classList.toggle('active', mode !== 'stack'));
+    stackBtns.forEach(b => b.classList.toggle('active', mode === 'stack'));
+  }
+  sideBtns.forEach(b => b.addEventListener('click', () => {
+    localStorage.setItem('emulatorLayout', 'side');
+    applyLayout('side');
+  }));
+  stackBtns.forEach(b => b.addEventListener('click', () => {
+    localStorage.setItem('emulatorLayout', 'stack');
+    applyLayout('stack');
+  }));
+  applyLayout(localStorage.getItem('emulatorLayout') === 'stack' ? 'stack' : 'side');
+})();
+
+tvBlank();
+</script>
+</body>
+</html>
