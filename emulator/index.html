@@ -461,7 +461,7 @@ select, .btn, .num-input {
     <div class="toolbar">
       <input type="file" id="romFile" accept=".uze,.hex">
     </div>
-    <div id="romInfo"><p class="empty">Load a <code>.uze</code> or <code>.hex</code> ROM &mdash; e.g. <code>compiler/uzebox/tools/packrom/Test/arkanoid.uze</code>.</p></div>
+    <div id="romInfo"><p class="empty">Load a <code>.uze</code> or <code>.hex</code> ROM &mdash; e.g. <code>emulator/uzebox/tools/packrom/Test/arkanoid.uze</code>.</p></div>
   </div>
 
   <div class="card layout-pair">
@@ -1992,9 +1992,18 @@ function disasm(core, a) {
   }
   const e = OPS[op - 1];
   const imm = ['ANDI', 'ORI', 'SUBI', 'SBCI', 'CPI', 'LDI', 'ADIW', 'SBIW'].includes(name);
+  /* These four take a BIT NUMBER as their second operand, not a register, and
+     they have to be named here because the generic form below assumes a second
+     operand is a register unless it is a known immediate. Without them
+     `sbrs r16, 0` printed as `sbrs r16, r0` - wrong in the most confusing way
+     available, since r0 is a real register the instruction never touches.
+     Display only, as all of disasm is: the interpreter uses arg2 numerically
+     (see the SBRC/SBRS cases in step()). */
+  const bitIndex = ['BST', 'BLD', 'SBRC', 'SBRS'].includes(name);
   const oneArg = e[6] === 0 && !imm;
   if (oneArg) return name.toLowerCase() + ' r' + d;
-  return name.toLowerCase() + ' r' + d + ', ' + (imm ? '0x' + (k & 0xff).toString(16) : 'r' + k);
+  return name.toLowerCase() + ' r' + d + ', '
+    + (imm ? '0x' + (k & 0xff).toString(16) : bitIndex ? k : 'r' + k);
 }
 
 /* ========================= UI WIRING ========================= */

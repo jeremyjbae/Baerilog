@@ -626,9 +626,10 @@
           <span class="time-label" id="memUnitLabel">B</span>
         </div>
         <select id="isaSelect" style="flex:0 1 auto; min-width:0;">
+          <option value="tinyavr2" selected> ATmega644 (reduced AVR2)</option>
+          <option value="atmega644">ATmega644 (AVR5)</option>
           <option value="rv32im">RV32IM (hardware mul/div)</option>
           <option value="rv32i">RV32I (software mul/div)</option>
-          <option value="atmega644" selected>ATmega644 (8-bit AVR)</option>
         </select>
       </div>
     </div>
@@ -1436,9 +1437,21 @@ function buildProgramMeta(ast, abi) {
     // before the body that uses the slots has been generated. Only the slot
     // *number* is recorded - which register that is belongs to the backend.
     const opRegSaves = [];
-    const wanted = Math.min(maxOperandDepth(d, n => globals.has(n)), abi.slotCount);
+    const depth = maxOperandDepth(d, n => globals.has(n));
+    const wanted = Math.min(depth, abi.slotCount);
     for (let i = 0; i < wanted; i++) {
       opRegSaves.push({ slot: i, offset: allocSlot(INT_TYPE) });
+    }
+
+    /* A machine with no PUSH cannot spill an over-deep operand slot onto the
+       stack, so those cells have to be part of the frame instead. Gated on the
+       abi flag rather than done unconditionally because allocating them changes
+       the frame size, and RV32/ATmega644 frame layouts must not move. */
+    const spillSlots = [];
+    if (abi.spillsToFrame) {
+      for (let i = abi.slotCount; i < depth; i++) {
+        spillSlots.push({ slot: i, offset: allocSlot(INT_TYPE) });
+      }
     }
 
     // Keep every named slot (params + locals) so the Stack viewer can say which
@@ -1447,7 +1460,7 @@ function buildProgramMeta(ast, abi) {
       .concat(localDecls.map(vd => ({ name: vd.name, ctype: vd.ctype, offset: vd.slotOffset, param: false })));
 
     const frameSize = Math.ceil(off / abi.frameAlign) * abi.frameAlign;
-    funcs.set(d.name, { node: d, params, slots, opRegSaves, frameSize });
+    funcs.set(d.name, { node: d, params, slots, opRegSaves, spillSlots, frameSize });
   }
 
   if (!funcs.has('main')) throw new Error('Compile error: no \'main\' function defined');
@@ -3181,6 +3194,10 @@ const ARET = 24;
 const ASCRATCH_A = AREG.X;   // general scratch pair
 const ASCRATCH_B = AREG.Z;   // scratch pair that may become a pointer
 
+// The relational operators, in one place: both backends test membership here to
+// decide whether a condition can be folded into a comparison-and-branch.
+const RELATIONAL_OPS = new Set(['<', '>', '<=', '>=', '==', '!=']);
+
 // Role labels for the register panel. AVR has no ABI mnemonics like RISC-V's, so
 // the useful thing to show is what this compiler uses each register for.
 const AVR_REG_NAMES = (() => {
@@ -3809,6 +3826,14 @@ class AvrCodegen extends CodegenBase {
   lo(p) { return p; }
   hi(p) { return p + 1; }
 
+  /* The argument/return bank, and a spare pair for parking a value across a
+     read-modify-write. Reached through methods rather than the AARGS constant
+     because TinyAvrCodegen reserves one upper pair for constant staging and so
+     has one fewer argument pair than this backend does. */
+  argPairs() { return AARGS; }
+  retPair() { return ARET; }
+  parkPair() { return AARGS[AARGS.length - 1]; }
+
   // A 16-bit constant into a pair. Only possible directly when the pair is in
   // the upper half; the caller stages through scratch otherwise (see setConst).
   emitLdiPair(pair, v, comment) {
@@ -3824,10 +3849,64 @@ class AvrCodegen extends CodegenBase {
     if (this.canLdi(this.lo(pair))) { this.emitLdiPair(pair, v, comment); return; }
     const st = this.stagingPair(pair);
     this.emitLdiPair(st, v, comment);
-    this.emit('MOVW', { rd: pair, rs2: st });
+    this.movw(pair, st);
   }
-  movwIf(dst, src) {
-    if (dst !== src) this.emit('MOVW', { rd: dst, rs2: src });
+  // Copy a pair. Every 16-bit register-to-register move in this backend goes
+  // through here rather than emitting MOVW directly, which is what lets a
+  // backend without MOVW (see TinyAvrCodegen) substitute two MOVs by overriding
+  // one method instead of by editing every call site.
+  movw(dst, src, comment) { this.emit('MOVW', { rd: dst, rs2: src, comment }); }
+  movwIf(dst, src, comment) {
+    if (dst !== src) this.movw(dst, src, comment);
+  }
+
+  /* ---- 16-bit ALU primitives ----
+     Every 16-bit operation the expression code above performs is reached through
+     one of these, for the same reason movw() exists: TinyAvrCodegen is limited to
+     an opcode set with no SUB, no AND/OR/EOR, no COM and no right shift, and can
+     replace the *instruction choice* by overriding a handful of one-line methods
+     rather than by carrying its own copy of genBinary/genUnary/genAddr. Each one
+     operates in place on `pd`, which is what preserves the register-operand-stack
+     payoff (see pushTarget). */
+  addPair(pd, pb, comment) {
+    this.emit('ADD', { rd: this.lo(pd), rs2: this.lo(pb), comment });
+    this.emit('ADC', { rd: this.hi(pd), rs2: this.hi(pb) });
+  }
+  subPair(pd, pb, comment) {
+    this.emit('SUB', { rd: this.lo(pd), rs2: this.lo(pb), comment });
+    this.emit('SBC', { rd: this.hi(pd), rs2: this.hi(pb) });
+  }
+  // pd = op(pd, pb), one byte at a time - AVR's bitwise ops carry no flags
+  // between bytes, so there is nothing to chain.
+  bitOpPair(op, pd, pb, comment) {
+    this.emit(op, { rd: this.lo(pd), rs2: this.lo(pb), comment });
+    this.emit(op, { rd: this.hi(pd), rs2: this.hi(pb) });
+  }
+  notPair(pd, comment) {
+    this.emit('COM', { rd: this.lo(pd), comment });
+    this.emit('COM', { rd: this.hi(pd) });
+  }
+  // pd = 0 - pa. Staged in scratch because SBCI would restrict the destination
+  // to the upper half, and pd is usually a slot pair.
+  negateInto(pd, pa, comment) {
+    this.emit('LDI', { rd: this.lo(ASCRATCH_A), imm: 0, comment });
+    this.emit('LDI', { rd: this.hi(ASCRATCH_A), imm: 0 });
+    this.subPair(ASCRATCH_A, pa);
+    this.movwIf(pd, ASCRATCH_A);
+  }
+  lslPair(pair, comment) {
+    this.emit('LSL', { rd: this.lo(pair), comment });
+    this.emit('ROL', { rd: this.hi(pair) });
+  }
+  asrPair(pair, comment) {
+    this.emit('ASR', { rd: this.hi(pair), comment });
+    this.emit('ROR', { rd: this.lo(pair) });
+  }
+  // A pointer pair +/- a small constant, used where the pointer must survive a
+  // read-modify-write and so cannot be post-incremented.
+  bumpPtr(pair, delta) {
+    if (delta > 0) this.emit('ADIW', { rd: pair, imm: delta });
+    else this.emit('SBIW', { rd: pair, imm: -delta });
   }
 
   /* ---- operand stack: slot d is the PAIR at AOPREGS[d] ---- */
@@ -3887,8 +3966,19 @@ class AvrCodegen extends CodegenBase {
 
   // Materialise a local's address into a pointer pair (Z by default).
   addrOfLocal(offset, pair) {
-    this.emit('MOVW', { rd: pair, rs2: AREG.Y });
+    this.movw(pair, AREG.Y);
     this.addConst(pair, this.dispOf(offset), 'frame + ' + this.dispOf(offset));
+  }
+
+  /* &local, into an operand pair. Separate from addrOfLocal because the address
+     is built in scratch first - Y+disp needs an immediate add, which a slot pair
+     cannot do - and because a backend that puts locals at fixed addresses
+     replaces the whole computation with a constant. */
+  addrOfLocalInto(pd, offset, name) {
+    const st = this.stagingPair(pd);
+    this.movw(st, AREG.Y, '&' + name);
+    this.addConst(st, this.dispOf(offset));
+    this.movwIf(pd, st);
   }
 
   /* Add a 16-bit constant to a pair. Which instructions are legal depends
@@ -4073,8 +4163,8 @@ class AvrCodegen extends CodegenBase {
     fnRec.params.forEach((p, i) => {
       const bytes = elemSize(p.ctype, this.abi);
       const q = this.dispOf(p.offset);
-      this.emit('STD', { rs1: AREG.Y, imm: q, rs2: this.lo(AARGS[i]), comment: 'param ' + p.name });
-      if (bytes === 2) this.emit('STD', { rs1: AREG.Y, imm: q + 1, rs2: this.hi(AARGS[i]) });
+      this.emit('STD', { rs1: AREG.Y, imm: q, rs2: this.lo(this.argPairs()[i]), comment: 'param ' + p.name });
+      if (bytes === 2) this.emit('STD', { rs1: AREG.Y, imm: q + 1, rs2: this.hi(this.argPairs()[i]) });
     });
 
     this.genStmt(d.body);
@@ -4142,7 +4232,7 @@ class AvrCodegen extends CodegenBase {
       case 'Return':
         if (s.expr) {
           this.genExpr(s.expr);
-          this.popTo(ARET);
+          this.popTo(this.retPair());
         }
         this.emit('RJMP', { targetLabel: this.epilogueLabel, comment: 'return' });
         return;
@@ -4207,20 +4297,50 @@ class AvrCodegen extends CodegenBase {
   /* ---- conditions ----
      A 16-bit truth test ORs the two bytes together so Z reflects the whole
      value; comparisons use CP/CPC, whose chained Z is what makes a two-byte
-     comparison answer for the value rather than for the high byte alone. */
+     comparison answer for the value rather than for the high byte alone.
+
+     The four methods below are the seams a restricted backend replaces. They
+     exist because a machine with only BREQ/BRNE cannot branch on an ORDERING at
+     all - it has to compute the answer into a register first - so "compare and
+     branch" has to be one overridable step rather than a compare followed by a
+     branch the caller chooses. */
   testPairZero(pair) {
     this.emit('MOV', { rd: AREG.scratch, rs2: this.lo(pair), comment: 'test 16-bit value' });
     this.emit('OR', { rd: AREG.scratch, rs2: this.hi(pair) });
   }
 
+  // Evaluate a relational expression and branch on its result.
+  genCompareBranch(cond, label, whenTrue) {
+    const T = { '<': 'BRLT', '>': 'BRLT', '<=': 'BRGE', '>=': 'BRGE', '==': 'BREQ', '!=': 'BRNE' };
+    const F = { '<': 'BRGE', '>': 'BRGE', '<=': 'BRLT', '>=': 'BRLT', '==': 'BRNE', '!=': 'BREQ' };
+    this.genCompare(cond);
+    this.emit((whenTrue ? T : F)[cond.op], {
+      targetLabel: label,
+      comment: (whenTrue ? 'if (' : 'if not (') + cond.op + ')',
+    });
+  }
+  // Branch on whether a 16-bit value already in `pair` is zero.
+  branchOnPairZero(pair, label, whenZero) {
+    this.testPairZero(pair);
+    this.emit(whenZero ? 'BREQ' : 'BRNE', { targetLabel: label });
+  }
+  // pd = 1 if the relation holds, else 0.
+  setBoolFromCompare(pd, e, comment) {
+    const T = { '<': 'BRLT', '>': 'BRLT', '<=': 'BRGE', '>=': 'BRGE', '==': 'BREQ', '!=': 'BRNE' };
+    this.genCompare(e);
+    this.setBoolFromFlag(pd, T[e.op], comment);
+  }
+  // pd = 1 if `pair` is zero (wantZero) or nonzero, else 0.
+  setBoolFromPairZero(pd, pair, wantZero, comment) {
+    this.testPairZero(pair);
+    this.setBoolFromFlag(pd, wantZero ? 'BREQ' : 'BRNE', comment);
+  }
+
   // Branch to `label` when `cond` is false. Comparisons and && / || are folded
   // into the branch instead of being materialised as a 0/1 value first.
   genBranchIfZero(cond, label) {
-    const relational = { '<': 'BRGE', '>': 'BRGE', '<=': 'BRLT', '>=': 'BRLT', '==': 'BRNE', '!=': 'BREQ' };
-    if (cond.type === 'Binary' && relational[cond.op]) {
-      // Emit the compare, then branch on the INVERSE condition.
-      this.genCompare(cond);
-      this.emit(relational[cond.op], { targetLabel: label, comment: 'if not (' + cond.op + ')' });
+    if (cond.type === 'Binary' && RELATIONAL_OPS.has(cond.op)) {
+      this.genCompareBranch(cond, label, false);
       return;
     }
     if (cond.type === 'Binary' && cond.op === '&&') {
@@ -4241,15 +4361,12 @@ class AvrCodegen extends CodegenBase {
     }
     this.genExpr(cond);
     const p = this.pop1(ASCRATCH_A);
-    this.testPairZero(p);
-    this.emit('BREQ', { targetLabel: label });
+    this.branchOnPairZero(p, label, true);
   }
 
   genBranchIfNonZero(cond, label) {
-    const relational = { '<': 'BRLT', '>': 'BRLT', '<=': 'BRGE', '>=': 'BRGE', '==': 'BREQ', '!=': 'BRNE' };
-    if (cond.type === 'Binary' && relational[cond.op]) {
-      this.genCompare(cond);
-      this.emit(relational[cond.op], { targetLabel: label, comment: 'if (' + cond.op + ')' });
+    if (cond.type === 'Binary' && RELATIONAL_OPS.has(cond.op)) {
+      this.genCompareBranch(cond, label, true);
       return;
     }
     if (cond.type === 'Unary' && cond.op === '!') {
@@ -4258,8 +4375,7 @@ class AvrCodegen extends CodegenBase {
     }
     this.genExpr(cond);
     const p = this.pop1(ASCRATCH_A);
-    this.testPairZero(p);
-    this.emit('BRNE', { targetLabel: label });
+    this.branchOnPairZero(p, label, false);
   }
 
   /* Emits CP/CPC for a relational operator, ordering the operands so that the
@@ -4284,12 +4400,7 @@ class AvrCodegen extends CodegenBase {
       if (!v) throw new Error('Compile error: undefined variable \'' + e.name + '\'');
       const pd = this.pushTarget();
       if (v.kind === 'local') {
-        // Built in scratch because Y+disp needs an immediate add, which a slot
-        // pair cannot do; then moved into place.
-        const st = this.stagingPair(pd);
-        this.emit('MOVW', { rd: st, rs2: AREG.Y, comment: '&' + e.name });
-        this.addConst(st, this.dispOf(v.offset));
-        this.movwIf(pd, st);
+        this.addrOfLocalInto(pd, v.offset, e.name);
       } else {
         this.setConst(pd, v.addr, '&' + e.name);
       }
@@ -4305,14 +4416,10 @@ class AvrCodegen extends CodegenBase {
       this.genExpr(e.index);
       const pi = this.pop1(ASCRATCH_B);
       const pb = this.pop1(ASCRATCH_A);
-      if (scale === 2) {
-        this.emit('LSL', { rd: this.lo(pi), comment: 'index * 2' });
-        this.emit('ROL', { rd: this.hi(pi) });
-      }
+      if (scale === 2) this.lslPair(pi, 'index * 2');
       const pd = this.pushTarget();
       this.movwIf(pd, pb);
-      this.emit('ADD', { rd: this.lo(pd), rs2: this.lo(pi) });
-      this.emit('ADC', { rd: this.hi(pd), rs2: this.hi(pi) });
+      this.addPair(pd, pi);
       this.pushDone();
       return;
     }
@@ -4431,14 +4538,8 @@ class AvrCodegen extends CodegenBase {
     if (e.op === '-') {
       this.genExpr(e.expr);
       const pa = this.pop1(ASCRATCH_B);
-      // 0 - v, built with SUB/SBC so it works on any register pair (SBCI would
-      // restrict the destination to the upper half).
-      this.emit('LDI', { rd: this.lo(ASCRATCH_A), imm: 0, comment: 'negate' });
-      this.emit('LDI', { rd: this.hi(ASCRATCH_A), imm: 0 });
-      this.emit('SUB', { rd: this.lo(ASCRATCH_A), rs2: this.lo(pa) });
-      this.emit('SBC', { rd: this.hi(ASCRATCH_A), rs2: this.hi(pa) });
       const pd = this.pushTarget();
-      this.movwIf(pd, ASCRATCH_A);
+      this.negateInto(pd, pa, 'negate');
       this.pushDone();
       return;
     }
@@ -4447,17 +4548,15 @@ class AvrCodegen extends CodegenBase {
       const pa = this.pop1(ASCRATCH_A);
       const pd = this.pushTarget();
       this.movwIf(pd, pa);
-      this.emit('COM', { rd: this.lo(pd), comment: 'bitwise not' });
-      this.emit('COM', { rd: this.hi(pd) });
+      this.notPair(pd, 'bitwise not');
       this.pushDone();
       return;
     }
     if (e.op === '!') {
       this.genExpr(e.expr);
       const pa = this.pop1(ASCRATCH_A);
-      this.testPairZero(pa);
       const pd = this.pushTarget();
-      this.setBoolFromFlag(pd, 'BREQ', 'logical not');
+      this.setBoolFromPairZero(pd, pa, true, 'logical not');
       this.pushDone();
       return;
     }
@@ -4485,7 +4584,7 @@ class AvrCodegen extends CodegenBase {
       // Old value in X; the new value is computed there too, so the pair that
       // gets pushed depends on which one this expression evaluates to.
       this.loadLocal(ASCRATCH_A, v, cmt);
-      if (!e.prefix && !discard) this.emit('MOVW', { rd: ASCRATCH_B, rs2: ASCRATCH_A });
+      if (!e.prefix && !discard) this.movw(ASCRATCH_B, ASCRATCH_A);
       this.addConst(ASCRATCH_A, delta);
       this.storeLocal(ASCRATCH_A, v);
       if (discard) return;
@@ -4502,18 +4601,18 @@ class AvrCodegen extends CodegenBase {
     // Z must survive the read-modify-write, so reload it rather than post-increment.
     this.emit('LD', { rd: this.lo(ASCRATCH_A), rs1: AREG.Z, comment: cmt });
     if (bytes === 2) {
-      this.emit('ADIW', { rd: AREG.Z, imm: 1 });
+      this.bumpPtr(AREG.Z, 1);
       this.emit('LD', { rd: this.hi(ASCRATCH_A), rs1: AREG.Z });
-      this.emit('SBIW', { rd: AREG.Z, imm: 1 });
+      this.bumpPtr(AREG.Z, -1);
     } else this.signExtendInto(ASCRATCH_A);
     if (!e.prefix && !discard) {
-      this.emit('MOVW', { rd: AARGS[7], rs2: ASCRATCH_A }); // park the old value
+      this.movw(this.parkPair(), ASCRATCH_A); // park the old value
     }
     this.addConst(ASCRATCH_A, delta);
     this.storeThroughZ(ASCRATCH_A, bytes);
     if (discard) return;
     const pd = this.pushTarget();
-    this.movwIf(pd, e.prefix ? ASCRATCH_A : AARGS[7]);
+    this.movwIf(pd, e.prefix ? ASCRATCH_A : this.parkPair());
     this.pushDone();
   }
 
@@ -4522,9 +4621,8 @@ class AvrCodegen extends CodegenBase {
 
     const relational = { '<': 'BRLT', '>': 'BRLT', '<=': 'BRGE', '>=': 'BRGE', '==': 'BREQ', '!=': 'BRNE' };
     if (relational[e.op]) {
-      this.genCompare(e);
       const pd = this.pushTarget();
-      this.setBoolFromFlag(pd, relational[e.op], e.op);
+      this.setBoolFromCompare(pd, e, e.op);
       this.pushDone();
       return;
     }
@@ -4540,19 +4638,11 @@ class AvrCodegen extends CodegenBase {
       this.genExpr(lPtr ? e.right : e.left);
       const pi = this.pop1(ASCRATCH_B);
       const pp = this.pop1(ASCRATCH_A);
-      if (size === 2) {
-        this.emit('LSL', { rd: this.lo(pi), comment: 'scale by sizeof(elem)' });
-        this.emit('ROL', { rd: this.hi(pi) });
-      }
+      if (size === 2) this.lslPair(pi, 'scale by sizeof(elem)');
       const pd = this.pushTarget();
       this.movwIf(pd, pp);
-      if (e.op === '+') {
-        this.emit('ADD', { rd: this.lo(pd), rs2: this.lo(pi) });
-        this.emit('ADC', { rd: this.hi(pd), rs2: this.hi(pi) });
-      } else {
-        this.emit('SUB', { rd: this.lo(pd), rs2: this.lo(pi) });
-        this.emit('SBC', { rd: this.hi(pd), rs2: this.hi(pi) });
-      }
+      if (e.op === '+') this.addPair(pd, pi);
+      else this.subPair(pd, pi);
       this.pushDone();
       return;
     }
@@ -4570,12 +4660,8 @@ class AvrCodegen extends CodegenBase {
       const size = pointedSize(lt, this.abi);
       const pd0 = this.pushTarget();
       this.movwIf(pd0, pa);
-      this.emit('SUB', { rd: this.lo(pd0), rs2: this.lo(pb), comment: 'pointer difference' });
-      this.emit('SBC', { rd: this.hi(pd0), rs2: this.hi(pb) });
-      if (size === 2) {
-        this.emit('ASR', { rd: this.hi(pd0) });
-        this.emit('ROR', { rd: this.lo(pd0) });
-      }
+      this.subPair(pd0, pb, 'pointer difference');
+      if (size === 2) this.asrPair(pd0);
       this.pushDone();
       return;
     }
@@ -4583,26 +4669,11 @@ class AvrCodegen extends CodegenBase {
     const pd = this.pushTarget();
     this.movwIf(pd, pa);
     switch (e.op) {
-      case '+':
-        this.emit('ADD', { rd: this.lo(pd), rs2: this.lo(pb) });
-        this.emit('ADC', { rd: this.hi(pd), rs2: this.hi(pb) });
-        break;
-      case '-':
-        this.emit('SUB', { rd: this.lo(pd), rs2: this.lo(pb) });
-        this.emit('SBC', { rd: this.hi(pd), rs2: this.hi(pb) });
-        break;
-      case '&':
-        this.emit('AND', { rd: this.lo(pd), rs2: this.lo(pb) });
-        this.emit('AND', { rd: this.hi(pd), rs2: this.hi(pb) });
-        break;
-      case '|':
-        this.emit('OR', { rd: this.lo(pd), rs2: this.lo(pb) });
-        this.emit('OR', { rd: this.hi(pd), rs2: this.hi(pb) });
-        break;
-      case '^':
-        this.emit('EOR', { rd: this.lo(pd), rs2: this.lo(pb) });
-        this.emit('EOR', { rd: this.hi(pd), rs2: this.hi(pb) });
-        break;
+      case '+': this.addPair(pd, pb); break;
+      case '-': this.subPair(pd, pb); break;
+      case '&': this.bitOpPair('AND', pd, pb); break;
+      case '|': this.bitOpPair('OR', pd, pb); break;
+      case '^': this.bitOpPair('EOR', pd, pb); break;
       default: throw new Error('Compile error: unsupported operator ' + e.op);
     }
     this.pushDone();
@@ -4623,14 +4694,15 @@ class AvrCodegen extends CodegenBase {
     const pa = this.pop1(ASCRATCH_A);
     // Operands into the helper's argument pairs. b first: a may be sitting in
     // the pair b is destined for.
-    this.emit('MOVW', { rd: AARGS[1], rs2: pb });
-    this.emit('MOVW', { rd: AARGS[0], rs2: pa });
+    const [A, B] = this.argPairs();
+    this.movw(B, pb);
+    this.movw(A, pa);
     if (e.op === '*') {
       this.callHelper('__mul16', 'software multiply');
-      this.push(AARGS[0]);
+      this.push(A);
     } else {
       this.callHelper('__divmod16', 'software ' + (e.op === '/' ? 'divide' : 'remainder'));
-      this.push(e.op === '/' ? AARGS[0] : AARGS[1]);
+      this.push(e.op === '/' ? A : B);
     }
   }
 
@@ -4641,11 +4713,11 @@ class AvrCodegen extends CodegenBase {
     this.genExpr(e.right);
     const pb = this.pop1(ASCRATCH_B);
     const pa = this.pop1(ASCRATCH_A);
-    this.emit('MOVW', { rd: AARGS[1], rs2: pb });
-    this.emit('MOVW', { rd: AARGS[0], rs2: pa });
+    this.movw(this.argPairs()[1], pb);
+    this.movw(this.argPairs()[0], pa);
     this.callHelper(e.op === '<<' ? '__shl16' : '__ashr16',
       e.op === '<<' ? 'shift left' : 'arithmetic shift right');
-    this.push(AARGS[0]);
+    this.push(this.argPairs()[0]);
   }
 
   genShortCircuit(e) {
@@ -4679,15 +4751,16 @@ class AvrCodegen extends CodegenBase {
       throw new Error('Compile error: ' + e.name + '() expects ' + f.node.params.length
         + ' argument(s), got ' + e.args.length);
     }
-    if (e.args.length > AARGS.length) {
-      throw new Error('Compile error: more than ' + AARGS.length + ' arguments to \'' + e.name + '\'');
+    if (e.args.length > this.argPairs().length) {
+      throw new Error('Compile error: more than ' + this.argPairs().length
+        + ' arguments to \'' + e.name + '\' on this target');
     }
     for (const a of e.args) this.genExpr(a);
     // Reverse order, so an argument still on the stack is never overwritten by
     // one already moved into place.
-    for (let i = e.args.length - 1; i >= 0; i--) this.popTo(AARGS[i]);
+    for (let i = e.args.length - 1; i >= 0; i--) this.popTo(this.argPairs()[i]);
     this.emit('RCALL', { targetLabel: e.name, comment: e.name + '()' });
-    if (!discard) this.push(ARET);
+    if (!discard) this.push(this.retPair());
   }
 
   /* printf is lowered at compile time into port writes - there is no libc here.
@@ -4925,6 +4998,965 @@ class AvrCodegen extends CodegenBase {
     this.addConst(B, -1);
     this.emit('MOV', { rd: AREG.scratch, rs2: this.lo(B) });
     this.emit('OR', { rd: AREG.scratch, rs2: this.hi(B) });
+    this.emit('RJMP', { targetLabel: loop });
+    this.label(done);
+    this.emit('RET', {});
+  }
+}
+
+
+/* =========================================================================
+   TINY C / MINIMAL avr2 BACKEND
+
+   A second AVR code generator restricted to FOURTEEN opcodes:
+
+       LDI  MOV   LDS  STS   LD  ST   ADD  ADC   CP   BREQ  BRNE
+       RJMP  RCALL  RET
+
+   That is enough to run the whole C subset, but almost nothing is available
+   directly, so this backend is mostly a set of identities. The ones worth
+   knowing before editing:
+
+     - LSL/ROL ARE ADD/ADC with equal operands, so shifting left is free, and
+       `ADC lo,lo / ADC hi,hi` rotates the 17-bit chain [hi,lo,C] left by one.
+       Applying that SIXTEEN times therefore rotates it RIGHT by one, which is
+       the only way to shift right here (see genLshr16/genAshr16).
+     - -x == 65535*x (mod 2^16), and per byte -b == 255*b (mod 256), which is
+       reachable by doubling and adding. That is what __neg16 does, and it is
+       why every runtime subtraction is a helper call while a CONSTANT
+       subtraction still costs nothing (the constant is negated at compile time).
+     - There is no BRCS/BRCC, so an ordering cannot be branched on directly. The
+       carry is MATERIALISED instead: `MOV r0,r1 / ADC r0,r1` leaves C in r0 and,
+       because ADC sets Z from its own result, leaves Z = !C - so the very next
+       BRNE/BREQ branches on the carry. This is the single most load-bearing
+       trick in the backend.
+     - Signed compare biases both high bytes by 0x80 first, since adding 0x80 to
+       a byte is the same as flipping its top bit, and then an unsigned compare
+       answers the signed question.
+     - There is no OR, so a 16-bit truth test cannot fold both bytes into one
+       flag; it compares each byte against the zero register instead.
+
+   Storage: locals and params of a NON-RECURSIVE function live at fixed SRAM
+   addresses and are reached with LDS/STS, exactly like globals - there is no
+   frame at all, and the hardware stack holds only what RCALL pushed. Only a
+   function that can be re-entered (found by a call-graph cycle check) gets a
+   real Y frame, reached through Z. See genFunction.
+
+   The 14-opcode ceiling is enforced by assertOnlySubset() at the end of
+   generate(), not by care: this class inherits all of AvrCodegen's statement and
+   expression structure, so an inherited path that emits something else must fail
+   loudly rather than quietly produce code no avr2 part could run.
+   ========================================================================= */
+
+/* One upper pair is reserved for staging constants, and it is what makes every
+   "materialise a constant" operation unconditionally safe. It has to exist
+   because LDI only reaches r16-r31 while every operand pair this backend
+   computes with sits below r16, and because the obvious alternative - staging in
+   X - is wrong exactly where it matters most: genIncDec holds a loaded value in
+   X while stepping Z, so a constant staged there would destroy it.
+
+   The cost is one argument pair (seven rather than eight), which is why
+   argPairs() is a method. */
+const TSTAGE = 16;              // r16:r17 - never holds a live value
+const TARGS = [24, 22, 20, 18, 14, 12, 10];
+const TRET = TARGS[0];          // r24:r25, as on the full AVR target
+
+/* The register panel shows NO role beside any register on this target except
+   r30/r31, and that omission is a statement about the subset rather than
+   tidiness. X is not a pointer here - only Z can be, since no LD/ST form for X
+   or Y is in the fourteen - and Y means nothing outside a recursive function, so
+   labelling them "X lo"/"Y lo (fp)" invites a reader to assume an addressing
+   mode this machine does not have. Every other name a full AVR panel would show
+   (slot, argument pair, staging pair) describes *this compiler's* private
+   allocation, not an ABI anything else could rely on, and the full ATmega644
+   target is right there to compare against if that is what someone wants to see.
+
+   Z is the exception because it genuinely is the one and only pointer. */
+const TINY_REG_NAMES = (() => {
+  const n = new Array(32).fill('');
+  n[AREG.Z] = 'Z lo'; n[AREG.Z + 1] = 'Z hi';
+  return n;
+})();
+
+// The whole instruction set. Nothing outside this may reach the listing.
+const TINY_OPS = new Set(['LDI', 'MOV', 'LDS', 'STS', 'LD', 'ST', 'ADD', 'ADC',
+  'CP', 'BREQ', 'BRNE', 'RJMP', 'RCALL', 'RET']);
+
+/* Which functions can be re-entered, and therefore cannot keep their locals at
+   a fixed address. Any function on a cycle of the call graph counts - direct
+   recursion is a self-loop, mutual recursion a longer one. `printf` is lowered
+   inline and never appears as a callee. */
+function callGraphCycles(ast, funcs) {
+  const edges = new Map();
+  for (const name of funcs.keys()) edges.set(name, new Set());
+  const walk = (node, from) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) { for (const c of node) walk(c, from); return; }
+    if (node.type === 'Call' && funcs.has(node.name)) edges.get(from).add(node.name);
+    for (const k of Object.keys(node)) {
+      if (k === 'ctype' || k === 'type') continue;
+      walk(node[k], from);
+    }
+  };
+  for (const [name, rec] of funcs) walk(rec.node.body, name);
+
+  // f is re-entrant iff f is reachable from f.
+  const recursive = new Set();
+  for (const start of funcs.keys()) {
+    const seen = new Set();
+    const stack = [...edges.get(start)];
+    while (stack.length) {
+      const n = stack.pop();
+      if (n === start) { recursive.add(start); break; }
+      if (seen.has(n)) continue;
+      seen.add(n);
+      for (const m of edges.get(n) || []) stack.push(m);
+    }
+  }
+  return recursive;
+}
+
+class TinyAvrCodegen extends AvrCodegen {
+  constructor(ast, meta, opts) {
+    super(ast, meta, opts);
+    this.recursive = callGraphCycles(ast, meta.funcs);
+    /* Every non-recursive function's frame becomes a fixed block of SRAM. Done
+       here, before any code is emitted, because a LDS/STS referring to a cell
+       needs the address up front - and before printf's string literals are
+       added, so the blocks land in one contiguous, labelled run. */
+    this.staticFrames = new Map();
+    for (const [name, rec] of meta.funcs) {
+      if (this.recursive.has(name) || rec.frameSize === 0) continue;
+      this.staticFrames.set(name, meta.data.addBytes(rec.frameSize));
+    }
+  }
+
+  argPairs() { return TARGS; }
+  retPair() { return TRET; }
+  parkPair() { return TARGS[TARGS.length - 1]; }
+
+  /* ---- constants ----
+     Every constant goes through the reserved staging pair, so no call site has
+     to reason about which registers can take an immediate. */
+  stageByte(reg, k) {
+    if ((k & 0xff) === 0) { this.emit('MOV', { rd: reg, rs2: AREG.zero }); return; }
+    if (this.canLdi(reg)) { this.emit('LDI', { rd: reg, imm: k & 0xff }); return; }
+    this.emit('LDI', { rd: TSTAGE, imm: k & 0xff });
+    this.emit('MOV', { rd: reg, rs2: TSTAGE });
+  }
+  setConst(pair, v, comment) {
+    if (comment) this.comment(comment);
+    this.stageByte(this.lo(pair), v & 0xff);
+    this.stageByte(this.hi(pair), (v >> 8) & 0xff);
+  }
+  // pair += k, as a 16-bit two's-complement add. A negative k is just the
+  // wrapped positive one, which is why constant subtraction needs no helper.
+  addConst(pair, k, comment) {
+    if (k === 0) return;
+    if (pair === TSTAGE) {
+      throw new Error('Internal error: addConst cannot target the staging pair');
+    }
+    const lo = k & 0xff, hi = (k >> 8) & 0xff;
+    if (comment) this.comment(comment);
+    if (lo === 0) {
+      // No carry can come out of the low byte, so only the high byte moves.
+      this.emit('LDI', { rd: TSTAGE, imm: hi });
+      this.emit('ADD', { rd: this.hi(pair), rs2: TSTAGE });
+      return;
+    }
+    this.emit('LDI', { rd: TSTAGE, imm: lo });
+    this.emit('ADD', { rd: this.lo(pair), rs2: TSTAGE });
+    if (hi === 0) {
+      this.emit('ADC', { rd: this.hi(pair), rs2: AREG.zero });
+    } else {
+      this.emit('LDI', { rd: TSTAGE + 1, imm: hi });
+      this.emit('ADC', { rd: this.hi(pair), rs2: TSTAGE + 1 });
+    }
+  }
+  bumpPtr(pair, delta) { this.addConst(pair, delta); }
+  movw(dst, src, comment) {
+    if (comment) this.comment(comment);
+    this.emit('MOV', { rd: this.lo(dst), rs2: this.lo(src) });
+    this.emit('MOV', { rd: this.hi(dst), rs2: this.hi(src) });
+  }
+  // A comment has to be attachable without an instruction of its own, since one
+  // logical step here is several instructions and which one comes first varies.
+  // It PREPENDS rather than replaces, so a note can never be silently lost.
+  comment(text) { this.pendingComment = text; }
+  emit(op, f) {
+    if (this.pendingComment) {
+      const c = f.comment ? this.pendingComment + '; ' + f.comment : this.pendingComment;
+      f = Object.assign({}, f, { comment: c });
+      this.pendingComment = null;
+    }
+    return super.emit(op, f);
+  }
+
+  /* ---- 16-bit ALU, all synthesized ---- */
+  subPair(pd, pb, comment) {
+    /* pd = pd + (-pb). The old value of pd is parked in an argument pair across
+       the call rather than left where it is, because pd is X whenever the operand
+       slot spilled and __negx works in X. __negx touches only X, r0 and the
+       staging pair, so the parked value survives. */
+    const B = this.argPairs()[1];
+    if (comment) this.comment(comment);
+    this.movw(B, pd);
+    this.movwIf(AREG.X, pb);
+    this.callHelper('__negx', 'a - b  =>  a + (-b)');
+    this.addPair(AREG.X, B);
+    this.movwIf(pd, AREG.X);
+  }
+  negateInto(pd, pa, comment) {
+    if (comment) this.comment(comment);
+    this.movwIf(AREG.X, pa);
+    this.callHelper('__negx', 'negate');
+    this.movwIf(pd, AREG.X);
+  }
+  notPair(pd, comment) {
+    // ~x == -x - 1, so one call plus a constant add covers it.
+    if (comment) this.comment(comment);
+    this.movwIf(AREG.X, pd);
+    this.callHelper('__negx', '~x  =>  -x - 1');
+    this.movwIf(pd, AREG.X);
+    this.addConst(pd, -1);
+  }
+  bitOpPair(op, pd, pb, comment) {
+    const helper = { AND: '__and16', OR: '__or16', EOR: '__xor16' }[op];
+    const [A, B] = this.argPairs();
+    this.movw(B, pb, comment);
+    this.movw(A, pd);
+    this.callHelper(helper, 'bit-serial ' + op.toLowerCase());
+    this.movwIf(pd, A);
+  }
+  lslPair(pair, comment) {
+    if (comment) this.comment(comment);
+    this.emit('ADD', { rd: this.lo(pair), rs2: this.lo(pair) });
+    this.emit('ADC', { rd: this.hi(pair), rs2: this.hi(pair) });
+  }
+  asrPair(pair, comment) {
+    // Only used for a pointer difference, where the value is a small positive
+    // count, but done arithmetically anyway so a negative difference is right.
+    const [A, B] = this.argPairs();
+    this.movw(A, pair, comment);
+    this.setConst(B, 1);
+    this.callHelper('__ashr16', 'arithmetic shift right');
+    this.movwIf(pair, A);
+  }
+
+  /* ---- conditions ----
+     Nothing here can branch on an ordering, so the shape is always: compare,
+     turn the carry into Z, then BREQ/BRNE. */
+  genCompare() {
+    throw new Error('Internal error: TinyAvrCodegen has no flag-based compare; '
+      + 'use genCompareBranch or setBoolFromCompare');
+  }
+
+  // Evaluate both sides of a relational expression, in the order the full AVR
+  // backend uses, and return the pairs holding them.
+  evalRelation(e) {
+    const swap = (e.op === '>' || e.op === '<=');
+    this.genExpr(swap ? e.right : e.left);
+    this.genExpr(swap ? e.left : e.right);
+    const py = this.pop1(TARGS[TARGS.length - 1]);
+    const px = this.pop1(TARGS[TARGS.length - 2]);
+    return { px, py };
+  }
+
+  /* Leaves Z = !(x < y), i.e. the next BRNE is taken exactly when x < y.
+     Signed by biasing both high bytes, which destroys both operands - they have
+     already been popped, so they are dead. */
+  emitLessThan(px, py, comment) {
+    const decided = this.freshLabel('cmphi');
+    if (comment) this.comment(comment);
+    this.emit('LDI', { rd: TSTAGE, imm: 0x80 });
+    this.emit('ADD', { rd: this.hi(px), rs2: TSTAGE, comment: 'bias to unsigned' });
+    this.emit('ADD', { rd: this.hi(py), rs2: TSTAGE });
+    this.emit('CP', { rd: this.hi(px), rs2: this.hi(py) });
+    this.emit('BRNE', { targetLabel: decided });
+    this.emit('CP', { rd: this.lo(px), rs2: this.lo(py) });
+    this.label(decided);
+    // C is now the borrow of whichever byte decided it. Materialise it: r0 = C,
+    // and ADC's own Z flag is then !C, which is what the caller branches on.
+    this.emit('MOV', { rd: AREG.scratch, rs2: AREG.zero });
+    this.emit('ADC', { rd: AREG.scratch, rs2: AREG.zero, comment: 'r0 = carry, Z = !carry' });
+  }
+
+  // Branch to `label` when the two pairs are (un)equal, comparing byte by byte.
+  emitEqualBranch(px, py, label, whenEqual, comment) {
+    if (whenEqual) {
+      const no = this.freshLabel('cmpne');
+      this.emit('CP', { rd: this.lo(px), rs2: this.lo(py), comment });
+      this.emit('BRNE', { targetLabel: no });
+      this.emit('CP', { rd: this.hi(px), rs2: this.hi(py) });
+      this.emit('BRNE', { targetLabel: no });
+      this.emit('RJMP', { targetLabel: label });
+      this.label(no);
+      return;
+    }
+    this.emit('CP', { rd: this.lo(px), rs2: this.lo(py), comment });
+    this.emit('BRNE', { targetLabel: label });
+    this.emit('CP', { rd: this.hi(px), rs2: this.hi(py) });
+    this.emit('BRNE', { targetLabel: label });
+  }
+
+  genCompareBranch(cond, label, whenTrue) {
+    const { px, py } = this.evalRelation(cond);
+    const cmt = (whenTrue ? 'if (' : 'if not (') + cond.op + ')';
+    if (cond.op === '==' || cond.op === '!=') {
+      // != is == with the polarity flipped, and whenTrue flips it again.
+      this.emitEqualBranch(px, py, label, (cond.op === '==') === whenTrue, cmt);
+      return;
+    }
+    this.emitLessThan(px, py, cmt);
+    // After the swap in evalRelation, every ordering is "px < py"; >= and <= are
+    // its negation, so the polarity is one XOR rather than four cases.
+    const negated = (cond.op === '>=' || cond.op === '<=');
+    this.emit(negated === whenTrue ? 'BREQ' : 'BRNE', { targetLabel: label });
+  }
+
+  setBoolFromCompare(pd, e, comment) {
+    const { px, py } = this.evalRelation(e);
+    if (e.op === '==' || e.op === '!=') {
+      this.emit('CP', { rd: this.lo(px), rs2: this.lo(py), comment });
+      const no = this.freshLabel('cmpne');
+      const end = this.freshLabel('endcmp');
+      this.emit('BRNE', { targetLabel: no });
+      this.emit('CP', { rd: this.hi(px), rs2: this.hi(py) });
+      this.emit('BRNE', { targetLabel: no });
+      this.setConst(pd, e.op === '==' ? 1 : 0);
+      this.emit('RJMP', { targetLabel: end });
+      this.label(no);
+      this.setConst(pd, e.op === '==' ? 0 : 1);
+      this.label(end);
+      return;
+    }
+    this.emitLessThan(px, py, comment);
+    const negated = (e.op === '>=' || e.op === '<=');
+    this.setBoolFromFlag(pd, negated ? 'BREQ' : 'BRNE', comment);
+  }
+
+  // No OR, so the two bytes are tested separately against the zero register.
+  testPairZero() {
+    throw new Error('Internal error: TinyAvrCodegen cannot fold a 16-bit value '
+      + 'into one flag; use branchOnPairZero or setBoolFromPairZero');
+  }
+  branchOnPairZero(pair, label, whenZero) {
+    const cmt = 'test 16-bit value';
+    if (!whenZero) {
+      this.emit('CP', { rd: this.lo(pair), rs2: AREG.zero, comment: cmt });
+      this.emit('BRNE', { targetLabel: label });
+      this.emit('CP', { rd: this.hi(pair), rs2: AREG.zero });
+      this.emit('BRNE', { targetLabel: label });
+      return;
+    }
+    const nz = this.freshLabel('nonzero');
+    this.emit('CP', { rd: this.lo(pair), rs2: AREG.zero, comment: cmt });
+    this.emit('BRNE', { targetLabel: nz });
+    this.emit('CP', { rd: this.hi(pair), rs2: AREG.zero });
+    this.emit('BRNE', { targetLabel: nz });
+    this.emit('RJMP', { targetLabel: label });
+    this.label(nz);
+  }
+  setBoolFromPairZero(pd, pair, wantZero, comment) {
+    const nz = this.freshLabel('nonzero');
+    const end = this.freshLabel('endtest');
+    this.emit('CP', { rd: this.lo(pair), rs2: AREG.zero, comment });
+    this.emit('BRNE', { targetLabel: nz });
+    this.emit('CP', { rd: this.hi(pair), rs2: AREG.zero });
+    this.emit('BRNE', { targetLabel: nz });
+    this.setConst(pd, wantZero ? 1 : 0);
+    this.emit('RJMP', { targetLabel: end });
+    this.label(nz);
+    this.setConst(pd, wantZero ? 0 : 1);
+    this.label(end);
+  }
+
+  /* ---- char widening ----
+     No SBRC and no COM: compare the byte against 0x80 unsigned instead, which
+     works because both MOV and LDI leave the flags alone, so the carry survives
+     from the CP to the ADC that materialises it. */
+  signExtendInto(pair) {
+    const done = this.freshLabel('sext');
+    this.emit('LDI', { rd: TSTAGE, imm: 0x80, comment: 'sign-extend char' });
+    this.emit('CP', { rd: this.lo(pair), rs2: TSTAGE });
+    this.emit('MOV', { rd: this.hi(pair), rs2: AREG.zero });
+    this.emit('MOV', { rd: AREG.scratch, rs2: AREG.zero });
+    this.emit('ADC', { rd: AREG.scratch, rs2: AREG.zero });
+    this.emit('BRNE', { targetLabel: done });   // byte < 0x80: high byte stays 0
+    this.emit('LDI', { rd: TSTAGE, imm: 0xff });
+    this.emit('MOV', { rd: this.hi(pair), rs2: TSTAGE });
+    this.label(done);
+  }
+
+  /* ---- memory through Z ----
+     No post-increment, so the pointer is stepped explicitly. Z is left one byte
+     past the start for a 16-bit access, matching what LDPI/STPI leave behind on
+     the full AVR target. */
+  loadThroughZ(pair, bytes, comment) {
+    this.emit('LD', { rd: this.lo(pair), rs1: AREG.Z, comment });
+    if (bytes === 2) {
+      this.bumpPtr(AREG.Z, 1);
+      this.emit('LD', { rd: this.hi(pair), rs1: AREG.Z });
+    } else {
+      this.signExtendInto(pair);
+    }
+  }
+  storeThroughZ(pair, bytes, comment) {
+    this.emit('ST', { rs1: AREG.Z, rs2: this.lo(pair), comment });
+    if (bytes === 2) {
+      this.bumpPtr(AREG.Z, 1);
+      this.emit('ST', { rs1: AREG.Z, rs2: this.hi(pair) });
+    }
+  }
+
+  /* ---- locals ----
+     Fixed address when the function cannot be re-entered, otherwise a real
+     frame reached through Z. Everything funnels through cellAddr(), which
+     returns null in the frame case. */
+  usesFrame() { return this.recursive.has(this.fn.node.name); }
+  // A slot at distance `offset` below the frame top is at base + fs - offset.
+  cellAddr(offset) {
+    if (this.usesFrame()) return null;
+    const base = this.staticFrames.get(this.fn.node.name);
+    if (base === undefined) throw new Error('Internal error: no static frame for ' + this.fn.node.name);
+    return base + this.fn.frameSize - offset;
+  }
+  loadLocal(pair, v, comment) {
+    const bytes = elemSize(v.ctype, this.abi);
+    const addr = this.cellAddr(v.offset);
+    if (addr !== null) { this.loadGlobal(pair, addr, bytes, comment); return; }
+    this.addrOfLocal(v.offset, AREG.Z);
+    this.loadThroughZ(pair, bytes, comment);
+  }
+  storeLocal(pair, v, comment) {
+    const bytes = elemSize(v.ctype, this.abi);
+    const addr = this.cellAddr(v.offset);
+    if (addr !== null) { this.storeGlobal(pair, addr, bytes, comment); return; }
+    this.addrOfLocal(v.offset, AREG.Z);
+    this.storeThroughZ(pair, bytes, comment);
+  }
+  loadWordAt(offset, pair, comment) {
+    const addr = this.cellAddr(offset);
+    if (addr !== null) {
+      this.emit('LDS', { rd: this.lo(pair), imm: addr, comment });
+      this.emit('LDS', { rd: this.hi(pair), imm: addr + 1 });
+      return;
+    }
+    this.addrOfLocal(offset, AREG.Z);
+    this.loadThroughZ(pair, 2, comment);
+  }
+  storeWordAt(offset, pair, comment) {
+    const addr = this.cellAddr(offset);
+    if (addr !== null) {
+      this.emit('STS', { imm: addr, rs2: this.lo(pair), comment });
+      this.emit('STS', { imm: addr + 1, rs2: this.hi(pair) });
+      return;
+    }
+    this.addrOfLocal(offset, AREG.Z);
+    this.storeThroughZ(pair, 2, comment);
+  }
+  addrOfLocal(offset, pair) {
+    const addr = this.cellAddr(offset);
+    if (addr !== null) { this.setConst(pair, addr, 'frame cell 0x' + addr.toString(16)); return; }
+    this.movw(pair, AREG.Y);
+    this.addConst(pair, this.dispOf(offset), 'frame + ' + this.dispOf(offset));
+  }
+  addrOfLocalInto(pd, offset, name) {
+    const addr = this.cellAddr(offset);
+    if (addr !== null) { this.setConst(pd, addr, '&' + name); return; }
+    const st = this.stagingPair(pd);
+    this.movw(st, AREG.Y, '&' + name);
+    this.addConst(st, this.dispOf(offset));
+    this.movwIf(pd, st);
+  }
+
+  /* ---- operand-stack spills ----
+     No PUSH, so an over-deep slot goes to a cell of this function's frame
+     (static or real) rather than onto the stack. The cell is chosen by DEPTH,
+     which is a compile-time quantity, so nothing needs to be released - which is
+     why adjustSp has nothing to do. */
+  spillOffset() {
+    const i = this.depth - this.abi.slotCount;
+    const cells = this.fn.spillSlots || [];
+    if (i < 0 || i >= cells.length) {
+      throw new Error('Internal error: operand slot ' + this.depth + ' in '
+        + this.fn.node.name + '() has no spill cell (maxOperandDepth undercounted)');
+    }
+    return cells[i].offset;
+  }
+  memPush(pair) { this.storeWordAt(this.spillOffset(), pair, 'spill operand slot ' + this.depth); }
+  memPop(pair) { this.loadWordAt(this.spillOffset(), pair, 'reload operand slot ' + this.depth); }
+  adjustSp() { /* spill cells are fixed: there is nothing to release */ }
+
+  /* ---- SP, by hand ----
+     No IN/OUT: SPL/SPH are ordinary data addresses, so LDS/STS reach them. */
+  loadSp(pair) {
+    this.emit('LDS', { rd: this.lo(pair), imm: AVR_IO_ADDR(AVR_IO.SPL), comment: 'sp' });
+    this.emit('LDS', { rd: this.hi(pair), imm: AVR_IO_ADDR(AVR_IO.SPH) });
+  }
+  storeSp(pair, comment) {
+    this.emit('STS', { imm: AVR_IO_ADDR(AVR_IO.SPL), rs2: this.lo(pair), comment });
+    this.emit('STS', { imm: AVR_IO_ADDR(AVR_IO.SPH), rs2: this.hi(pair) });
+  }
+
+  /* ---- program ---- */
+  generate() {
+    this.curLine = null;
+    this.label('_start');
+    // r1 = 0. It cannot be reached by LDI, so it is staged and moved - and it is
+    // load-bearing everywhere below as the addend for carry propagation and the
+    // comparand for every truth test.
+    this.emit('LDI', { rd: TSTAGE, imm: 0, comment: 'r1 = 0 (zero register)' });
+    this.emit('MOV', { rd: AREG.zero, rs2: TSTAGE });
+    const top = this.abi.dataStart + this.memSize - 1;
+    this.emit('LDI', { rd: TSTAGE, imm: top & 0xff, comment: '__stack_top' });
+    this.emit('LDI', { rd: TSTAGE + 1, imm: (top >> 8) & 0xff });
+    this.storeSp(TSTAGE, 'sp = top of SRAM');
+    this.emit('RCALL', { targetLabel: 'main', comment: 'call main()' });
+    this.emitService(SYSCALL.EXIT, this.retPair(), 'exit(main())');
+
+    for (const d of this.ast.decls) {
+      if (d.type === 'FuncDecl') this.genFunction(this.meta.funcs.get(d.name));
+    }
+    this.genHelpers();
+    avrRelaxBranches(this.instrs, this.labels);
+    const layout = assignAddresses(this.instrs, avrInstrBytes);
+    resolveLabels(this.instrs, this.labels, layout.addrs);
+    this.assertOnlySubset();
+    return {
+      instrs: this.instrs,
+      labels: this.labels,
+      addrs: layout.addrs,
+      addrToIndex: layout.addrToIndex,
+      codeBytes: layout.codeBytes,
+      data: this.meta.data,
+      globals: this.meta.globals,
+      funcs: this.meta.funcs,
+      staticFrames: this.staticFrames,
+      recursive: this.recursive,
+      target: this.target,
+      useM: false,
+      memSize: this.memSize,
+    };
+  }
+
+  /* The claim this whole backend rests on, checked rather than trusted. Also
+     checks the two register classes that survive: LDI still only reaches
+     r16-r31, and LD/ST can only name Z here (no X or Y indirect form is in the
+     subset), both of which an interpreter would happily ignore. */
+  assertOnlySubset() {
+    for (let i = 0; i < this.instrs.length; i++) {
+      const ins = this.instrs[i];
+      const where = ' (instruction ' + i + (ins.line != null ? ', C line ' + ins.line : '') + ')';
+      if (!TINY_OPS.has(ins.op)) {
+        throw new Error('Internal error: ' + ins.op + ' is not in the 14-instruction subset' + where);
+      }
+      if (ins.op === 'LDI' && ins.rd < 16) {
+        throw new Error('Internal error: LDI r' + ins.rd + ' - LDI only reaches r16-r31' + where);
+      }
+      if ((ins.op === 'LD' || ins.op === 'ST') && ins.rs1 !== AREG.Z) {
+        throw new Error('Internal error: ' + ins.op + ' through r' + ins.rs1
+          + ' - only Z is a pointer in this subset' + where);
+      }
+    }
+  }
+
+  /* ---- functions ----
+     Non-recursive (the common case): no frame at all. The prologue only saves
+     the operand-slot pairs this function will use and copies the parameters out
+     of the argument pairs into their fixed cells.
+
+     Recursive: a real frame, since fixed cells would be overwritten by the inner
+     call. Y is the frame pointer and sp at once, and the layout matches the full
+     AVR backend's exactly so the debugger's walk is the same shape:
+
+         Y+fs+4, Y+fs+3   return address (pushed by RCALL, lo at the higher one)
+         Y+fs+2, Y+fs+1   saved caller's Y (lo at the higher one)
+         Y+fs .. Y+1      this frame
+         Y                = sp                                                */
+  genFunction(fnRec) {
+    this.fn = fnRec;
+    const d = fnRec.node;
+    const fs = fnRec.frameSize;
+    if (d.params.length > TARGS.length) {
+      throw new Error('Compile error: function \'' + d.name + '\' has more than '
+        + TARGS.length + ' parameters (one register pair is reserved for staging '
+        + 'constants on this target)');
+    }
+    this.epilogueLabel = '.Lepi_' + d.name;
+    this.scopes = [new Map()];
+    this.curLine = d.line != null ? d.line : null;
+    this.depth = 0;
+    this.opRegs = fnRec.opRegSaves.length;
+    for (const p of fnRec.params) this.declareLocal(p.name, p.ctype, p.offset);
+
+    this.label(d.name);
+    const frame = this.recursive.has(d.name);
+    if (frame) {
+      // PUSH by hand: the byte is written AT sp, then sp moves down.
+      this.loadSp(AREG.Z);
+      this.emit('ST', { rs1: AREG.Z, rs2: AREG.Y,
+        comment: d.name + '(): recursive, frame = ' + fs + ' bytes' });
+      this.addConst(AREG.Z, -1);
+      this.emit('ST', { rs1: AREG.Z, rs2: AREG.Y + 1, comment: "save caller's frame pointer" });
+      this.addConst(AREG.Z, -1);
+      this.movw(AREG.Y, AREG.Z);
+      this.addConst(AREG.Y, -fs, 'allocate frame');
+      this.storeSp(AREG.Y, 'sp = frame base');
+    } else if (fs) {
+      this.comment(d.name + '(): locals at fixed addresses, no frame');
+    }
+
+    for (const sv of fnRec.opRegSaves) {
+      this.storeWordAt(sv.offset, AOPREGS[sv.slot], 'save operand slot ' + sv.slot);
+    }
+    fnRec.params.forEach((p, i) => {
+      const bytes = elemSize(p.ctype, this.abi);
+      const addr = this.cellAddr(p.offset);
+      if (addr !== null) {
+        this.emit('STS', { imm: addr, rs2: this.lo(TARGS[i]), comment: 'param ' + p.name });
+        if (bytes === 2) this.emit('STS', { imm: addr + 1, rs2: this.hi(TARGS[i]) });
+        return;
+      }
+      this.addrOfLocal(p.offset, AREG.Z);
+      this.storeThroughZ(TARGS[i], bytes, 'param ' + p.name);
+    });
+
+    this.genStmt(d.body);
+    if (this.depth !== 0) throw new Error('Internal error: operand stack depth ' + this.depth + ' at end of ' + d.name + '()');
+
+    this.curLine = d.line != null ? d.line : null;
+    this.label(this.epilogueLabel);
+    fnRec.opRegSaves.forEach((sv, i) => {
+      this.loadWordAt(sv.offset, AOPREGS[sv.slot],
+        i === 0 ? d.name + '(): epilogue, restore slots' : null);
+    });
+    if (frame) {
+      this.addConst(AREG.Y, fs, 'discard frame');
+      // POP by hand, reading at sp+1. The saved bytes are read out before Y is
+      // overwritten, since Y is what the addresses are computed from.
+      this.movw(AREG.Z, AREG.Y);
+      this.addConst(AREG.Z, 1);
+      this.emit('LD', { rd: AREG.scratch, rs1: AREG.Z, comment: "restore caller's frame pointer" });
+      this.addConst(AREG.Z, 1);
+      this.emit('LD', { rd: TSTAGE, rs1: AREG.Z });
+      this.storeSp(AREG.Z, 'sp = above the saved pair');
+      this.emit('MOV', { rd: AREG.Y + 1, rs2: AREG.scratch });
+      this.emit('MOV', { rd: AREG.Y, rs2: TSTAGE });
+    }
+    this.emit('RET', { comment: 'return' });
+    this.fn = null;
+    this.scopes = [];
+  }
+
+  /* ---- generated helpers ----
+     Leaf-ish routines built from the same 14 opcodes. Every one of them touches
+     only r0, the staging pair, X, Z and argument pairs - never r2..r9 - which is
+     the contract that lets operands parked in slot pairs survive a call, exactly
+     as on the full AVR target. */
+  genHelpers() {
+    this.curLine = null;
+    const gens = {
+      __puts: () => this.genPuts(),
+      __and16: () => this.genBitHelper('__and16', 'AND'),
+      __or16: () => this.genBitHelper('__or16', 'OR'),
+      __xor16: () => this.genBitHelper('__xor16', 'XOR'),
+      __mul16: () => this.genMul16(),
+      __divmod16: () => this.genDivmod16(),
+      __shl16: () => this.genShl16(),
+      __ashr16: () => this.genAshr16(),
+      // Last, because __divmod16 negates through it and so adds the dependency
+      // while it is being generated.
+      __negx: () => this.genNegx(),
+    };
+    const done = new Set();
+    for (let pass = 0; pass < 4; pass++) {
+      let more = false;
+      for (const name of Object.keys(gens)) {
+        if (!this.usedHelpers.has(name) || done.has(name)) continue;
+        done.add(name);
+        gens[name]();
+        more = true;
+      }
+      if (!more) return;
+    }
+    throw new Error('Internal error: helper generation did not settle');
+  }
+
+  // p -= 1, as p + 0xffff.
+  decPair(p) {
+    this.emit('LDI', { rd: TSTAGE, imm: 0xff });
+    this.emit('ADD', { rd: this.lo(p), rs2: TSTAGE });
+    this.emit('ADC', { rd: this.hi(p), rs2: TSTAGE });
+  }
+  // reg = the sign bit of `pair`, as 0 or 1.
+  emitSignInto(reg, pair, comment) {
+    this.emit('MOV', { rd: AREG.scratch, rs2: this.hi(pair), comment });
+    this.emit('ADD', { rd: AREG.scratch, rs2: AREG.scratch });
+    this.emit('MOV', { rd: reg, rs2: AREG.zero });
+    this.emit('ADC', { rd: reg, rs2: AREG.zero });
+  }
+  // pair = |pair|, given its sign already recorded in signReg.
+  emitAbs(pair, signReg, label, comment) {
+    this.emit('CP', { rd: signReg, rs2: AREG.zero, comment });
+    this.emit('BREQ', { targetLabel: label });
+    this.negThrough(pair);
+    this.label(label);
+  }
+  // pair = -pair, through the one negation primitive.
+  negThrough(pair) {
+    this.movwIf(AREG.X, pair);
+    this.callHelper('__negx');
+    this.movwIf(pair, AREG.X);
+  }
+
+  /* X = -X, and the reason subtraction exists at all on this target.
+
+     Per byte, -b == 255*b (mod 256), and 255*b is seven rounds of doubling and
+     adding - Horner on 0b11111111 - so a negation needs no borrow and no branch
+     on carry. The two bytes are then stitched: -x == ~x + 1, and ~lo + 1 is
+     already exactly -lo, so the low byte needs no fixup while the high byte
+     needs the borrow, which is 0 when the low byte was 0 and 0xff otherwise.
+
+     Deliberately operates on X rather than on an argument pair: that is what
+     lets `a - b` keep `a` in an argument pair across the call. */
+  genNegx() {
+    const HI = TSTAGE + 1, X = AREG.X;
+    const zero = '.L__negx_nolo';
+    this.label('__negx');
+    this.emit('MOV', { rd: AREG.scratch, rs2: this.lo(X), comment: '__negx: -lo = 255*lo (mod 256)' });
+    for (let i = 0; i < 7; i++) {
+      this.emit('ADD', { rd: AREG.scratch, rs2: AREG.scratch });
+      this.emit('ADD', { rd: AREG.scratch, rs2: this.lo(X) });
+    }
+    this.emit('MOV', { rd: HI, rs2: this.hi(X), comment: '-hi = 255*hi (mod 256)' });
+    for (let i = 0; i < 7; i++) {
+      this.emit('ADD', { rd: HI, rs2: HI });
+      this.emit('ADD', { rd: HI, rs2: this.hi(X) });
+    }
+    this.emit('CP', { rd: this.lo(X), rs2: AREG.zero, comment: 'borrow into hi unless lo was 0' });
+    this.emit('BREQ', { targetLabel: zero });
+    this.emit('LDI', { rd: TSTAGE, imm: 0xff });
+    this.emit('ADD', { rd: HI, rs2: TSTAGE });
+    this.label(zero);
+    this.emit('MOV', { rd: this.lo(X), rs2: AREG.scratch });
+    this.emit('MOV', { rd: this.hi(X), rs2: HI });
+    this.emit('RET', {});
+  }
+
+  /* A = A <op> B, one bit at a time from the top.
+
+     With no AND/OR/EOR, each bit has to be extracted and combined by hand:
+     shifting an operand left leaves its top bit in C, `MOV r0,r1 / ADC r0,r1`
+     turns that into a byte, and the SUM of the two bits then decides the result
+     bit - 2 for and, nonzero for or, exactly 1 for xor. Adding 1 to the
+     accumulator is a valid "set bit 0" because the shift just cleared it. */
+  genBitHelper(name, kind) {
+    const [A, B] = this.argPairs();
+    const acc = AREG.X, HI = TSTAGE + 1;
+    const loop = '.L' + name + '_loop', nobit = '.L' + name + '_nobit';
+    this.label(name);
+    this.emit('MOV', { rd: this.lo(acc), rs2: AREG.zero, comment: name + ': bit-serial, MSB first' });
+    this.emit('MOV', { rd: this.hi(acc), rs2: AREG.zero });
+    this.emit('LDI', { rd: TSTAGE, imm: 16 });
+    this.label(loop);
+    this.emit('ADD', { rd: this.lo(acc), rs2: this.lo(acc), comment: 'result <<= 1' });
+    this.emit('ADC', { rd: this.hi(acc), rs2: this.hi(acc) });
+    this.emit('ADD', { rd: this.lo(A), rs2: this.lo(A), comment: "a's top bit -> C -> r0" });
+    this.emit('ADC', { rd: this.hi(A), rs2: this.hi(A) });
+    this.emit('MOV', { rd: AREG.scratch, rs2: AREG.zero });
+    this.emit('ADC', { rd: AREG.scratch, rs2: AREG.zero });
+    this.emit('ADD', { rd: this.lo(B), rs2: this.lo(B), comment: "b's top bit -> C" });
+    this.emit('ADC', { rd: this.hi(B), rs2: this.hi(B) });
+    this.emit('MOV', { rd: HI, rs2: AREG.zero });
+    this.emit('ADC', { rd: HI, rs2: AREG.zero });
+    this.emit('ADD', { rd: AREG.scratch, rs2: HI, comment: 'r0 = how many of the two bits are set' });
+    if (kind === 'OR') {
+      this.emit('CP', { rd: AREG.scratch, rs2: AREG.zero });
+      this.emit('BREQ', { targetLabel: nobit });
+    } else {
+      this.emit('LDI', { rd: HI, imm: kind === 'AND' ? 2 : 1 });
+      this.emit('CP', { rd: AREG.scratch, rs2: HI });
+      this.emit('BRNE', { targetLabel: nobit });
+    }
+    this.emit('LDI', { rd: HI, imm: 1 });
+    this.emit('ADD', { rd: this.lo(acc), rs2: HI, comment: 'set the result bit' });
+    this.label(nobit);
+    this.emit('LDI', { rd: HI, imm: 0xff });
+    this.emit('ADD', { rd: TSTAGE, rs2: HI, comment: 'all 16 bits done?' });
+    this.emit('BRNE', { targetLabel: loop });
+    this.emit('MOV', { rd: this.lo(A), rs2: this.lo(acc) });
+    this.emit('MOV', { rd: this.hi(A), rs2: this.hi(acc) });
+    this.emit('RET', {});
+  }
+
+  /* A = A * B, shift-and-add from B's top bit down - MSB first specifically so
+     it needs no right shift, which is the expensive direction here. Correct for
+     either sign, since two's-complement multiply mod 2^16 equals unsigned
+     multiply mod 2^16. */
+  genMul16() {
+    const [A, B] = this.argPairs();
+    const md = AREG.X, HI = TSTAGE + 1;
+    const loop = '.L__mul16_loop', nobit = '.L__mul16_nobit';
+    this.label('__mul16');
+    this.emit('MOV', { rd: this.lo(md), rs2: this.lo(A), comment: '__mul16: shift-add, MSB first' });
+    this.emit('MOV', { rd: this.hi(md), rs2: this.hi(A) });
+    this.emit('MOV', { rd: this.lo(A), rs2: AREG.zero, comment: 'product = 0' });
+    this.emit('MOV', { rd: this.hi(A), rs2: AREG.zero });
+    this.emit('LDI', { rd: TSTAGE, imm: 16 });
+    this.label(loop);
+    this.emit('ADD', { rd: this.lo(A), rs2: this.lo(A), comment: 'product <<= 1' });
+    this.emit('ADC', { rd: this.hi(A), rs2: this.hi(A) });
+    this.emit('ADD', { rd: this.lo(B), rs2: this.lo(B), comment: "b's top bit -> C -> r0" });
+    this.emit('ADC', { rd: this.hi(B), rs2: this.hi(B) });
+    this.emit('MOV', { rd: AREG.scratch, rs2: AREG.zero });
+    this.emit('ADC', { rd: AREG.scratch, rs2: AREG.zero });
+    this.emit('CP', { rd: AREG.scratch, rs2: AREG.zero });
+    this.emit('BREQ', { targetLabel: nobit });
+    this.emit('ADD', { rd: this.lo(A), rs2: this.lo(md), comment: 'product += a' });
+    this.emit('ADC', { rd: this.hi(A), rs2: this.hi(md) });
+    this.label(nobit);
+    this.emit('LDI', { rd: HI, imm: 0xff });
+    this.emit('ADD', { rd: TSTAGE, rs2: HI, comment: 'all 16 bits done?' });
+    this.emit('BRNE', { targetLabel: loop });
+    this.emit('RET', {});
+  }
+
+  // A = A << B. Shifting left is the cheap direction: ADD/ADC is the shift.
+  genShl16() {
+    const [A, B] = this.argPairs();
+    const loop = '.L__shl16_loop', step = '.L__shl16_step', done = '.L__shl16_done';
+    this.label('__shl16');
+    this.label(loop);
+    this.emit('CP', { rd: this.lo(B), rs2: AREG.zero, comment: '__shl16: while (n != 0)' });
+    this.emit('BRNE', { targetLabel: step });
+    this.emit('CP', { rd: this.hi(B), rs2: AREG.zero });
+    this.emit('BREQ', { targetLabel: done });
+    this.label(step);
+    this.emit('ADD', { rd: this.lo(A), rs2: this.lo(A) });
+    this.emit('ADC', { rd: this.hi(A), rs2: this.hi(A) });
+    this.decPair(B);
+    this.emit('RJMP', { targetLabel: loop });
+    this.label(done);
+    this.emit('RET', {});
+  }
+
+  /* A = A >> B, arithmetically - which is what C's >> on a signed int means, and
+     the one operation this instruction set really makes you pay for.
+
+     There is no LSR and no ROR, so the only way down is round the other way:
+     `ADC lo,lo / ADC hi,hi` rotates the 17-bit chain [hi, lo, C] LEFT by one, so
+     SIXTEEN of them rotate it RIGHT by one. Seeding C with the sign bit first is
+     what makes the vacated top bit a copy of the sign. */
+  genAshr16() {
+    const [A, B] = this.argPairs();
+    const loop = '.L__ashr16_loop', step = '.L__ashr16_step', done = '.L__ashr16_done';
+    this.label('__ashr16');
+    this.label(loop);
+    this.emit('CP', { rd: this.lo(B), rs2: AREG.zero, comment: '__ashr16: while (n != 0)' });
+    this.emit('BRNE', { targetLabel: step });
+    this.emit('CP', { rd: this.hi(B), rs2: AREG.zero });
+    this.emit('BREQ', { targetLabel: done });
+    this.label(step);
+    this.emit('MOV', { rd: AREG.scratch, rs2: this.hi(A), comment: 'C = sign bit' });
+    this.emit('ADD', { rd: AREG.scratch, rs2: AREG.scratch });
+    for (let i = 0; i < 16; i++) {
+      this.emit('ADC', { rd: this.lo(A), rs2: this.lo(A),
+        comment: i === 0 ? 'rotate the 17-bit chain left 16x = right once' : null });
+      this.emit('ADC', { rd: this.hi(A), rs2: this.hi(A) });
+    }
+    this.decPair(B);
+    this.emit('RJMP', { targetLabel: loop });
+    this.label(done);
+    this.emit('RET', {});
+  }
+
+  /* A = A / B, B = A % B. Restoring division on magnitudes, MSB first, then the
+     signs are applied: C truncates toward zero, so the quotient is negative iff
+     the operands' signs differed and the remainder takes the dividend's sign.
+     Divide by zero reproduces the RV32 result (quotient -1, remainder = the
+     dividend) so both targets agree on the one case C leaves undefined.
+
+     The divisor is negated ONCE, before the loop, which is what makes the loop
+     body plain ADD/ADC on a machine with no subtract. */
+  genDivmod16() {
+    const [A, B, R, NB, SG] = this.argPairs();
+    const HI = TSTAGE + 1;
+    const L = n => '.L__divmod16_' + n;
+    this.label('__divmod16');
+    this.emit('CP', { rd: this.lo(B), rs2: AREG.zero, comment: '__divmod16: divide by zero?' });
+    this.emit('BRNE', { targetLabel: L('ok') });
+    this.emit('CP', { rd: this.hi(B), rs2: AREG.zero });
+    this.emit('BRNE', { targetLabel: L('ok') });
+    this.emit('MOV', { rd: this.lo(B), rs2: this.lo(A), comment: 'x/0: remainder = dividend' });
+    this.emit('MOV', { rd: this.hi(B), rs2: this.hi(A) });
+    this.emit('LDI', { rd: TSTAGE, imm: 0xff });
+    this.emit('MOV', { rd: this.lo(A), rs2: TSTAGE, comment: 'quotient = -1' });
+    this.emit('MOV', { rd: this.hi(A), rs2: TSTAGE });
+    this.emit('RET', {});
+
+    this.label(L('ok'));
+    this.emitSignInto(this.lo(SG), A, 'remember sign(a)');
+    this.emitSignInto(this.hi(SG), B, 'remember sign(b)');
+    this.emitAbs(A, this.lo(SG), L('apos'), 'a = |a|');
+    this.emitAbs(B, this.hi(SG), L('bpos'), 'b = |b|');
+    this.movwIf(AREG.X, B);
+    this.callHelper('__negx', 'negate the divisor once, so the loop can add');
+    this.movwIf(NB, AREG.X);
+
+    this.emit('MOV', { rd: this.lo(R), rs2: AREG.zero, comment: 'remainder = 0' });
+    this.emit('MOV', { rd: this.hi(R), rs2: AREG.zero });
+    this.emit('LDI', { rd: TSTAGE, imm: 16 });
+    this.label(L('loop'));
+    this.emit('ADD', { rd: this.lo(A), rs2: this.lo(A), comment: "dividend <<= 1, its top bit into the remainder" });
+    this.emit('ADC', { rd: this.hi(A), rs2: this.hi(A) });
+    this.emit('ADC', { rd: this.lo(R), rs2: this.lo(R) });
+    this.emit('ADC', { rd: this.hi(R), rs2: this.hi(R) });
+    /* No 17th bit to worry about, and that is worth stating because the usual
+       restoring-division writeup needs one: the remainder is always < |b| and a
+       16-bit signed |b| is at most 0x8000, so the shifted remainder 2r+bit is at
+       most 0xffff and cannot carry out. (Checked by exhausting the boundary
+       divisors, not assumed - and a defensive branch here would have been
+       unreachable code no test could ever cover.) */
+    this.emit('CP', { rd: this.hi(R), rs2: this.hi(B), comment: 'remainder >= b?' });
+    this.emit('BRNE', { targetLabel: L('cmp') });
+    this.emit('CP', { rd: this.lo(R), rs2: this.lo(B) });
+    this.label(L('cmp'));
+    this.emit('MOV', { rd: AREG.scratch, rs2: AREG.zero });
+    this.emit('ADC', { rd: AREG.scratch, rs2: AREG.zero });
+    this.emit('BRNE', { targetLabel: L('next') });
+    this.emit('ADD', { rd: this.lo(R), rs2: this.lo(NB), comment: 'remainder -= b' });
+    this.emit('ADC', { rd: this.hi(R), rs2: this.hi(NB) });
+    this.emit('LDI', { rd: HI, imm: 1 });
+    this.emit('ADD', { rd: this.lo(A), rs2: HI, comment: 'quotient bit = 1' });
+    this.label(L('next'));
+    this.emit('LDI', { rd: HI, imm: 0xff });
+    this.emit('ADD', { rd: TSTAGE, rs2: HI, comment: 'all 16 bits done?' });
+    this.emit('BRNE', { targetLabel: L('loop') });
+
+    this.emit('MOV', { rd: this.lo(B), rs2: this.lo(R), comment: 'remainder into the second result' });
+    this.emit('MOV', { rd: this.hi(B), rs2: this.hi(R) });
+    this.emit('CP', { rd: this.lo(SG), rs2: AREG.zero, comment: 'remainder takes the dividend' + "'" + 's sign' });
+    this.emit('BREQ', { targetLabel: L('rpos') });
+    this.negThrough(B);
+    this.label(L('rpos'));
+    this.emit('CP', { rd: this.lo(SG), rs2: this.hi(SG), comment: 'quotient is negative iff the signs differed' });
+    this.emit('BREQ', { targetLabel: L('qpos') });
+    this.negThrough(A);
+    this.label(L('qpos'));
+    this.emit('RET', {});
+  }
+
+  // No LD Rd,Z+ either, so the pointer is stepped by hand.
+  genPuts() {
+    const loop = '.L__puts_loop', done = '.L__puts_done';
+    this.label('__puts');
+    this.label(loop);
+    this.emit('LD', { rd: AREG.scratch, rs1: AREG.Z, comment: '__puts: send *Z++ until NUL' });
+    this.emit('CP', { rd: AREG.scratch, rs2: AREG.zero });
+    this.emit('BREQ', { targetLabel: done });
+    this.emitPutchar(AREG.scratch);
+    this.addConst(AREG.Z, 1);
     this.emit('RJMP', { targetLabel: loop });
     this.label(done);
     this.emit('RET', {});
@@ -5588,6 +6620,117 @@ function avrMemoryRegions(program, memSize) {
   ];
 }
 
+/* The Tiny target puts each non-recursive function's locals at a fixed address,
+   which the memory viewer can name - so the regions are more useful here than on
+   any other target: one entry per function, in address order, plus the globals
+   and the top of the stack. */
+function tinyMemoryRegions(program, memSize) {
+  const w = program.target.viewWordBytes;
+  const frames = program.staticFrames || new Map();
+  const firstFrame = frames.size ? Math.min(...frames.values()) : null;
+  const globalsEnd = firstFrame === null
+    ? program.data.base + program.data.bytes.length
+    : firstFrame;
+  const regions = [];
+  // Omitted rather than shown as an empty sliver when the program has no
+  // globals and the first static frame starts at the base of the segment.
+  if (globalsEnd > program.data.base) {
+    regions.push({ key: '__data', label: 'globals + strings', lo: program.data.base,
+      hi: program.data.base + Math.max(w, Math.ceil((globalsEnd - program.data.base) / w) * w) });
+  }
+  for (const [name, base] of frames) {
+    const rec = program.funcs.get(name);
+    if (!rec || !rec.frameSize) continue;
+    regions.push({ key: '__frame_' + name, label: name + '() locals', lo: base, hi: base + rec.frameSize });
+  }
+  regions.sort((a, b) => a.lo - b.lo);
+  // A program whose every function is recursive has no static frames at all.
+  if (!regions.length) {
+    regions.push({ key: '__data', label: 'data segment (SRAM)', lo: program.data.base,
+      hi: program.data.base + Math.max(w, program.data.bytes.length) });
+  }
+  return regions;
+}
+
+/* Stack hints for the Tiny target.
+
+   Most functions here have no frame at all, so for a program with no recursion
+   the stack is nothing but the 2-byte return addresses RCALL pushed - a clearer
+   view than the full AVR target's, not a poorer one.
+
+   The walk goes top-down and must NOT simply take every pair to be a return
+   address: a recursive callee also pushed the caller's Y and then its whole
+   frame, so pair-by-pair labelling would confidently name frame bytes as return
+   addresses. What makes the walk exact is that the callee's identity is readable
+   from the call instruction itself - the RCALL just before the return address
+   carries its target label - so each step knows whether a frame follows and how
+   big it is:
+
+       a-1, a          return address (lo at the higher address)
+       a-3, a-2        saved caller's Y     ] only when the callee
+       a-fs-3 .. a-4   the callee's frame   ] is recursive
+
+   which puts the next return address at a - 2 - (frame ? fs + 2 : 0). */
+function tinyBuildStackHints(program, result, lo, hi) {
+  const hints = new Map();
+  if (!program || !result || !result.mem) return hints;
+  const index = buildFunctionIndex(program);
+  const byte = a => (a >= 0 && a < result.memSize ? result.mem[a] : null);
+  const put = (a, text) => { if (a >= lo && a < hi && !hints.has(a)) hints.set(a, text); };
+  const putCell = (a, bytes, text) => {
+    put(a, text);
+    for (let b = 1; b < bytes; b++) put(a + b, text + ' (high byte)');
+  };
+  const abi = program.target.abi;
+
+  let a = result.stackTop;
+  for (let depth = 0; depth < MAX_FRAME_WALK && a > result.sp; depth++) {
+    const l = byte(a), h = byte(a - 1);
+    if (l == null || h == null) break;
+    const ret = l | (h << 8);
+    // Back up one instruction to land on the RCALL itself, which is both
+    // certainly inside the caller and the thing that names the callee.
+    const site = program.addrToIndex.get(ret - 2);
+    const caller = functionContaining(index, ret - 2);
+    const callIns = site === undefined ? null : program.instrs[site];
+    const callee = callIns && callIns.op === 'RCALL' ? callIns.targetLabel : null;
+    const label = caller ? 'return into ' + caller + '()' : 'return address';
+    put(a, label);
+    put(a - 1, label + ' (high byte)');
+    a -= 2;
+
+    const rec = callee ? program.funcs.get(callee) : null;
+    // Only a recursive callee has a frame; a static-locals one pushed nothing.
+    if (!rec || !program.recursive || !program.recursive.has(callee)) continue;
+    const fs = rec.frameSize;
+    put(a, callee + "() · saved caller's Y");
+    put(a - 1, callee + "() · saved caller's Y (high byte)");
+    a -= 2;
+    // Frame cells, addressed exactly as the code does: a slot at distance
+    // `offset` below the frame top sits at Y + fs - offset + 1.
+    const fpTop = a; // = Y + fs
+    for (const sl of rec.slots) {
+      const base = fpTop - sl.offset + 1;
+      const esz = elemSize(sl.ctype, abi);
+      if (sl.ctype.arraySize != null) {
+        for (let i = 0; i < sl.ctype.arraySize; i++) {
+          putCell(base + i * esz, esz, callee + '() · ' + sl.name + '[' + i + ']');
+        }
+      } else {
+        putCell(base, esz, callee + '() · ' + sl.name + (sl.param ? ' (param)' : ''));
+      }
+    }
+    for (const sv of rec.opRegSaves) {
+      putCell(fpTop - sv.offset + 1, 2, callee + '() · saved slot ' + sv.slot);
+    }
+    for (const sv of (rec.spillSlots || [])) {
+      putCell(fpTop - sv.offset + 1, 2, callee + '() · spilled slot ' + sv.slot);
+    }
+    a -= fs;
+  }
+  return hints;
+}
+
 
 /* =========================================================================
    TARGET REGISTRY
@@ -5631,9 +6774,59 @@ function rv32Target(id, label, asmLabel, useM) {
 // The target selected on load, and the fallback wherever an id is missing or
 // unrecognised. Named once so the dropdown's `selected`, the UI fallback and
 // compileC's default cannot drift apart.
-const DEFAULT_TARGET_ID = 'atmega644';
+const DEFAULT_TARGET_ID = 'tinyavr2';
 
 const TARGETS = {
+  /* The default. A subset this small is the interesting case pedagogically: it
+     shows how much of C survives when the machine offers almost nothing, and
+     what each missing instruction actually costs. Same silicon as the entry
+     below, so the two are directly comparable listing against listing - which is
+     the point of keeping both. */
+  tinyavr2: {
+    id: 'tinyavr2', label: 'ATmega644 (reduced AVR2)',
+    /* "avr2" describes the INSTRUCTION SUBSET, not the part: avr2 is an avr-gcc
+       architecture family, and the device really is an ATmega644 (naming a real
+       part is what stopped an earlier revision from inventing a memory map that
+       matched no silicon). Every one of these 14 opcodes is avr2-legal, so this
+       code would also run on a genuine avr2 device given enough SRAM. */
+    asmLabel: ATMEGA644.name + ' (reduced AVR2) - 14-opcode: '
+      + 'LDI MOV LDS STS LD ST ADD ADC CP BREQ BRNE RJMP RCALL RET',
+    abi: {
+      intSize: 2, ptrSize: 2, charSize: 1,
+      dataStart: ATMEGA644.sramStart,
+      dataAlign: 2,
+      slotAlign: 2,
+      frameBase: 0,
+      frameAlign: 2,
+      slotCount: AOPREGS.length,
+      // No PUSH, so an over-deep operand slot has to spill into a frame cell.
+      spillsToFrame: true,
+    },
+    Codegen: TinyAvrCodegen, Sim: AvrSim,
+    codegenOpts: {},
+    regNames: TINY_REG_NAMES, regPrefix: 'r', regHexDigits: 2, pcHexDigits: 4,
+    zeroReg: null,
+    hasSreg: true, sregOrder: SREG_FLAG_ORDER, sregBits: SF,
+    viewWordBytes: 1, wordLabel: 'Byte (hex)',
+    stackPointer: r => r.sp,
+    framePointer: r => r.regs[AREG.Y] | (r.regs[AREG.Y + 1] << 8),
+    stackFloor: r => r.sp + 1,
+    buildStackHints: tinyBuildStackHints,
+    memoryRegions: tinyMemoryRegions,
+    isReturn: ins => ins.op === 'RET',
+    mem: { unit: 'B', fixed: true, size: ATMEGA644.sramSize, minStack: 256 },
+    // The listing, encoder and operand tables are shared with the full AVR
+    // target: all 14 opcodes are ordinary AVR instructions, so there is nothing
+    // for this target to add and nothing that could disagree.
+    /* Saving the assembly writes a ROM image, not a listing - the shape
+       simulator/index.html's $readmemh consumes (see buildRomDumpText). One
+       16-bit word per element, packed contiguously from 0, which is how flash is
+       indexed; the byte address a design fetches with is the viewer's business,
+       derived there from the element width. */
+    romDump: { file: 'rom.txt', wordBits: 16 },
+    formatAsm: avrFormatAsm, formatInstr: avrFormatInstr, encodeInstr: avrEncodeInstr,
+    sourceRegs: avrSourceRegs, loadOps: AVR_LOAD_OPS,
+  },
   rv32im: rv32Target('rv32im', 'RV32IM', 'RV32IM (hardware mul/div)', true),
   rv32i: rv32Target('rv32i', 'RV32I', 'RV32I (software mul/div)', false),
   atmega644: {
@@ -5674,6 +6867,12 @@ const TARGETS = {
     /* SRAM is a property of the device, not a setting: 4 KB at 0x0100-0x10FF.
        `fixed` is what disables the input - see applyMemControl. */
     mem: { unit: 'B', fixed: true, size: ATMEGA644.sramSize, minStack: 256 },
+    /* Saving the assembly writes a ROM image, not a listing - the shape
+       simulator/index.html's $readmemh consumes (see buildRomDumpText). One
+       16-bit word per element, packed contiguously from 0, which is how flash is
+       indexed; the byte address a design fetches with is the viewer's business,
+       derived there from the element width. */
+    romDump: { file: 'rom.txt', wordBits: 16 },
     formatAsm: avrFormatAsm, formatInstr: avrFormatInstr, encodeInstr: avrEncodeInstr,
     sourceRegs: avrSourceRegs, loadOps: AVR_LOAD_OPS,
   },
@@ -5686,7 +6885,7 @@ const TARGETS = {
 const EXAMPLES = {
   'Hello, printf': `// printf is lowered at compile time into print syscalls (ecall),
 // one per literal fragment and one per format specifier.
-char *name = "RISC-V";
+char *name = "Baerilog";
 
 int main() {
   int a = 2;
@@ -5793,7 +6992,7 @@ int main() {
 
   'String walk (char + pointers)': `// A char is one byte, so char arrays and char* use lb/sb while
 // int and pointer accesses use lw/sw.
-char *src = "hello, riscv";
+char *src = "Hello, Baerilog";
 char upper[32];
 
 int main() {
@@ -6040,13 +7239,85 @@ function buildAsmDumpText() {
     line.kind === 'instr' ? line.code + ' // ' + line.text : line.text
   ).join('\n');
 }
+
+/* A ROM image rather than a listing, for a target whose descriptor carries
+   `romDump`. The point is that this file is consumable rather than merely
+   readable: it is exactly the shape simulator/index.html's $readmemh loads, so a
+   program compiled here can be dropped into a Verilog design as its instruction
+   memory - and that reader keeps one `//` comment per line as the annotation for
+   that address, so the disassembly rides along instead of being lost.
+
+   ONE MACHINE WORD PER LINE, all the same width, which is the whole point on a
+   machine where instruction length varies: AVR's LDS/STS are two words and
+   everything else is one, so a two-word instruction is split across two lines.
+   The opcode word comes first, matching the order flash holds them in (which is
+   also the order avrEncodeInstr packs them, opcode in the high half).
+
+   The word count comes from the ADDRESS LAYOUT, not from a per-ISA table of
+   which opcodes are long: addrs[i+1] - addrs[i] is the width of instruction i on
+   any target, so nothing here needs to know what a two-word opcode looks like. */
+function buildRomDumpText(program, spec) {
+  const t = program.target;
+  const digits = spec.wordBits / 4;
+  const perWord = spec.wordBits / 8;
+  const byIndex = labelsByIndex(program.labels);
+  const out = ['// ' + t.asmLabel, '// ' + program.instrs.length + ' instructions, '
+    + program.codeBytes + ' bytes of flash, ' + spec.wordBits + ' bits per word'];
+  for (let i = 0; i < program.instrs.length; i++) {
+    /* The label goes out twice, for two different readers. On its own line it is
+       what makes the file legible as text - and it costs nothing, because a line
+       with no value token consumes no address. But $readmemh only records a
+       comment against the first address ON THAT LINE, so a comment-only line's
+       text is dropped; to reach the Memory Viewer the label has to ride on the
+       next word's comment as well. */
+    const labels = byIndex.get(i) || [];
+    for (const name of labels) out.push('// ' + name + ':');
+    const prefix = labels.length ? labels.map(n => n + ':').join(' ') + ' ' : '';
+
+    const ins = program.instrs[i];
+    const value = t.encodeInstr(ins);
+    const text = t.formatInstr(ins);
+    if (value === null || value === undefined) {
+      // Refuse rather than write a plausible-looking word for something the
+      // encoder does not know - a wrong ROM is the one failure nothing here
+      // would catch downstream.
+      throw new Error('cannot write a ROM image: ' + ins.op
+        + ' has no encoding (instruction ' + i + ')');
+    }
+    const words = (program.addrs[i + 1] - program.addrs[i]) / perWord;
+    for (let w = 0; w < words; w++) {
+      // Most significant word first, so flash order is preserved.
+      const shift = Math.pow(2, spec.wordBits * (words - 1 - w));
+      const word = Math.floor(value / shift) % Math.pow(2, spec.wordBits);
+      /* No `@` address: words go out in flash order and $readmemh's own counter
+         places them, one per element. An explicit `@` would be actively
+         misleading here, because it takes an array INDEX while the Memory Viewer
+         shows the byte address the design fetches with - two different numbers
+         for the same row. */
+      out.push(word.toString(16).padStart(digits, '0') + ' // '
+        + (w === 0 ? prefix + text : '(word ' + (w + 1) + ' of ' + text + ')'));
+    }
+  }
+  return out.join('\n') + '\n';
+}
+
 document.getElementById('asmSaveBtn').addEventListener('click', () => {
   if (!lastProgram) return;
-  const blob = new Blob([buildAsmDumpText()], { type: 'text/plain' });
+  const t = shownTarget();
+  const spec = t.romDump;
+  let text, name;
+  try {
+    text = spec ? buildRomDumpText(lastProgram, spec) : buildAsmDumpText();
+  } catch (e) {
+    logLine('<span class="err">' + escapeHtml(e.message) + '</span>');
+    return;
+  }
+  name = spec ? spec.file : currentFileName.replace(/\.c$/i, '') + '.s';
+  const blob = new Blob([text], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = currentFileName.replace(/\.c$/i, '') + '.s';
+  a.download = name;
   a.click();
   URL.revokeObjectURL(url);
 });
@@ -6636,8 +7907,11 @@ function renderRegisters() {
     const pend = i !== t.zeroReg && pendRegs.has(i) ? pendRegs.get(i) : null;
     const cls = 'reg-cell' + (pend !== null ? ' pending' : '') + (srcs.has(i) ? ' src' : '');
     html += '<div class="' + cls + '" title="' + formatRegTitle(v) + '">'
-      + '<span class="reg-name"><span class="reg-xnum">' + t.regPrefix + i + '</span> '
-      + '<span class="reg-abi">(' + t.regNames[i] + ')</span></span>'
+      + '<span class="reg-name"><span class="reg-xnum">' + t.regPrefix + i + '</span>'
+      // A target may leave a register unnamed, in which case the role span is
+      // omitted entirely rather than rendered as an empty "()".
+      + (t.regNames[i] ? ' <span class="reg-abi">(' + t.regNames[i] + ')</span>' : '')
+      + '</span>'
       + '<span class="reg-value">' + formatRegValue(v)
       + (pend !== null ? ' <span class="reg-next">→ ' + formatRegValue(pend) + '</span>' : '')
       + '</span></div>';

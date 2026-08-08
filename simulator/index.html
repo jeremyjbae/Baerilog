@@ -356,7 +356,10 @@
     .console-box .time-tag { color: #5ac8fa; }
 
     #waveScroll { overflow-x: auto; border-radius: 12px; }
-    canvas#waveCanvas { display: block; background: #fff; }
+    /* touch-action: pan-y leaves vertical page scrolling to the browser while
+       reserving horizontal gestures for the swipe-to-scroll / drag-to-zoom
+       handlers below - without it the browser would pan the page instead. */
+    canvas#waveCanvas { display: block; background: #fff; touch-action: pan-y; }
     .wave-empty {
       font-size: 12px;
       color: #8e8e93;
@@ -550,7 +553,7 @@
             </span>
           </span>
         </h2>
-        <p>Click a signal name to show/hide its row · hover a value to change its radix · click the chart to move the cursor, drag to zoom a range, double-click to zoom in</p>
+        <p>Click a signal name to show/hide its row · hover a value to change its radix · click the chart to move the cursor, drag right to zoom into a range, drag left to zoom out, double-click to zoom in · swipe sideways (two-finger on a trackpad) to scroll · on a touchscreen, drag right/left to zoom in/out</p>
         <div class="toolbar" style="margin-bottom:14px;">
           <div class="toolbar-group">
             <span class="time-label">Zoom</span>
@@ -1714,14 +1717,39 @@ class Simulator {
       // long combinational chain could look "settled" one pass before it actually
       // converges, leaving a stale value until the next unrelated event happens to
       // re-run comb procs from scratch.
+      // The pass limit is derived from the design rather than being a magic number:
+      // with combProcs evaluated in a fixed order, one pass advances the settled
+      // frontier by at least one process even in the worst (reverse-topological)
+      // order, so an acyclic comb graph of N processes converges in at most N
+      // passes, plus one more to observe that nothing moved. Anything still
+      // changing past that is provably a cycle, not a long chain - measured: the
+      // worst case really is N+1 (a reverse-ordered chain of 100 inverters needs
+      // exactly 101), while every built-in example needs at most 6.
       let combIter = 0, combChanged = true;
-      while (combChanged && combIter++ < this.maxDeltaIters) {
+      const combLimit = this.combProcs.length + 2;
+      while (combChanged && combIter++ < combLimit) {
         this._changedThisDelta = 0;
         for (const cp of this.combProcs) {
           try { cp(); } catch (e) { this.error = e.message; this.finished = true; return; }
         }
         combChanged = this._changedThisDelta > 0;
         if (combChanged) didWork = true;
+      }
+      // Falling out of that loop while still changing used to be silent, which is
+      // the worst of both worlds: the run continues as if it had converged, and
+      // every one of those wasted passes is a real value change, so it pushes a
+      // history entry. That's how a single double-driven net grew 812,000 entries
+      // over a 410-time-unit run (against <100 on every other signal) and turned
+      // revealing its row in the hierarchy panel into a 1.6s canvas stall - the
+      // waveform renderer is an O(history) walk per row. Stopping with a named
+      // error instead keeps the junk bounded and points at the actual net.
+      if (combChanged) {
+        const culprits = this._traceOscillators();
+        this.error = 'Combinational loop: ' + (culprits.length ? culprits.join(', ') : '(unidentified)') +
+          ' still changing after ' + combLimit + ' delta iterations at t=' + this.time +
+          ' - check for a net driven by more than one source, or a self-referential assign.';
+        this.finished = true;
+        return;
       }
 
       let ranAny = false;
@@ -1742,6 +1770,26 @@ class Simulator {
         break;
       }
     }
+  }
+
+  // Names the signals responsible for a combinational loop that failed to settle.
+  // Only ever called on the give-up path, so recording names costs the settling
+  // hot path nothing: run two more passes with recording on and report whatever
+  // changed in BOTH. A signal genuinely oscillating changes on every pass, while
+  // one that was merely the last to settle changes on at most one of them.
+  // Note this deliberately mutates state (two more passes of comb writes, so a
+  // couple more history entries) - acceptable because the caller stops the run
+  // immediately afterwards, and a design with an unsettleable loop has no
+  // meaningful state past this point anyway.
+  _traceOscillators() {
+    const passes = [];
+    for (let i = 0; i < 2; i++) {
+      this._oscTrace = new Set();
+      for (const cp of this.combProcs) { try { cp(); } catch (e) { break; } }
+      passes.push(this._oscTrace);
+    }
+    this._oscTrace = null;
+    return [...passes[0]].filter(n => passes[1].has(n));
   }
 
   _stepProc(p, sendValue) {
@@ -1768,6 +1816,7 @@ class Simulator {
 
   _notifyChange(name, oldValue, newValue) {
     this._changedThisDelta++;
+    if (this._oscTrace) this._oscTrace.add(name); // only non-null while _traceOscillators is running
     const sig = this.signals[name];
     const waiters = sig.edgeWaiters;
     if (!waiters.length) return;
@@ -2336,13 +2385,11 @@ endmodule`,
 
   '8-bit RAM': `module ram (input clk, input we, input [7:0] addr, input [7:0] wdata, output [7:0] rdata);
   reg [7:0] mem [0:'hff];
-  reg [7:0] rdata;
 
   always@(posedge clk)
     if(we) mem[addr] = wdata;
 
-  always@(posedge clk)
-    rdata = mem[addr];
+  assign rdata = mem[addr];
 
   // loads mem[] from a file attached via the Memory Viewer card below -
   // this app has no real filesystem access over file://, so $readmemh can
@@ -2352,52 +2399,50 @@ endmodule
 
 module ram_tb;
   reg  clk, we;
-  reg  [7:0] waddr, raddr, wdata;
+  reg  [7:0] addr, wdata;
   wire [7:0] rdata;
 
-  ram u0 (clk, we, waddr, wdata, raddr, rdata);
+  ram u0 (clk, we, addr, wdata, rdata);
 
   always#10
     clk <= ~clk;
 
   always@(posedge clk) begin
-    raddr <= raddr + 1;
-    waddr <= waddr + 1;
+    addr <= addr + 1;
   end
 
   initial begin
-    waddr = 1;
+    addr = 1;
     wdata = 8'hA;
-    raddr = 0;
     clk = 0;
     we = 0;
-    #15 $display("addr=%d data=%h", raddr, rdata);
-    #10 $display("addr=%d data=%h", raddr, rdata);
-    #10 $display("addr=%d data=%h", raddr, rdata);
+    #15 $display("addr=%d data=%h", addr, rdata);
+    #10 $display("addr=%d data=%h", addr, rdata);
+    #10 $display("addr=%d data=%h", addr, rdata);
     we = 1;
-    #30 $display("addr=%d data=%h", raddr, rdata);
-    #10 $display("addr=%d data=%h", raddr, rdata);
+    #30 $display("addr=%d data=%h", addr, rdata);
+    #10 $display("addr=%d data=%h", addr, rdata);
     #100 $finish;
   end
 endmodule`,
 
-  '8-bit Calculator': `/* Instruction Set
+  '8-bit Calculator': `/* 
+Instruction Set
 | Bit 7 | Bit 6 | Bit 5 | Bit 4 | Bit 3 | Bit 2 | Bit 1 | Bit 0 |           Function           |  Assembly code   |
 |-------|-------|-------|-------|-------|-------|-------|-------|------------------------------|------------------|
 |   0   |   0   |  opcode[1:0]  |            a[3:0]             |    results = results op a    | ADD/SUB/SHL/SHR  |
 |   0   |   1   |                   imm[5:0]                    |        results = imm         |       MOV        |
-*/
 
-/* Opcode
+Opcode
 | Bit 1 | Bit 0 | Function |
 |-------|-------|----------|
-|   0   |   0   |   ADD    |
+|   1   |   0   |   ADD    |
 |   0   |   1   |   SUB    |
-|   1   |   0   |   SHL    | (not implemented)
+|   0   |   0   |   SHL    | (not implemented)
 |   1   |   1   |   SHR    | (not implemented)
 */
 
-module calc (input clk, input rst_n, input [7:0] data, output [7:0] addr);
+module calc (input clk, input rst_n, output [7:0] addr, input [7:0] data);
   reg [7:0] results;
 
   always@(posedge clk or negedge rst_n) begin
@@ -2415,18 +2460,18 @@ module calc (input clk, input rst_n, input [7:0] data, output [7:0] addr);
     end
   end
 
-  pc u_pc (.clk(clk), .rst_n(rst_n), .addr(addr));
+  pc u_pc (.clk(clk), .rst_n(rst_n), .pc(addr));
 
 endmodule
 
-module pc (input clk, input rst_n, output [7:0] addr);
-  reg [7:0] addr;
+module pc (input clk, input rst_n, output [7:0] pc);
+  reg [7:0] pc;
 
   always@(posedge clk or negedge rst_n) begin
     if(!rst_n)
-      addr <= 0;
+      pc <= 0;
     else
-      addr <= addr + 1;
+      pc <= pc + 1;
   end
 
 endmodule
@@ -2448,7 +2493,7 @@ module system (input clk, input rst_n);
   wire [7:0] data;
 
   rom u_rom (addr, data);
-  calc u_calc (clk, rst_n, data, addr);
+  calc u_calc (clk, rst_n, addr, data);
 
 endmodule
 
@@ -2469,47 +2514,67 @@ module system_tb;
   end
 endmodule`,
 
-  '8-bit CPU': `/* Instruction Set
+  '8-bit CPU (8-bit instruction)': `/*
+Instruction Set
 | Bit 7 | Bit 6 | Bit 5 | Bit 4 | Bit 3 | Bit 2 | Bit 1 | Bit 0 |           Function           |  Assembly code   |
 |-------|-------|-------|-------|-------|-------|-------|-------|------------------------------|------------------|
 |   0   |   0   |  opcode[1:0]  |            a[3:0]             |    results = results op a    | ADD/SUB/SHL/SHR  |
 |   0   |   1   |                   imm[5:0]                    |        results = imm         |       MOV        |
 |   1   |   0   |         offset[5:0] (2's complement)          | if results > 0, pc=pc+offset |       BGT        |
-|   1   |   1   |  L/S  |         addr[4:0] (unsigned)          |         load / store         |     LD / ST      | (not implemented)
-*/
+|   1   |   1   |  L/S  |       RAM addr[4:0] (unsigned)        | L/S=0, results = mem[addr]   |       LD         |
+|       |       |       |                                       | L/S=1, mem[addr] = results   |       ST         |
 
-/* Opcode
+Opcode
 | Bit 1 | Bit 0 | Function |
 |-------|-------|----------|
-|   0   |   0   |   ADD    |
+|   1   |   0   |   ADD    |
 |   0   |   1   |   SUB    |
-|   1   |   0   |   SHL    |
+|   0   |   0   |   SHL    |
 |   1   |   1   |   SHR    |
-*/
 
-/* Test Code (rom.txt)
-01001111 // MOV 15
-00010001 // SUB 1
-10111111 // BGT -1
+L/S Bit
+| Bit 0 | Function |
+|-------|----------|
+|   0   |LD (Load) |
+|   1   |ST (Store)|
+
+Test Code (rom.txt)
+01001111 // MOV 0
+00100001 // ADD 1
+11100000 // ST 0
+00100001 // ADD 1
+11100001 // ST 1
+11000000 // LD 0
+00100000 // NOP
+00100000 // NOP
 00100000 // NOP
 00100000 // NOP
 */        
 
-module cpu (input clk, input rst_n, input [7:0] inst, output [7:0] addr, input [7:0] wdata, output [7:0] rdata);
+module cpu (input clk, input rst_n, output [7:0] iaddr, input [7:0] inst, output [7:0] daddr, output we, output [7:0] wdata, input [7:0] rdata);
   reg [7:0] results;
+  wire [7:0] daddr;
   wire      gt0;
 
-  assign gt0 = (results > 8'b0);
+  assign gt0   = (results > 8'b0);
+
+  assign we    = (inst[7:5] == 3'b111);
+  assign daddr = (inst[7:6] == 2'b11) ? {3'b0, inst[4:0]} : 8'b0;
+  assign wdata = (we) ? results : 8'b0;
 
   always@(posedge clk or negedge rst_n) begin
     if(!rst_n)
       results <= 0;
     else begin
-      if(inst[6])
-        results <= inst[5:0];
-      else if(!inst[7])begin
+      if(inst[7:6] == 2'b11) begin
+        if(!inst[5])
+          results <= rdata; // LD
+      end
+      else if(inst[7:6] == 2'b01) begin
+         results <= inst[5:0];
+      end
+      else if(inst[7:6] == 2'b00) begin
         casex(inst[6:4])
-          3'b1xx: results <= inst[5:0]; // MOV
           3'b010: results <= results + inst[3:0]; // ADD
           3'b001: results <= results - inst[3:0]; // SUB
           3'b000: results <= results << inst[3:0]; // SHL
@@ -2519,21 +2584,21 @@ module cpu (input clk, input rst_n, input [7:0] inst, output [7:0] addr, input [
     end
   end
 
-  pc u_pc (.clk(clk), .rst_n(rst_n), .inst(inst), .gt0(gt0), .addr(addr));
+  pc u_pc (.clk(clk), .rst_n(rst_n), .inst(inst), .gt0(gt0), .pc(iaddr));
 
 endmodule
 
-module pc (input clk, input rst_n, input [7:0] inst, input gt0, output [7:0] addr);
-  reg [7:0] addr;
+module pc (input clk, input rst_n, input [7:0] inst, input gt0, output [7:0] pc);
+  reg [7:0] pc;
 
   always@(posedge clk or negedge rst_n) begin
     if(!rst_n)
-      addr <= 0;
+      pc <= 0;
     else begin
       if(inst[7:6] == 2'b10 && gt0)
-        addr <= addr + {{2{inst[5]}},inst[5:0]};
+        pc <= pc + {{2{inst[5]}},inst[5:0]};
       else
-        addr <= addr + 1;
+        pc <= pc + 1;
     end
   end
 
@@ -2553,13 +2618,11 @@ endmodule
 
 module ram (input clk, input we, input [7:0] addr, input [7:0] wdata, output [7:0] rdata);
   reg [7:0] mem [0:'hff];
-  reg [7:0] rdata;
 
   always@(posedge clk)
     if(we) mem[addr] = wdata;
 
-  always@(posedge clk)
-    rdata = mem[addr];
+  assign rdata = mem[addr];
 
   // loads mem[] from a file attached via the Memory Viewer card below -
   // this app has no real filesystem access over file://, so $readmemh can
@@ -2568,16 +2631,115 @@ module ram (input clk, input we, input [7:0] addr, input [7:0] wdata, output [7:
 endmodule
 
 module system (input clk, input rst_n);
-  wire [7:0] addr;
-  wire [7:0] data;
+  wire [7:0] inst;
+  wire [7:0] iaddr;
   wire [7:0] daddr;
   wire [7:0] wdata;
   wire [7:0] rdata;
   wire we;
 
-  rom u_rom (addr, data);
-  ram u_ram (clk, we, addr, wdata, rdata);
-  cpu u_cpu (clk, rst_n, data, addr, wdata, rdata);
+  rom u_rom (iaddr, inst);
+  ram u_ram (clk, we, daddr, wdata, rdata);
+  cpu u_cpu (clk, rst_n, iaddr, inst, daddr, we, wdata, rdata);
+
+endmodule
+
+module system_tb;
+  reg clk;
+  reg rst_n;
+
+  system u_sys (clk, rst_n);
+
+  // clock generator: toggles every 5 time units
+  always #5 clk = ~clk;
+
+  initial begin
+    clk = 0;
+    rst_n = 0;
+    #10 rst_n = 1;
+    #400 $finish;
+  end
+endmodule`,
+
+  '8-bit CPU (16-bit instruction)': `
+/* reduced AVR2 instruction */        
+
+module cpu (input clk, input rst_n, output [15:0] iaddr, input [15:0] inst, output [7:0] daddr, output we, output [7:0] wdata, input [7:0] rdata);
+  wire [7:0] daddr;
+  wire [15:0] pc, pc_nxt;
+  wire [3:0] opcode;
+  wire [7:0] op_a, op_b;
+  wire [7:0] alu_out;
+  wire [4:0] rf_ridx, rf_widx;
+  wire [7:0] rf_rdata, rf_wdata;
+
+  assign pc_nxt = pc + 2;
+  assign iaddr = pc;
+
+  alu u_alu (.clk(clk), .rst_n(rst_n), .opcode(opcode), .op_a(op_a), .op_b(op_b), .alu_out(alu_out));
+  rf u_rf (.clk(clk), .rst_n(rst_n), .rf_ridx(rf_ridx), .rf_widx(rf_widx), . rf_wdata(rf_wdata), .we(we), . rf_rdata(rf_rdata));
+  pc u_pc (.clk(clk), .rst_n(rst_n), .inst(inst), .pc_nxt(pc_nxt), .pc(pc));
+
+endmodule
+
+module alu (input clk, input rst_n, input [3:0] opcode, input [7:0] op_a, input [7:0] op_b, output [7:0] alu_out);
+
+endmodule
+
+module rf (input clk, input rst_n, input [4:0] rf_ridx, input [4:0] rf_widx, input [7:0] rf_wdata, input we, output [7:0] rf_rdata);
+
+endmodule
+
+module pc (input clk, input rst_n, input [15:0] inst, input [15:0] pc_nxt, output [15:0] pc);
+  reg [15:0] pc;
+
+  always@(posedge clk or negedge rst_n) begin
+    if(!rst_n)
+      pc <= 0;
+    else begin
+      pc <= pc_nxt;
+    end
+  end
+
+endmodule
+
+module rom_256x16 (input [15:0] addr, output [15:0] data);
+  reg [15:0] mem [0:'hff];
+
+  assign data = mem[addr[15:1]];
+
+  // loads mem[] from a file attached via the Memory Viewer card below -
+  // this app has no real filesystem access over file://, so $readmemh can
+  // only resolve a filename the user has already attached there
+  initial $readmemh("rom.txt", mem, 0);
+
+endmodule
+
+module ram_256x8 (input clk, input we, input [7:0] addr, input [7:0] wdata, output [7:0] rdata);
+  reg [7:0] mem [0:'hff];
+
+  always@(posedge clk)
+    if(we) mem[addr] = wdata;
+
+  assign rdata = mem[addr];
+
+  // loads mem[] from a file attached via the Memory Viewer card below -
+  // this app has no real filesystem access over file://, so $readmemh can
+  // only resolve a filename the user has already attached there
+  initial $readmemh("ram.txt", mem, 0);
+endmodule
+
+module system (input clk, input rst_n);
+  wire [15:0] inst;
+  wire [15:0] iaddr;
+  wire [7:0] daddr;
+  wire [7:0] wdata;
+  wire [7:0] rdata;
+  wire we;
+
+  rom_256x16 u_rom (iaddr, inst);
+  ram_256x8 u_ram (clk, we, daddr, wdata, rdata);
+  cpu u_cpu (clk, rst_n, iaddr, inst, daddr, we, wdata, rdata);
 
 endmodule
 
@@ -2819,6 +2981,24 @@ function waveScrollBy(fraction) {
 }
 function waveScrollLeft() { waveScrollBy(-0.5); }
 function waveScrollRight() { waveScrollBy(0.5); }
+// Sets the view to `span` time units wide with `anchorTime` sitting at fractional
+// position `anchorFrac` across the plot - i.e. zooms about a fixed point, which is
+// what makes the touch zoom drag feel anchored under the finger. A window that
+// lands outside the data is SHIFTED back inside rather than shrunk (same shape as
+// waveScrollBy's clamping), so zooming near t=0 or the end doesn't silently
+// change the span the caller asked for.
+const WAVE_MIN_SPAN = 1; // same floor waveZoomAt uses
+function waveSetSpanAround(anchorTime, anchorFrac, span) {
+  if (!lastResult) return;
+  const [fullMin, fullMax] = waveFullRange();
+  span = Math.max(WAVE_MIN_SPAN, Math.min(fullMax - fullMin, span));
+  let start = anchorTime - anchorFrac * span;
+  let end = start + span;
+  if (start < fullMin) { start = fullMin; end = fullMin + span; }
+  if (end > fullMax) { end = fullMax; start = fullMax - span; }
+  viewStart = start; viewEnd = end;
+  drawWaveform(lastResult);
+}
 function waveApplyRange() {
   if (!lastResult) return;
   const s = parseFloat(waveStartInput.value);
@@ -2995,15 +3175,29 @@ function renderMemoryTable() {
   }
   memoryTableWrap.style.display = 'block';
   memoryEmpty.style.display = 'none';
-  const addrWidth = Math.max(1, Math.ceil(Math.log2(Math.max(mem.hi, 1) + 1)));
+  /* An element wider than a byte is addressed in BYTES by whatever reads it - a
+     16-bit instruction ROM fetched by a byte-counting PC, say - so the address
+     column shows each element's byte address rather than its array index. For a
+     `reg [7:0]` memory the two are the same, which is why every built-in example
+     looks unchanged.
+
+     Note this deliberately makes the column differ from what `$readmemh`'s `@`
+     directives take: those are array indices, always. The column answers "where
+     does the design see this word", not "what index would I write in the file". */
+  const bytesPerElem = Math.max(1, Math.ceil(mem.elemWidth / 8));
+  const topAddr = Math.max(mem.hi * bytesPerElem, 1);
+  const addrWidth = Math.max(1, Math.ceil(Math.log2(topAddr + 1)));
   const valueLabel = memHexCheckbox.checked && memBinCheckbox.checked ? 'Value (hex (binary))'
     : memHexCheckbox.checked ? 'Value (hex)' : 'Value (binary)';
   const hasComments = mem.comments && mem.comments.size > 0;
-  let html = '<thead><tr><th>Address (hex)</th><th>' + valueLabel + '</th>'
+  let html = '<thead><tr><th>Address (hex'
+    + (bytesPerElem > 1 ? ', bytes' : '') + ')</th><th>' + valueLabel + '</th>'
     + (hasComments ? '<th>Comment</th>' : '') + '</tr></thead><tbody>';
   for (let i = 0; i < mem.depth; i++) {
+    // The INDEX is what indexes cells and keys comments; the byte address is
+    // display only, so the two must not be confused here.
     const addr = mem.lo + i;
-    const addrHex = addr.toString(16).padStart(Math.ceil(addrWidth / 4), '0');
+    const addrHex = (addr * bytesPerElem).toString(16).padStart(Math.ceil(addrWidth / 4), '0');
     const value = mem.cells[i];
     const valueHex = formatValue(value, mem.elemWidth, 'hex');
     const valueBin = groupBinary(formatValue(value, mem.elemWidth, 'bin'));
@@ -3793,9 +3987,11 @@ function drawWaveform(result) {
     }
   });
 
-  // drag-to-zoom selection band
+  // drag-to-zoom selection band - blue when the drag will zoom in (rightward),
+  // gray when it will zoom out (leftward), since the two gestures are otherwise
+  // indistinguishable until the mouse is released
   if (dragBandPx) {
-    ctx.fillStyle = 'rgba(0, 122, 255, 0.15)';
+    ctx.fillStyle = dragBandPx.zoomOut ? 'rgba(142, 142, 147, 0.18)' : 'rgba(0, 122, 255, 0.15)';
     ctx.fillRect(dragBandPx.x0, PAD_TOP - 6, dragBandPx.x1 - dragBandPx.x0, names.length * ROW_H + 6);
   }
 
@@ -3865,7 +4061,9 @@ function drawWaveform(result) {
 
 /* ---- waveform mouse interaction ----
    single click: set the cursor (drives the value column)
-   click + drag + release: select a range, zooms the view to it
+   drag right + release: select a range, zooms the view to it
+   drag left + release: the exact inverse - zooms out until the current view
+     occupies the dragged band, so dragging out a third of the width zooms out 3x
    double-click: zoom in centered on that time
    hovering a value cell: pop up the radix picker (cursor does not follow hover) */
 const DRAG_THRESHOLD = 4;
@@ -3895,7 +4093,11 @@ window.addEventListener('mousemove', (e) => {
   if (Math.abs(mx - dragStartX) > DRAG_THRESHOLD) dragMoved = true;
   if (dragMoved) {
     const clamped = Math.max(plotX0, Math.min(plotX0 + plotW, mx));
-    dragBandPx = { x0: Math.min(dragStartX, clamped), x1: Math.max(dragStartX, clamped) };
+    dragBandPx = {
+      x0: Math.min(dragStartX, clamped),
+      x1: Math.max(dragStartX, clamped),
+      zoomOut: clamped < dragStartX, // direction is the gesture's meaning, not just its extent
+    };
     drawWaveform(lastResult);
   }
 });
@@ -3906,15 +4108,27 @@ window.addEventListener('mouseup', (e) => {
   if (!lastResult || !waveLayout) { dragMoved = false; dragBandPx = null; return; }
   const rect = waveCanvas.getBoundingClientRect();
   const mx = e.clientX - rect.left;
-  if (dragMoved && dragBandPx && dragBandPx.x1 - dragBandPx.x0 > DRAG_THRESHOLD) {
-    const t0 = pxToTime(dragBandPx.x0);
-    const t1 = pxToTime(dragBandPx.x1);
-    if (t1 - t0 >= 0.001) { viewStart = t0; viewEnd = t1; }
-  } else {
-    cursorTime = pxToTime(mx);
-  }
+  // The band is cleared before the view changes, so the zoom-out path's own redraw
+  // (inside waveSetSpanAround) can't flash a stale band over the new view.
+  const band = (dragMoved && dragBandPx && dragBandPx.x1 - dragBandPx.x0 > DRAG_THRESHOLD) ? dragBandPx : null;
   dragMoved = false;
   dragBandPx = null;
+  if (!band) {
+    cursorTime = pxToTime(mx);
+  } else if (band.zoomOut) {
+    // Inverse of the zoom-in below: instead of the band becoming the whole view,
+    // the whole view becomes the band. A band w px wide out of plotW therefore
+    // zooms out by plotW/w, and anchoring viewStart at the band's left edge puts
+    // viewEnd on its right edge by construction. Span and boundary clamping (a
+    // hair-thin band asks for an enormous span) are waveSetSpanAround's job.
+    const { plotX0, plotW } = waveLayout;
+    const span = viewEnd - viewStart;
+    waveSetSpanAround(viewStart, (band.x0 - plotX0) / plotW, span * plotW / (band.x1 - band.x0));
+  } else {
+    const t0 = pxToTime(band.x0);
+    const t1 = pxToTime(band.x1);
+    if (t1 - t0 >= 0.001) { viewStart = t0; viewEnd = t1; }
+  }
   drawWaveform(lastResult);
 });
 
@@ -4003,6 +4217,104 @@ waveCanvas.addEventListener('mouseleave', () => {
   if (hoverNameSignal) { hoverNameSignal = null; hideNameTooltip(); }
   if (hoverNameDivider) { hoverNameDivider = false; if (lastResult) drawWaveform(lastResult); }
 });
+
+/* ---- waveform swipe / touch gestures ----
+   wheel with a horizontal delta (two-finger trackpad swipe, tilt wheel, shift+wheel):
+     pans the view at the current zoom level, using the OS sign convention
+     (deltaX > 0 scrolls right, i.e. moves the view later in time).
+   one-finger touch drag: zooms proportionally to the drag distance - rightward in,
+     leftward out - anchored on where the gesture started.
+   two-finger touch swipe: pans, content following the fingers.
+   a motionless tap sets the cursor: touchstart deliberately does NOT preventDefault,
+     so the browser still synthesizes the mousedown/mouseup the click path above
+     already handles, and taps need no code of their own here.
+   Both listeners must be non-passive or preventDefault() is ignored. */
+const WHEEL_LINE_PX = 16;         // deltaMode 1 (lines) -> px, as Firefox reports lines
+const TOUCH_ZOOM_PER_WIDTH = 4;   // zoom factor for a drag across the full plot width
+
+waveCanvas.addEventListener('wheel', (e) => {
+  if (!lastResult || !waveLayout) return;
+  const { plotW } = waveLayout;
+  // Shift+wheel is the conventional horizontal-scroll modifier, and the only way a
+  // plain wheel mouse can reach this at all. Otherwise a predominantly vertical
+  // gesture is left alone so it still scrolls the page.
+  const vertical = Math.abs(e.deltaY) > Math.abs(e.deltaX);
+  if (vertical && !e.shiftKey) return;
+  let dx = vertical ? e.deltaY : e.deltaX;
+  if (!dx) return;
+  if (e.deltaMode === 1) dx *= WHEEL_LINE_PX;
+  else if (e.deltaMode === 2) dx *= plotW;
+  e.preventDefault(); // also suppresses the browser's horizontal-swipe back-navigation
+  waveScrollBy(dx / plotW); // clamps at the data boundaries and redraws
+}, { passive: false });
+
+// null until the first touchmove past the threshold latches a mode, then one of
+// 'pan' | 'zoom' | 'page' ('page' = give up, the browser scrolls). Latched once per
+// gesture so a wobbling finger can't flip modes mid-drag.
+let touchGesture = null;
+function touchMidpoint(touches) {
+  const rect = waveCanvas.getBoundingClientRect();
+  const n = Math.min(touches.length, 2);
+  let x = 0, y = 0;
+  for (let i = 0; i < n; i++) { x += touches[i].clientX; y += touches[i].clientY; }
+  return { x: x / n - rect.left, y: y / n - rect.top };
+}
+
+waveCanvas.addEventListener('touchstart', (e) => {
+  if (!lastResult || !waveLayout) { touchGesture = null; return; }
+  const { plotX0, plotW } = waveLayout;
+  const p = touchMidpoint(e.touches);
+  if (p.x < plotX0 || p.x > plotX0 + plotW) { touchGesture = null; return; } // name/value columns keep their own behaviour
+  touchGesture = {
+    mode: null,
+    startX: p.x, startY: p.y, lastX: p.x,
+    anchorTime: pxToTime(p.x),
+    anchorFrac: (p.x - plotX0) / plotW,
+    startSpan: viewEnd - viewStart,
+  };
+}, { passive: false });
+
+waveCanvas.addEventListener('touchmove', (e) => {
+  if (!touchGesture || !lastResult || !waveLayout) return;
+  const g = touchGesture;
+  const { plotW } = waveLayout;
+  // Two touches are tracked by their MIDPOINT, so a pure pinch (fingers moving
+  // opposite ways) moves it barely at all and pans nothing, rather than jittering.
+  const p = touchMidpoint(e.touches);
+  const dx = p.x - g.startX;
+  if (!g.mode) {
+    if (Math.max(Math.abs(dx), Math.abs(p.y - g.startY)) <= DRAG_THRESHOLD) return;
+    g.mode = Math.abs(p.y - g.startY) > Math.abs(dx) ? 'page'
+           : e.touches.length >= 2 ? 'pan' : 'zoom';
+  }
+  if (g.mode === 'page') return;
+  e.preventDefault();
+  if (g.mode === 'pan') {
+    waveScrollBy(-(p.x - g.lastX) / plotW); // negated: content follows the fingers
+  } else {
+    // Measured from the gesture's start, not the previous move, so the zoom is
+    // absolute - dragging back to where you started restores the original span.
+    const ratio = Math.pow(TOUCH_ZOOM_PER_WIDTH, dx / plotW);
+    waveSetSpanAround(g.anchorTime, g.anchorFrac, g.startSpan / ratio);
+  }
+  g.lastX = p.x;
+}, { passive: false });
+
+// Lifting one finger of a two-finger swipe re-anchors on whatever is still down and
+// keeps the latched mode, rather than ending the gesture (which would need a lift and
+// re-touch to carry on) or continuing from a stale midpoint (which would jump).
+function endTouchGesture(e) {
+  if (!touchGesture || !e.touches.length || !lastResult || !waveLayout) { touchGesture = null; return; }
+  const { plotX0, plotW } = waveLayout;
+  const p = touchMidpoint(e.touches);
+  const g = touchGesture;
+  g.startX = g.lastX = p.x; g.startY = p.y;
+  g.anchorTime = pxToTime(p.x);
+  g.anchorFrac = Math.max(0, Math.min(1, (p.x - plotX0) / plotW));
+  g.startSpan = viewEnd - viewStart;
+}
+waveCanvas.addEventListener('touchend', endTouchGesture);
+waveCanvas.addEventListener('touchcancel', endTouchGesture);
 
 function niceTickStep(totalTime) {
   const target = totalTime / 10;
