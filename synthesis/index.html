@@ -841,17 +841,29 @@ function lex(src) {
     if (c === '/' && src[i+1] === '*') { i += 2; while (i < n && !(src[i]==='*'&&src[i+1]==='/')) { if (src[i]==='\n') line++; i++; } i += 2; continue; }
     if (/[0-9]/.test(c)) {
       let j = i;
-      while (j < n && /[0-9]/.test(src[j])) j++;
+      /* Underscores are legal digit separators anywhere after the first digit
+         (`1_000`, `8'b0000_0001`, `16'hDE_AD`), so they are consumed here and
+         STRIPPED from `digits` - every consumer then sees clean text and needs no
+         knowledge of them. Stripping at the lexer rather than at each use is what
+         makes that safe, because the three consumers failed in three different
+         ways: numToBits threw a raw BigInt error, `parseInt(digits, 10)` for a bit
+         index or range bound silently truncated ('1_0' -> 1), and _patternBits
+         walks the digit string POSITIONALLY, so an underscore shifted a casex
+         pattern's alignment and silently synthesized a comparison against a
+         different bit. */
+      while (j < n && /[0-9_]/.test(src[j])) j++;
       if (src[j] === "'") {
-        const widthStr = src.slice(i, j);
+        const widthStr = src.slice(i, j).replace(/_/g, '');
         const base = src[j+1];
         let k = j + 2;
         while (k < n && /[0-9A-Fa-fxXzZ?_]/.test(src[k])) k++;
-        toks.push({ type: 'num', value: { width: parseInt(widthStr,10), base, digits: src.slice(j+2, k) }, line, start: i, end: k });
+        const digits = src.slice(j+2, k).replace(/_/g, '');
+        if (!digits) throw new Error(`Parse error: numeric literal '${src.slice(i, k)}' has no digits (line ${line})`);
+        toks.push({ type: 'num', value: { width: parseInt(widthStr,10), base, digits }, line, start: i, end: k });
         i = k;
         continue;
       }
-      toks.push({ type: 'num', value: { width: null, base: 'd', digits: src.slice(i, j) }, line, start: i, end: j });
+      toks.push({ type: 'num', value: { width: null, base: 'd', digits: src.slice(i, j).replace(/_/g, '') }, line, start: i, end: j });
       i = j;
       continue;
     }
@@ -946,9 +958,21 @@ class Parser {
       let isReg = false;
       if (kind === 'output' && this.at('reg')) { this.next(); isReg = true; }
       const range = this.parseRange();
-      const name = this.expect('ident').value;
-      ports.push(name);
-      decls.push({ kind, isReg, range, names: [name] });
+      /* The direction, reg-ness and range carry across commas until a new direction
+         appears, so `input [7:0] r0, r1, r2` declares all three - which is what the
+         LOOKAHEAD is for: only a bare identifier continues this declaration, while
+         `input a, output b` starts a new one. Without it, r1 and r2 were pushed as
+         bare port names with no declaration and _buildSignalTable rejected them.
+
+         One decl carrying N names, exactly as parseDecl yields for the equivalent
+         body declaration, so nothing downstream has to know which style was used. */
+      const names = [this.expect('ident').value];
+      while (this.at(',') && this.peek(1).type === 'ident') {
+        this.next();
+        names.push(this.expect('ident').value);
+      }
+      for (const n of names) ports.push(n);
+      decls.push({ kind, isReg, range, names });
       return;
     }
     ports.push(this.expect('ident').value);
@@ -1275,6 +1299,15 @@ function exprToStr(node) {
 
 function numToBits(numVal, width) {
   let bigVal;
+  /* x/z digits have no value to convert, so they reached BigInt and surfaced as a
+     raw 'Cannot convert 0bxxxx to a BigInt'. They are legal only as casex
+     wildcards, which _patternBits handles before ever calling here - so reaching
+     this point means one was used where a value is required. Underscores cannot
+     appear: the lexer strips them (see there). */
+  if (/[xXzZ?]/.test(numVal.digits)) {
+    const lit = numVal.width ? `${numVal.width}'${numVal.base}${numVal.digits}` : numVal.digits;
+    throw new Error(`Literal '${lit}' has x/z digits, which have no value — they are only allowed as casex item wildcards`);
+  }
   if (numVal.base === 'b') bigVal = BigInt('0b' + numVal.digits);
   else if (numVal.base === 'h') bigVal = BigInt('0x' + numVal.digits);
   else if (numVal.base === 'o') bigVal = BigInt('0o' + numVal.digits);
@@ -1329,6 +1362,54 @@ class Synthesizer {
     }
     for (const portName of this.ast.ports) {
       if (!this.sig[portName]) this.error(`Port '${portName}' has no input/output declaration`);
+    }
+    this._checkAssignmentKinds();
+  }
+
+  /* Verilog decides where a signal may be assigned by whether it is a variable:
+     an `always` block may only assign a reg (so an output driven there must be
+     declared `output reg`), and a continuous `assign` may only drive a net. This
+     synthesizer does not itself care - it infers a flop or a mux from the
+     sensitivity list, never from reg-ness - so both mistakes used to synthesize
+     silently, and a design this app accepted could be rejected by every other
+     tool. Checking it here is the whole value: the error names the signal and the
+     declaration it needs, which is what the user cannot see from a netlist. */
+  _checkAssignmentKinds() {
+    const targets = (lhs, out) => {
+      if (!lhs) return;
+      if (lhs.type === 'ConcatLvalue') { for (const e of lhs.elems) targets(e, out); return; }
+      if (lhs.name) out.add(lhs.name);
+    };
+    const walk = (stmt, out) => {
+      if (!stmt) return;
+      switch (stmt.type) {
+        case 'Block': for (const st of stmt.stmts) walk(st, out); return;
+        case 'If': walk(stmt.then, out); walk(stmt.else, out); return;
+        case 'Case':
+          for (const it of stmt.items) walk(it.body, out);
+          walk(stmt.defaultBody, out);
+          return;
+        default: targets(stmt.lhs, out);
+      }
+    };
+
+    const proc = new Set();
+    for (const blk of this.ast.always) walk(blk.body, proc);
+    for (const name of proc) {
+      const s = this.sig[name];
+      if (!s || s.isReg) continue;
+      const fix = s.dir === 'output' ? `declare it 'output reg'` : `declare it as a 'reg'`;
+      this.error(`'${name}' is assigned inside an always block but is not a reg — ${fix}`);
+    }
+
+    const cont = new Set();
+    for (const a of this.ast.assigns) targets(a.lhs, cont);
+    for (const name of cont) {
+      const s = this.sig[name];
+      if (!s || !s.isReg) continue;
+      // A reg driven continuously is the mirror mistake, and just as silent.
+      const fix = s.dir === 'output' ? `drop the 'reg' from its declaration` : `declare it as a 'wire'`;
+      this.error(`'${name}' is a reg but is driven by a continuous assign — ${fix}`);
     }
   }
 
@@ -1865,7 +1946,18 @@ class Synthesizer {
   _alias(targetNet, sourceNet) {
     if (targetNet === sourceNet) return;
     let rewrote = false;
-    if (!Object.values(this.constNets).includes(sourceNet)) {
+    /* The rename is only safe on a net the synthesizer invented for itself. A net
+       belonging to a DECLARED signal may be read anywhere in the module - and by
+       statements not yet synthesized, so counting current consumers would not be
+       enough - and renaming its driver steals it from all of them. That is what
+       broke `assign o = res[7:0]; assign q7 = res[7];`: aliasing q7 renamed the
+       mux driving res[7] to q7, leaving res[7] with no driver at all and the
+       other consumer dangling, in either statement order. This is the same
+       failure the constant guard below already prevents, generalised: a shared
+       net must be buffered, never renamed. */
+    const sourceBase = sourceNet.replace(/\[\d+\]$/, '');
+    const sourceIsDeclared = Object.prototype.hasOwnProperty.call(this.sig, sourceBase);
+    if (!sourceIsDeclared && !Object.values(this.constNets).includes(sourceNet)) {
       for (const c of this.cells) {
         for (const p of Object.keys(c.ports)) {
           if (c.ports[p] !== sourceNet) continue;
@@ -2851,7 +2943,12 @@ function genModuleVerilog(result) {
       const s = sig[name];
       if (s.dir !== dir) continue;
       const rangeStr = s.width > 1 ? `[${s.lo + s.width - 1}:${s.lo}] ` : '';
-      lines.push(`  ${dir}${s.isReg && dir === 'output' ? ' reg' : ''} ${rangeStr}${name};`);
+      /* Never `output reg`, however the source declared it. This netlist is
+         structural - every port is driven by a cell instance - and a reg cannot
+         be driven by an instance, so copying the source's reg-ness here emitted
+         Verilog no tool would compile. reg-ness is an input-validation property
+         (see _checkAssignmentKinds), not an output one. */
+      lines.push(`  ${dir} ${rangeStr}${name};`);
     }
   }
   const portNets = new Set();

@@ -643,9 +643,15 @@ function lex(src) {
     }
     if (/[0-9]/.test(c)) {
       let j = i;
-      while (j < n && /[0-9]/.test(src[j])) j++;
+      /* Underscores are legal digit separators anywhere after the first digit, so
+         they are consumed here and stripped below. The based forms already did
+         that (see the two `.replace(/_/g, '')` calls); what was missing is this
+         scan and the unsized path, so `1_000` lexed as NUMBER(1) followed by
+         IDENT(_000) and failed as "expected ';'". A size prefix may carry them
+         too (`1_6'hff`). */
+      while (j < n && /[0-9_]/.test(src[j])) j++;
       if (src[j] === "'") {
-        const sizeStr = src.slice(i, j);
+        const sizeStr = src.slice(i, j).replace(/_/g, '');
         let k = j + 1, base = 'd';
         if (/[bBoOdDhH]/.test(src[k])) { base = src[k].toLowerCase(); k++; }
         const ds = k;
@@ -654,7 +660,7 @@ function lex(src) {
         toks.push({ type: 'NUMBER', value: { size: sizeStr ? parseInt(sizeStr, 10) : null, base, digits }, line, start: i, end: k });
         i = k; continue;
       }
-      toks.push({ type: 'NUMBER', value: { size: null, base: 'd', digits: src.slice(i, j) }, line, start: i, end: j });
+      toks.push({ type: 'NUMBER', value: { size: null, base: 'd', digits: src.slice(i, j).replace(/_/g, '') }, line, start: i, end: j });
       i = j; continue;
     }
     if (c === "'") {
@@ -769,9 +775,25 @@ class Parser {
       let kind = ioKind;
       if (this.atKw('reg') || this.atKw('wire')) kind = this.next().value;
       const width = this.parseRange();
-      const name = this.expectIdent();
-      ports.push(name);
-      decls.push({ kind, ioKind, name, width, array: null });
+      /* The direction, reg/wire-ness and range carry across commas until a new
+         direction appears, so `input [7:0] r0, r1, r2` declares all three - which
+         is what the LOOKAHEAD is for: only a bare identifier continues this
+         declaration, while `input a, output b` starts a new one. Without it the
+         later names became bare ports with no declaration and elaboration
+         rejected them with "port 'r1' ... has no input/output declaration".
+
+         One decl per name, matching what parseDecl produces for the equivalent
+         body declaration, so nothing downstream needs to know which style was
+         used. */
+      const names = [this.expectIdent()];
+      while (this.atOp(',') && this.peek(1) && this.peek(1).type === 'IDENT') {
+        this.next();
+        names.push(this.expectIdent());
+      }
+      for (const name of names) {
+        ports.push(name);
+        decls.push({ kind, ioKind, name, width, array: null });
+      }
       return;
     }
     ports.push(this.expectIdent());
@@ -2661,6 +2683,101 @@ module system_tb;
   end
 endmodule`,
 
+  '8-bit CPU Register File (two read, one write)': `
+module rf (
+  input clk, rst_n, 
+  input [1:0] idx_d, idx_r,
+  input [7:0] wdata, 
+  output [7:0] rd, rr
+);
+
+wire [7:0] r0, r1, r2, r3;
+wire [3:0] we;
+
+rf_reg u_r0(.clk(clk), .rst_n(rst_n), .we(we[0]), .wdata(wdata), .r(r0));
+rf_reg u_r1(.clk(clk), .rst_n(rst_n), .we(we[1]), .wdata(wdata), .r(r1));
+rf_reg u_r2(.clk(clk), .rst_n(rst_n), .we(we[2]), .wdata(wdata), .r(r2));
+rf_reg u_r3(.clk(clk), .rst_n(rst_n), .we(we[3]), .wdata(wdata), .r(r3));
+
+rf_wdec u_wdec(.idx(idx_d), .we(we));
+rf_rdec u_rdec_d(.idx(idx_d), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .opr(rd));
+rf_rdec u_rdec_r(.idx(idx_r), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .opr(rr));
+
+endmodule
+
+module rf_reg (
+  input clk, rst_n, we,
+  input [7:0] wdata,
+  output reg [7:0] r
+);
+
+always@(posedge clk or negedge rst_n)
+  if(!rst_n)
+    r <= 8'b0;
+  else if (we)
+    r <= wdata;
+ 
+endmodule
+
+module rf_rdec(
+  input [1:0] idx, 
+  input [7:0] r0, r1, r2, r3,
+  output reg [7:0] opr
+);
+
+always@(*)
+begin
+  case(idx)
+    2'd0:  opr = r0;
+    2'd1:  opr = r1;
+    2'd2:  opr = r2;
+    2'd3:  opr = r3;
+  endcase
+end
+
+endmodule
+
+module rf_wdec (
+  input [1:0] idx,
+  output reg [3:0] we
+);
+
+always@(*)
+  case(idx)
+  2'd0: we = 4'b0001;
+  2'd1: we = 4'b0010;
+  2'd2: we = 4'b0100;
+  2'd3: we = 4'b1000;
+ endcase
+  
+endmodule
+
+module rf_tb;
+  reg clk, rst_n;
+  reg [1:0] idx_d, idx_r;
+  reg [7:0] wdata;
+  wire [7:0] rd, rr;
+
+  rf u_rf (.clk(clk), .rst_n(rst_n), .idx_d(idx_d), .idx_r(idx_r),
+           .wdata(wdata), .rd(rd), .rr(rr));
+
+  always #5 clk = ~clk;
+
+  // Writes go to whichever register idx_d selects, so idx_d doubles as the write
+  // index and one of the two read indices - which is why reading back r1 and r2
+  // together needs idx_r for the second port.
+  initial begin
+    clk = 0; rst_n = 0;
+    idx_d = 2'd0; idx_r = 2'd0; wdata = 8'h00;
+    #12 rst_n = 1;
+    idx_d = 2'd1; wdata = 8'ha5; #10;   // r1 <= a5
+    idx_d = 2'd2; wdata = 8'h3c; #10;   // r2 <= 3c
+    idx_d = 2'd1; idx_r = 2'd2; #1 $display("r1=%h r2=%h (both read ports)", rd, rr);
+    idx_d = 2'd0; idx_r = 2'd3; #1 $display("r0=%h r3=%h (never written, reset)", rd, rr);
+    #5 $finish;
+  end
+endmodule`,
+
   '8-bit CPU (16-bit instruction)': `
 /* reduced AVR2 instruction */        
 
@@ -2668,25 +2785,351 @@ module cpu (input clk, input rst_n, output [15:0] iaddr, input [15:0] inst, outp
   wire [7:0] daddr;
   wire [15:0] pc, pc_nxt;
   wire [3:0] opcode;
-  wire [7:0] op_a, op_b;
+  wire [7:0] rd, rr;
   wire [7:0] alu_out;
-  wire [4:0] rf_ridx, rf_widx;
-  wire [7:0] rf_rdata, rf_wdata;
+  wire [7:0] alu_out_ai;
+  wire [4:0] rf_idx_d, rf_idx_r;
+  wire [7:0] rf_wdata;
+  wire [3:0] sreg;
+  wire [3:0] sreg_ai;
 
   assign pc_nxt = pc + 2;
   assign iaddr = pc;
+  assign rf_wdata = alu_out;
 
-  alu u_alu (.clk(clk), .rst_n(rst_n), .opcode(opcode), .op_a(op_a), .op_b(op_b), .alu_out(alu_out));
-  rf u_rf (.clk(clk), .rst_n(rst_n), .rf_ridx(rf_ridx), .rf_widx(rf_widx), . rf_wdata(rf_wdata), .we(we), . rf_rdata(rf_rdata));
+  alu_ai u_alu_ai (.clk(clk), .rst_n(rst_n), .opcode(opcode), .rd(rd), .rr(rr), .alu_out(alu_out_ai), .sreg(sreg_ai));
+  alu u_alu (.clk(clk), .rst_n(rst_n), .opcode(opcode), .rd(rd), .rr(rr), .alu_out(alu_out), .sreg(sreg));
+  rf u_rf (.clk(clk), .rst_n(rst_n), .rf_idx_d(rf_idx_d), .rf_idx_r(rf_idx_r), .rf_wdata(rf_wdata), .rd(rd), .rr(rr));
   pc u_pc (.clk(clk), .rst_n(rst_n), .inst(inst), .pc_nxt(pc_nxt), .pc(pc));
 
 endmodule
 
-module alu (input clk, input rst_n, input [3:0] opcode, input [7:0] op_a, input [7:0] op_b, output [7:0] alu_out);
+module alu_ai (
+  input clk, rst_n,
+  input [3:0] opcode,
+  input [7:0] rd, rr,
+  output [7:0] alu_out,
+  output [3:0] sreg
+);
+
+/* The result is COMBINATIONAL and the flags are REGISTERED, which is what makes
+   ADC/SBC work: they read the carry the previous instruction left in SREG.
+
+   Everything here is driven by continuous assignments rather than an always@(*)
+   block. Two reasons: alu_out then stays a net, so it needs no 'reg' and the
+   synthesizer accepts it; and this engine settles combinational logic by
+   counting value changes, so the usual "assign a default, then override it in
+   a case" idiom would change a signal twice per pass and be reported as a
+   combinational loop. One driver per net, computed once. */
+
+reg sreg_v; // Overflow
+reg sreg_n; // Negative
+reg sreg_z; // Zero
+reg sreg_c; // Carry
+
+// Exposed in AVR's own SREG bit order for these four: V=3, N=2, Z=1, C=0.
+assign sreg = {sreg_v, sreg_n, sreg_z, sreg_c};
+
+wire is_add, is_adc, is_sbc, is_sub, is_cp, is_and, is_eor, is_or, is_mov;
+assign is_add = (opcode == 4'b0001);
+assign is_adc = (opcode == 4'b0011);
+assign is_sbc = (opcode == 4'b0010);
+assign is_sub = (opcode == 4'b0110);
+assign is_cp  = (opcode == 4'b0101);
+assign is_and = (opcode == 4'b1000);
+assign is_eor = (opcode == 4'b1001);
+assign is_or  = (opcode == 4'b1010);
+assign is_mov = (opcode == 4'b1011);
+
+wire add_class, sub_class, logic_class;
+assign add_class   = is_add | is_adc;
+assign sub_class   = is_sub | is_sbc | is_cp;   // CP is a subtract whose result is discarded
+assign logic_class = is_and | is_eor | is_or;
+
+/* NINE bits wide, because bit 8 is the carry out of an add and the borrow out of
+   a subtract - the flag cannot be recovered from an 8-bit result. CP computes the
+   difference like SUB and puts it on alu_out; not writing it back is the
+   decoder's job (it controls the register file's write enable), not the ALU's. */
+wire [8:0] res;
+assign res = is_add ? rd + rr
+           : is_adc ? rd + rr + sreg_c
+           : is_sub ? rd - rr
+           : is_sbc ? rd - rr - sreg_c
+           : is_cp  ? rd - rr
+           : is_and ? rd & rr
+           : is_eor ? rd ^ rr
+           : is_or  ? rd | rr
+           : is_mov ? rr
+           : rd;   // unknown opcode: pass Rd through and hold the flags
+
+assign alu_out = res[7:0];
+
+// Flag inputs, named so the overflow formulas below read like the manual's.
+wire d7, r7, q7, zero;
+assign d7   = rd[7];
+assign r7   = rr[7];
+assign q7   = res[7];
+assign zero = (res[7:0] == 8'b0);
+
+/* Signed overflow: for an add, both operands share a sign and the result differs
+   from it; for a subtract, the operands differ in sign and the result takes the
+   subtrahend's. Getting V wrong is invisible until something branches on
+   S = N ^ V, which is why it is spelled out rather than approximated. */
+wire v_add, v_sub;
+assign v_add = (d7 & r7 & ~q7) | (~d7 & ~r7 & q7);
+assign v_sub = (d7 & ~r7 & ~q7) | (~d7 & r7 & q7);
+
+wire v_nxt, n_nxt, z_nxt, c_nxt;
+assign v_nxt = add_class   ? v_add
+             : sub_class   ? v_sub
+             : logic_class ? 1'b0    // a logic op always clears V
+             : sreg_v;               // MOV and unknown opcodes hold every flag
+assign n_nxt = (add_class | sub_class | logic_class) ? q7 : sreg_n;
+/* SBC ANDs the PREVIOUS Z into the new one, and that AND is exactly what makes a
+   multi-byte subtract or compare answer for the whole value rather than for the
+   top byte alone. Plain SUB and CP do not do this. */
+assign z_nxt = is_sbc                                 ? (zero & sreg_z)
+             : (add_class | sub_class | logic_class)  ? zero
+             : sreg_z;
+assign c_nxt = (add_class | sub_class) ? res[8] : sreg_c;   // logic ops leave C alone
+
+always@(posedge clk or negedge rst_n)
+begin
+  if(!rst_n) begin
+    sreg_v <= 1'b0;
+    sreg_n <= 1'b0;
+    sreg_z <= 1'b0;
+    sreg_c <= 1'b0;
+  end
+  else begin
+    sreg_v <= v_nxt;
+    sreg_n <= n_nxt;
+    sreg_z <= z_nxt;
+    sreg_c <= c_nxt;
+  end
+end
 
 endmodule
 
-module rf (input clk, input rst_n, input [4:0] rf_ridx, input [4:0] rf_widx, input [7:0] rf_wdata, input we, output [7:0] rf_rdata);
+module alu (input clk, input rst_n, input [3:0] opcode, input [7:0] rd, rr, output reg [7:0] alu_out, output [3:0] sreg);
+
+reg sreg_v; // Overflow
+reg sreg_n; // Negative
+reg sreg_z; // Zero
+reg sreg_c; // Carry
+wire v_nxt; // Overflow (next)
+wire n_nxt; // Negative (next)
+wire z_nxt; // Zero (next)
+wire c_nxt; // Carry (next)
+
+assign sreg = {sreg_v, sreg_n, sreg_z, sreg_c};
+
+always@(posedge clk or negedge rst_n)
+begin
+  if(!rst_n) begin
+    sreg_v <= 4'b0;
+    sreg_n <= 4'b0;
+    sreg_z <= 4'b0;
+    sreg_c <= 4'b0;
+  end
+  else begin
+    sreg_v <= v_nxt;
+    sreg_n <= n_nxt;
+    sreg_z <= z_nxt;
+    sreg_c <= c_nxt;
+  end
+end
+
+always@(*)
+begin
+  case(opcode)
+    4'b0001: alu_out <= rd + rr;          // ADD
+    4'b0011: alu_out <= rd + rr + sreg_c; // ADC (Add with Carry): Rd = Rd + Rr + C
+    4'b0010: alu_out <= rd - rr - sreg_c; // SBC (Subtract with Carry)
+    4'b0110: alu_out <= rd + rr;          // SUB
+    4'b0101: alu_out <= rd - rr;          // CP (Compare)
+    4'b1000: alu_out <= rd & rr;          // AND
+    4'b1001: alu_out <= rd ^ rr;          // EOR
+    4'b1010: alu_out <= rd | rr;          // OR
+    4'b1011: alu_out <= rr;               // MOV
+    default: alu_out <= rd;               // default
+  endcase
+end
+
+wire add_v, sub_v, add_z, sbc_z, add_c, sub_c;
+
+assign add_v = ( rd[7] &  rr[7] & ~alu_out[7]) | (~rd[7] & ~rr[7] & alu_out[7]);
+assign sub_v = ( rd[7] & ~rr[7] & ~alu_out[7]) | (~rd[7] &  rr[7] & alu_out[7]);
+assign add_z = &~alu_out;
+assign sbc_z = add_z & ~sreg_z;
+assign add_c = ( rd[7] &  rr[7]) | (rr[7] & ~alu_out[7]) | (~alu_out[7] &  rd[7]);
+assign sub_c = (~rd[7] &  rr[7]) | (rr[7] &  alu_out[7]) | ( alu_out[7] & ~rd[7]);
+
+
+always@(*)
+begin
+  case(opcode)
+    4'b0001: begin v_nxt <= add_v;  n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= add_c;  end // ADD
+    4'b0011: begin v_nxt <= add_v;  n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= add_c;  end // ADC (Add with Carry): Rd = Rd + Rr + C
+    4'b0010: begin v_nxt <= sub_v;  n_nxt <= alu_out[7]; z_nxt <= sbc_z; c_nxt <= sub_c;  end // SBC (Subtract with Carry)
+    4'b0110: begin v_nxt <= sub_v;  n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= sub_c;  end // SUB
+    4'b0101: begin v_nxt <= sub_v;  n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= sreg_c; end // CP (Compare)
+    4'b1000: begin v_nxt <= 1'b0;   n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= sreg_c; end // AND
+    4'b1001: begin v_nxt <= 1'b0;   n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= sreg_c; end // EOR
+    4'b1010: begin v_nxt <= 1'b0;   n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= sreg_c; end // OR
+    4'b1011: begin v_nxt <= 1'b0;   n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= sreg_c; end // MOV
+    default: begin v_nxt <= sreg_v; n_nxt <= sreg_n;     z_nxt <= sreg_z; c_nxt <= sreg_c; end // default
+  endcase
+end
+
+endmodule
+
+module rf (input clk, input rst_n, input [4:0] rf_idx_d, rf_idx_r, input [7:0] rf_wdata, output [7:0] rd, rr);
+
+wire [7:0] r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31;
+wire [31:0] we;
+
+rf_reg u_r0 (.clk(clk), .rst_n(rst_n), .we(we[ 0]), .wdata(rf_wdata), .r(r0 ));
+rf_reg u_r1 (.clk(clk), .rst_n(rst_n), .we(we[ 1]), .wdata(rf_wdata), .r(r1 ));
+rf_reg u_r2 (.clk(clk), .rst_n(rst_n), .we(we[ 2]), .wdata(rf_wdata), .r(r2 ));
+rf_reg u_r3 (.clk(clk), .rst_n(rst_n), .we(we[ 3]), .wdata(rf_wdata), .r(r3 ));
+rf_reg u_r4 (.clk(clk), .rst_n(rst_n), .we(we[ 4]), .wdata(rf_wdata), .r(r4 ));
+rf_reg u_r5 (.clk(clk), .rst_n(rst_n), .we(we[ 5]), .wdata(rf_wdata), .r(r5 ));
+rf_reg u_r6 (.clk(clk), .rst_n(rst_n), .we(we[ 6]), .wdata(rf_wdata), .r(r6 ));
+rf_reg u_r7 (.clk(clk), .rst_n(rst_n), .we(we[ 7]), .wdata(rf_wdata), .r(r7 ));
+rf_reg u_r8 (.clk(clk), .rst_n(rst_n), .we(we[ 8]), .wdata(rf_wdata), .r(r8 ));
+rf_reg u_r9 (.clk(clk), .rst_n(rst_n), .we(we[ 9]), .wdata(rf_wdata), .r(r9 ));
+rf_reg u_r10(.clk(clk), .rst_n(rst_n), .we(we[10]), .wdata(rf_wdata), .r(r10));
+rf_reg u_r11(.clk(clk), .rst_n(rst_n), .we(we[11]), .wdata(rf_wdata), .r(r11));
+rf_reg u_r12(.clk(clk), .rst_n(rst_n), .we(we[12]), .wdata(rf_wdata), .r(r12));
+rf_reg u_r13(.clk(clk), .rst_n(rst_n), .we(we[13]), .wdata(rf_wdata), .r(r13));
+rf_reg u_r14(.clk(clk), .rst_n(rst_n), .we(we[14]), .wdata(rf_wdata), .r(r14));
+rf_reg u_r15(.clk(clk), .rst_n(rst_n), .we(we[15]), .wdata(rf_wdata), .r(r15));
+rf_reg u_r16(.clk(clk), .rst_n(rst_n), .we(we[16]), .wdata(rf_wdata), .r(r16));
+rf_reg u_r17(.clk(clk), .rst_n(rst_n), .we(we[17]), .wdata(rf_wdata), .r(r17));
+rf_reg u_r18(.clk(clk), .rst_n(rst_n), .we(we[18]), .wdata(rf_wdata), .r(r18));
+rf_reg u_r19(.clk(clk), .rst_n(rst_n), .we(we[19]), .wdata(rf_wdata), .r(r19));
+rf_reg u_r20(.clk(clk), .rst_n(rst_n), .we(we[20]), .wdata(rf_wdata), .r(r20));
+rf_reg u_r21(.clk(clk), .rst_n(rst_n), .we(we[21]), .wdata(rf_wdata), .r(r21));
+rf_reg u_r22(.clk(clk), .rst_n(rst_n), .we(we[22]), .wdata(rf_wdata), .r(r22));
+rf_reg u_r23(.clk(clk), .rst_n(rst_n), .we(we[23]), .wdata(rf_wdata), .r(r23));
+rf_reg u_r24(.clk(clk), .rst_n(rst_n), .we(we[24]), .wdata(rf_wdata), .r(r24));
+rf_reg u_r25(.clk(clk), .rst_n(rst_n), .we(we[25]), .wdata(rf_wdata), .r(r25));
+rf_reg u_r26(.clk(clk), .rst_n(rst_n), .we(we[26]), .wdata(rf_wdata), .r(r26));
+rf_reg u_r27(.clk(clk), .rst_n(rst_n), .we(we[27]), .wdata(rf_wdata), .r(r27));
+rf_reg u_r28(.clk(clk), .rst_n(rst_n), .we(we[28]), .wdata(rf_wdata), .r(r28));
+rf_reg u_r29(.clk(clk), .rst_n(rst_n), .we(we[29]), .wdata(rf_wdata), .r(r29));
+rf_reg u_r30(.clk(clk), .rst_n(rst_n), .we(we[30]), .wdata(rf_wdata), .r(r30));
+rf_reg u_r31(.clk(clk), .rst_n(rst_n), .we(we[31]), .wdata(rf_wdata), .r(r31));
+
+rf_wdec u_wdec  (.idx(rf_idx_d), .we(we));
+
+rf_rdec u_rdec_d(.idx(rf_idx_d), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .r5(r5), .r6(r6), .r7(r7), .r8(r8), .r9(r9), .r10(r10), .r11(r11), .r12(r12), .r13(r13), .r14(r14), .r15(r15), .r16(r16), .r17(r17), .r18(r18), .r19(r19), .r20(r20), .r21(r21), .r22(r22), .r23(r23), .r24(r24), .r25(r25), .r26(r26), .r27(r27), .r28(r28), .r29(r29), .r30(r30), .r31(r31), .opr(rd));
+
+rf_rdec u_rdec_r(.idx(rf_idx_r), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .r5(r5), .r6(r6), .r7(r7), .r8(r8), .r9(r9), .r10(r10), .r11(r11), .r12(r12), .r13(r13), .r14(r14), .r15(r15), .r16(r16), .r17(r17), .r18(r18), .r19(r19), .r20(r20), .r21(r21), .r22(r22), .r23(r23), .r24(r24), .r25(r25), .r26(r26), .r27(r27), .r28(r28), .r29(r29), .r30(r30), .r31(r31), .opr(rr));
+
+endmodule
+
+module rf_reg (
+  input clk, rst_n, we,
+  input [7:0] wdata,
+  output reg [7:0] r
+);
+
+always@(posedge clk or negedge rst_n)
+  if(!rst_n)
+    r <= 8'b0;
+  else if (we)
+    r <= wdata;
+ 
+endmodule
+
+module rf_wdec (
+  input [1:0] idx,
+  output reg [3:0] we
+);
+
+always@(*)
+  case(idx)
+  5'd0 : we = 32'b0000_0000_0000_0000_0000_0000_0000_0001;
+  5'd1 : we = 32'b0000_0000_0000_0000_0000_0000_0000_0010;
+  5'd2 : we = 32'b0000_0000_0000_0000_0000_0000_0000_0100;
+  5'd3 : we = 32'b0000_0000_0000_0000_0000_0000_0000_1000;
+  5'd4 : we = 32'b0000_0000_0000_0000_0000_0000_0001_0000;
+  5'd5 : we = 32'b0000_0000_0000_0000_0000_0000_0010_0000;
+  5'd6 : we = 32'b0000_0000_0000_0000_0000_0000_0100_0000;
+  5'd7 : we = 32'b0000_0000_0000_0000_0000_0000_1000_0000;
+  5'd8 : we = 32'b0000_0000_0000_0000_0000_0001_0000_0000;
+  5'd9 : we = 32'b0000_0000_0000_0000_0000_0010_0000_0000;
+  5'd10: we = 32'b0000_0000_0000_0000_0000_0100_0000_0000;
+  5'd11: we = 32'b0000_0000_0000_0000_0000_1000_0000_0000;
+  5'd12: we = 32'b0000_0000_0000_0000_0001_0000_0000_0000;
+  5'd13: we = 32'b0000_0000_0000_0000_0010_0000_0000_0000;
+  5'd14: we = 32'b0000_0000_0000_0000_0100_0000_0000_0000;
+  5'd15: we = 32'b0000_0000_0000_0000_1000_0000_0000_0000;
+  5'd16: we = 32'b0000_0000_0000_0001_0000_0000_0000_0000;
+  5'd17: we = 32'b0000_0000_0000_0010_0000_0000_0000_0000;
+  5'd18: we = 32'b0000_0000_0000_0100_0000_0000_0000_0000;
+  5'd19: we = 32'b0000_0000_0000_1000_0000_0000_0000_0000;
+  5'd20: we = 32'b0000_0000_0001_0000_0000_0000_0000_0000;
+  5'd21: we = 32'b0000_0000_0010_0000_0000_0000_0000_0000;
+  5'd22: we = 32'b0000_0000_0100_0000_0000_0000_0000_0000;
+  5'd23: we = 32'b0000_0000_1000_0000_0000_0000_0000_0000;
+  5'd24: we = 32'b0000_0001_0000_0000_0000_0000_0000_0000;
+  5'd25: we = 32'b0000_0010_0000_0000_0000_0000_0000_0000;
+  5'd26: we = 32'b0000_0100_0000_0000_0000_0000_0000_0000;
+  5'd27: we = 32'b0000_1000_0000_0000_0000_0000_0000_0000;
+  5'd28: we = 32'b0001_0000_0000_0000_0000_0000_0000_0000;
+  5'd29: we = 32'b0010_0000_0000_0000_0000_0000_0000_0000;
+  5'd30: we = 32'b0100_0000_0000_0000_0000_0000_0000_0000;
+  5'd31: we = 32'b1000_0000_0000_0000_0000_0000_0000_0000;
+ endcase
+  
+endmodule
+
+module rf_rdec(
+  input [4:0] idx, 
+  input [7:0] r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31,
+  output reg [7:0] opr
+);
+
+always@(*)
+begin
+  case(idx)
+    5'd0:  opr = r0;
+    5'd1:  opr = r1;
+    5'd2:  opr = r2;
+    5'd3:  opr = r3;
+    5'd4:  opr = r4;
+    5'd5:  opr = r5;
+    5'd6:  opr = r6;
+    5'd7:  opr = r7;
+    5'd8:  opr = r8;
+    5'd9:  opr = r9;
+    5'd10: opr = r10;
+    5'd11: opr = r11;
+    5'd12: opr = r12;
+    5'd13: opr = r13;
+    5'd14: opr = r14;
+    5'd15: opr = r15;
+    5'd16: opr = r16;
+    5'd17: opr = r17;
+    5'd18: opr = r18;
+    5'd19: opr = r19;
+    5'd20: opr = r20;
+    5'd21: opr = r21;
+    5'd22: opr = r22;
+    5'd23: opr = r23;
+    5'd24: opr = r24;
+    5'd25: opr = r25;
+    5'd26: opr = r26;
+    5'd27: opr = r27;
+    5'd28: opr = r28;
+    5'd29: opr = r29;
+    5'd30: opr = r30;
+    5'd31: opr = r31;
+  endcase
+end
 
 endmodule
 
@@ -2758,7 +3201,28 @@ module system_tb;
     #10 rst_n = 1;
     #400 $finish;
   end
-endmodule`,
+endmodule
+
+/* Test Code (rom.txt)
+e604 // ldi r16, 100      r16 = 0x64
+2e00 // mov r0,  r16      r0  = 100
+e605 // ldi r16, 101      r16 = 0x65
+2e10 // mov r1,  r16      r1  = 101
+e606 // ldi r16, 102      r16 = 0x66
+2e20 // mov r2,  r16      r2  = 102
+e607 // ldi r16, 103      r16 = 0x67
+2e30 // mov r3,  r16      r3  = 103
+2c41 // mov r4,  r1       r4  = 101
+0c42 // add r4,  r2       r4  = r1 + r2 = 203 (0xcb)
+2c53 // mov r5,  r3       r5  = 103
+1851 // sub r5,  r1       r5  = r3 - r1 = 2   (0x02)
+0000 // nop
+0000 // nop
+0000 // nop
+0000 // nop
+0000 // nop
+0000 // nop
+*/`,
 };
 
 /* =========================================================================
@@ -2770,6 +3234,8 @@ const editorHierarchyPanel = document.getElementById('editorHierarchyPanel');
 const editorSyncWarning = document.getElementById('editorSyncWarning');
 let editorFullSource = '';
 let editorSelectedModule = '(all)';
+let editorModuleSpan = null;   // {start, end} of the selected module inside editorFullSource, null in (all) view
+let lastGoodModuleNames = [];  // module list from the last parse that succeeded, so a syntax error doesn't empty the panel
 const exampleSelect = document.getElementById('exampleSelect');
 const openBtn = document.getElementById('openBtn');
 const fileOpenInput = document.getElementById('fileOpenInput');
@@ -3030,9 +3496,8 @@ for (const name of Object.keys(EXAMPLES)) {
   exampleSelect.appendChild(opt);
 }
 function loadExample(name) {
-  codeInput.value = EXAMPLES[name];
+  setEditorText(EXAMPLES[name]);
   currentFileName = name.replace(/[^A-Za-z0-9_-]+/g, '_') + '.v';
-  updateGutter();
   resetEditorHierarchyState();
   tryApplyAutoFinishTime(codeInput.value);
 }
@@ -3048,10 +3513,9 @@ fileOpenInput.addEventListener('change', () => {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
-    codeInput.value = reader.result;
+    setEditorText(reader.result);
     currentFileName = file.name;
     exampleSelect.selectedIndex = -1;
-    updateGutter();
     resetEditorHierarchyState();
     tryApplyAutoFinishTime(codeInput.value);
   };
@@ -3069,13 +3533,11 @@ function copyTextToClipboard(text) {
   document.body.removeChild(ta);
 }
 document.getElementById('editorCopyBtn').addEventListener('click', () => {
-  const res = spliceEditorChangesBack();
-  showEditorSyncWarning(res.ok ? null : res.reason);
+  spliceEditorChangesBack(); // always merges, so Copy can never hand back a stale file
   copyTextToClipboard(editorFullSource);
 });
 document.getElementById('editorSaveBtn').addEventListener('click', () => {
-  const res = spliceEditorChangesBack();
-  showEditorSyncWarning(res.ok ? null : res.reason);
+  spliceEditorChangesBack(); // ditto: Save writes what's on screen, syntax error or not
   const blob = new Blob([editorFullSource], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -3214,6 +3676,25 @@ function updateGutter() {
   for (let i = 1; i <= lines; i++) s += i + '\n';
   gutter.textContent = s;
 }
+
+// Replaces the whole editor contents *without* destroying the textarea's native
+// undo stack, which a plain `codeInput.value = ...` silently wipes. Every
+// programmatic swap goes through here, because that stack is the last line of
+// defence for an edit the module view couldn't merge: Cmd-Z gets it back.
+// execCommand needs the textarea focused, so this steals focus - guarded on the
+// editor already having content, which is what keeps the initial example load
+// (empty textarea, nothing to undo to) from yanking focus on page load.
+function setEditorText(text) {
+  if (codeInput.value === text) return;
+  let ok = false;
+  if (codeInput.value !== '' && text !== '') {
+    codeInput.focus();
+    codeInput.setSelectionRange(0, codeInput.value.length);
+    ok = document.execCommand('insertText', false, text);
+  }
+  if (!ok) codeInput.value = text;
+  updateGutter();
+}
 codeInput.addEventListener('input', updateGutter);
 codeInput.addEventListener('scroll', () => { gutter.scrollTop = codeInput.scrollTop; });
 codeInput.addEventListener('keydown', (e) => {
@@ -3260,65 +3741,67 @@ codeInput.addEventListener('keydown', (e) => {
 
 /* ---- editor: module hierarchy view (browse/edit one module definition at a
    time out of the single underlying source file) ---- */
-function showEditorSyncWarning(reason) {
-  if (!reason) { editorSyncWarning.style.display = 'none'; return; }
-  editorSyncWarning.textContent = 'Latest edit wasn\'t merged (' + reason + ') — switch to (all) to make structural changes.';
+function showEditorSyncWarning(text) {
+  if (!text) { editorSyncWarning.style.display = 'none'; return; }
+  editorSyncWarning.textContent = text;
   editorSyncWarning.style.display = 'block';
 }
 
+// Shows one module (or the whole file) and records which span of
+// editorFullSource is on screen. Slicing a single module out needs a source
+// that parses; when it doesn't there is no span to show, so the view falls back
+// to the whole file and says why - with the parser's own line number, which now
+// matches the gutter because the gutter is numbering the whole file too.
+// Leaving the user in a stale single-module view is how an edit gets lost.
 function showModuleInEditor(name) {
-  if (name === '(all)') {
-    codeInput.value = editorFullSource;
-    updateGutter();
-    return;
+  if (name !== '(all)') {
+    let mod = null, parseErr = null;
+    try { mod = parseTopLevelModules(editorFullSource).get(name) || null; }
+    catch (e) { parseErr = e.message; }
+    if (mod) {
+      editorSelectedModule = name;
+      editorModuleSpan = { start: mod.srcStart, end: mod.srcEnd };
+      showEditorSyncWarning(null);
+      setEditorText(editorFullSource.slice(mod.srcStart, mod.srcEnd));
+      return;
+    }
+    showEditorSyncWarning(parseErr
+      ? 'Showing the whole file — a single module can\'t be sliced out while the source has a syntax error (' + parseErr + ').'
+      : 'Showing the whole file — module \'' + name + '\' no longer exists.');
+  } else {
+    showEditorSyncWarning(null);
   }
-  let modules;
-  try { modules = parseTopLevelModules(editorFullSource); } catch (e) { return; }
-  const mod = modules.get(name);
-  if (!mod) return;
-  codeInput.value = editorFullSource.slice(mod.srcStart, mod.srcEnd);
-  updateGutter();
+  editorSelectedModule = '(all)';
+  editorModuleSpan = null;
+  setEditorText(editorFullSource);
 }
 
 // Merges whatever is currently visible in the textarea back into
-// editorFullSource. Never blocks navigation: on mismatch it just leaves
-// editorFullSource untouched and reports why, rather than trapping the user
-// in a view they can't leave.
+// editorFullSource. The single-module view shows exactly one contiguous span of
+// the file, so the merge is a plain textual splice of that span and
+// deliberately does NOT require the edited text to parse: a half-typed
+// begin/end or endmodule merges fine, and the mistake then surfaces as an
+// ordinary `Parse error at line N` from Run against the whole file. This used
+// to re-parse the edit and refuse the merge on any error - but the refused text
+// was the only copy of it, and the next view switch overwrote it. Tracking the
+// span across merges (rather than re-deriving it from a parse) is what lets a
+// currently-unparseable module keep being edited and merged.
 function spliceEditorChangesBack() {
   if (editorSelectedModule === '(all)') {
     editorFullSource = codeInput.value;
-    return { ok: true };
+    return;
   }
-  let baseModules;
-  try { baseModules = parseTopLevelModules(editorFullSource); } catch (e) {
-    return { ok: false, reason: 'the full file no longer parses' };
-  }
-  const baseMod = baseModules.get(editorSelectedModule);
-  if (!baseMod) return { ok: false, reason: 'module no longer exists' };
-
-  let editedModules;
-  try { editedModules = parseTopLevelModules(codeInput.value); } catch (e) {
-    return { ok: false, reason: 'parse error' };
-  }
-  if (editedModules.size !== 1 || !editedModules.has(editorSelectedModule)) {
-    return { ok: false, reason: 'module structure changed' };
-  }
-
-  const editedMod = editedModules.get(editorSelectedModule);
-  const newText = codeInput.value.slice(editedMod.srcStart, editedMod.srcEnd);
-  editorFullSource = editorFullSource.slice(0, baseMod.srcStart) + newText + editorFullSource.slice(baseMod.srcEnd);
-  return { ok: true };
+  if (!editorModuleSpan) return; // unreachable: the two are always set together
+  const start = editorModuleSpan.start;
+  editorFullSource = editorFullSource.slice(0, start) + codeInput.value + editorFullSource.slice(editorModuleSpan.end);
+  editorModuleSpan = { start, end: start + codeInput.value.length };
 }
 
 function renderEditorHierarchyList() {
-  let modules;
-  try { modules = parseTopLevelModules(editorFullSource); } catch (e) {
-    if (editorHierarchyPanel.childElementCount > 0) return; // keep last-good list on a transient parse error
-    modules = new Map();
-  }
+  try { lastGoodModuleNames = [...parseTopLevelModules(editorFullSource).keys()]; }
+  catch (e) { /* keep the last-good list: a transient syntax error shouldn't empty the panel */ }
   editorHierarchyPanel.innerHTML = '';
-  const names = ['(all)', ...modules.keys()];
-  for (const name of names) {
+  for (const name of ['(all)', ...lastGoodModuleNames]) {
     const row = document.createElement('div');
     row.className = 'editor-module-row' + (name === editorSelectedModule ? ' active' : '');
     row.textContent = name;
@@ -3329,24 +3812,23 @@ function renderEditorHierarchyList() {
 
 function selectEditorModule(name) {
   if (name === editorSelectedModule) return;
-  const res = spliceEditorChangesBack();
-  showEditorSyncWarning(res.ok ? null : res.reason);
-  editorSelectedModule = name;
-  showModuleInEditor(name);
+  spliceEditorChangesBack();
+  showModuleInEditor(name); // may land on (all) instead, if the file doesn't parse
   renderEditorHierarchyList();
 }
 
 function resetEditorHierarchyState() {
   editorFullSource = codeInput.value;
   editorSelectedModule = '(all)';
+  editorModuleSpan = null;
+  lastGoodModuleNames = []; // a new document: don't carry the old file's module list
   showEditorSyncWarning(null);
   renderEditorHierarchyList();
 }
 
 codeInput.addEventListener('blur', () => {
-  const res = spliceEditorChangesBack();
-  showEditorSyncWarning(res.ok ? null : res.reason);
-  if (res.ok) renderEditorHierarchyList();
+  spliceEditorChangesBack();
+  renderEditorHierarchyList();
 });
 
 /* ---- collapse buttons (generic, works for any .card-collapse-btn) ---- */
@@ -3555,9 +4037,8 @@ function tryApplyAutoFinishTime(src) {
 
 function runSimulation() {
   clearConsole();
-  const splice = spliceEditorChangesBack();
-  showEditorSyncWarning(splice.ok ? null : splice.reason);
-  if (splice.ok) renderEditorHierarchyList();
+  spliceEditorChangesBack(); // merges unconditionally, so Run can never simulate a stale file
+  renderEditorHierarchyList();
   const src = editorFullSource;
 
   let ast;
@@ -3571,6 +4052,7 @@ function runSimulation() {
     renderMemorySelect();
     return;
   }
+  showEditorSyncWarning(null); // the file parses again, so any fallback notice is stale
   applyAutoFinishTime(ast);
   const maxTime = Math.max(10, parseInt(maxTimeInput.value, 10) || 300);
   computeDeclMeta(ast);
