@@ -217,6 +217,21 @@
     .hierarchy-node-row:hover { background: #f2f2f7; }
     .hierarchy-node-row.active { background: #e8f1ff; color: #007aff; font-weight: 600; }
     .hierarchy-node-type { color: #8e8e93; font-size: 10px; }
+    .hierarchy-fold-box {
+      flex-shrink: 0;
+      width: 14px;
+      height: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #c7c7cc;
+      border-radius: 3px;
+      color: #8e8e93;
+      font: 700 12px/1 "SF Mono", Menlo, Consolas, monospace;
+      cursor: pointer;
+    }
+    .hierarchy-fold-box:hover { border-color: #8e8e93; color: #3a3a3c; }
+    .hierarchy-fold-spacer { flex-shrink: 0; width: 14px; height: 14px; }
     .hierarchy-node-icon {
       width: 13px;
       height: 13px;
@@ -3441,6 +3456,8 @@ function pushGraph(nodes, edges) {
 
 let currentAll = null;    // last synthesizeAll() result (all modules' Synthesizer output)
 let viewStack = [];       // breadcrumb: module names from top down to the currently-viewed module
+let collapsedBranches = new Set(); // module-type path keys (node.path.join('/')) whose child rows are folded out of the tree - display-only fold via the +/- box
+let lastSynthTopName = null; // top module name of the last synthesis - a change means a new design, so the tree re-folds to all-collapsed
 
 /* ---- module hierarchy tree (mirrors the same module-type-based navigation as the breadcrumb) ---- */
 function buildHierarchyTree() {
@@ -3464,11 +3481,38 @@ function renderHierarchyTree() {
   hierarchyTree.innerHTML = '';
   const tree = buildHierarchyTree();
   if (!tree) return;
+  // keep the active module's row reachable: never leave one of its ANCESTOR
+  // branches folded (its own branch may stay folded). Ancestors are the proper
+  // prefixes of viewStack; the active node itself is the full-length key.
+  for (let i = 1; i < viewStack.length; i++) {
+    collapsedBranches.delete(viewStack.slice(0, i).join('/'));
+  }
   function buildRow(node) {
     const wrap = document.createElement('div');
     const row = document.createElement('div');
     row.className = 'hierarchy-node-row';
     row.dataset.modtype = node.modType;
+    const key = node.path.join('/');
+    // leftmost fold box on any node that has child instances; a same-size
+    // spacer on leaf nodes keeps the chip icons/labels aligned across rows.
+    if (node.children.length) {
+      const foldBox = document.createElement('span');
+      foldBox.className = 'hierarchy-fold-box';
+      foldBox.textContent = collapsedBranches.has(key) ? '+' : '−';
+      // the box owns branch expand/collapse only - stop the click from bubbling
+      // to the row, so it never navigates the netlist viewer.
+      foldBox.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (collapsedBranches.has(key)) collapsedBranches.delete(key);
+        else collapsedBranches.add(key);
+        renderHierarchyTree();
+      });
+      row.appendChild(foldBox);
+    } else {
+      const spacer = document.createElement('span');
+      spacer.className = 'hierarchy-fold-spacer';
+      row.appendChild(spacer);
+    }
     row.insertAdjacentHTML('beforeend', '<svg class="hierarchy-node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
       '<rect x="7" y="3" width="10" height="18"/>' +
       '<line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="12" x2="7" y2="12"/><line x1="2" y1="17" x2="7" y2="17"/>' +
@@ -3483,7 +3527,7 @@ function renderHierarchyTree() {
     }
     row.addEventListener('click', () => { viewStack = node.path; showCurrentView(); });
     wrap.appendChild(row);
-    if (node.children.length) {
+    if (node.children.length && !collapsedBranches.has(key)) {
       const kids = document.createElement('div');
       kids.className = 'hierarchy-children';
       node.children.forEach(c => kids.appendChild(buildRow(c)));
@@ -3569,6 +3613,7 @@ function showCurrentView() {
     logLine('err', `error showing '${modName}': ${e.message}`);
   }
   renderBreadcrumb();
+  renderHierarchyTree(); // re-render so a drilled-into node's ancestor branches auto-expand and its row shows
   highlightHierarchyNode(viewStack[viewStack.length - 1]);
 }
 
@@ -3594,8 +3639,19 @@ function runSynthesis() {
     logLine('ok', `synthesized top module '${currentAll.top.name}'${currentAll.modules.length > 1 ? ` (+${currentAll.modules.length - 1} sub-module${currentAll.modules.length > 2 ? 's' : ''})` : ''}`);
     logLine('info', buildAreaReport(currentAll));
     viewStack = [currentAll.top.name];
-    renderHierarchyTree();
-    showCurrentView();
+    if (currentAll.top.name !== lastSynthTopName) {
+      // new top module (fresh design): start with every branch folded, so the
+      // tree shows only the top row and expands one level at a time. Re-
+      // synthesizing the same top preserves the current fold state.
+      collapsedBranches = new Set();
+      (function collectBranches(node) {
+        if (!node.children.length) return;
+        collapsedBranches.add(node.path.join('/'));
+        node.children.forEach(collectBranches);
+      })(buildHierarchyTree());
+      lastSynthTopName = currentAll.top.name;
+    }
+    showCurrentView(); // renders the netlist and the hierarchy tree (+ highlight)
   } catch (e) {
     currentAll = null;
     logLine('err', 'error: ' + e.message);
