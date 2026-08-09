@@ -2852,7 +2852,8 @@ function mergeInstancePins(graph) {
   const mergedPinsByNode = {};
   let aggConstCounter = 0;
   for (const { node, side, base, width, items } of Object.values(groups)) {
-    if (items.length !== width) continue; // not every bit present at the graph level — leave unmerged
+    if (new Set(items.map(it => it.idx)).size !== width) continue; // not every bit present at the graph level — leave unmerged (fanout means item count may exceed width)
+    if (mergedPinsByNode[node.id] && mergedPinsByNode[node.id].has(base)) continue; // already merged from the other end (instance↔instance pass below)
     const otherIds = new Set(items.map(it => (side === 'out' ? it.edge.to : it.edge.from)));
     const otherPorts = new Set(items.map(it => (side === 'out' ? it.edge.toPort : it.edge.fromPort)));
     if (otherIds.size === 1 && otherPorts.size === 1) {
@@ -2895,6 +2896,49 @@ function mergeInstancePins(graph) {
       }
       (mergedPinsByNode[node.id] ||= new Set()).add(base);
       continue;
+    }
+    // instance→instance multi-bit connection(s): a multi-bit OUTPUT port whose
+    // every bit fans out ONLY into full-width, 1:1-aligned INPUT ports of other
+    // instances (possibly several consumers of the same bus, e.g. a register-file
+    // output read by two decoders). Neither end can satisfy the single-far-port
+    // merge above (each sees the other's per-bit handles p[0], p[1], …), so merge
+    // from the output side: collapse this output pin AND every consumer input pin
+    // into single bus pins, drawing one thick bus edge per consumer. The reciprocal
+    // 'in' groups are skipped by the already-merged guard at the top of the loop.
+    // If any bit reaches a non-instance or non-aligned consumer, bail and leave it
+    // per-bit (merging the output pin would orphan those other per-bit edges).
+    if (side === 'out') {
+      const byConsumer = new Map(); // `${toId}|${consBase}` -> { toId, consBase, cons, items:[{idx,toIdx}] }
+      let mergeable = true;
+      for (const it of items) {
+        const cons = nodeIndex.get(it.edge.to);
+        const m = /^(.+)\[(\d+)\]$/.exec(it.edge.toPort);
+        if (!cons || cons.kind !== 'instance' || !m) { mergeable = false; break; }
+        const key = `${it.edge.to}|${m[1]}`;
+        if (!byConsumer.has(key)) byConsumer.set(key, { toId: it.edge.to, consBase: m[1], cons, items: [] });
+        byConsumer.get(key).items.push({ idx: it.idx, toIdx: parseInt(m[2], 10) });
+      }
+      if (mergeable && byConsumer.size) {
+        mergeable = [...byConsumer.values()].every(g =>
+          g.cons.cell.portWidths[g.consBase] === width &&
+          g.items.length === width &&
+          new Set(g.items.map(x => x.toIdx)).size === width &&
+          g.items.every(x => x.idx === x.toIdx) &&
+          !(mergedPinsByNode[g.toId] && mergedPinsByNode[g.toId].has(g.consBase)));
+      } else {
+        mergeable = false;
+      }
+      if (mergeable) {
+        for (const it of items) dropEdgeIds.add(it.edge.id);
+        (mergedPinsByNode[node.id] ||= new Set()).add(base);
+        let consCounter = 0;
+        for (const g of byConsumer.values()) {
+          (mergedPinsByNode[g.toId] ||= new Set()).add(g.consBase);
+          const net = g.cons.cell.portExprText[g.consBase] || node.cell.portExprText[base] || `${base}[${width - 1}:0]`;
+          newEdges.push({ id: `inst_e_${node.id}_${base}_${consCounter++}`, from: node.id, fromPort: base, to: g.toId, toPort: g.consBase, net });
+        }
+        continue;
+      }
     }
     // an 'in' port whose every bit is driven by SOME constant (not necessarily the
     // same one, e.g. `.b(4'b0001)` bit-blasts into distinct 1'b1/1'b0 cells) — synthesize
