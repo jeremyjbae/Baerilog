@@ -2739,7 +2739,7 @@ endmodule
 
 module rf_wdec (
   input [1:0] idx,
-  output reg [3:0] we
+  output reg [31:0] we
 );
 
 always@(*)
@@ -2782,7 +2782,6 @@ endmodule`,
 /* reduced AVR2 instruction */        
 
 module cpu (input clk, input rst_n, output [15:0] iaddr, input [15:0] inst, output [7:0] daddr, output we, output [7:0] wdata, input [7:0] rdata);
-  wire [7:0] daddr;
   wire [15:0] pc, pc_nxt;
   wire [3:0] opcode;
   wire [7:0] rd, rr;
@@ -2796,6 +2795,12 @@ module cpu (input clk, input rst_n, output [15:0] iaddr, input [15:0] inst, outp
   assign pc_nxt = pc + 2;
   assign iaddr = pc;
   assign rf_wdata = alu_out;
+  assign opcode = 4'b0;   // Not Implemented
+  assign rf_idx_d = 5'b0; // Not Implemented
+  assign rf_idx_r = 5'b0; // Not Implemented
+  assign daddr = 8'b0;    // Not Implemented
+  assign we = 1'b0;       // Not Implemented
+  assign wdata = 8'b0;    // Not Implemented
 
   alu_ai u_alu_ai (.clk(clk), .rst_n(rst_n), .opcode(opcode), .rd(rd), .rr(rr), .alu_out(alu_out_ai), .sreg(sreg_ai));
   alu u_alu (.clk(clk), .rst_n(rst_n), .opcode(opcode), .rd(rd), .rr(rr), .alu_out(alu_out), .sreg(sreg));
@@ -2917,10 +2922,10 @@ reg sreg_v; // Overflow
 reg sreg_n; // Negative
 reg sreg_z; // Zero
 reg sreg_c; // Carry
-wire v_nxt; // Overflow (next)
-wire n_nxt; // Negative (next)
-wire z_nxt; // Zero (next)
-wire c_nxt; // Carry (next)
+reg v_nxt; // Overflow (next)
+reg n_nxt; // Negative (next)
+reg z_nxt; // Zero (next)
+reg c_nxt; // Carry (next)
 
 assign sreg = {sreg_v, sreg_n, sreg_z, sreg_c};
 
@@ -3046,7 +3051,7 @@ endmodule
 
 module rf_wdec (
   input [1:0] idx,
-  output reg [3:0] we
+  output reg [31:0] we
 );
 
 always@(*)
@@ -3169,7 +3174,7 @@ module ram_256x8 (input clk, input we, input [7:0] addr, input [7:0] wdata, outp
   // loads mem[] from a file attached via the Memory Viewer card below -
   // this app has no real filesystem access over file://, so $readmemh can
   // only resolve a filename the user has already attached there
-  initial $readmemh("ram.txt", mem, 0);
+  // initial $readmemh("ram.txt", mem, 0);
 endmodule
 
 module system (input clk, input rst_n);
