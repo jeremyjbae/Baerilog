@@ -2739,7 +2739,7 @@ endmodule
 
 module rf_wdec (
   input [1:0] idx,
-  output reg [31:0] we
+  output reg [1:0] we
 );
 
 always@(*)
@@ -2788,6 +2788,7 @@ module cpu (input clk, input rst_n, output [15:0] iaddr, input [15:0] inst, outp
   wire [7:0] alu_out;
   wire [7:0] alu_out_ai;
   wire [4:0] rf_idx_d, rf_idx_r;
+  wire       rf_we;
   wire [7:0] rf_wdata;
   wire [3:0] sreg;
   wire [3:0] sreg_ai;
@@ -2796,123 +2797,16 @@ module cpu (input clk, input rst_n, output [15:0] iaddr, input [15:0] inst, outp
   assign iaddr = pc;
   assign rf_wdata = alu_out;
   assign opcode = 4'b0;   // Not Implemented
+  assign rf_we = 1'b0;    // Not Implemented
   assign rf_idx_d = 5'b0; // Not Implemented
   assign rf_idx_r = 5'b0; // Not Implemented
   assign daddr = 8'b0;    // Not Implemented
   assign we = 1'b0;       // Not Implemented
   assign wdata = 8'b0;    // Not Implemented
 
-  alu_ai u_alu_ai (.clk(clk), .rst_n(rst_n), .opcode(opcode), .rd(rd), .rr(rr), .alu_out(alu_out_ai), .sreg(sreg_ai));
   alu u_alu (.clk(clk), .rst_n(rst_n), .opcode(opcode), .rd(rd), .rr(rr), .alu_out(alu_out), .sreg(sreg));
-  rf u_rf (.clk(clk), .rst_n(rst_n), .rf_idx_d(rf_idx_d), .rf_idx_r(rf_idx_r), .rf_wdata(rf_wdata), .rd(rd), .rr(rr));
+  rf u_rf (.clk(clk), .rst_n(rst_n), .rf_we(rf_we), .rf_idx_d(rf_idx_d), .rf_idx_r(rf_idx_r), .rf_wdata(rf_wdata), .rd(rd), .rr(rr));
   pc u_pc (.clk(clk), .rst_n(rst_n), .inst(inst), .pc_nxt(pc_nxt), .pc(pc));
-
-endmodule
-
-module alu_ai (
-  input clk, rst_n,
-  input [3:0] opcode,
-  input [7:0] rd, rr,
-  output [7:0] alu_out,
-  output [3:0] sreg
-);
-
-/* The result is COMBINATIONAL and the flags are REGISTERED, which is what makes
-   ADC/SBC work: they read the carry the previous instruction left in SREG.
-
-   Everything here is driven by continuous assignments rather than an always@(*)
-   block. Two reasons: alu_out then stays a net, so it needs no 'reg' and the
-   synthesizer accepts it; and this engine settles combinational logic by
-   counting value changes, so the usual "assign a default, then override it in
-   a case" idiom would change a signal twice per pass and be reported as a
-   combinational loop. One driver per net, computed once. */
-
-reg sreg_v; // Overflow
-reg sreg_n; // Negative
-reg sreg_z; // Zero
-reg sreg_c; // Carry
-
-// Exposed in AVR's own SREG bit order for these four: V=3, N=2, Z=1, C=0.
-assign sreg = {sreg_v, sreg_n, sreg_z, sreg_c};
-
-wire is_add, is_adc, is_sbc, is_sub, is_cp, is_and, is_eor, is_or, is_mov;
-assign is_add = (opcode == 4'b0001);
-assign is_adc = (opcode == 4'b0011);
-assign is_sbc = (opcode == 4'b0010);
-assign is_sub = (opcode == 4'b0110);
-assign is_cp  = (opcode == 4'b0101);
-assign is_and = (opcode == 4'b1000);
-assign is_eor = (opcode == 4'b1001);
-assign is_or  = (opcode == 4'b1010);
-assign is_mov = (opcode == 4'b1011);
-
-wire add_class, sub_class, logic_class;
-assign add_class   = is_add | is_adc;
-assign sub_class   = is_sub | is_sbc | is_cp;   // CP is a subtract whose result is discarded
-assign logic_class = is_and | is_eor | is_or;
-
-/* NINE bits wide, because bit 8 is the carry out of an add and the borrow out of
-   a subtract - the flag cannot be recovered from an 8-bit result. CP computes the
-   difference like SUB and puts it on alu_out; not writing it back is the
-   decoder's job (it controls the register file's write enable), not the ALU's. */
-wire [8:0] res;
-assign res = is_add ? rd + rr
-           : is_adc ? rd + rr + sreg_c
-           : is_sub ? rd - rr
-           : is_sbc ? rd - rr - sreg_c
-           : is_cp  ? rd - rr
-           : is_and ? rd & rr
-           : is_eor ? rd ^ rr
-           : is_or  ? rd | rr
-           : is_mov ? rr
-           : rd;   // unknown opcode: pass Rd through and hold the flags
-
-assign alu_out = res[7:0];
-
-// Flag inputs, named so the overflow formulas below read like the manual's.
-wire d7, r7, q7, zero;
-assign d7   = rd[7];
-assign r7   = rr[7];
-assign q7   = res[7];
-assign zero = (res[7:0] == 8'b0);
-
-/* Signed overflow: for an add, both operands share a sign and the result differs
-   from it; for a subtract, the operands differ in sign and the result takes the
-   subtrahend's. Getting V wrong is invisible until something branches on
-   S = N ^ V, which is why it is spelled out rather than approximated. */
-wire v_add, v_sub;
-assign v_add = (d7 & r7 & ~q7) | (~d7 & ~r7 & q7);
-assign v_sub = (d7 & ~r7 & ~q7) | (~d7 & r7 & q7);
-
-wire v_nxt, n_nxt, z_nxt, c_nxt;
-assign v_nxt = add_class   ? v_add
-             : sub_class   ? v_sub
-             : logic_class ? 1'b0    // a logic op always clears V
-             : sreg_v;               // MOV and unknown opcodes hold every flag
-assign n_nxt = (add_class | sub_class | logic_class) ? q7 : sreg_n;
-/* SBC ANDs the PREVIOUS Z into the new one, and that AND is exactly what makes a
-   multi-byte subtract or compare answer for the whole value rather than for the
-   top byte alone. Plain SUB and CP do not do this. */
-assign z_nxt = is_sbc                                 ? (zero & sreg_z)
-             : (add_class | sub_class | logic_class)  ? zero
-             : sreg_z;
-assign c_nxt = (add_class | sub_class) ? res[8] : sreg_c;   // logic ops leave C alone
-
-always@(posedge clk or negedge rst_n)
-begin
-  if(!rst_n) begin
-    sreg_v <= 1'b0;
-    sreg_n <= 1'b0;
-    sreg_z <= 1'b0;
-    sreg_c <= 1'b0;
-  end
-  else begin
-    sreg_v <= v_nxt;
-    sreg_n <= n_nxt;
-    sreg_z <= z_nxt;
-    sreg_c <= c_nxt;
-  end
-end
 
 endmodule
 
@@ -2989,45 +2883,45 @@ end
 
 endmodule
 
-module rf (input clk, input rst_n, input [4:0] rf_idx_d, rf_idx_r, input [7:0] rf_wdata, output [7:0] rd, rr);
+module rf (input clk, input rst_n, input rf_we, input [4:0] rf_idx_d, rf_idx_r, input [7:0] rf_wdata, output [7:0] rd, rr);
 
 wire [7:0] r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31;
-wire [31:0] we;
+wire [31:0] we_oh;
 
-rf_reg u_r0 (.clk(clk), .rst_n(rst_n), .we(we[ 0]), .wdata(rf_wdata), .r(r0 ));
-rf_reg u_r1 (.clk(clk), .rst_n(rst_n), .we(we[ 1]), .wdata(rf_wdata), .r(r1 ));
-rf_reg u_r2 (.clk(clk), .rst_n(rst_n), .we(we[ 2]), .wdata(rf_wdata), .r(r2 ));
-rf_reg u_r3 (.clk(clk), .rst_n(rst_n), .we(we[ 3]), .wdata(rf_wdata), .r(r3 ));
-rf_reg u_r4 (.clk(clk), .rst_n(rst_n), .we(we[ 4]), .wdata(rf_wdata), .r(r4 ));
-rf_reg u_r5 (.clk(clk), .rst_n(rst_n), .we(we[ 5]), .wdata(rf_wdata), .r(r5 ));
-rf_reg u_r6 (.clk(clk), .rst_n(rst_n), .we(we[ 6]), .wdata(rf_wdata), .r(r6 ));
-rf_reg u_r7 (.clk(clk), .rst_n(rst_n), .we(we[ 7]), .wdata(rf_wdata), .r(r7 ));
-rf_reg u_r8 (.clk(clk), .rst_n(rst_n), .we(we[ 8]), .wdata(rf_wdata), .r(r8 ));
-rf_reg u_r9 (.clk(clk), .rst_n(rst_n), .we(we[ 9]), .wdata(rf_wdata), .r(r9 ));
-rf_reg u_r10(.clk(clk), .rst_n(rst_n), .we(we[10]), .wdata(rf_wdata), .r(r10));
-rf_reg u_r11(.clk(clk), .rst_n(rst_n), .we(we[11]), .wdata(rf_wdata), .r(r11));
-rf_reg u_r12(.clk(clk), .rst_n(rst_n), .we(we[12]), .wdata(rf_wdata), .r(r12));
-rf_reg u_r13(.clk(clk), .rst_n(rst_n), .we(we[13]), .wdata(rf_wdata), .r(r13));
-rf_reg u_r14(.clk(clk), .rst_n(rst_n), .we(we[14]), .wdata(rf_wdata), .r(r14));
-rf_reg u_r15(.clk(clk), .rst_n(rst_n), .we(we[15]), .wdata(rf_wdata), .r(r15));
-rf_reg u_r16(.clk(clk), .rst_n(rst_n), .we(we[16]), .wdata(rf_wdata), .r(r16));
-rf_reg u_r17(.clk(clk), .rst_n(rst_n), .we(we[17]), .wdata(rf_wdata), .r(r17));
-rf_reg u_r18(.clk(clk), .rst_n(rst_n), .we(we[18]), .wdata(rf_wdata), .r(r18));
-rf_reg u_r19(.clk(clk), .rst_n(rst_n), .we(we[19]), .wdata(rf_wdata), .r(r19));
-rf_reg u_r20(.clk(clk), .rst_n(rst_n), .we(we[20]), .wdata(rf_wdata), .r(r20));
-rf_reg u_r21(.clk(clk), .rst_n(rst_n), .we(we[21]), .wdata(rf_wdata), .r(r21));
-rf_reg u_r22(.clk(clk), .rst_n(rst_n), .we(we[22]), .wdata(rf_wdata), .r(r22));
-rf_reg u_r23(.clk(clk), .rst_n(rst_n), .we(we[23]), .wdata(rf_wdata), .r(r23));
-rf_reg u_r24(.clk(clk), .rst_n(rst_n), .we(we[24]), .wdata(rf_wdata), .r(r24));
-rf_reg u_r25(.clk(clk), .rst_n(rst_n), .we(we[25]), .wdata(rf_wdata), .r(r25));
-rf_reg u_r26(.clk(clk), .rst_n(rst_n), .we(we[26]), .wdata(rf_wdata), .r(r26));
-rf_reg u_r27(.clk(clk), .rst_n(rst_n), .we(we[27]), .wdata(rf_wdata), .r(r27));
-rf_reg u_r28(.clk(clk), .rst_n(rst_n), .we(we[28]), .wdata(rf_wdata), .r(r28));
-rf_reg u_r29(.clk(clk), .rst_n(rst_n), .we(we[29]), .wdata(rf_wdata), .r(r29));
-rf_reg u_r30(.clk(clk), .rst_n(rst_n), .we(we[30]), .wdata(rf_wdata), .r(r30));
-rf_reg u_r31(.clk(clk), .rst_n(rst_n), .we(we[31]), .wdata(rf_wdata), .r(r31));
+rf_reg u_r0 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 0]), .wdata(rf_wdata), .r(r0 ));
+rf_reg u_r1 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 1]), .wdata(rf_wdata), .r(r1 ));
+rf_reg u_r2 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 2]), .wdata(rf_wdata), .r(r2 ));
+rf_reg u_r3 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 3]), .wdata(rf_wdata), .r(r3 ));
+rf_reg u_r4 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 4]), .wdata(rf_wdata), .r(r4 ));
+rf_reg u_r5 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 5]), .wdata(rf_wdata), .r(r5 ));
+rf_reg u_r6 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 6]), .wdata(rf_wdata), .r(r6 ));
+rf_reg u_r7 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 7]), .wdata(rf_wdata), .r(r7 ));
+rf_reg u_r8 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 8]), .wdata(rf_wdata), .r(r8 ));
+rf_reg u_r9 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 9]), .wdata(rf_wdata), .r(r9 ));
+rf_reg u_r10(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[10]), .wdata(rf_wdata), .r(r10));
+rf_reg u_r11(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[11]), .wdata(rf_wdata), .r(r11));
+rf_reg u_r12(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[12]), .wdata(rf_wdata), .r(r12));
+rf_reg u_r13(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[13]), .wdata(rf_wdata), .r(r13));
+rf_reg u_r14(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[14]), .wdata(rf_wdata), .r(r14));
+rf_reg u_r15(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[15]), .wdata(rf_wdata), .r(r15));
+rf_reg u_r16(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[16]), .wdata(rf_wdata), .r(r16));
+rf_reg u_r17(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[17]), .wdata(rf_wdata), .r(r17));
+rf_reg u_r18(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[18]), .wdata(rf_wdata), .r(r18));
+rf_reg u_r19(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[19]), .wdata(rf_wdata), .r(r19));
+rf_reg u_r20(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[20]), .wdata(rf_wdata), .r(r20));
+rf_reg u_r21(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[21]), .wdata(rf_wdata), .r(r21));
+rf_reg u_r22(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[22]), .wdata(rf_wdata), .r(r22));
+rf_reg u_r23(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[23]), .wdata(rf_wdata), .r(r23));
+rf_reg u_r24(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[24]), .wdata(rf_wdata), .r(r24));
+rf_reg u_r25(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[25]), .wdata(rf_wdata), .r(r25));
+rf_reg u_r26(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[26]), .wdata(rf_wdata), .r(r26));
+rf_reg u_r27(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[27]), .wdata(rf_wdata), .r(r27));
+rf_reg u_r28(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[28]), .wdata(rf_wdata), .r(r28));
+rf_reg u_r29(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[29]), .wdata(rf_wdata), .r(r29));
+rf_reg u_r30(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[30]), .wdata(rf_wdata), .r(r30));
+rf_reg u_r31(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[31]), .wdata(rf_wdata), .r(r31));
 
-rf_wdec u_wdec  (.idx(rf_idx_d), .we(we));
+rf_wdec u_wdec  (.idx(rf_idx_d), .rf_we(rf_we), .we_oh(we_oh));
 
 rf_rdec u_rdec_d(.idx(rf_idx_d), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .r5(r5), .r6(r6), .r7(r7), .r8(r8), .r9(r9), .r10(r10), .r11(r11), .r12(r12), .r13(r13), .r14(r14), .r15(r15), .r16(r16), .r17(r17), .r18(r18), .r19(r19), .r20(r20), .r21(r21), .r22(r22), .r23(r23), .r24(r24), .r25(r25), .r26(r26), .r27(r27), .r28(r28), .r29(r29), .r30(r30), .r31(r31), .opr(rd));
 
@@ -3036,7 +2930,7 @@ rf_rdec u_rdec_r(.idx(rf_idx_r), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .r
 endmodule
 
 module rf_reg (
-  input clk, rst_n, we,
+  input clk, rst_n, we_oh,
   input [7:0] wdata,
   output reg [7:0] r
 );
@@ -3044,51 +2938,55 @@ module rf_reg (
 always@(posedge clk or negedge rst_n)
   if(!rst_n)
     r <= 8'b0;
-  else if (we)
+  else if (we_oh)
     r <= wdata;
  
 endmodule
 
 module rf_wdec (
   input [1:0] idx,
-  output reg [31:0] we
+  input       rf_we,
+  output reg [31:0] we_oh
 );
 
 always@(*)
-  case(idx)
-  5'd0 : we = 32'b0000_0000_0000_0000_0000_0000_0000_0001;
-  5'd1 : we = 32'b0000_0000_0000_0000_0000_0000_0000_0010;
-  5'd2 : we = 32'b0000_0000_0000_0000_0000_0000_0000_0100;
-  5'd3 : we = 32'b0000_0000_0000_0000_0000_0000_0000_1000;
-  5'd4 : we = 32'b0000_0000_0000_0000_0000_0000_0001_0000;
-  5'd5 : we = 32'b0000_0000_0000_0000_0000_0000_0010_0000;
-  5'd6 : we = 32'b0000_0000_0000_0000_0000_0000_0100_0000;
-  5'd7 : we = 32'b0000_0000_0000_0000_0000_0000_1000_0000;
-  5'd8 : we = 32'b0000_0000_0000_0000_0000_0001_0000_0000;
-  5'd9 : we = 32'b0000_0000_0000_0000_0000_0010_0000_0000;
-  5'd10: we = 32'b0000_0000_0000_0000_0000_0100_0000_0000;
-  5'd11: we = 32'b0000_0000_0000_0000_0000_1000_0000_0000;
-  5'd12: we = 32'b0000_0000_0000_0000_0001_0000_0000_0000;
-  5'd13: we = 32'b0000_0000_0000_0000_0010_0000_0000_0000;
-  5'd14: we = 32'b0000_0000_0000_0000_0100_0000_0000_0000;
-  5'd15: we = 32'b0000_0000_0000_0000_1000_0000_0000_0000;
-  5'd16: we = 32'b0000_0000_0000_0001_0000_0000_0000_0000;
-  5'd17: we = 32'b0000_0000_0000_0010_0000_0000_0000_0000;
-  5'd18: we = 32'b0000_0000_0000_0100_0000_0000_0000_0000;
-  5'd19: we = 32'b0000_0000_0000_1000_0000_0000_0000_0000;
-  5'd20: we = 32'b0000_0000_0001_0000_0000_0000_0000_0000;
-  5'd21: we = 32'b0000_0000_0010_0000_0000_0000_0000_0000;
-  5'd22: we = 32'b0000_0000_0100_0000_0000_0000_0000_0000;
-  5'd23: we = 32'b0000_0000_1000_0000_0000_0000_0000_0000;
-  5'd24: we = 32'b0000_0001_0000_0000_0000_0000_0000_0000;
-  5'd25: we = 32'b0000_0010_0000_0000_0000_0000_0000_0000;
-  5'd26: we = 32'b0000_0100_0000_0000_0000_0000_0000_0000;
-  5'd27: we = 32'b0000_1000_0000_0000_0000_0000_0000_0000;
-  5'd28: we = 32'b0001_0000_0000_0000_0000_0000_0000_0000;
-  5'd29: we = 32'b0010_0000_0000_0000_0000_0000_0000_0000;
-  5'd30: we = 32'b0100_0000_0000_0000_0000_0000_0000_0000;
-  5'd31: we = 32'b1000_0000_0000_0000_0000_0000_0000_0000;
- endcase
+  if(rf_we)
+    case(idx)
+      5'd0 : we_oh = 32'b0000_0000_0000_0000_0000_0000_0000_0001;
+      5'd1 : we_oh = 32'b0000_0000_0000_0000_0000_0000_0000_0010;
+      5'd2 : we_oh = 32'b0000_0000_0000_0000_0000_0000_0000_0100;
+      5'd3 : we_oh = 32'b0000_0000_0000_0000_0000_0000_0000_1000;
+      5'd4 : we_oh = 32'b0000_0000_0000_0000_0000_0000_0001_0000;
+      5'd5 : we_oh = 32'b0000_0000_0000_0000_0000_0000_0010_0000;
+      5'd6 : we_oh = 32'b0000_0000_0000_0000_0000_0000_0100_0000;
+      5'd7 : we_oh = 32'b0000_0000_0000_0000_0000_0000_1000_0000;
+      5'd8 : we_oh = 32'b0000_0000_0000_0000_0000_0001_0000_0000;
+      5'd9 : we_oh = 32'b0000_0000_0000_0000_0000_0010_0000_0000;
+      5'd10: we_oh = 32'b0000_0000_0000_0000_0000_0100_0000_0000;
+      5'd11: we_oh = 32'b0000_0000_0000_0000_0000_1000_0000_0000;
+      5'd12: we_oh = 32'b0000_0000_0000_0000_0001_0000_0000_0000;
+      5'd13: we_oh = 32'b0000_0000_0000_0000_0010_0000_0000_0000;
+      5'd14: we_oh = 32'b0000_0000_0000_0000_0100_0000_0000_0000;
+      5'd15: we_oh = 32'b0000_0000_0000_0000_1000_0000_0000_0000;
+      5'd16: we_oh = 32'b0000_0000_0000_0001_0000_0000_0000_0000;
+      5'd17: we_oh = 32'b0000_0000_0000_0010_0000_0000_0000_0000;
+      5'd18: we_oh = 32'b0000_0000_0000_0100_0000_0000_0000_0000;
+      5'd19: we_oh = 32'b0000_0000_0000_1000_0000_0000_0000_0000;
+      5'd20: we_oh = 32'b0000_0000_0001_0000_0000_0000_0000_0000;
+      5'd21: we_oh = 32'b0000_0000_0010_0000_0000_0000_0000_0000;
+      5'd22: we_oh = 32'b0000_0000_0100_0000_0000_0000_0000_0000;
+      5'd23: we_oh = 32'b0000_0000_1000_0000_0000_0000_0000_0000;
+      5'd24: we_oh = 32'b0000_0001_0000_0000_0000_0000_0000_0000;
+      5'd25: we_oh = 32'b0000_0010_0000_0000_0000_0000_0000_0000;
+      5'd26: we_oh = 32'b0000_0100_0000_0000_0000_0000_0000_0000;
+      5'd27: we_oh = 32'b0000_1000_0000_0000_0000_0000_0000_0000;
+      5'd28: we_oh = 32'b0001_0000_0000_0000_0000_0000_0000_0000;
+      5'd29: we_oh = 32'b0010_0000_0000_0000_0000_0000_0000_0000;
+      5'd30: we_oh = 32'b0100_0000_0000_0000_0000_0000_0000_0000;
+      5'd31: we_oh = 32'b1000_0000_0000_0000_0000_0000_0000_0000;
+    endcase
+  else
+      we_oh = 32'b1000_0000_0000_0000_0000_0000_0000_0000;
   
 endmodule
 
