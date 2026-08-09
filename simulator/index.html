@@ -216,6 +216,21 @@
     .hierarchy-node-row:hover { background: #f2f2f7; }
     .hierarchy-node-row.active { background: #e8f1ff; color: #007aff; font-weight: 600; }
     .hierarchy-node-type { color: #8e8e93; font-size: 10px; }
+    .hierarchy-fold-box {
+      flex-shrink: 0;
+      width: 14px;
+      height: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #c7c7cc;
+      border-radius: 3px;
+      color: #8e8e93;
+      font: 700 12px/1 "SF Mono", Menlo, Consolas, monospace;
+      cursor: pointer;
+    }
+    .hierarchy-fold-box:hover { border-color: #8e8e93; color: #3a3a3c; }
+    .hierarchy-fold-spacer { flex-shrink: 0; width: 14px; height: 14px; }
     .hierarchy-node-icon {
       width: 13px;
       height: 13px;
@@ -2888,6 +2903,18 @@ module rf (input clk, input rst_n, input rf_we, input [4:0] rf_idx_d, rf_idx_r, 
 wire [7:0] r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31;
 wire [31:0] we_oh;
 
+rf_reg_32 u_rf_reg_32 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh), .rf_wdata(rf_wdata), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .r5(r5), .r6(r6), .r7(r7), .r8(r8), .r9(r9), .r10(r10), .r11(r11), .r12(r12), .r13(r13), .r14(r14), .r15(r15), .r16(r16), .r17(r17), .r18(r18), .r19(r19), .r20(r20), .r21(r21), .r22(r22), .r23(r23), .r24(r24), .r25(r25), .r26(r26), .r27(r27), .r28(r28), .r29(r29), .r30(r30), .r31(r31));
+
+rf_wdec u_wdec (.idx(rf_idx_d), .rf_we(rf_we), .we_oh(we_oh));
+
+rf_rdec u_rdec_d (.idx(rf_idx_d), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .r5(r5), .r6(r6), .r7(r7), .r8(r8), .r9(r9), .r10(r10), .r11(r11), .r12(r12), .r13(r13), .r14(r14), .r15(r15), .r16(r16), .r17(r17), .r18(r18), .r19(r19), .r20(r20), .r21(r21), .r22(r22), .r23(r23), .r24(r24), .r25(r25), .r26(r26), .r27(r27), .r28(r28), .r29(r29), .r30(r30), .r31(r31), .opr(rd));
+
+rf_rdec u_rdec_r (.idx(rf_idx_r), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .r5(r5), .r6(r6), .r7(r7), .r8(r8), .r9(r9), .r10(r10), .r11(r11), .r12(r12), .r13(r13), .r14(r14), .r15(r15), .r16(r16), .r17(r17), .r18(r18), .r19(r19), .r20(r20), .r21(r21), .r22(r22), .r23(r23), .r24(r24), .r25(r25), .r26(r26), .r27(r27), .r28(r28), .r29(r29), .r30(r30), .r31(r31), .opr(rr));
+
+endmodule
+
+module rf_reg_32 (input clk, input rst_n, input [31:0] we_oh, input [7:0] rf_wdata, output [7:0] r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31);
+
 rf_reg u_r0 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 0]), .wdata(rf_wdata), .r(r0 ));
 rf_reg u_r1 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 1]), .wdata(rf_wdata), .r(r1 ));
 rf_reg u_r2 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 2]), .wdata(rf_wdata), .r(r2 ));
@@ -2921,12 +2948,6 @@ rf_reg u_r29(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[29]), .wdata(rf_wdata), .r(r
 rf_reg u_r30(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[30]), .wdata(rf_wdata), .r(r30));
 rf_reg u_r31(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[31]), .wdata(rf_wdata), .r(r31));
 
-rf_wdec u_wdec  (.idx(rf_idx_d), .rf_we(rf_we), .we_oh(we_oh));
-
-rf_rdec u_rdec_d(.idx(rf_idx_d), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .r5(r5), .r6(r6), .r7(r7), .r8(r8), .r9(r9), .r10(r10), .r11(r11), .r12(r12), .r13(r13), .r14(r14), .r15(r15), .r16(r16), .r17(r17), .r18(r18), .r19(r19), .r20(r20), .r21(r21), .r22(r22), .r23(r23), .r24(r24), .r25(r25), .r26(r26), .r27(r27), .r28(r28), .r29(r29), .r30(r30), .r31(r31), .opr(rd));
-
-rf_rdec u_rdec_r(.idx(rf_idx_r), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .r5(r5), .r6(r6), .r7(r7), .r8(r8), .r9(r9), .r10(r10), .r11(r11), .r12(r12), .r13(r13), .r14(r14), .r15(r15), .r16(r16), .r17(r17), .r18(r18), .r19(r19), .r20(r20), .r21(r21), .r22(r22), .r23(r23), .r24(r24), .r25(r25), .r26(r26), .r27(r27), .r28(r28), .r29(r29), .r30(r30), .r31(r31), .opr(rr));
-
 endmodule
 
 module rf_reg (
@@ -2944,7 +2965,7 @@ always@(posedge clk or negedge rst_n)
 endmodule
 
 module rf_wdec (
-  input [1:0] idx,
+  input [4:0] idx,
   input       rf_we,
   output reg [31:0] we_oh
 );
@@ -3179,6 +3200,7 @@ let hiddenSignals = new Set();
 let instanceVisibility = new Map(); // path -> 'shown'|'hidden', the last explicit single-click action on that exact path (single-click toggle) - a path with no entry inherits its parent's effective state, but an explicit entry always wins over inheritance regardless of depth, which is what lets a submodule be shown/hidden independently of its parent's own state. Layered on top of hiddenSignals, so per-signal choices survive show/hide of an ancestor instance.
 let lastTopModuleName = null; // top module's modType from the last run - a change means a new design, so visibility resets to top-only-visible
 let expandedHierarchyPaths = new Set(); // module-instance paths whose own-signal checklist is open
+let collapsedBranches = new Set(); // module-instance paths whose child sub-instance rows are folded out of the tree view (the +/- box) - purely a display fold, independent of waveform visibility
 let declKindMap = new Map();   // fullName -> {kind, ioKind}, from the last successful parse's decls
 let clockSignalNames = new Set(); // fullNames used with posedge/negedge anywhere - drawn with the clock icon
 let hierarchyDragState = null; // { listEl, paintVisible } while a signal-list drag-to-toggle is in progress
@@ -3835,6 +3857,7 @@ resetBtn.addEventListener('click', () => {
   instanceVisibility = new Map();
   lastTopModuleName = null;
   expandedHierarchyPaths = new Set();
+  collapsedBranches = new Set();
   radixMap = new Map();
   viewStart = 0; viewEnd = 1; cursorTime = 0;
   hideRadixPopup();
@@ -3969,6 +3992,14 @@ function runSimulation() {
     // leftover per-signal overrides from whatever was run before.
     hiddenSignals = new Set();
     instanceVisibility = new Map(ast.tree.children.map(c => [c.path, 'hidden']));
+    // start with every branch folded, so a freshly loaded design shows only the
+    // top row and is expanded one level at a time via the +/- boxes.
+    collapsedBranches = new Set();
+    (function collectBranches(node) {
+      if (!node.children.length) return;
+      collapsedBranches.add(node.path);
+      node.children.forEach(collectBranches);
+    })(ast.tree);
     lastTopModuleName = ast.tree.modType;
   }
 
@@ -4128,6 +4159,29 @@ function renderHierarchyTree(tree) {
     const row = document.createElement('div');
     row.className = 'hierarchy-node-row';
 
+    // leftmost fold box on any node that has child instances; a same-size
+    // spacer on leaf nodes keeps the chip icons/labels aligned across rows.
+    if (node.children.length) {
+      const foldBox = document.createElement('span');
+      foldBox.className = 'hierarchy-fold-box';
+      foldBox.textContent = collapsedBranches.has(node.path) ? '+' : '−';
+      // the box owns branch expand/collapse only - stop click AND dblclick from
+      // bubbling to the row, so it never toggles waveform visibility (row click)
+      // or the own-signal checklist (row dblclick).
+      foldBox.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (collapsedBranches.has(node.path)) collapsedBranches.delete(node.path);
+        else collapsedBranches.add(node.path);
+        renderHierarchyTree(tree);
+      });
+      foldBox.addEventListener('dblclick', (e) => e.stopPropagation());
+      row.appendChild(foldBox);
+    } else {
+      const spacer = document.createElement('span');
+      spacer.className = 'hierarchy-fold-spacer';
+      row.appendChild(spacer);
+    }
+
     row.insertAdjacentHTML('beforeend', '<svg class="hierarchy-node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
       '<rect x="7" y="3" width="10" height="18"/>' +
       '<line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="12" x2="7" y2="12"/><line x1="2" y1="17" x2="7" y2="17"/>' +
@@ -4227,7 +4281,7 @@ function renderHierarchyTree(tree) {
       wrap.appendChild(list);
     }
 
-    if (node.children.length) {
+    if (node.children.length && !collapsedBranches.has(node.path)) {
       const kids = document.createElement('div');
       kids.className = 'hierarchy-children';
       node.children.forEach(c => kids.appendChild(buildNode(c)));
