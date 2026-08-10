@@ -841,6 +841,9 @@ endmodule`,
 
 /* ---------------- Lexer ---------------- */
 const KEYWORDS = new Set(['module','endmodule','input','output','wire','reg','assign','always','begin','end','if','else','posedge','negedge','or','case','casex','endcase','default','parameter']);
+// Only needed so `\"` cannot end a string literal early; the value itself is discarded
+// (see stripStringAssignments) and is kept purely to quote in log lines and errors.
+const STR_ESCAPES = { n: '\n', t: '\t', r: '\r', '0': '\0', '\\': '\\', '"': '"' };
 
 function lex(src) {
   const toks = [];
@@ -854,6 +857,29 @@ function lex(src) {
     if (/\s/.test(c)) { i++; continue; }
     if (c === '/' && src[i+1] === '/') { while (i < n && src[i] !== '\n') i++; continue; }
     if (c === '/' && src[i+1] === '*') { i += 2; while (i < n && !(src[i]==='*'&&src[i+1]==='/')) { if (src[i]==='\n') line++; i++; } i += 2; continue; }
+    /* A string literal. Nothing in this subset can consume one — there is no $display
+       here — and the only place one is tolerated at all is as the whole right-hand side
+       of an assignment, which stripStringAssignments then deletes. It still has to be a
+       real token rather than a lex error, because a bare `unexpected character '"'` names
+       the quote instead of the construct, and because the rule about where a string may
+       appear is a statement-shape rule the parser is the right place to enforce. */
+    if (c === '"') {
+      let j = i + 1, val = '';
+      while (j < n && src[j] !== '"') {
+        if (src[j] === '\n') throw new Error(`Lex error: unterminated string literal at line ${line}`);
+        if (src[j] === '\\' && j + 1 < n) {
+          const esc = src[j+1];
+          val += STR_ESCAPES[esc] !== undefined ? STR_ESCAPES[esc] : esc;
+          j += 2;
+          continue;
+        }
+        val += src[j++];
+      }
+      if (j >= n) throw new Error(`Lex error: unterminated string literal at line ${line}`);
+      toks.push({ type: 'str', value: val, line, start: i, end: j + 1 });
+      i = j + 1;
+      continue;
+    }
     if (/[0-9]/.test(c)) {
       let j = i;
       /* Underscores are legal digit separators anywhere after the first digit
@@ -889,6 +915,16 @@ function lex(src) {
       toks.push({ type: KEYWORDS.has(word) ? word : 'ident', value: word, line, start: i, end: j });
       i = j;
       continue;
+    }
+    // `&&&` is a real Verilog token, but only inside a specify-block timing check
+    // (`$setup(d, posedge clk &&& en, t)`), which this subset does not support. It
+    // has to be munched here, before `&&`, because maximal munch is exactly what
+    // makes rejecting it correct rather than pedantic: a compliant tool takes all
+    // three characters as one token and so *cannot* read `a &&& b` as the
+    // `a && (&b)` this parser used to accept silently. A spaced `a && &b` still
+    // lexes as `&&` then a unary reduction and keeps working.
+    if (src.slice(i, i + 3) === '&&&') {
+      throw new Error(`Lex error: '&&&' is only valid in a specify-block timing check, which is not supported; write '&& &' if you meant a reduction, at line ${line}`);
     }
     const two = src.slice(i, i+2);
     if (['==','!=','<=','>=','~^','^~','&&','||'].includes(two)) { toks.push({ type: two, value: two, line, start: i, end: i + 2 }); i += 2; continue; }
@@ -1236,6 +1272,12 @@ class Parser {
     }
     if (this.at('(')) { this.next(); const e = this.parseExpr(); this.expect(')'); return e; }
     if (this.at('num')) { return { type: 'Num', value: this.next().value }; }
+    /* Parsed as an ordinary expression, in every position, deliberately: whether a string
+       is in a position where it can be ignored is decided by stripStringAssignments, which
+       can then name the offending construct AND its line. Restricting it to the RHS here
+       instead would report `expected ')' but got 'str'` for `{"A", b}`. The `line` is what
+       every message about this node quotes, since no other expression node carries one. */
+    if (this.at('str')) { const t = this.next(); return { type: 'Str', value: t.value, line: t.line }; }
     const name = this.expect('ident').value;
     if (this.at('[')) {
       this.next();
@@ -1249,10 +1291,185 @@ class Parser {
   }
 }
 
+/* ---------------- string assignments: ignored, not synthesized ----------------
+   A string is not hardware. Other tools do synthesize `debug_alu <= "ADD"` — "ADD" is
+   just a 24-bit constant — but a design that carries a handful of debug_* strings for
+   the simulator's `str` radix then arrives here as dozens of const cells and a mux tree
+   nobody wants to look at, so this pass DELETES those assignments outright.
+
+   The rule is deliberately narrow: a string is ignorable only as the ENTIRE right-hand
+   side of an assignment. Anywhere else — `{"A", b}`, `op == "A"`, a case pattern — it is
+   an error, because there is no reading of those under which "ignore it" means anything,
+   and quietly dropping the statement wrapped around one would swallow a typo.
+
+   Pruning is BOTTOM-UP, and that is what makes "generates nothing" true rather than
+   merely "errors nowhere": an emptied case is removed whole, so its selector nets, its
+   exhaustiveness check and its address-decode tree are never built; an emptied always
+   block goes with it. Left in place, an all-strings case with no default would be
+   rejected for not covering its selector — an error about hardware that isn't there.
+
+   Two things are deliberately NOT pruned away, because they carry a fact the errors
+   downstream depend on. A surviving if/case branch that emptied out keeps an empty
+   `Block` rather than vanishing, so `default: debug <= "ERR";` beside items that assign
+   a real signal still reports "not assigned by the default branch" — accurate — instead
+   of "there is no default branch", which the source contradicts. Both those latch errors
+   are correct to raise here: a branch whose only content was a debug string genuinely
+   does leave the real signal holding its value.
+*/
+function stripStringAssignments(mod) {
+  const isStr = node => !!node && node.type === 'Str';
+  const emptyBlock = () => ({ type: 'Block', stmts: [] });
+
+  const lvalueNames = (lv, out) => {
+    if (!lv) return;
+    if (lv.type === 'ConcatLvalue') { for (const e of lv.elems) lvalueNames(e, out); return; }
+    if (lv.name) out.add(lv.name);
+  };
+  const walkExpr = (node, visit) => {
+    if (!node) return;
+    visit(node);
+    switch (node.type) {
+      case 'Unary': walkExpr(node.expr, visit); return;
+      case 'Binary': walkExpr(node.l, visit); walkExpr(node.r, visit); return;
+      case 'Ternary': walkExpr(node.cond, visit); walkExpr(node.then, visit); walkExpr(node.else, visit); return;
+      case 'Concat': for (const e of node.elems) walkExpr(e, visit); return;
+      default: return;
+    }
+  };
+
+  /* Pass 1 — legality, over the ORIGINAL tree. It has to run before anything is pruned,
+     or a string inside a construct that prunes away entirely (`case ("A") ...`) would
+     never be looked at. `bareStrOk` is true at exactly one kind of position. */
+  const rejectStrings = (node, bareStrOk) => {
+    if (isStr(node) && bareStrOk) return;
+    walkExpr(node, sub => {
+      if (!isStr(sub)) return;
+      throw new Error(`Parse error: string literal ${JSON.stringify(sub.value)} is only supported as the entire right-hand side of an assignment, where it is then ignored (line ${sub.line}) — a string is not synthesizable hardware`);
+    });
+  };
+  const checkStmt = stmt => {
+    if (!stmt) return;
+    switch (stmt.type) {
+      case 'Block': for (const s of stmt.stmts) checkStmt(s); return;
+      case 'If': rejectStrings(stmt.cond, false); checkStmt(stmt.then); checkStmt(stmt.else); return;
+      case 'Case':
+        rejectStrings(stmt.selector, false);
+        for (const it of stmt.items) { for (const p of it.patterns) rejectStrings(p, false); checkStmt(it.body); }
+        checkStmt(stmt.defaultBody);
+        return;
+      default: rejectStrings(stmt.rhs, true);
+    }
+  };
+  for (const a of mod.assigns) rejectStrings(a.rhs, true);
+  for (const blk of mod.always) checkStmt(blk.body);
+  for (const inst of mod.instances) for (const c of inst.conns) rejectStrings(c.expr, false);
+
+  /* Pass 2 — prune, recording what went. */
+  const ignored = [];                   // {name, text, line} per dropped assignment target
+  const stringTargets = new Map();      // name -> line of its first string assignment
+  const recordDrop = (lhs, rhs) => {
+    const names = new Set();
+    lvalueNames(lhs, names);
+    for (const name of names) {
+      ignored.push({ name, text: JSON.stringify(rhs.value), line: rhs.line });
+      if (!stringTargets.has(name)) stringTargets.set(name, rhs.line);
+    }
+  };
+  const pruneStmt = stmt => {
+    if (!stmt) return null;
+    if (stmt.type === 'Block') {
+      const stmts = stmt.stmts.map(pruneStmt).filter(s => s !== null);
+      return stmts.length ? { ...stmt, stmts } : null;
+    }
+    if (stmt.type === 'If') {
+      const thenS = pruneStmt(stmt.then);
+      const elseS = pruneStmt(stmt.else);
+      if (!thenS && !elseS) return null;
+      return { ...stmt, then: thenS || emptyBlock(), else: elseS };
+    }
+    if (stmt.type === 'Case') {
+      const items = stmt.items.map(it => ({ ...it, body: pruneStmt(it.body) }));
+      const defaultBody = stmt.defaultBody ? pruneStmt(stmt.defaultBody) : null;
+      if (items.every(it => it.body === null) && defaultBody === null) return null;
+      return {
+        ...stmt,
+        items: items.map(it => (it.body ? it : { ...it, body: emptyBlock() })),
+        defaultBody: stmt.defaultBody ? (defaultBody || emptyBlock()) : null,
+      };
+    }
+    if (isStr(stmt.rhs)) { recordDrop(stmt.lhs, stmt.rhs); return null; }
+    return stmt;
+  };
+  for (const a of mod.assigns) if (isStr(a.rhs)) recordDrop(a.lhs, a.rhs);
+  mod.assigns = mod.assigns.filter(a => !isStr(a.rhs));
+  mod.always = mod.always.map(blk => ({ ...blk, body: pruneStmt(blk.body) })).filter(blk => blk.body !== null);
+
+  if (!stringTargets.size) { mod.ignoredStrings = []; mod.droppedSignals = []; return mod; }
+
+  /* Pass 3 — what is left of the module, so a string-only signal can be told apart from a
+     signal that merely also had a debug string assigned beside its real driver. */
+  const driven = new Set(); // has a surviving driver
+  const read = new Set();   // consumed by surviving logic
+  const collectReads = node => walkExpr(node, sub => {
+    if (sub.type === 'Ident' || sub.type === 'Index' || sub.type === 'Slice') read.add(sub.name);
+  });
+  const collectStmt = stmt => {
+    if (!stmt) return;
+    switch (stmt.type) {
+      case 'Block': for (const s of stmt.stmts) collectStmt(s); return;
+      case 'If': collectReads(stmt.cond); collectStmt(stmt.then); collectStmt(stmt.else); return;
+      case 'Case':
+        collectReads(stmt.selector);
+        for (const it of stmt.items) { for (const p of it.patterns) collectReads(p); collectStmt(it.body); }
+        collectStmt(stmt.defaultBody);
+        return;
+      default: lvalueNames(stmt.lhs, driven); collectReads(stmt.rhs);
+    }
+  };
+  for (const a of mod.assigns) { lvalueNames(a.lhs, driven); collectReads(a.rhs); }
+  for (const blk of mod.always) {
+    if (Array.isArray(blk.sens)) for (const s of blk.sens) read.add(s.sig);
+    collectStmt(blk.body);
+  }
+  /* An instance connection counts as a READ, even though a bare signal name on an output
+     port is really a drive: port directions live in another module's interface, which does
+     not exist at parse time. Erring this way turns the case that matters — a string-only
+     signal wired into a submodule input — into the clean error below, instead of leaving it
+     undriven for buildGraph to hit as `internal error: no driver found`. The cost is a
+     false error on a signal both string-assigned and driven by an instance output, which is
+     a multi-driver design anyway. */
+  for (const inst of mod.instances) for (const c of inst.conns) collectReads(c.expr);
+
+  const widthOf = name => {
+    for (const d of mod.decls) if (d.names.includes(name)) return d.range ? d.range.hi - d.range.lo + 1 : 1;
+    return null;
+  };
+  const dropped = [];
+  for (const [name, line] of stringTargets) {
+    if (driven.has(name)) continue; // a real driver survived beside the string — leave it alone
+    const isPort = mod.ports.includes(name);
+    if (isPort || read.has(name)) {
+      const why = isPort ? `is a port of module '${mod.name}'` : `is read elsewhere in module '${mod.name}'`;
+      const fix = isPort ? 'drive it with real logic, or make it an internal reg used only for debug' : 'drive it with real logic, or stop reading it';
+      throw new Error(`Parse error: '${name}' ${why}, but its only assignment is the string literal on line ${line}, which is ignored — nothing would drive it; ${fix}`);
+    }
+    if (widthOf(name) !== null) dropped.push({ name, width: widthOf(name) });
+  }
+  if (dropped.length) {
+    const dropSet = new Set(dropped.map(d => d.name));
+    mod.decls = mod.decls
+      .map(d => ({ ...d, names: d.names.filter(nm => !dropSet.has(nm)) }))
+      .filter(d => d.names.length);
+  }
+  mod.ignoredStrings = ignored;
+  mod.droppedSignals = dropped;
+  return mod;
+}
+
 function parseVerilog(src) {
   const parser = new Parser(lex(src));
   const modules = [];
-  while (!parser.at('eof')) modules.push(parser.parseModule());
+  while (!parser.at('eof')) modules.push(stripStringAssignments(parser.parseModule()));
   if (!modules.length) throw new Error('Parse error: no module found');
   return modules;
 }
@@ -1301,6 +1518,7 @@ function exprToStr(node) {
   const REDUCE_SYM = { redand: '&', redor: '|', redxor: '^', redxnor: '~^' };
   switch (node.type) {
     case 'Num': return node.value.width ? `${node.value.width}'${node.value.base}${node.value.digits}` : node.value.digits;
+    case 'Str': return JSON.stringify(node.value);
     case 'Ident': return node.name;
     case 'Index': return `${node.name}[${node.bit}]`;
     case 'Slice': return `${node.name}[${node.hi}:${node.lo}]`;
@@ -1463,6 +1681,9 @@ class Synthesizer {
   naturalWidth(node) {
     switch (node.type) {
       case 'Num': return node.value.width || 32;
+      // Unreachable via stripStringAssignments, which either deletes a string assignment or
+      // errors on the string; here so a future parser path that leaks one fails loudly.
+      case 'Str': this.error(`string literal ${JSON.stringify(node.value)} has no width — a string is only allowed as the whole right-hand side of an assignment, which is then ignored`);
       case 'Ident': return this._sigWidth(node.name);
       case 'Index': return 1;
       case 'Slice': return node.hi - node.lo + 1;
@@ -1619,6 +1840,8 @@ class Synthesizer {
     switch (node.type) {
       case 'Num':
         return numToBits(node.value, width).map(b => this.constNet(b));
+      case 'Str': // see naturalWidth — unreachable, and loud rather than silent if it ever isn't
+        this.error(`cannot synthesize the string literal ${JSON.stringify(node.value)} — a string is only allowed as the whole right-hand side of an assignment, which is then ignored`);
       case 'Ident': {
         const s = this.sig[node.name];
         if (!s) this.error(`Unknown signal '${node.name}'`);
@@ -2158,7 +2381,13 @@ class Synthesizer {
       // fast path: every item is a distinct, non-wildcard literal, so the selector's own raw
       // bits already say which leaf to pick — no comparators, no OR-propagated priority tree
       if (addrMap) {
+        /* The item-coverage loop above only proves every ITEM assigns this key; the default
+           slot is unchecked, and an undefined leaf reaching _synthAddressDecodeTree becomes a
+           mux2 with a missing input — silently the very latch this whole function refuses to
+           infer, rather than an error. The slow path below already guards its fallbackNet the
+           same way; this is that guard, on the path that skips it. */
         const leavesByAddress = addrMap.map(idx => idx === null ? defaultCv.get(key) : itemCvs[idx].cv.get(key));
+        if (leavesByAddress.some(leaf => leaf === undefined)) this.error(`signal driving net '${key}' is not assigned by the default branch inside a combinational always block — add it there too, or remove the default and ensure every item covers this signal, to avoid inferring a latch`);
         result.set(key, this._synthAddressDecodeTree(leavesByAddress, selNets, busGroups, base, bitIdx, s));
         continue;
       }
@@ -2493,6 +2722,10 @@ class Synthesizer {
   }
 
   run() {
+    /* Reported rather than dropped silently — a netlist that is missing hardware the
+       source appears to ask for has to say so, or the only evidence is an absence. */
+    for (const s of this.ast.ignoredStrings || []) this.info(`ignored the assignment of ${s.text} to '${s.name}' (line ${s.line}) — a string is not synthesizable, so no hardware was generated for it`);
+    for (const d of this.ast.droppedSignals || []) this.info(`signal '${d.name}' (${d.width}-bit) was dropped entirely: every assignment to it was an ignored string literal and nothing reads it`);
     for (const a of this.ast.assigns) this.synthAssign(a);
     for (const blk of this.ast.always) {
       if (blk.sens === 'star') this.synthCombAlways(blk);

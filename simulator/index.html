@@ -240,6 +240,19 @@
     .hierarchy-children { margin-left: 12px; border-left: 1px solid #e5e5ea; padding-left: 6px; }
 
     /* --- additions for editor / console / waveform, same visual language --- */
+    /* Expand: the waveform row breaks out of .grid's max-width to the full body
+       content width, leaving every other card centred at 1100px. This is an
+       app-specific rule and stays out of style.css even though .split-row itself
+       lives there, since only this app has the control. --wave-bleed is set from
+       MEASURED geometry rather than the usual calc(50% - 50vw) trick, because
+       100vw includes the vertical scrollbar - which on any platform with classic
+       (non-overlay) scrollbars makes the row wider than the body's content box
+       and pops a horizontal scrollbar the moment you expand.
+       document.documentElement.clientWidth excludes it. */
+    .split-row.wave-expanded {
+      margin-left: calc(-1 * var(--wave-bleed, 0px));
+      margin-right: calc(-1 * var(--wave-bleed, 0px));
+    }
     .hierarchy-node-row.off { color: #c7c7cc; }
     .hierarchy-node-row.off .hierarchy-node-icon { color: #c7c7cc; }
     .hierarchy-signal-list { margin-left: 15px; padding: 2px 0 4px; }
@@ -566,6 +579,11 @@
                 <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 2 H10 M4 6 H10 M2 10 H10" stroke-linecap="round"/><rect x="10.5" y="0.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="10.5" y="4.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="10.5" y="8.5" width="3" height="3" fill="currentColor" stroke="none"/><path d="M2 2 V10" stroke-linecap="round"/></svg>
               </span>
             </span>
+            <span class="layout-toggle">
+              <span class="layout-btn" id="waveExpandBtn" title="Expand to the full browser width">
+                <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1 V11 M15 1 V11"/><path d="M4.5 6 H11.5 M6.5 3.8 L4.3 6 L6.5 8.2 M9.5 3.8 L11.7 6 L9.5 8.2"/></svg>
+              </span>
+            </span>
           </span>
         </h2>
         <p>Click a signal name to show/hide its row · hover a value to change its radix · click the chart to move the cursor, drag right to zoom into a range, drag left to zoom out, double-click to zoom in · swipe sideways (two-finger on a trackpad) to scroll · on a touchscreen, drag right/left to zoom in/out</p>
@@ -693,6 +711,16 @@ function lex(src) {
       const word = src.slice(i, j);
       toks.push({ type: KEYWORDS.has(word) ? 'KW' : 'IDENT', value: word, line, start: i, end: j });
       i = j; continue;
+    }
+    // `&&&` is a real Verilog token, but only inside a specify-block timing check
+    // (`$setup(d, posedge clk &&& en, t)`), which this subset does not support. It
+    // has to be munched here, before `&&`, because maximal munch is exactly what
+    // makes rejecting it correct rather than pedantic: a compliant tool takes all
+    // three characters as one token and so *cannot* read `a &&& b` as the
+    // `a && (&b)` this parser used to accept silently. A spaced `a && &b` still
+    // lexes as `&&` then a unary reduction and keeps working.
+    if (src.slice(i, i + 3) === '&&&') {
+      throw new Error(`Lex error: '&&&' is only valid in a specify-block timing check, which is not supported; write '&& &' if you meant a reduction, at line ${line}`);
     }
     const two = src.slice(i, i + 2);
     if (['<=','>=','==','!=','&&','||','<<','>>','~&','~|','~^','^~'].includes(two)) {
@@ -1243,6 +1271,22 @@ function truthValue(val) {
   if ((val.x | val.z) === 0) return 0;
   return 'x';
 }
+/* Verilog reduces the operand of !, &&, ||, `if` and ?: at its OWN width - those
+   are self-determined contexts - and that is not the same as reducing the stored
+   32-bit value. It matters for `~`, which inverts all 32 stored bits: `~x` on a
+   1-bit x left 31 stray 1s, and truthValue (where any known-1 bit wins) then
+   called it true whatever x was, so `~a && ~b` was ALWAYS true and `if (~x)`
+   never false. Masking to widthOfExpr first is exactly the self-determined rule.
+
+   Assignment contexts are deliberately left alone: there the width is
+   context-determined by the target, which is why `y16 = ~a8` must keep all 16
+   bits rather than being masked to 8. Comparisons are still reduced unmasked -
+   `~a == 8'hf0` remains wrong - because fixing that needs the same
+   context/self-determined distinction threaded through every operator, which is
+   a bigger change than this one. */
+function truthOfExpr(val, node, ctx) {
+  return truthValue(maskVal(val, widthOfExpr(node, ctx)));
+}
 function boolVal(b) { return b ? mkVal(1) : mkVal(0); }
 const X1 = mkVal(0, 1, 0); // a single ambiguous/unknown scalar result
 function popcount32(x) { let c = 0; x = x >>> 0; while (x) { c += x & 1; x >>>= 1; } return c; }
@@ -1441,6 +1485,89 @@ function elaborate(modules) {
       default: throw new Error('cannot check statement ' + stmt.type);
     }
   }
+  /* Verilog gives a variable ONE driver: either a continuous `assign` or one
+     procedural block, never a mix and never two procedural blocks. This engine
+     cannot report that usefully at run time, which is why it is worth rejecting
+     here. A comb process and an `assign` both re-run to a fixed point every delta
+     cycle, so two of them fighting over one signal keep changing it and the
+     settling loop gives up with "combinational loop" - naming the signal but not
+     the cause, leaving you looking at two drivers each of which is correct on its
+     own. Worse, an edge-triggered block paired with an `assign` does not even
+     oscillate reliably: it just quietly loses whichever write lands first.
+
+     Two things are deliberately NOT rejected:
+
+     - Two continuous `assign`s. That is the multi-driver / wired-OR case this app
+       models rather than forbids: drivers that agree settle to the agreed value,
+       and drivers that disagree get the runtime oscillator trace. Turning it into
+       a parse error would remove behaviour the tri-state example depends on.
+     - `initial` plus `always` on the same reg, which is the standard clock
+       generator (`initial clk = 0;` alongside `always #5 clk = ~clk;`). An
+       `initial` block runs once and seeds state; it is not a driver.
+
+     This runs on the ELABORATED list, so a port connection's synthesized assign
+     counts as the driver it actually is - wiring a submodule's output to a signal
+     the parent also drives is precisely this bug - and hierarchical names make the
+     message point at the offending instance. */
+  function lvalueTargets(lv, out = []) {
+    if (lv.type === 'Concat') { lv.items.forEach(it => lvalueTargets(it, out)); return out; }
+    // Ident/BitSelect/PartSelect/MemWrite all name their target in `.name`. Index
+    // and part-select bounds are READS, so they are deliberately not collected -
+    // `mem[addr] <= x` drives `mem`, not `addr`.
+    if (lv.name) out.push(lv.name);
+    return out;
+  }
+  function collectDriveTargets(stmt, out) {
+    switch (stmt.type) {
+      case 'Block': stmt.stmts.forEach(s => collectDriveTargets(s, out)); return;
+      case 'If':
+        collectDriveTargets(stmt.then, out);
+        if (stmt.els) collectDriveTargets(stmt.els, out);
+        return;
+      case 'Case': stmt.items.forEach(it => collectDriveTargets(it.body, out)); return;
+      case 'AssignStmt': lvalueTargets(stmt.lhs).forEach(n => out.add(n)); return;
+      case 'Timing': if (stmt.stmt) collectDriveTargets(stmt.stmt, out); return;
+      // A $readmemh fills a memory but is not a continuous driver of it, so it is
+      // not counted here - two always blocks that both $readmemh one memory is
+      // odd but not the defect this check is about.
+      case 'SysCall': case 'Readmem': case 'Finish': case 'Empty': return;
+      default: throw new Error('cannot check statement ' + stmt.type);
+    }
+  }
+  function describeSensitivity(sens) {
+    if (!Array.isArray(sens)) return 'always @(*)';
+    if (sens.length === 0) return 'always';
+    return 'always @(' + sens.map(s => (s.edge ? s.edge + ' ' : '') + s.signal).join(' or ') + ')';
+  }
+  function checkSingleDriver(items) {
+    const contAssign = new Map();
+    const procBlocks = new Map();
+    for (const item of items) {
+      if (item.type === 'Assign') {
+        for (const n of lvalueTargets(item.lhs)) contAssign.set(n, (contAssign.get(n) || 0) + 1);
+      } else if (item.type === 'Always') {
+        const targets = new Set();
+        collectDriveTargets(item.body, targets);
+        for (const n of targets) {
+          if (!procBlocks.has(n)) procBlocks.set(n, []);
+          procBlocks.get(n).push(describeSensitivity(item.sensitivity));
+        }
+      }
+    }
+    for (const [name, blocks] of procBlocks) {
+      if (contAssign.has(name)) {
+        throw new Error(`Parse error: '${name}' is driven by both a continuous assign and `
+          + `${blocks.length > 1 ? blocks.length + ' always blocks' : 'an ' + blocks[0] + ' block'}`
+          + ` - a variable may have only one driver, so this cannot settle and would be`
+          + ` reported as a combinational loop. Drive '${name}' from one or the other.`);
+      }
+      if (blocks.length > 1) {
+        throw new Error(`Parse error: '${name}' is assigned in ${blocks.length} separate always `
+          + `blocks (${blocks.join(', ')}) - a variable may have only one driver. Merge them`
+          + ` into a single block.`);
+      }
+    }
+  }
   function checkUndeclaredSignals(items) {
     for (const item of items) {
       const used = new Set(), usedMem = new Set();
@@ -1560,6 +1687,7 @@ function elaborate(modules) {
 
   const tree = elaborateModule(top, '');
   checkUndeclaredSignals(items);
+  checkSingleDriver(items);
   return { type: 'Module', name: top.name, ports: [], decls, items, tree };
 }
 
@@ -1995,7 +2123,7 @@ function* execStmt(stmt, ctx) {
       for (const s of stmt.stmts) yield* execStmt(s, ctx);
       return;
     case 'If': {
-      if (truthValue(evalExpr(stmt.cond, ctx)) === 1) yield* execStmt(stmt.then, ctx);
+      if (truthOfExpr(evalExpr(stmt.cond, ctx), stmt.cond, ctx) === 1) yield* execStmt(stmt.then, ctx);
       else if (stmt.els) yield* execStmt(stmt.els, ctx);
       return;
     }
@@ -2076,7 +2204,7 @@ function evalExpr(node, ctx) {
       switch (node.op) {
         case '-': return isFullyKnown(a) ? mkVal(-a.v) : mkVal(0, 0xFFFFFFFF);
         case '+': return a;
-        case '!': { const t = truthValue(a); return t === 'x' ? X1 : boolVal(t === 0); }
+        case '!': { const t = truthOfExpr(a, node.expr, ctx); return t === 'x' ? X1 : boolVal(t === 0); }
         case '~': return mkVal(~a.v, a.x | a.z);
         case '&': case '|': case '^': case '~&': case '~|': case '~^': case '^~': {
           // reduction operators: fold every bit of the OPERAND'S OWN width (not
@@ -2126,12 +2254,12 @@ function evalExpr(node, ctx) {
           return mkVal((l.v ^ r.v) & known, ~known);
         }
         case '&&': {
-          const a = truthValue(l), b = truthValue(r);
+          const a = truthOfExpr(l, node.left, ctx), b = truthOfExpr(r, node.right, ctx);
           if (a === 0 || b === 0) return mkVal(0);
           return (a === 1 && b === 1) ? mkVal(1) : X1;
         }
         case '||': {
-          const a = truthValue(l), b = truthValue(r);
+          const a = truthOfExpr(l, node.left, ctx), b = truthOfExpr(r, node.right, ctx);
           if (a === 1 || b === 1) return mkVal(1);
           return (a === 0 && b === 0) ? mkVal(0) : X1;
         }
@@ -2147,7 +2275,7 @@ function evalExpr(node, ctx) {
       break;
     }
     case 'Ternary': {
-      const t = truthValue(evalExpr(node.cond, ctx));
+      const t = truthOfExpr(evalExpr(node.cond, ctx), node.cond, ctx);
       if (t === 1) return evalExpr(node.then, ctx);
       if (t === 0) return evalExpr(node.els, ctx);
       // ambiguous condition: per bit, use the branches' value where they agree, else x
@@ -2702,26 +2830,27 @@ endmodule`,
 module rf (
   input clk, rst_n, 
   input [1:0] idx_d, idx_r,
+  input       we,
   input [7:0] wdata, 
   output [7:0] rd, rr
 );
 
 wire [7:0] r0, r1, r2, r3;
-wire [3:0] we;
+wire [3:0] we_1h;
 
-rf_reg u_r0(.clk(clk), .rst_n(rst_n), .we(we[0]), .wdata(wdata), .r(r0));
-rf_reg u_r1(.clk(clk), .rst_n(rst_n), .we(we[1]), .wdata(wdata), .r(r1));
-rf_reg u_r2(.clk(clk), .rst_n(rst_n), .we(we[2]), .wdata(wdata), .r(r2));
-rf_reg u_r3(.clk(clk), .rst_n(rst_n), .we(we[3]), .wdata(wdata), .r(r3));
+rf_reg u_r0(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[0]), .wdata(wdata), .r(r0));
+rf_reg u_r1(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[1]), .wdata(wdata), .r(r1));
+rf_reg u_r2(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[2]), .wdata(wdata), .r(r2));
+rf_reg u_r3(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[3]), .wdata(wdata), .r(r3));
 
-rf_wdec u_wdec(.idx(idx_d), .we(we));
+rf_wdec u_wdec(.idx(idx_d), .we(we), .we_1h(we_1h));
 rf_rdec u_rdec_d(.idx(idx_d), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .opr(rd));
 rf_rdec u_rdec_r(.idx(idx_r), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .opr(rr));
 
 endmodule
 
 module rf_reg (
-  input clk, rst_n, we,
+  input clk, rst_n, we_1h,
   input [7:0] wdata,
   output reg [7:0] r
 );
@@ -2729,7 +2858,7 @@ module rf_reg (
 always@(posedge clk or negedge rst_n)
   if(!rst_n)
     r <= 8'b0;
-  else if (we)
+  else if (we_1h)
     r <= wdata;
  
 endmodule
@@ -2754,27 +2883,32 @@ endmodule
 
 module rf_wdec (
   input [1:0] idx,
-  output reg [1:0] we
+  input       we,
+  output reg [3:0] we_1h
 );
 
 always@(*)
-  case(idx)
-  2'd0: we = 4'b0001;
-  2'd1: we = 4'b0010;
-  2'd2: we = 4'b0100;
-  2'd3: we = 4'b1000;
- endcase
-  
+  if(we)
+    case(idx)
+      2'd0: we_1h = 4'b0001;
+      2'd1: we_1h = 4'b0010;
+      2'd2: we_1h = 4'b0100;
+      2'd3: we_1h = 4'b1000;
+     endcase
+  else
+      we_1h = 4'b0000;
+
 endmodule
 
 module rf_tb;
   reg clk, rst_n;
   reg [1:0] idx_d, idx_r;
+  reg       we;
   reg [7:0] wdata;
   wire [7:0] rd, rr;
 
   rf u_rf (.clk(clk), .rst_n(rst_n), .idx_d(idx_d), .idx_r(idx_r),
-           .wdata(wdata), .rd(rd), .rr(rr));
+           .we(we), .wdata(wdata), .rd(rd), .rr(rr));
 
   always #5 clk = ~clk;
 
@@ -2782,11 +2916,12 @@ module rf_tb;
   // index and one of the two read indices - which is why reading back r1 and r2
   // together needs idx_r for the second port.
   initial begin
-    clk = 0; rst_n = 0;
-    idx_d = 2'd0; idx_r = 2'd0; wdata = 8'h00;
+    clk = 0; rst_n = 0; we = 1'b0;
+    idx_d = 2'd0; idx_r = 2'd0; we = 1'b1; wdata = 8'h00;
     #12 rst_n = 1;
     idx_d = 2'd1; wdata = 8'ha5; #10;   // r1 <= a5
     idx_d = 2'd2; wdata = 8'h3c; #10;   // r2 <= 3c
+    we = 1'b0;
     idx_d = 2'd1; idx_r = 2'd2; #1 $display("r1=%h r2=%h (both read ports)", rd, rr);
     idx_d = 2'd0; idx_r = 2'd3; #1 $display("r0=%h r3=%h (never written, reset)", rd, rr);
     #5 $finish;
@@ -2801,23 +2936,37 @@ module cpu (input clk, input rst_n, output [15:0] iaddr, input [15:0] inst, outp
   wire [3:0] opcode;
   wire [7:0] rd, rr;
   wire [7:0] alu_out;
-  wire [7:0] alu_out_ai;
-  wire [4:0] rf_idx_d, rf_idx_r;
-  wire       rf_we;
-  wire [7:0] rf_wdata;
   wire [3:0] sreg;
-  wire [3:0] sreg_ai;
+  reg [4:0] rf_idx_d, rf_idx_r;
+  reg       rf_we;
+  reg [7:0] rf_wdata;
+  reg [5*8-1:0] debug_inst;
 
-  assign pc_nxt = pc + 2;
+  assign pc_nxt = pc + 1;
   assign iaddr = pc;
-  assign rf_wdata = alu_out;
-  assign opcode = 4'b0;   // Not Implemented
-  assign rf_we = 1'b0;    // Not Implemented
-  assign rf_idx_d = 5'b0; // Not Implemented
-  assign rf_idx_r = 5'b0; // Not Implemented
   assign daddr = 8'b0;    // Not Implemented
   assign we = 1'b0;       // Not Implemented
   assign wdata = 8'b0;    // Not Implemented
+
+  always@(*) begin
+    if(~inst[15] && ~inst[14]) begin
+      debug_inst <= u_alu.debug_alu; 
+      rf_we <= 1'b1;
+      opcode <= inst[13:10];
+      rf_idx_d <= inst[8:4];
+      rf_idx_r <= {inst[9], inst[3:0]};
+      rf_wdata <= alu_out;
+    end
+    else if(inst[15] && inst[14]) begin
+      debug_inst <= "LDI";
+      rf_we <= 1'b1;
+      rf_idx_d <= inst[7:4] + 5'b10000;
+      rf_wdata <= {inst[11:8], inst[3:0]};
+    end
+    else begin
+      debug_inst <= "ERR";
+    end
+  end
 
   alu u_alu (.clk(clk), .rst_n(rst_n), .opcode(opcode), .rd(rd), .rr(rr), .alu_out(alu_out), .sreg(sreg));
   rf u_rf (.clk(clk), .rst_n(rst_n), .rf_we(rf_we), .rf_idx_d(rf_idx_d), .rf_idx_r(rf_idx_r), .rf_wdata(rf_wdata), .rd(rd), .rr(rr));
@@ -2860,7 +3009,7 @@ begin
     4'b0001: alu_out <= rd + rr;          // ADD
     4'b0011: alu_out <= rd + rr + sreg_c; // ADC (Add with Carry): Rd = Rd + Rr + C
     4'b0010: alu_out <= rd - rr - sreg_c; // SBC (Subtract with Carry)
-    4'b0110: alu_out <= rd + rr;          // SUB
+    4'b0110: alu_out <= rd - rr;          // SUB
     4'b0101: alu_out <= rd - rr;          // CP (Compare)
     4'b1000: alu_out <= rd & rr;          // AND
     4'b1001: alu_out <= rd ^ rr;          // EOR
@@ -2875,7 +3024,7 @@ wire add_v, sub_v, add_z, sbc_z, add_c, sub_c;
 assign add_v = ( rd[7] &  rr[7] & ~alu_out[7]) | (~rd[7] & ~rr[7] & alu_out[7]);
 assign sub_v = ( rd[7] & ~rr[7] & ~alu_out[7]) | (~rd[7] &  rr[7] & alu_out[7]);
 assign add_z = &~alu_out;
-assign sbc_z = add_z & ~sreg_z;
+assign sbc_z = add_z & sreg_z;
 assign add_c = ( rd[7] &  rr[7]) | (rr[7] & ~alu_out[7]) | (~alu_out[7] &  rd[7]);
 assign sub_c = (~rd[7] &  rr[7]) | (rr[7] &  alu_out[7]) | ( alu_out[7] & ~rd[7]);
 
@@ -2883,16 +3032,34 @@ assign sub_c = (~rd[7] &  rr[7]) | (rr[7] &  alu_out[7]) | ( alu_out[7] & ~rd[7]
 always@(*)
 begin
   case(opcode)
-    4'b0001: begin v_nxt <= add_v;  n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= add_c;  end // ADD
-    4'b0011: begin v_nxt <= add_v;  n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= add_c;  end // ADC (Add with Carry): Rd = Rd + Rr + C
-    4'b0010: begin v_nxt <= sub_v;  n_nxt <= alu_out[7]; z_nxt <= sbc_z; c_nxt <= sub_c;  end // SBC (Subtract with Carry)
-    4'b0110: begin v_nxt <= sub_v;  n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= sub_c;  end // SUB
-    4'b0101: begin v_nxt <= sub_v;  n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= sreg_c; end // CP (Compare)
-    4'b1000: begin v_nxt <= 1'b0;   n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= sreg_c; end // AND
-    4'b1001: begin v_nxt <= 1'b0;   n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= sreg_c; end // EOR
-    4'b1010: begin v_nxt <= 1'b0;   n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= sreg_c; end // OR
-    4'b1011: begin v_nxt <= 1'b0;   n_nxt <= alu_out[7]; z_nxt <= add_z; c_nxt <= sreg_c; end // MOV
+    4'b0001: begin v_nxt <= add_v;  n_nxt <= alu_out[7]; z_nxt <= add_z;  c_nxt <= add_c;  end // ADD
+    4'b0011: begin v_nxt <= add_v;  n_nxt <= alu_out[7]; z_nxt <= add_z;  c_nxt <= add_c;  end // ADC (Add with Carry): Rd = Rd + Rr + C
+    4'b0010: begin v_nxt <= sub_v;  n_nxt <= alu_out[7]; z_nxt <= sbc_z;  c_nxt <= sub_c;  end // SBC (Subtract with Carry)
+    4'b0110: begin v_nxt <= sub_v;  n_nxt <= alu_out[7]; z_nxt <= add_z;  c_nxt <= sub_c;  end // SUB
+    4'b0101: begin v_nxt <= sub_v;  n_nxt <= alu_out[7]; z_nxt <= add_z;  c_nxt <= sub_c;  end // CP (Compare)
+    4'b1000: begin v_nxt <= 1'b0;   n_nxt <= alu_out[7]; z_nxt <= add_z;  c_nxt <= sreg_c; end // AND
+    4'b1001: begin v_nxt <= 1'b0;   n_nxt <= alu_out[7]; z_nxt <= add_z;  c_nxt <= sreg_c; end // EOR
+    4'b1010: begin v_nxt <= 1'b0;   n_nxt <= alu_out[7]; z_nxt <= add_z;  c_nxt <= sreg_c; end // OR
+    4'b1011: begin v_nxt <= sreg_v; n_nxt <= sreg_n;     z_nxt <= sreg_z; c_nxt <= sreg_c; end // MOV
     default: begin v_nxt <= sreg_v; n_nxt <= sreg_n;     z_nxt <= sreg_z; c_nxt <= sreg_c; end // default
+  endcase
+end
+
+reg [3*8-1:0] debug_alu;
+
+always@(*)
+begin
+  case(opcode)
+    4'b0001: debug_alu <= "ADD";
+    4'b0011: debug_alu <= "ADC";
+    4'b0010: debug_alu <= "SBC";
+    4'b0110: debug_alu <= "SUB";
+    4'b0101: debug_alu <= "CP";
+    4'b1000: debug_alu <= "AND";
+    4'b1001: debug_alu <= "EOR";
+    4'b1010: debug_alu <= "OR ";
+    4'b1011: debug_alu <= "MOV";
+    default: debug_alu <= "ERR";
   endcase
 end
 
@@ -2901,11 +3068,11 @@ endmodule
 module rf (input clk, input rst_n, input rf_we, input [4:0] rf_idx_d, rf_idx_r, input [7:0] rf_wdata, output [7:0] rd, rr);
 
 wire [7:0] r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31;
-wire [31:0] we_oh;
+wire [31:0] we_1h;
 
-rf_reg_32 u_rf_reg_32 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh), .rf_wdata(rf_wdata), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .r5(r5), .r6(r6), .r7(r7), .r8(r8), .r9(r9), .r10(r10), .r11(r11), .r12(r12), .r13(r13), .r14(r14), .r15(r15), .r16(r16), .r17(r17), .r18(r18), .r19(r19), .r20(r20), .r21(r21), .r22(r22), .r23(r23), .r24(r24), .r25(r25), .r26(r26), .r27(r27), .r28(r28), .r29(r29), .r30(r30), .r31(r31));
+rf_reg_32 u_rf_reg_32 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h), .rf_wdata(rf_wdata), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .r5(r5), .r6(r6), .r7(r7), .r8(r8), .r9(r9), .r10(r10), .r11(r11), .r12(r12), .r13(r13), .r14(r14), .r15(r15), .r16(r16), .r17(r17), .r18(r18), .r19(r19), .r20(r20), .r21(r21), .r22(r22), .r23(r23), .r24(r24), .r25(r25), .r26(r26), .r27(r27), .r28(r28), .r29(r29), .r30(r30), .r31(r31));
 
-rf_wdec u_wdec (.idx(rf_idx_d), .rf_we(rf_we), .we_oh(we_oh));
+rf_wdec u_wdec (.idx(rf_idx_d), .rf_we(rf_we), .we_1h(we_1h));
 
 rf_rdec u_rdec_d (.idx(rf_idx_d), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .r5(r5), .r6(r6), .r7(r7), .r8(r8), .r9(r9), .r10(r10), .r11(r11), .r12(r12), .r13(r13), .r14(r14), .r15(r15), .r16(r16), .r17(r17), .r18(r18), .r19(r19), .r20(r20), .r21(r21), .r22(r22), .r23(r23), .r24(r24), .r25(r25), .r26(r26), .r27(r27), .r28(r28), .r29(r29), .r30(r30), .r31(r31), .opr(rd));
 
@@ -2913,45 +3080,45 @@ rf_rdec u_rdec_r (.idx(rf_idx_r), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .
 
 endmodule
 
-module rf_reg_32 (input clk, input rst_n, input [31:0] we_oh, input [7:0] rf_wdata, output [7:0] r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31);
+module rf_reg_32 (input clk, input rst_n, input [31:0] we_1h, input [7:0] rf_wdata, output [7:0] r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31);
 
-rf_reg u_r0 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 0]), .wdata(rf_wdata), .r(r0 ));
-rf_reg u_r1 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 1]), .wdata(rf_wdata), .r(r1 ));
-rf_reg u_r2 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 2]), .wdata(rf_wdata), .r(r2 ));
-rf_reg u_r3 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 3]), .wdata(rf_wdata), .r(r3 ));
-rf_reg u_r4 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 4]), .wdata(rf_wdata), .r(r4 ));
-rf_reg u_r5 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 5]), .wdata(rf_wdata), .r(r5 ));
-rf_reg u_r6 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 6]), .wdata(rf_wdata), .r(r6 ));
-rf_reg u_r7 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 7]), .wdata(rf_wdata), .r(r7 ));
-rf_reg u_r8 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 8]), .wdata(rf_wdata), .r(r8 ));
-rf_reg u_r9 (.clk(clk), .rst_n(rst_n), .we_oh(we_oh[ 9]), .wdata(rf_wdata), .r(r9 ));
-rf_reg u_r10(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[10]), .wdata(rf_wdata), .r(r10));
-rf_reg u_r11(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[11]), .wdata(rf_wdata), .r(r11));
-rf_reg u_r12(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[12]), .wdata(rf_wdata), .r(r12));
-rf_reg u_r13(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[13]), .wdata(rf_wdata), .r(r13));
-rf_reg u_r14(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[14]), .wdata(rf_wdata), .r(r14));
-rf_reg u_r15(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[15]), .wdata(rf_wdata), .r(r15));
-rf_reg u_r16(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[16]), .wdata(rf_wdata), .r(r16));
-rf_reg u_r17(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[17]), .wdata(rf_wdata), .r(r17));
-rf_reg u_r18(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[18]), .wdata(rf_wdata), .r(r18));
-rf_reg u_r19(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[19]), .wdata(rf_wdata), .r(r19));
-rf_reg u_r20(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[20]), .wdata(rf_wdata), .r(r20));
-rf_reg u_r21(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[21]), .wdata(rf_wdata), .r(r21));
-rf_reg u_r22(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[22]), .wdata(rf_wdata), .r(r22));
-rf_reg u_r23(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[23]), .wdata(rf_wdata), .r(r23));
-rf_reg u_r24(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[24]), .wdata(rf_wdata), .r(r24));
-rf_reg u_r25(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[25]), .wdata(rf_wdata), .r(r25));
-rf_reg u_r26(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[26]), .wdata(rf_wdata), .r(r26));
-rf_reg u_r27(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[27]), .wdata(rf_wdata), .r(r27));
-rf_reg u_r28(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[28]), .wdata(rf_wdata), .r(r28));
-rf_reg u_r29(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[29]), .wdata(rf_wdata), .r(r29));
-rf_reg u_r30(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[30]), .wdata(rf_wdata), .r(r30));
-rf_reg u_r31(.clk(clk), .rst_n(rst_n), .we_oh(we_oh[31]), .wdata(rf_wdata), .r(r31));
+rf_reg u_r0 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 0]), .wdata(rf_wdata), .r(r0 ));
+rf_reg u_r1 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 1]), .wdata(rf_wdata), .r(r1 ));
+rf_reg u_r2 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 2]), .wdata(rf_wdata), .r(r2 ));
+rf_reg u_r3 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 3]), .wdata(rf_wdata), .r(r3 ));
+rf_reg u_r4 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 4]), .wdata(rf_wdata), .r(r4 ));
+rf_reg u_r5 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 5]), .wdata(rf_wdata), .r(r5 ));
+rf_reg u_r6 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 6]), .wdata(rf_wdata), .r(r6 ));
+rf_reg u_r7 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 7]), .wdata(rf_wdata), .r(r7 ));
+rf_reg u_r8 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 8]), .wdata(rf_wdata), .r(r8 ));
+rf_reg u_r9 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 9]), .wdata(rf_wdata), .r(r9 ));
+rf_reg u_r10(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[10]), .wdata(rf_wdata), .r(r10));
+rf_reg u_r11(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[11]), .wdata(rf_wdata), .r(r11));
+rf_reg u_r12(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[12]), .wdata(rf_wdata), .r(r12));
+rf_reg u_r13(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[13]), .wdata(rf_wdata), .r(r13));
+rf_reg u_r14(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[14]), .wdata(rf_wdata), .r(r14));
+rf_reg u_r15(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[15]), .wdata(rf_wdata), .r(r15));
+rf_reg u_r16(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[16]), .wdata(rf_wdata), .r(r16));
+rf_reg u_r17(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[17]), .wdata(rf_wdata), .r(r17));
+rf_reg u_r18(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[18]), .wdata(rf_wdata), .r(r18));
+rf_reg u_r19(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[19]), .wdata(rf_wdata), .r(r19));
+rf_reg u_r20(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[20]), .wdata(rf_wdata), .r(r20));
+rf_reg u_r21(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[21]), .wdata(rf_wdata), .r(r21));
+rf_reg u_r22(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[22]), .wdata(rf_wdata), .r(r22));
+rf_reg u_r23(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[23]), .wdata(rf_wdata), .r(r23));
+rf_reg u_r24(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[24]), .wdata(rf_wdata), .r(r24));
+rf_reg u_r25(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[25]), .wdata(rf_wdata), .r(r25));
+rf_reg u_r26(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[26]), .wdata(rf_wdata), .r(r26));
+rf_reg u_r27(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[27]), .wdata(rf_wdata), .r(r27));
+rf_reg u_r28(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[28]), .wdata(rf_wdata), .r(r28));
+rf_reg u_r29(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[29]), .wdata(rf_wdata), .r(r29));
+rf_reg u_r30(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[30]), .wdata(rf_wdata), .r(r30));
+rf_reg u_r31(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[31]), .wdata(rf_wdata), .r(r31));
 
 endmodule
 
 module rf_reg (
-  input clk, rst_n, we_oh,
+  input clk, rst_n, we_1h,
   input [7:0] wdata,
   output reg [7:0] r
 );
@@ -2959,7 +3126,7 @@ module rf_reg (
 always@(posedge clk or negedge rst_n)
   if(!rst_n)
     r <= 8'b0;
-  else if (we_oh)
+  else if (we_1h)
     r <= wdata;
  
 endmodule
@@ -2967,47 +3134,47 @@ endmodule
 module rf_wdec (
   input [4:0] idx,
   input       rf_we,
-  output reg [31:0] we_oh
+  output reg [31:0] we_1h
 );
 
 always@(*)
   if(rf_we)
     case(idx)
-      5'd0 : we_oh = 32'b0000_0000_0000_0000_0000_0000_0000_0001;
-      5'd1 : we_oh = 32'b0000_0000_0000_0000_0000_0000_0000_0010;
-      5'd2 : we_oh = 32'b0000_0000_0000_0000_0000_0000_0000_0100;
-      5'd3 : we_oh = 32'b0000_0000_0000_0000_0000_0000_0000_1000;
-      5'd4 : we_oh = 32'b0000_0000_0000_0000_0000_0000_0001_0000;
-      5'd5 : we_oh = 32'b0000_0000_0000_0000_0000_0000_0010_0000;
-      5'd6 : we_oh = 32'b0000_0000_0000_0000_0000_0000_0100_0000;
-      5'd7 : we_oh = 32'b0000_0000_0000_0000_0000_0000_1000_0000;
-      5'd8 : we_oh = 32'b0000_0000_0000_0000_0000_0001_0000_0000;
-      5'd9 : we_oh = 32'b0000_0000_0000_0000_0000_0010_0000_0000;
-      5'd10: we_oh = 32'b0000_0000_0000_0000_0000_0100_0000_0000;
-      5'd11: we_oh = 32'b0000_0000_0000_0000_0000_1000_0000_0000;
-      5'd12: we_oh = 32'b0000_0000_0000_0000_0001_0000_0000_0000;
-      5'd13: we_oh = 32'b0000_0000_0000_0000_0010_0000_0000_0000;
-      5'd14: we_oh = 32'b0000_0000_0000_0000_0100_0000_0000_0000;
-      5'd15: we_oh = 32'b0000_0000_0000_0000_1000_0000_0000_0000;
-      5'd16: we_oh = 32'b0000_0000_0000_0001_0000_0000_0000_0000;
-      5'd17: we_oh = 32'b0000_0000_0000_0010_0000_0000_0000_0000;
-      5'd18: we_oh = 32'b0000_0000_0000_0100_0000_0000_0000_0000;
-      5'd19: we_oh = 32'b0000_0000_0000_1000_0000_0000_0000_0000;
-      5'd20: we_oh = 32'b0000_0000_0001_0000_0000_0000_0000_0000;
-      5'd21: we_oh = 32'b0000_0000_0010_0000_0000_0000_0000_0000;
-      5'd22: we_oh = 32'b0000_0000_0100_0000_0000_0000_0000_0000;
-      5'd23: we_oh = 32'b0000_0000_1000_0000_0000_0000_0000_0000;
-      5'd24: we_oh = 32'b0000_0001_0000_0000_0000_0000_0000_0000;
-      5'd25: we_oh = 32'b0000_0010_0000_0000_0000_0000_0000_0000;
-      5'd26: we_oh = 32'b0000_0100_0000_0000_0000_0000_0000_0000;
-      5'd27: we_oh = 32'b0000_1000_0000_0000_0000_0000_0000_0000;
-      5'd28: we_oh = 32'b0001_0000_0000_0000_0000_0000_0000_0000;
-      5'd29: we_oh = 32'b0010_0000_0000_0000_0000_0000_0000_0000;
-      5'd30: we_oh = 32'b0100_0000_0000_0000_0000_0000_0000_0000;
-      5'd31: we_oh = 32'b1000_0000_0000_0000_0000_0000_0000_0000;
+      5'd0 : we_1h = 32'b0000_0000_0000_0000_0000_0000_0000_0001;
+      5'd1 : we_1h = 32'b0000_0000_0000_0000_0000_0000_0000_0010;
+      5'd2 : we_1h = 32'b0000_0000_0000_0000_0000_0000_0000_0100;
+      5'd3 : we_1h = 32'b0000_0000_0000_0000_0000_0000_0000_1000;
+      5'd4 : we_1h = 32'b0000_0000_0000_0000_0000_0000_0001_0000;
+      5'd5 : we_1h = 32'b0000_0000_0000_0000_0000_0000_0010_0000;
+      5'd6 : we_1h = 32'b0000_0000_0000_0000_0000_0000_0100_0000;
+      5'd7 : we_1h = 32'b0000_0000_0000_0000_0000_0000_1000_0000;
+      5'd8 : we_1h = 32'b0000_0000_0000_0000_0000_0001_0000_0000;
+      5'd9 : we_1h = 32'b0000_0000_0000_0000_0000_0010_0000_0000;
+      5'd10: we_1h = 32'b0000_0000_0000_0000_0000_0100_0000_0000;
+      5'd11: we_1h = 32'b0000_0000_0000_0000_0000_1000_0000_0000;
+      5'd12: we_1h = 32'b0000_0000_0000_0000_0001_0000_0000_0000;
+      5'd13: we_1h = 32'b0000_0000_0000_0000_0010_0000_0000_0000;
+      5'd14: we_1h = 32'b0000_0000_0000_0000_0100_0000_0000_0000;
+      5'd15: we_1h = 32'b0000_0000_0000_0000_1000_0000_0000_0000;
+      5'd16: we_1h = 32'b0000_0000_0000_0001_0000_0000_0000_0000;
+      5'd17: we_1h = 32'b0000_0000_0000_0010_0000_0000_0000_0000;
+      5'd18: we_1h = 32'b0000_0000_0000_0100_0000_0000_0000_0000;
+      5'd19: we_1h = 32'b0000_0000_0000_1000_0000_0000_0000_0000;
+      5'd20: we_1h = 32'b0000_0000_0001_0000_0000_0000_0000_0000;
+      5'd21: we_1h = 32'b0000_0000_0010_0000_0000_0000_0000_0000;
+      5'd22: we_1h = 32'b0000_0000_0100_0000_0000_0000_0000_0000;
+      5'd23: we_1h = 32'b0000_0000_1000_0000_0000_0000_0000_0000;
+      5'd24: we_1h = 32'b0000_0001_0000_0000_0000_0000_0000_0000;
+      5'd25: we_1h = 32'b0000_0010_0000_0000_0000_0000_0000_0000;
+      5'd26: we_1h = 32'b0000_0100_0000_0000_0000_0000_0000_0000;
+      5'd27: we_1h = 32'b0000_1000_0000_0000_0000_0000_0000_0000;
+      5'd28: we_1h = 32'b0001_0000_0000_0000_0000_0000_0000_0000;
+      5'd29: we_1h = 32'b0010_0000_0000_0000_0000_0000_0000_0000;
+      5'd30: we_1h = 32'b0100_0000_0000_0000_0000_0000_0000_0000;
+      5'd31: we_1h = 32'b1000_0000_0000_0000_0000_0000_0000_0000;
     endcase
   else
-      we_oh = 32'b1000_0000_0000_0000_0000_0000_0000_0000;
+      we_1h = 32'b0000_0000_0000_0000_0000_0000_0000_0000;
   
 endmodule
 
@@ -3073,7 +3240,7 @@ endmodule
 module rom_256x16 (input [15:0] addr, output [15:0] data);
   reg [15:0] mem [0:'hff];
 
-  assign data = mem[addr[15:1]];
+  assign data = mem[addr[15:0]];
 
   // loads mem[] from a file attached via the Memory Viewer card below -
   // this app has no real filesystem access over file://, so $readmemh can
@@ -3123,29 +3290,144 @@ module system_tb;
     clk = 0;
     rst_n = 0;
     #10 rst_n = 1;
-    #400 $finish;
+    #400 
+    $display("r0 : %h", u_sys.u_cpu.u_rf.r0 ,  u_sys.u_cpu.u_rf.r0 );
+    $display("r1 : %h", u_sys.u_cpu.u_rf.r1 ,  u_sys.u_cpu.u_rf.r1 );
+    $display("r2 : %h", u_sys.u_cpu.u_rf.r2 ,  u_sys.u_cpu.u_rf.r2 );
+    $display("r3 : %h", u_sys.u_cpu.u_rf.r3 ,  u_sys.u_cpu.u_rf.r3 );
+    $display("r4 : %h", u_sys.u_cpu.u_rf.r4 ,  u_sys.u_cpu.u_rf.r4 );
+    $display("r5 : %h", u_sys.u_cpu.u_rf.r5 ,  u_sys.u_cpu.u_rf.r5 );
+    $display("r6 : %h", u_sys.u_cpu.u_rf.r6 ,  u_sys.u_cpu.u_rf.r6 );
+    $display("r7 : %h", u_sys.u_cpu.u_rf.r7 ,  u_sys.u_cpu.u_rf.r7 );
+    $display("r8 : %h", u_sys.u_cpu.u_rf.r8 ,  u_sys.u_cpu.u_rf.r8 );
+    $display("r9 : %h", u_sys.u_cpu.u_rf.r9 ,  u_sys.u_cpu.u_rf.r9 );
+    $display("r10: %h", u_sys.u_cpu.u_rf.r10,  u_sys.u_cpu.u_rf.r10);
+    $display("r11: %h", u_sys.u_cpu.u_rf.r11,  u_sys.u_cpu.u_rf.r11);
+    $display("r12: %h", u_sys.u_cpu.u_rf.r12,  u_sys.u_cpu.u_rf.r12);
+    $display("r13: %h", u_sys.u_cpu.u_rf.r13,  u_sys.u_cpu.u_rf.r13);
+    $display("r14: %h", u_sys.u_cpu.u_rf.r14,  u_sys.u_cpu.u_rf.r14);
+    $display("r15: %h", u_sys.u_cpu.u_rf.r15,  u_sys.u_cpu.u_rf.r15);
+    $display("r16: %h", u_sys.u_cpu.u_rf.r16,  u_sys.u_cpu.u_rf.r16);
+    $display("r17: %h", u_sys.u_cpu.u_rf.r17,  u_sys.u_cpu.u_rf.r17);
+    $display("r18: %h", u_sys.u_cpu.u_rf.r18,  u_sys.u_cpu.u_rf.r18);
+    $display("r19: %h", u_sys.u_cpu.u_rf.r19,  u_sys.u_cpu.u_rf.r19);
+    $display("r20: %h", u_sys.u_cpu.u_rf.r20,  u_sys.u_cpu.u_rf.r20);
+    $display("r21: %h", u_sys.u_cpu.u_rf.r21,  u_sys.u_cpu.u_rf.r21);
+    $display("r22: %h", u_sys.u_cpu.u_rf.r22,  u_sys.u_cpu.u_rf.r22);
+    $display("r23: %h", u_sys.u_cpu.u_rf.r23,  u_sys.u_cpu.u_rf.r23);
+    $display("r24: %h", u_sys.u_cpu.u_rf.r24,  u_sys.u_cpu.u_rf.r24);
+    $display("r25: %h", u_sys.u_cpu.u_rf.r25,  u_sys.u_cpu.u_rf.r25);
+    $display("r26: %h", u_sys.u_cpu.u_rf.r26,  u_sys.u_cpu.u_rf.r26);
+    $display("r27: %h", u_sys.u_cpu.u_rf.r27,  u_sys.u_cpu.u_rf.r27);
+    $display("r28: %h", u_sys.u_cpu.u_rf.r28,  u_sys.u_cpu.u_rf.r28);
+    $display("r29: %h", u_sys.u_cpu.u_rf.r29,  u_sys.u_cpu.u_rf.r29);
+    $display("r30: %h", u_sys.u_cpu.u_rf.r30,  u_sys.u_cpu.u_rf.r30);
+    $display("r31: %h", u_sys.u_cpu.u_rf.r31,  u_sys.u_cpu.u_rf.r31);
+    $finish;
   end
 endmodule
 
-/* Test Code (rom.txt)
-e604 // ldi r16, 100      r16 = 0x64
-2e00 // mov r0,  r16      r0  = 100
-e605 // ldi r16, 101      r16 = 0x65
-2e10 // mov r1,  r16      r1  = 101
-e606 // ldi r16, 102      r16 = 0x66
-2e20 // mov r2,  r16      r2  = 102
-e607 // ldi r16, 103      r16 = 0x67
-2e30 // mov r3,  r16      r3  = 103
-2c41 // mov r4,  r1       r4  = 101
-0c42 // add r4,  r2       r4  = r1 + r2 = 203 (0xcb)
-2c53 // mov r5,  r3       r5  = 103
-1851 // sub r5,  r1       r5  = r3 - r1 = 2   (0x02)
-0000 // nop
-0000 // nop
-0000 // nop
-0000 // nop
-0000 // nop
-0000 // nop
+/* Test Code for LDI and ALU (rom.txt)
+e604 // w00  ldi r16, 100      r16 = 0x64
+2e00 // w01  mov r0,  r16      r0  = 100
+e605 // w02  ldi r16, 101      r16 = 0x65
+2e10 // w03  mov r1,  r16      r1  = 101
+e606 // w04  ldi r16, 102      r16 = 0x66
+2e20 // w05  mov r2,  r16      r2  = 102
+e607 // w06  ldi r16, 103      r16 = 0x67
+2e30 // w07  mov r3,  r16      r3  = 103
+2c41 // w08  mov r4,  r1       r4  = 101
+0c42 // w09  add r4,  r2       r4  = r1 + r2 = 203 (0xcb)
+2c53 // w0a  mov r5,  r3       r5  = 103
+1851 // w0b  sub r5,  r1       r5  = r3 - r1 = 2   (0x02)
+0000 // w0c  nop
+0000 // w0d  nop
+0000 // w0e  nop
+0000 // w0f  nop
+0000 // w10  nop
+0000 // w11  nop
+
+   Expected non-zero registers, hex as the console prints them (decimal in
+   parens where the decimal is the number that means something):
+     r0=64 (100)   r1=65 (101)   r2=66 (102)   r3=67 (103)
+     r4=cb (203)   r5=02         r16=67 (103)
+   Every other register stays 0.
+*/
+
+/* Test Code for BREQ and BRNE (rom.txt)
+
+e604 // w00  ldi r16, 100   r16 = 0x64
+2e00 // w01  mov r0,  r16   r0  = 100
+e604 // w02  ldi r16, 100   r16 = 0x64
+2e10 // w03  mov r1,  r16   r1  = 100   == r0
+ec08 // w04  ldi r16, 200   r16 = 0xc8
+2e20 // w05  mov r2,  r16   r2  = 200   != r0
+1401 // w06  cp  r0,  r1    100 == 100  -> Z = 1
+f009 // w07  breq +1        TAKEN:     pc = 07 + 1 + 1 -> w09
+2e70 // w08  mov r7,  r16   SKIPPED    -> r7 stays 0
+e001 // w09  ldi r16, 1     <-- BREQ landed HERE
+2e30 // w0a  mov r3,  r16   r3  = 1     proves the branch was taken
+1402 // w0b  cp  r0,  r2    100 != 200  -> Z = 0
+f009 // w0c  breq +1        NOT taken: pc = 0c + 1     -> w0d
+e002 // w0d  ldi r16, 2     <-- fell through to HERE
+2e40 // w0e  mov r4,  r16   r4  = 2     proves it was not taken
+1402 // w0f  cp  r0,  r2    100 != 200  -> Z = 0
+f409 // w10  brne +1        TAKEN:     pc = 10 + 1 + 1 -> w12
+2e80 // w11  mov r8,  r16   SKIPPED    -> r8 stays 0
+e003 // w12  ldi r16, 3     <-- BRNE landed HERE
+2e50 // w13  mov r5,  r16   r5  = 3     proves the branch was taken
+1401 // w14  cp  r0,  r1    100 == 100  -> Z = 1
+f409 // w15  brne +1        NOT taken: pc = 15 + 1     -> w16
+e004 // w16  ldi r16, 4     <-- fell through to HERE
+2e60 // w17  mov r6,  r16   r6  = 4     proves it was not taken
+0000 // w18  nop
+0000 // w19  nop
+0000 // w1a  nop
+0000 // w1b  nop
+
+   Expected non-zero registers (correct AVR semantics):
+     r0=64 (100)   r1=64 (100)   r2=c8 (200)
+     r3=01         r4=02         r5=03        r6=04       r16=04
+   Must stay 0: r7 and r8, the two writes a taken branch skips. They are the
+   only witnesses that a branch really skipped something, so they matter as
+   much as r3..r6.
+*/
+
+/* Test Code for RJMP (rom.txt)
+
+   A forward jump and a backward jump, each with its own witness. Written to
+   be loaded on its own - paste these words over rom.txt, the same way the
+   LDI/ALU block above is used, since $readmemh's filename is fixed.
+
+e005 // w00  ldi r16, 5     r16 = 5
+c003 // w01  rjmp +3        pc = 01 + 1 + 3 -> w05   forward, over w02..w04
+2e30 // w02  mov r3,  r16   SKIPPED    -> r3 stays 0
+e007 // w03  ldi r16, 7     <-- backward RJMP landed HERE
+c003 // w04  rjmp +3        pc = 04 + 1 + 3 -> w08   exit, only reached from w03
+e006 // w05  ldi r16, 6     <-- forward RJMP landed HERE
+2e10 // w06  mov r1,  r16   r1  = 6     proves the forward jump landed on w05
+cffb // w07  rjmp -5        pc = 07 + 1 - 5 -> w03   backward
+2e20 // w08  mov r2,  r16   r2  = 7     proves the backward jump landed on w03
+0000 // w09  nop
+0000 // w0a  nop
+0000 // w0b  nop
+
+   Execution order is w00 w01 w05 w06 w07 w03 w04 w08 and then the nops:
+   every word runs at most once and w02 never runs at all, so the test
+   terminates without needing a conditional - which it has to, since breq/brne
+   do not execute on this CPU either. RJMP takes the same pc <- pc + k + 1 as a
+   branch, with k a 12-bit signed WORD displacement, so -5 encodes as 0xffb
+   -> cffb.
+
+   Expected non-zero registers (correct AVR semantics):
+     r1=06   r2=07   r16=07
+   Must stay 0: r3, the write the forward jump skips.
+
+   Each witness catches a different fault. r1 pins where the forward jump
+   landed - one word late leaves r16 at 5, so r1=05. r2 pins where the
+   backward jump landed - one word late reaches w08 with r16 still 6, so
+   r2=06. r3 catches the jumps not being taken at all, and one word early on
+   the backward jump lands on w02, which writes r3 too.
 */`,
 };
 
@@ -3222,8 +3504,19 @@ let dragBandPx = null;         // {x0,x1} selection band while dragging, or null
 
 /* ---- radix formatting for the waveform value column ---- */
 const RADIX_OPTIONS = [['bin', 'Binary'], ['dec', 'Decimal'], ['sdec', 'Signed Decimal'], ['hex', 'Hexadecimal'], ['str', 'String']];
+// A signal whose DECLARED name begins with this is taken to carry ASCII, so it
+// defaults to the String radix instead of hex. Matched on the leaf name (the text
+// after the last dot) rather than the flattened path, so it works at any hierarchy
+// depth - elaboration turns it into u_sys.u_cpu.debug_msg - and so an instance
+// named u_debug_* cannot drag every signal inside it into String too.
+const DEBUG_STR_PREFIX = 'debug_';
 function getRadix(name, width) {
-  return radixMap.get(name) || (width === 1 ? 'bin' : 'hex');
+  const explicit = radixMap.get(name);
+  if (explicit) return explicit;
+  // 1-bit signals are excluded: String renders 0 as '-' and 1 as '.' (non-printable),
+  // which is strictly less readable than the binary it replaces.
+  if (width > 1 && name.slice(name.lastIndexOf('.') + 1).startsWith(DEBUG_STR_PREFIX)) return 'str';
+  return width === 1 ? 'bin' : 'hex';
 }
 function bitState1(val) {
   if (val.x & 1) return 'x';
@@ -3562,29 +3855,35 @@ function renderMemoryTable() {
   }
   memoryTableWrap.style.display = 'block';
   memoryEmpty.style.display = 'none';
-  /* An element wider than a byte is addressed in BYTES by whatever reads it - a
-     16-bit instruction ROM fetched by a byte-counting PC, say - so the address
-     column shows each element's byte address rather than its array index. For a
-     `reg [7:0]` memory the two are the same, which is why every built-in example
-     looks unchanged.
+  /* The address column is the element's WORD address - its index in the array -
+     because that is the unit a word-addressed fetch counts in. An AVR-style pc
+     holds a word address, so `breq +1` moving pc from 07 to 09 lines up with the
+     rows two apart in this table, and a 16-bit instruction ROM reads 0, 1, 2, ...
+     For a `reg [7:0]` memory a word IS a byte, so every 8-bit example is
+     unaffected either way.
 
-     Note this deliberately makes the column differ from what `$readmemh`'s `@`
-     directives take: those are array indices, always. The column answers "where
-     does the design see this word", not "what index would I write in the file". */
-  const bytesPerElem = Math.max(1, Math.ceil(mem.elemWidth / 8));
-  const topAddr = Math.max(mem.hi * bytesPerElem, 1);
+     The payoff beyond matching pc is that ONE number now serves everything:
+     `$readmemh`'s `@` directives are array indices, and `mem.comments` is keyed by
+     index, so the address on screen is the same number you would write in the file
+     and the same number the comment was looked up with. The earlier byte-scaled
+     column could not be any of those things, and having two numbering schemes in
+     play is what made the branch offsets in rom.txt read as an off-by-one.
+
+     The cost, worth knowing: `compiler/index.html`'s assembly listing prints BYTE
+     addresses, so a `rom.txt` generated there no longer lines up column-for-column
+     with this table - double the number here to compare. */
+  const topAddr = Math.max(mem.hi, 1);
   const addrWidth = Math.max(1, Math.ceil(Math.log2(topAddr + 1)));
   const valueLabel = memHexCheckbox.checked && memBinCheckbox.checked ? 'Value (hex (binary))'
     : memHexCheckbox.checked ? 'Value (hex)' : 'Value (binary)';
   const hasComments = mem.comments && mem.comments.size > 0;
   let html = '<thead><tr><th>Address (hex'
-    + (bytesPerElem > 1 ? ', bytes' : '') + ')</th><th>' + valueLabel + '</th>'
+    + (mem.elemWidth > 8 ? ', words' : '') + ')</th><th>' + valueLabel + '</th>'
     + (hasComments ? '<th>Comment</th>' : '') + '</tr></thead><tbody>';
   for (let i = 0; i < mem.depth; i++) {
-    // The INDEX is what indexes cells and keys comments; the byte address is
-    // display only, so the two must not be confused here.
+    // One number: it indexes cells, keys comments, and is what gets displayed.
     const addr = mem.lo + i;
-    const addrHex = (addr * bytesPerElem).toString(16).padStart(Math.ceil(addrWidth / 4), '0');
+    const addrHex = addr.toString(16).padStart(Math.ceil(addrWidth / 4), '0');
     const value = mem.cells[i];
     const valueHex = formatValue(value, mem.elemWidth, 'hex');
     const valueBin = groupBinary(formatValue(value, mem.elemWidth, 'bin'));
@@ -3811,6 +4110,14 @@ document.querySelectorAll('[data-collapse]').forEach(btn => {
   function apply(visible) {
     splitRow.classList.toggle('hierarchy-collapsed', !visible);
     btn.classList.toggle('active', visible);
+    // Showing/hiding the 220px panel changes the canvas's width, and it MUST
+    // redraw. `canvas { width: 100% !important }` in the shared block beats the
+    // inline width the renderer sets, so a stale drawing is not clipped - it is
+    // stretched to the new width over an unchanged backing store, and worse,
+    // `waveLayout`'s plotX0/plotW still describe the old geometry while the
+    // click handlers measure the new one through getBoundingClientRect(), so
+    // every cursor click and drag-zoom lands at the wrong time.
+    if (lastResult) drawWaveform(lastResult);
   }
   btn.addEventListener('click', () => {
     const visible = splitRow.classList.contains('hierarchy-collapsed');
@@ -3818,6 +4125,46 @@ document.querySelectorAll('[data-collapse]').forEach(btn => {
     apply(visible);
   });
   apply(localStorage.getItem('waveHierarchyVisible') === '1');
+})();
+
+/* ---- waveform card expand (full-bleed to the browser width) ----
+   The time window (viewStart/viewEnd) is deliberately untouched: the same range
+   is drawn across more pixels, so narrow value boxes widen and their labels
+   appear. Expanding is not a zoom. */
+let updateWaveBleed = () => {};
+(() => {
+  const splitRow = document.getElementById('waveSplitRow');
+  const btn = document.getElementById('waveExpandBtn');
+  const grid = document.querySelector('.grid');
+  // Measured, not calc()'d - see the .wave-expanded rule for why 100vw is wrong.
+  // .grid's width is a fixed max-width and a negative-margin child cannot feed
+  // width back into it, so this reads the same value in either state and apply()
+  // is not re-entrant. Math.max(0, ...) is what makes expanding a no-op rather
+  // than a SHRINK on a viewport narrower than the grid.
+  function measureBleed() {
+    const cs = getComputedStyle(document.body);
+    const contentW = document.documentElement.clientWidth
+      - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+    return Math.max(0, (contentW - grid.getBoundingClientRect().width) / 2);
+  }
+  updateWaveBleed = () => {
+    if (splitRow.classList.contains('wave-expanded')) {
+      splitRow.style.setProperty('--wave-bleed', measureBleed() + 'px');
+    }
+  };
+  function apply(expanded) {
+    splitRow.style.setProperty('--wave-bleed', (expanded ? measureBleed() : 0) + 'px');
+    splitRow.classList.toggle('wave-expanded', expanded);
+    btn.classList.toggle('active', expanded);
+    btn.title = expanded ? 'Restore the card to the page width' : 'Expand to the full browser width';
+    if (lastResult) drawWaveform(lastResult); // widening the container without a redraw stretches the old drawing and desyncs waveLayout - see the hierarchy toggle above
+  }
+  btn.addEventListener('click', () => {
+    const expanded = !splitRow.classList.contains('wave-expanded');
+    localStorage.setItem('waveExpanded', expanded ? '1' : '0');
+    apply(expanded);
+  });
+  apply(localStorage.getItem('waveExpanded') === '1');
 })();
 
 /* ---- editor module hierarchy panel toggle ---- */
@@ -4409,11 +4756,20 @@ function drawWaveform(result) {
         const known = isFullyKnown(v);
         ctx.strokeStyle = known ? color : '#ff3b30';
         ctx.strokeRect(x0 + 1, yTop, Math.max(x1 - x0 - 2, 1), yBot - yTop);
-        if (x1 - x0 > 22) {
+        // The label is centred on the box's VISIBLE span, not its true midpoint.
+        // A value held longer than the view has its midpoint off-screen, so
+        // centring there put the text outside the plot clip and the box rendered
+        // empty - the more zoomed in you were, the more values disappeared. The
+        // room-to-draw test has to move with it: the full width says "plenty of
+        // room" for a box whose visible sliver is 3px, which would then draw a
+        // label across the neighbouring box's edge. For a box that fits entirely
+        // on screen vx0/vx1 are x0/x1, so those renders are unchanged.
+        const vx0 = Math.max(x0, plotX0), vx1 = Math.min(x1, plotX0 + plotW);
+        if (vx1 - vx0 > 22) {
           ctx.fillStyle = known ? '#1c1c1e' : '#ff3b30';
           ctx.font = '10px "SF Mono", Menlo, monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(formatValue(v, sig.width, radix), (x0 + x1) / 2, (yTop + yBot) / 2 + 3);
+          ctx.fillText(formatValue(v, sig.width, radix), (vx0 + vx1) / 2, (yTop + yBot) / 2 + 3);
           ctx.fillStyle = color;
         }
         if (i > 0) {
@@ -4767,7 +5123,13 @@ function niceTickStep(totalTime) {
   return Math.max(1, step * pow);
 }
 
-window.addEventListener('resize', () => { if (lastResult) drawWaveform(lastResult); });
+// The bleed is viewport-dependent, so it is recomputed BEFORE the redraw rather
+// than in a resize listener of its own - relying on listener registration order
+// for that would be an invariant nobody is reminded of.
+window.addEventListener('resize', () => {
+  updateWaveBleed();
+  if (lastResult) drawWaveform(lastResult);
+});
 
 /* run the first example automatically so the tool isn't empty on load */
 runSimulation();
