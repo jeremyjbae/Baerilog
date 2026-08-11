@@ -625,6 +625,22 @@
           <input class="num-input" id="memSizeInput" type="number" value="4096" disabled>
           <span class="time-label" id="memUnitLabel">B</span>
         </div>
+        <!-- The image pair sits beside Compile because that is what produces
+             them: they are the compiled program, not the run. Styled `btn`
+             rather than `btn secondary` so they read as blue primary actions
+             like Compile once a program exists; `.btn:disabled` is declared
+             after both `.btn.secondary` and `.btn:hover`, and wins on equal
+             specificity by being later, so the disabled state is grey and stays
+             grey under the pointer. -->
+        <div class="toolbar-group">
+          <button class="btn" id="saveRomBtn" disabled title="The flash image, one 16-bit word per line, for $readmemh">Save rom.txt</button>
+          <button class="btn" id="saveRamBtn" disabled title="The initialised data segment, one byte per line, for $readmemh">Save ram.txt</button>
+        </div>
+      </div>
+      <!-- Target on its own row: it is the widest control here, and sharing a
+           row with Compile squeezed the memory field on a narrow card. -->
+      <div class="toolbar" style="margin-top:10px; margin-bottom:0;">
+        <span class="time-label">Target:</span>
         <select id="isaSelect" style="flex:0 1 auto; min-width:0;">
           <option value="tinyavr2" selected> ATmega644 (reduced AVR2)</option>
           <option value="atmega644">ATmega644 (AVR5)</option>
@@ -3521,6 +3537,23 @@ class AvrSim extends SimBase {
     this.setSreg(s);
   }
 
+  // Flags after a right shift (LSR/ASR/ROR). `carry` is the bit shifted out.
+  // V = N xor C and S = N xor V, per the ISA manual - the same rule the
+  // emulator's AvrCore implements, and the reason these three cannot go
+  // through flagsLogic (which assumes V is 0 and sets S = N accordingly).
+  setShiftFlags(res, carry) {
+    const C = carry & 1;
+    const N = (res >> 7) & 1;
+    const V = N ^ C;
+    let s = this.sreg & ~(SF.C | SF.Z | SF.N | SF.V | SF.S);
+    if (C) s |= SF.C;
+    if (N) s |= SF.N;
+    if (V) s |= SF.V;
+    if (N ^ V) s |= SF.S;
+    if ((res & 0xff) === 0) s |= SF.Z;
+    this.setSreg(s);
+  }
+
   // Flags after a 16-bit ADIW/SBIW on a register pair.
   flagsWord(before, res, isSub) {
     let s = this.sreg;
@@ -3683,33 +3716,30 @@ class AvrSim extends SimBase {
         this.setReg(ins.rd, res); this.flagsAdd(d, d, 0, res);
         break;
       }
-      case 'LSR': {
-        const d = r[ins.rd], res = d >> 1;
+      /* The three right-shifts share one flag rule, and it is NOT flagsLogic's:
+         the ISA manual defines C = the bit shifted out, V = N xor C, and
+         S = N xor V for all of LSR/ASR/ROR. flagsLogic clears V and then sets
+         S = N on the assumption V is 0, so patching V in afterwards leaves S
+         stale - which is why this is a helper rather than three call sites.
+
+         Found by the workbench's co-simulator: the RTL core, the emulator's
+         AvrCore and the manual all agreed on V for `ror`, and this file did
+         not. ASR and ROR were missing V entirely, and LSR set V but left S
+         wrong. Only reachable through `>>` on a signed value, which the six
+         built-in examples never do. */
+      case 'LSR': case 'ASR': case 'ROR': {
+        const d = r[ins.rd];
+        const res = ins.op === 'LSR' ? (d >> 1)
+          : ins.op === 'ASR' ? ((d >> 1) | (d & 0x80))
+          : ((d >> 1) | (this.sreg & SF.C ? 0x80 : 0));
         this.setReg(ins.rd, res);
-        this.flagsLogic(res);
-        this.setFlag(SF.C, !!(d & 1));
-        this.setFlag(SF.V, ((res >> 7) & 1) !== (d & 1));
-        break;
-      }
-      case 'ASR': {
-        const d = r[ins.rd], res = (d >> 1) | (d & 0x80);
-        this.setReg(ins.rd, res);
-        this.flagsLogic(res);
-        this.setFlag(SF.C, !!(d & 1));
+        this.setShiftFlags(res, d & 1);
         break;
       }
       case 'ROL': {
         const d = r[ins.rd], cin = this.sreg & SF.C ? 1 : 0;
         const res = ((d << 1) | cin) & 0xff;
         this.setReg(ins.rd, res); this.flagsAdd(d, d, cin, res);
-        break;
-      }
-      case 'ROR': {
-        const d = r[ins.rd], cin = this.sreg & SF.C ? 0x80 : 0;
-        const res = (d >> 1) | cin;
-        this.setReg(ins.rd, res);
-        this.flagsLogic(res);
-        this.setFlag(SF.C, !!(d & 1));
         break;
       }
 
@@ -7023,6 +7053,7 @@ const codeInput = $('codeInput'), gutter = $('gutter'), consoleBox = $('consoleB
 const lineHighlight = $('lineHighlight');
 const exampleSelect = $('exampleSelect'), openBtn = $('openBtn'), fileOpenInput = $('fileOpenInput');
 const runBtn = $('runBtn'), stepBtn = $('stepBtn'), resetBtn = $('resetBtn');
+const saveRomBtn = $('saveRomBtn'), saveRamBtn = $('saveRamBtn');
 const compileBtn = $('compileBtn');
 const isaSelect = $('isaSelect'), maxStepsInput = $('maxStepsInput'), memSizeInput = $('memSizeInput');
 const asmListing = $('asmListing'), asmEmpty = $('asmEmpty'), regGrid = $('regGrid'), badgeRow = $('badgeRow');
@@ -7301,18 +7332,40 @@ function buildRomDumpText(program, spec) {
   return out.join('\n') + '\n';
 }
 
-document.getElementById('asmSaveBtn').addEventListener('click', () => {
-  if (!lastProgram) return;
-  const t = shownTarget();
-  const spec = t.romDump;
-  let text, name;
-  try {
-    text = spec ? buildRomDumpText(lastProgram, spec) : buildAsmDumpText();
-  } catch (e) {
-    logLine('<span class="err">' + escapeHtml(e.message) + '</span>');
-    return;
+/* The initialised data segment, one byte per line, in the shape
+   simulator/index.html's `$readmemh` loads into a `reg [7:0]` memory - the
+   companion to buildRomDumpText, so a program compiled here can be dropped into
+   a Verilog design as both its instruction memory and its initialised RAM.
+
+   Dense from element 0 with the base stated in the header, and no `@` directive,
+   for exactly the reason the ROM image has none: `@` takes an array INDEX, so
+   writing the data ADDRESS there would put two different numbers on one row. A
+   design therefore maps its element i to data address base+i.
+
+   The per-byte comments come from buildDataHints, which is the function that
+   knows what each cell holds (a global's name, a string, an array element).
+   Note it keys by ROW, i.e. address rounded down to `viewWordBytes` - which is 1
+   on both AVR targets, so a per-byte lookup is exact there. */
+function buildRamDumpText(program) {
+  const bytes = program.data.bytes;
+  const base = program.data.base;
+  const hints = buildDataHints(program);
+  const out = [
+    '// ' + program.target.asmLabel,
+    '// Initialised data segment: ' + bytes.length + ' bytes, one per line',
+    '// Element i is data address 0x' + base.toString(16) + ' + i'
+      + ' (the segment starts at 0x' + base.toString(16) + ').',
+    '// Load with $readmemh into a reg [7:0] memory.',
+  ];
+  for (let i = 0; i < bytes.length; i++) {
+    const note = hints.get(base + i);
+    out.push(bytes[i].toString(16).padStart(2, '0') + (note ? ' // ' + note : ''));
   }
-  name = spec ? spec.file : currentFileName.replace(/\.c$/i, '') + '.s';
+  return out.join('\n') + '\n';
+}
+
+// One download path, so the Blob dance exists once rather than per button.
+function downloadText(name, text) {
   const blob = new Blob([text], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -7320,7 +7373,56 @@ document.getElementById('asmSaveBtn').addEventListener('click', () => {
   a.download = name;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+document.getElementById('asmSaveBtn').addEventListener('click', () => {
+  if (!lastProgram) return;
+  const t = shownTarget();
+  const spec = t.romDump;
+  let text;
+  try {
+    text = spec ? buildRomDumpText(lastProgram, spec) : buildAsmDumpText();
+  } catch (e) {
+    logLine('<span class="err">' + escapeHtml(e.message) + '</span>');
+    return;
+  }
+  downloadText(spec ? spec.file : currentFileName.replace(/\.c$/i, '') + '.s', text);
 });
+
+/* The two explicit buttons. `Save rom.txt` shares buildRomDumpText with the
+   header's Save icon rather than reimplementing it - the icon stays what it has
+   always been (the ROM image on a target that has one, the .s listing
+   otherwise), and these two name the Verilog handoff pair outright.
+
+   Both are gated on the target having a `romDump`: an RV32 program has a data
+   segment too, but the pair only means anything as "the files a Verilog design
+   loads", and offering ram.txt beside a listing that no design can fetch would
+   imply a flow that does not exist. The refusal says which target it is, the
+   same way the workbench's does. */
+function saveImage(kind) {
+  if (!lastProgram) return;
+  const t = shownTarget();
+  if (!t.romDump) {
+    logLine('<span class="err">' + escapeHtml(t.label) + ' has no ROM image format —'
+      + ' rom.txt/ram.txt are the handoff to a Verilog design, so they need one of the'
+      + ' ATmega644 targets. Use the Save icon for a .s listing instead.</span>');
+    return;
+  }
+  let text, name;
+  try {
+    if (kind === 'rom') { text = buildRomDumpText(lastProgram, t.romDump); name = t.romDump.file; }
+    else { text = buildRamDumpText(lastProgram); name = 'ram.txt'; }
+  } catch (e) {
+    logLine('<span class="err">' + escapeHtml(e.message) + '</span>');
+    return;
+  }
+  downloadText(name, text);
+  logLine('<span class="info">wrote ' + escapeHtml(name) + ' (' + text.split('\n').length
+    + ' lines) — attach it in the simulator’s Memory Viewer, or use the workbench,'
+    + ' which hands both images straight to $readmemh.</span>');
+}
+document.getElementById('saveRomBtn').addEventListener('click', () => saveImage('rom'));
+document.getElementById('saveRamBtn').addEventListener('click', () => saveImage('ram'));
 
 function buildDataDumpText() {
   const region = memoryRegions.find(r => r.key === '__data');
@@ -7456,6 +7558,11 @@ function setRunEnabled(on) {
   runBtn.disabled = !on;
   stepBtn.disabled = !on;
   resetBtn.disabled = !on;
+  /* The image buttons follow the same gate as Run: both write the compiled
+     program, so anything that invalidates the compile must disable them too -
+     otherwise Save would quietly hand out the previous compile's ROM. */
+  saveRomBtn.disabled = !on;
+  saveRamBtn.disabled = !on;
 }
 
 function readMaxSteps() {

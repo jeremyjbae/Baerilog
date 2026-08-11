@@ -241,6 +241,27 @@
     .hierarchy-children { margin-left: 12px; border-left: 1px solid #e5e5ea; padding-left: 6px; }
 
     /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
+    /* Expand: the netlist row breaks out of .grid's max-width to the full body content
+       width, leaving every other card centred at 1100px. Same control, same geometry and
+       the same reasoning as `simulator/index.html`'s waveform expand (`.wave-expanded`),
+       which is where the long version of this comment lives; kept ID-agnostic here so the
+       rule describes the ROW rather than what happens to be inside it.
+
+       --row-bleed is set from MEASURED geometry rather than the usual calc(50% - 50vw)
+       trick, because 100vw includes the vertical scrollbar - which on any platform with
+       classic (non-overlay) scrollbars makes the row wider than the body's content box and
+       pops a horizontal scrollbar the moment you expand. documentElement.clientWidth
+       excludes it.
+
+       Two apps now carry a byte-for-byte equivalent of this rule in their own additions
+       rather than one copy in style.css. That is a deliberate trade and not tidiness:
+       folding it in would oblige re-pasting style.css into all six apps' inline <style>
+       blocks (and re-running workbench's slice sync) for four lines four of them do not
+       use. If a third app wants it, fold it in then. */
+    .split-row.row-expanded {
+      margin-left: calc(-1 * var(--row-bleed, 0px));
+      margin-right: calc(-1 * var(--row-bleed, 0px));
+    }
     .toolbar {
       display: flex;
       gap: 8px;
@@ -700,6 +721,11 @@
               <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 2 H10 M4 6 H10 M2 10 H10" stroke-linecap="round"/><rect x="10.5" y="0.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="10.5" y="4.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="10.5" y="8.5" width="3" height="3" fill="currentColor" stroke="none"/><path d="M2 2 V10" stroke-linecap="round"/></svg>
             </span>
           </span>
+          <span class="layout-toggle">
+            <span class="layout-btn" id="netlistExpandBtn" title="Expand to the full browser width">
+              <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1 V11 M15 1 V11"/><path d="M4.5 6 H11.5 M6.5 3.8 L4.3 6 L6.5 8.2 M9.5 3.8 L11.7 6 L9.5 8.2"/></svg>
+            </span>
+          </span>
         </span>
       </h2>
       <p>drag to pan, scroll/pinch to zoom, drag nodes to rearrange, double-click an instance block to drill into it — built with React Flow</p>
@@ -740,9 +766,11 @@
 
 /* ---------------- Examples ---------------- */
 const EXAMPLES = {
-  'logic gates': `module gates(a, b, y_and, y_or, y_nand, y_nor, y_xor, y_xnor, y_not);
-  input a, b;
-  output y_and, y_or, y_nand, y_nor, y_xor, y_xnor, y_not;
+  'logic gates': `module gates(
+  input a, b,
+  output y_and, y_or, y_nand, y_nor, y_xor, y_xnor, y_not
+);
+
   assign y_and  = a & b;
   assign y_or   = a | b;
   assign y_nand = ~(a & b);
@@ -750,30 +778,24 @@ const EXAMPLES = {
   assign y_xor  = a ^ b;
   assign y_xnor = ~(a ^ b);
   assign y_not  = ~a;
+
 endmodule`,
-  '4-bit register (dff)': `module dff_reg(clk, resetn, d, q);
-  input clk, resetn;
-  input [3:0] d;
-  output reg [3:0] q;
+  '4-bit register (dff)': `module dff_reg(
+  input clk, resetn,
+  input [3:0] d,
+  output reg [3:0] q
+);
+
   always @(posedge clk or negedge resetn) begin
     if (!resetn) q <= 4'b0000;
     else q <= d;
   end
+
 endmodule`,
-  '4-bit accumulator (fa + dff)': `module accum(clk, resetn, a, q);
-  input clk, resetn;
-  input [3:0] a;
-  output reg [3:0] q;
-  wire [3:0] sum;
-  assign sum = a + q;
-  always @(posedge clk or negedge resetn) begin
-    if (!resetn) q <= 4'b0000;
-    else q <= sum;
-  end
-endmodule`,
-  'counter (add4 sub-module)': `module myadder4(a, b, sum);
-  input [3:0] a, b;
-  output [3:0] sum;
+  'counter (add4 sub-module)': `module myadder4(
+  input [3:0] a, b,
+  output [3:0] sum
+);
   assign sum = a + b;
 endmodule
 
@@ -789,14 +811,17 @@ module count(clk, resetn, q);
     else q <= q_1;
   end
 endmodule`,
-  '4-bit adder (with carry)': `module adder4(a, b, sum, cout);
-  input [3:0] a, b;
-  output [3:0] sum;
-  output cout;
+  '4-bit adder (with carry)': `module adder4(
+  input [3:0] a, b, 
+  input cin,
+  output [3:0] sum,
+  output cout
+);
 
   // carry-out via concatenation: {cout, sum} is 5 bits wide, so this widens
   // the addition itself and reads the extra top bit back off as the carry
-  assign {cout, sum} = a + b;
+  assign {cout, sum} = a + b + cin;
+
 endmodule`,
   '16-bit ALU (casex + concat)': `module alu(clk, resetn, aluAIn, aluBIn, aluCtl, aluOut, condFlag);
 input clk;
@@ -842,12 +867,31 @@ endmodule`,
 /* ---------------- Lexer ---------------- */
 const KEYWORDS = new Set(['module','endmodule','input','output','wire','reg','assign','always','begin','end','if','else','posedge','negedge','or','case','casex','endcase','default','parameter']);
 // Only needed so `\"` cannot end a string literal early; the value itself is discarded
-// (see stripStringAssignments) and is kept purely to quote in log lines and errors.
+// (see stripUnsynthesizable) and is kept purely to quote in log lines and errors.
 const STR_ESCAPES = { n: '\n', t: '\t', r: '\r', '0': '\0', '\\': '\\', '"': '"' };
+
+/* A comment mentioning 'Skip Synthesis' TRUNCATES the source: everything from that comment
+   to the end of the file is never lexed at all. That it happens here, in the lexer, rather
+   than as a parser rule is the whole point — the text being skipped is a testbench, and a
+   testbench uses `initial`, `$readmemb`, `#delay` and 2-D memory arrays, none of which this
+   subset can even LEX (`$` is not a legal character here). So "parse it and mark the module
+   as skipped" is not available; the text has to disappear before tokenization.
+
+   The match is a case-insensitive substring so the marker can carry decoration — the three
+   in `simulator/index.html` are block comments reading `---- Testbench (Skip Synthesis) ----`
+   — and it is tested against a COMMENT's text only, which is what keeps the same phrase in a
+   string literal or an identifier from silently deleting the rest of the design.
+
+   The scope is to end of file, which is what makes the rule safe: a marker cannot leave an
+   unbalanced `begin`/`end` or swallow one module's `endmodule` while later modules keep
+   parsing. A marker placed inside a module DOES take that module's `endmodule` with it, so
+   every parse error that lands on `eof` carries Parser.skipHint(). */
+const SKIP_SYNTHESIS_MARKER = /skip\s*synthesis/i;
 
 function lex(src) {
   const toks = [];
   let i = 0, line = 1;
+  let skipInfo = null;
   const n = src.length;
   const isIdStart = c => /[A-Za-z_]/.test(c);
   const isIdChar = c => /[A-Za-z0-9_]/.test(c);
@@ -855,11 +899,23 @@ function lex(src) {
     const c = src[i];
     if (c === '\n') { line++; i++; continue; }
     if (/\s/.test(c)) { i++; continue; }
-    if (c === '/' && src[i+1] === '/') { while (i < n && src[i] !== '\n') i++; continue; }
-    if (c === '/' && src[i+1] === '*') { i += 2; while (i < n && !(src[i]==='*'&&src[i+1]==='/')) { if (src[i]==='\n') line++; i++; } i += 2; continue; }
+    if (c === '/' && src[i+1] === '/') {
+      const start = i;
+      while (i < n && src[i] !== '\n') i++;
+      if (SKIP_SYNTHESIS_MARKER.test(src.slice(start, i))) { skipInfo = { line, offset: start }; break; }
+      continue;
+    }
+    if (c === '/' && src[i+1] === '*') {
+      const start = i, startLine = line;
+      i += 2;
+      while (i < n && !(src[i]==='*'&&src[i+1]==='/')) { if (src[i]==='\n') line++; i++; }
+      i += 2;
+      if (SKIP_SYNTHESIS_MARKER.test(src.slice(start, i))) { skipInfo = { line: startLine, offset: start }; break; }
+      continue;
+    }
     /* A string literal. Nothing in this subset can consume one — there is no $display
        here — and the only place one is tolerated at all is as the whole right-hand side
-       of an assignment, which stripStringAssignments then deletes. It still has to be a
+       of an assignment, which stripUnsynthesizable then deletes. It still has to be a
        real token rather than a lex error, because a bare `unexpected character '"'` names
        the quote instead of the construct, and because the rule about where a string may
        appear is a statement-shape rule the parser is the right place to enforce. */
@@ -932,17 +988,45 @@ function lex(src) {
     throw new Error(`Lex error: unexpected character '${c}' at line ${line}`);
   }
   toks.push({ type: 'eof', value: null, line, start: i, end: i });
+  // Where the text stopped, if a 'Skip Synthesis' comment stopped it. Carried on the token
+  // array rather than returned separately so every existing caller of lex() is unchanged.
+  toks.skipInfo = skipInfo;
   return toks;
+}
+
+/* Describes what a truncation actually dropped, for the one log line that reports it and for
+   the 'Unknown module type' hint. The module names are a DISPLAY-ONLY scan: the dropped text
+   was never lexed (that is the point), so there is no parse to take them from. Anchored to the
+   start of a line, which is where a module declaration is written and where prose in a comment
+   ("this module drives ...") is not, so the names stay recognizable rather than merely plausible. */
+function describeSkip(src, skipInfo) {
+  if (!skipInfo) return null;
+  const dropped = src.slice(skipInfo.offset);
+  const droppedLines = dropped.split('\n').length - (dropped.endsWith('\n') ? 1 : 0);
+  const moduleNames = [...dropped.matchAll(/^[ \t]*module\s+([A-Za-z_][A-Za-z0-9_]*)/gm)].map(m => m[1]);
+  return { line: skipInfo.line, droppedLines, moduleNames };
 }
 
 /* ---------------- Parser (recursive descent) ---------------- */
 class Parser {
-  constructor(toks) { this.toks = toks; this.pos = 0; this.params = {}; }
+  constructor(toks) { this.toks = toks; this.pos = 0; this.params = {}; this.skipInfo = toks.skipInfo || null; }
   peek(o=0) { return this.toks[this.pos+o]; }
   at(type) { return this.peek().type === type; }
   next() { return this.toks[this.pos++]; }
+  /* A parse error that lands on `eof` is the classic symptom of a 'Skip Synthesis' marker
+     placed INSIDE a module: the truncation took that module's own `endmodule` with it. The
+     bare message names 'eof' and gives no clue where the text went, which reads as the file
+     being truncated on disk rather than by a comment the user wrote. */
+  skipHint() {
+    return this.skipInfo
+      ? ` — note the 'Skip Synthesis' comment on line ${this.skipInfo.line} drops everything below it, so the marker belongs at top level, between modules`
+      : '';
+  }
   expect(type) {
-    if (!this.at(type)) throw new Error(`Parse error: expected '${type}' but got '${this.peek().type}' (line ${this.peek().line})`);
+    if (!this.at(type)) {
+      const tok = this.peek();
+      throw new Error(`Parse error: expected '${type}' but got '${tok.type}' (line ${tok.line})${tok.type === 'eof' ? this.skipHint() : ''}`);
+    }
     return this.next();
   }
   parseModule() {
@@ -973,7 +1057,8 @@ class Parser {
       } else if (this.at('ident') && this.peek(1).type === 'ident') {
         instances.push(this.parseInstance());
       } else {
-        throw new Error(`Parse error: unexpected token '${this.peek().type}' (line ${this.peek().line})`);
+        const tok = this.peek();
+        throw new Error(`Parse error: unexpected token '${tok.type}' (line ${tok.line})${tok.type === 'eof' ? this.skipHint() : ''}`);
       }
     }
     const endTok = this.expect('endmodule');
@@ -1087,10 +1172,32 @@ class Parser {
     return this.parseSimpleLvalue();
   }
   parseSimpleLvalue() {
-    const name = this.expect('ident').value;
+    const nameTok = this.expect('ident');
+    if (this.at('.')) return this.parseHierRest(nameTok, 'HierLvalue');
+    const name = nameTok.value;
     let bit = null;
     if (this.at('[')) { this.next(); bit = parseInt(this.expect('num').value.digits, 10); this.expect(']'); }
     return { type: 'Lvalue', name, bit };
+  }
+  /* A dotted name is a HIERARCHICAL reference into another instance (`u_alu.debug_alu`).
+     `nameTok` has been consumed and a '.' is next; `type` is 'Hier' for an expression or
+     'HierLvalue' for an assignment target, which is the only difference between the two —
+     one implementation so the two sides cannot come to disagree about what a dotted name is.
+
+     Parsed rather than rejected because stripUnsynthesizable then DELETES the statement that
+     mentions one and names it in the log (see there). A trailing bit- or part-select is
+     consumed into the node and otherwise discarded, since the whole reference is discarded. */
+  parseHierRest(nameTok, type) {
+    const path = [nameTok.value];
+    while (this.at('.')) { this.next(); path.push(this.expect('ident').value); }
+    let sel = null;
+    if (this.at('[')) {
+      this.next();
+      const hi = parseInt(this.expect('num').value.digits, 10);
+      sel = this.at(':') ? (this.next(), { hi, lo: parseInt(this.expect('num').value.digits, 10) }) : { hi, lo: hi };
+      this.expect(']');
+    }
+    return { type, path, sel, line: nameTok.line };
   }
   parseAssign() {
     this.expect('assign');
@@ -1117,8 +1224,15 @@ class Parser {
   parseEdge() {
     const edge = this.next().type;
     if (edge !== 'posedge' && edge !== 'negedge') throw new Error(`Parse error: expected posedge/negedge (line ${this.peek().line})`);
-    const sig = this.expect('ident').value;
-    return { edge, sig };
+    const sigTok = this.expect('ident');
+    // A sensitivity list is the one place a hierarchical reference cannot be ignored: there is
+    // no statement to delete, and dropping the edge would silently change what the block is
+    // clocked by. Caught here so the message names the construct instead of the dot.
+    if (this.at('.')) {
+      const hier = this.parseHierRest(sigTok, 'Hier');
+      throw new Error(`Parse error: hierarchical reference '${hierToStr(hier)}' is not supported in a sensitivity list (line ${hier.line}) — clock and reset must be ports of this module`);
+    }
+    return { edge, sig: sigTok.value };
   }
   parseStmtOrBlock() {
     if (this.at('begin')) {
@@ -1273,12 +1387,14 @@ class Parser {
     if (this.at('(')) { this.next(); const e = this.parseExpr(); this.expect(')'); return e; }
     if (this.at('num')) { return { type: 'Num', value: this.next().value }; }
     /* Parsed as an ordinary expression, in every position, deliberately: whether a string
-       is in a position where it can be ignored is decided by stripStringAssignments, which
+       is in a position where it can be ignored is decided by stripUnsynthesizable, which
        can then name the offending construct AND its line. Restricting it to the RHS here
        instead would report `expected ')' but got 'str'` for `{"A", b}`. The `line` is what
        every message about this node quotes, since no other expression node carries one. */
     if (this.at('str')) { const t = this.next(); return { type: 'Str', value: t.value, line: t.line }; }
-    const name = this.expect('ident').value;
+    const nameTok = this.expect('ident');
+    if (this.at('.')) return this.parseHierRest(nameTok, 'Hier');
+    const name = nameTok.value;
     if (this.at('[')) {
       this.next();
       const hi = parseInt(this.expect('num').value.digits, 10);
@@ -1291,16 +1407,35 @@ class Parser {
   }
 }
 
-/* ---------------- string assignments: ignored, not synthesized ----------------
-   A string is not hardware. Other tools do synthesize `debug_alu <= "ADD"` — "ADD" is
-   just a 24-bit constant — but a design that carries a handful of debug_* strings for
-   the simulator's `str` radix then arrives here as dozens of const cells and a mux tree
-   nobody wants to look at, so this pass DELETES those assignments outright.
+/* ---------------- unsynthesizable assignments: ignored, not synthesized ----------------
+   Two constructs are deleted here rather than synthesized, because both exist only to be
+   watched in `simulator/index.html` and neither is hardware:
 
-   The rule is deliberately narrow: a string is ignorable only as the ENTIRE right-hand
-   side of an assignment. Anywhere else — `{"A", b}`, `op == "A"`, a case pattern — it is
-   an error, because there is no reading of those under which "ignore it" means anything,
-   and quietly dropping the statement wrapped around one would swallow a typo.
+   A STRING. Other tools do synthesize `debug_alu <= "ADD"` — "ADD" is just a 24-bit constant
+   — but a design that carries a handful of debug_* strings for the simulator's `str` radix
+   then arrives here as dozens of const cells and a mux tree nobody wants to look at.
+
+   A HIERARCHICAL REFERENCE (`debug_inst <= u_alu.debug_alu;`). This one is not merely ugly,
+   it is unbuildable: the net named lives inside another module's instance, and a netlist has
+   no way to reach across the boundary that is not a port. The simulator resolves it for free
+   because elaboration flattens the hierarchy into dotted names; here the hierarchy is the
+   product, so there is nothing to flatten it into.
+
+   THE TWO HAVE DIFFERENT SCOPES, deliberately. A string is ignorable only as the ENTIRE
+   right-hand side of an assignment; anywhere else — `{"A", b}`, `op == "A"`, a case pattern
+   — it is an error, because quietly dropping the statement wrapped around one would swallow
+   a typo. A hierarchical reference drops the whole STATEMENT that mentions it, wherever it
+   appears in it: `debug_x <= {u_a.dbg, 8'h0}` is still just debug scaffolding, and an `if`
+   or `case` whose condition reads across the boundary cannot be synthesized under any
+   reading — keeping its branches unconditionally would be a different design. Two positions
+   are still errors, both because deleting them would silently change surviving hardware
+   rather than remove debug: an instance port connection (the port would be left dangling)
+   and a sensitivity list (caught in parseEdge, since there is no statement there to delete).
+
+   A dropped statement's assignment targets are recorded as ignored targets exactly as a
+   string assignment's are, so a signal that loses its only driver this way reaches the same
+   analysis in pass 3 — the clean "nothing would drive it" error, or removal from `decls` —
+   instead of surfacing later as buildGraph's `internal error: no driver found`.
 
    Pruning is BOTTOM-UP, and that is what makes "generates nothing" true rather than
    merely "errors nowhere": an emptied case is removed whole, so its selector nets, its
@@ -1316,14 +1451,24 @@ class Parser {
    are correct to raise here: a branch whose only content was a debug string genuinely
    does leave the real signal holding its value.
 */
-function stripStringAssignments(mod) {
+function stripUnsynthesizable(mod) {
   const isStr = node => !!node && node.type === 'Str';
+  const isHier = node => !!node && (node.type === 'Hier' || node.type === 'HierLvalue');
   const emptyBlock = () => ({ type: 'Block', stmts: [] });
 
   const lvalueNames = (lv, out) => {
     if (!lv) return;
     if (lv.type === 'ConcatLvalue') { for (const e of lv.elems) lvalueNames(e, out); return; }
+    // A HierLvalue contributes NO name: it targets a net inside another instance, not one of
+    // this module's signals, so it neither drives nor declares anything here.
+    if (lv.type === 'HierLvalue') return;
     if (lv.name) out.add(lv.name);
+  };
+  const lvalueToStr = lv => {
+    if (!lv) return '';
+    if (lv.type === 'ConcatLvalue') return '{' + lv.elems.map(lvalueToStr).join(', ') + '}';
+    if (lv.type === 'HierLvalue') return hierToStr(lv);
+    return lv.name + (lv.bit !== null && lv.bit !== undefined ? `[${lv.bit}]` : '');
   };
   const walkExpr = (node, visit) => {
     if (!node) return;
@@ -1337,6 +1482,18 @@ function stripStringAssignments(mod) {
     }
   };
 
+  const mentionsHier = node => {
+    let found = null;
+    walkExpr(node, sub => { if (!found && isHier(sub)) found = sub; });
+    return found;
+  };
+  const lvalueHier = lv => {
+    if (!lv) return null;
+    if (lv.type === 'HierLvalue') return lv;
+    if (lv.type === 'ConcatLvalue') { for (const e of lv.elems) { const h = lvalueHier(e); if (h) return h; } }
+    return null;
+  };
+
   /* Pass 1 — legality, over the ORIGINAL tree. It has to run before anything is pruned,
      or a string inside a construct that prunes away entirely (`case ("A") ...`) would
      never be looked at. `bareStrOk` is true at exactly one kind of position. */
@@ -1346,6 +1503,14 @@ function stripStringAssignments(mod) {
       if (!isStr(sub)) return;
       throw new Error(`Parse error: string literal ${JSON.stringify(sub.value)} is only supported as the entire right-hand side of an assignment, where it is then ignored (line ${sub.line}) — a string is not synthesizable hardware`);
     });
+  };
+  // An instance port connection is the one expression position where a hierarchical
+  // reference cannot be ignored: there is no statement to delete, and deleting the
+  // connection would leave a port of a real cell dangling.
+  const rejectHierInConn = (node, inst, port) => {
+    const hier = mentionsHier(node);
+    if (!hier) return;
+    throw new Error(`Parse error: hierarchical reference '${hierToStr(hier)}' is not supported in the '${port}' connection of instance '${inst.instName}' (line ${hier.line}) — it names a net inside another module, and dropping the connection would leave the port undriven; route it through a port instead`);
   };
   const checkStmt = stmt => {
     if (!stmt) return;
@@ -1362,18 +1527,46 @@ function stripStringAssignments(mod) {
   };
   for (const a of mod.assigns) rejectStrings(a.rhs, true);
   for (const blk of mod.always) checkStmt(blk.body);
-  for (const inst of mod.instances) for (const c of inst.conns) rejectStrings(c.expr, false);
+  for (const inst of mod.instances) {
+    for (const c of inst.conns) {
+      rejectStrings(c.expr, false);
+      rejectHierInConn(c.expr, inst, c.port || 'positional');
+    }
+  }
 
   /* Pass 2 — prune, recording what went. */
-  const ignored = [];                   // {name, text, line} per dropped assignment target
-  const stringTargets = new Map();      // name -> line of its first string assignment
+  const ignored = [];                   // {name, text, line} per dropped string assignment target
+  const ignoredHier = [];               // {what, ref, line} per statement dropped for a hier ref
+  const ignoredTargets = new Map();     // name -> {line, kinds:Set} of its first ignored assignment
+  const recordTarget = (name, line, kind) => {
+    if (!ignoredTargets.has(name)) ignoredTargets.set(name, { line, kinds: new Set() });
+    ignoredTargets.get(name).kinds.add(kind);
+  };
   const recordDrop = (lhs, rhs) => {
     const names = new Set();
     lvalueNames(lhs, names);
     for (const name of names) {
       ignored.push({ name, text: JSON.stringify(rhs.value), line: rhs.line });
-      if (!stringTargets.has(name)) stringTargets.set(name, rhs.line);
+      recordTarget(name, rhs.line, 'string literal');
     }
+  };
+  /* Everything a dropped statement assigned counts as an ignored target, at every depth —
+     that is what routes a signal whose only driver was inside a dropped `if` into pass 3's
+     analysis rather than leaving it undriven for buildGraph to hit. */
+  const recordHierDrop = (stmt, hier, what) => {
+    ignoredHier.push({ what, ref: hierToStr(hier), line: hier.line });
+    const names = new Set();
+    const collect = s => {
+      if (!s) return;
+      switch (s.type) {
+        case 'Block': for (const x of s.stmts) collect(x); return;
+        case 'If': collect(s.then); collect(s.else); return;
+        case 'Case': for (const it of s.items) collect(it.body); collect(s.defaultBody); return;
+        default: lvalueNames(s.lhs, names);
+      }
+    };
+    collect(stmt);
+    for (const name of names) recordTarget(name, hier.line, 'hierarchical reference');
   };
   const pruneStmt = stmt => {
     if (!stmt) return null;
@@ -1382,13 +1575,25 @@ function stripStringAssignments(mod) {
       return stmts.length ? { ...stmt, stmts } : null;
     }
     if (stmt.type === 'If') {
+      const hier = mentionsHier(stmt.cond);
+      if (hier) { recordHierDrop(stmt, hier, `the 'if' statement and its branches`); return null; }
       const thenS = pruneStmt(stmt.then);
       const elseS = pruneStmt(stmt.else);
       if (!thenS && !elseS) return null;
       return { ...stmt, then: thenS || emptyBlock(), else: elseS };
     }
     if (stmt.type === 'Case') {
-      const items = stmt.items.map(it => ({ ...it, body: pruneStmt(it.body) }));
+      const selHier = mentionsHier(stmt.selector);
+      if (selHier) { recordHierDrop(stmt, selHier, `the '${stmt.kind}' statement and all its items`); return null; }
+      // A hierarchical reference in one item's PATTERN drops that item only — the rest of the
+      // case is still a decode of a selector this module can see.
+      const kept = [];
+      for (const it of stmt.items) {
+        const patHier = it.patterns.map(mentionsHier).find(Boolean);
+        if (patHier) recordHierDrop(it.body, patHier, `a '${stmt.kind}' item`);
+        else kept.push(it);
+      }
+      const items = kept.map(it => ({ ...it, body: pruneStmt(it.body) }));
       const defaultBody = stmt.defaultBody ? pruneStmt(stmt.defaultBody) : null;
       if (items.every(it => it.body === null) && defaultBody === null) return null;
       return {
@@ -1398,16 +1603,28 @@ function stripStringAssignments(mod) {
       };
     }
     if (isStr(stmt.rhs)) { recordDrop(stmt.lhs, stmt.rhs); return null; }
+    const hier = lvalueHier(stmt.lhs) || mentionsHier(stmt.rhs);
+    if (hier) { recordHierDrop(stmt, hier, `the assignment to '${lvalueToStr(stmt.lhs)}'`); return null; }
     return stmt;
   };
   for (const a of mod.assigns) if (isStr(a.rhs)) recordDrop(a.lhs, a.rhs);
   mod.assigns = mod.assigns.filter(a => !isStr(a.rhs));
+  // A continuous assign is dropped for a hierarchical reference on the same terms as a
+  // procedural one — `assign debug = u_alu.dbg;` is the same scaffolding written differently.
+  mod.assigns = mod.assigns.filter(a => {
+    const hier = lvalueHier(a.lhs) || mentionsHier(a.rhs);
+    if (!hier) return true;
+    recordHierDrop({ type: 'NBAssign', lhs: a.lhs, rhs: a.rhs }, hier, `the continuous assignment to '${lvalueToStr(a.lhs)}'`);
+    return false;
+  });
   mod.always = mod.always.map(blk => ({ ...blk, body: pruneStmt(blk.body) })).filter(blk => blk.body !== null);
 
-  if (!stringTargets.size) { mod.ignoredStrings = []; mod.droppedSignals = []; return mod; }
+  mod.ignoredStrings = ignored;
+  mod.ignoredHier = ignoredHier;
+  if (!ignoredTargets.size) { mod.droppedSignals = []; return mod; }
 
-  /* Pass 3 — what is left of the module, so a string-only signal can be told apart from a
-     signal that merely also had a debug string assigned beside its real driver. */
+  /* Pass 3 — what is left of the module, so a signal whose only assignments were ignored can
+     be told apart from one that merely also had a debug assignment beside its real driver. */
   const driven = new Set(); // has a surviving driver
   const read = new Set();   // consumed by surviving logic
   const collectReads = node => walkExpr(node, sub => {
@@ -1445,15 +1662,18 @@ function stripStringAssignments(mod) {
     return null;
   };
   const dropped = [];
-  for (const [name, line] of stringTargets) {
-    if (driven.has(name)) continue; // a real driver survived beside the string — leave it alone
+  // 'a string literal' / 'a hierarchical reference' / both, so every message below says which
+  // kind of ignored assignment it is talking about instead of assuming there is only one kind.
+  const describeKinds = kinds => [...kinds].map(k => `a ${k}`).join(' and ');
+  for (const [name, { line, kinds }] of ignoredTargets) {
+    if (driven.has(name)) continue; // a real driver survived beside the debug one — leave it alone
     const isPort = mod.ports.includes(name);
     if (isPort || read.has(name)) {
       const why = isPort ? `is a port of module '${mod.name}'` : `is read elsewhere in module '${mod.name}'`;
       const fix = isPort ? 'drive it with real logic, or make it an internal reg used only for debug' : 'drive it with real logic, or stop reading it';
-      throw new Error(`Parse error: '${name}' ${why}, but its only assignment is the string literal on line ${line}, which is ignored — nothing would drive it; ${fix}`);
+      throw new Error(`Parse error: '${name}' ${why}, but every assignment to it is ignored (${describeKinds(kinds)}, first on line ${line}) — nothing would drive it; ${fix}`);
     }
-    if (widthOf(name) !== null) dropped.push({ name, width: widthOf(name) });
+    if (widthOf(name) !== null) dropped.push({ name, width: widthOf(name), why: describeKinds(kinds) });
   }
   if (dropped.length) {
     const dropSet = new Set(dropped.map(d => d.name));
@@ -1461,16 +1681,22 @@ function stripStringAssignments(mod) {
       .map(d => ({ ...d, names: d.names.filter(nm => !dropSet.has(nm)) }))
       .filter(d => d.names.length);
   }
-  mod.ignoredStrings = ignored;
   mod.droppedSignals = dropped;
   return mod;
 }
 
 function parseVerilog(src) {
-  const parser = new Parser(lex(src));
+  const toks = lex(src);
+  const skipInfo = describeSkip(src, toks.skipInfo);
+  const parser = new Parser(toks);
   const modules = [];
-  while (!parser.at('eof')) modules.push(stripStringAssignments(parser.parseModule()));
-  if (!modules.length) throw new Error('Parse error: no module found');
+  while (!parser.at('eof')) modules.push(stripUnsynthesizable(parser.parseModule()));
+  if (!modules.length) {
+    throw new Error(`Parse error: no module found${skipInfo ? ` before the 'Skip Synthesis' comment on line ${skipInfo.line}, which drops everything below it` : ''}`);
+  }
+  // Carried on the array so findTopModule and synthesizeAll can report the truncation without
+  // a signature change, and so parseTopLevelModules (which returns a Map) can ignore it.
+  modules.skipInfo = skipInfo;
   return modules;
 }
 
@@ -1504,13 +1730,27 @@ function extractInterface(mod) {
 }
 
 // The top module is the one no other module instantiates. Errors if that's ambiguous.
+/* `modules.skipInfo` is consulted because a truncation makes that error MORE likely rather
+   than less: dropping a testbench removes instantiations, so a module that only the dropped
+   text instantiated becomes a second candidate. Without the hint that reads as the design
+   being wrong, when the marker is simply in the wrong place. */
 function findTopModule(modules) {
   const instantiated = new Set();
   for (const m of modules) for (const inst of m.instances) instantiated.add(inst.modType);
   const candidates = modules.filter(m => !instantiated.has(m.name));
+  const skipHint = modules.skipInfo
+    ? ` — note the 'Skip Synthesis' comment on line ${modules.skipInfo.line} dropped everything below it, so anything instantiated only down there now looks like a top module; move the marker below it if that is what happened`
+    : '';
   if (candidates.length === 0) throw new Error('Cannot determine a top module: every module is instantiated by another (a cycle in the module hierarchy)');
-  if (candidates.length > 1) throw new Error(`Cannot determine a top module: multiple modules are never instantiated (${candidates.map(m => m.name).join(', ')}) — expected exactly one`);
+  if (candidates.length > 1) throw new Error(`Cannot determine a top module: multiple modules are never instantiated (${candidates.map(m => m.name).join(', ')}) — expected exactly one${skipHint}`);
   return candidates[0];
+}
+
+// A hierarchical reference's source text, for every message that quotes one. Shared by 'Hier'
+// and 'HierLvalue', which differ only in which side of an assignment they were parsed on.
+function hierToStr(node) {
+  const sel = node.sel ? (node.sel.hi === node.sel.lo ? `[${node.sel.hi}]` : `[${node.sel.hi}:${node.sel.lo}]`) : '';
+  return node.path.join('.') + sel;
 }
 
 function exprToStr(node) {
@@ -1519,6 +1759,7 @@ function exprToStr(node) {
   switch (node.type) {
     case 'Num': return node.value.width ? `${node.value.width}'${node.value.base}${node.value.digits}` : node.value.digits;
     case 'Str': return JSON.stringify(node.value);
+    case 'Hier': return hierToStr(node);
     case 'Ident': return node.name;
     case 'Index': return `${node.name}[${node.bit}]`;
     case 'Slice': return `${node.name}[${node.hi}:${node.lo}]`;
@@ -1557,10 +1798,11 @@ function numToBits(numVal, width) {
 // of O(log N)) is used instead, so no design is ever put at risk by this cap.
 const MAX_PRIORITY_MUX_FANIN = 32;
 class Synthesizer {
-  constructor(ast, interfaces, adderRegistry) {
+  constructor(ast, interfaces, adderRegistry, skipInfo) {
     this.ast = ast;
     this.interfaces = interfaces || {}; // moduleName -> extractInterface(mod), for validating instance connections
     this.adderRegistry = adderRegistry || new Map(); // shared across all modules in this run: 'add4'/'sub4' -> module result, so +/- at the same width reuse one generated module
+    this.skipInfo = skipInfo || null;   // set when a 'Skip Synthesis' comment truncated the source, so an unknown module type can say where the definition went
     this.sig = {};
     this.cells = [];
     this.driven = new Set();
@@ -1681,9 +1923,10 @@ class Synthesizer {
   naturalWidth(node) {
     switch (node.type) {
       case 'Num': return node.value.width || 32;
-      // Unreachable via stripStringAssignments, which either deletes a string assignment or
-      // errors on the string; here so a future parser path that leaks one fails loudly.
+      // Unreachable via stripUnsynthesizable, which either deletes the assignment or errors
+      // on the node; here so a future parser path that leaks one fails loudly.
       case 'Str': this.error(`string literal ${JSON.stringify(node.value)} has no width — a string is only allowed as the whole right-hand side of an assignment, which is then ignored`);
+      case 'Hier': this.error(`hierarchical reference '${hierToStr(node)}' has no width here — it names a net inside another module, and every statement mentioning one is ignored`);
       case 'Ident': return this._sigWidth(node.name);
       case 'Index': return 1;
       case 'Slice': return node.hi - node.lo + 1;
@@ -2036,7 +2279,7 @@ class Synthesizer {
         { kind: 'output', isReg: false, range, names: ['sum'] },
       ],
     };
-    const sub = new Synthesizer(fakeAst, this.interfaces, this.adderRegistry);
+    const sub = new Synthesizer(fakeAst, this.interfaces, this.adderRegistry, this.skipInfo);
     let bNets = Array.from({ length: width }, (_, i) => sub.netName('b', i));
     if (isSub) {
       bNets = bNets.map((net, i) => {
@@ -2725,7 +2968,8 @@ class Synthesizer {
     /* Reported rather than dropped silently — a netlist that is missing hardware the
        source appears to ask for has to say so, or the only evidence is an absence. */
     for (const s of this.ast.ignoredStrings || []) this.info(`ignored the assignment of ${s.text} to '${s.name}' (line ${s.line}) — a string is not synthesizable, so no hardware was generated for it`);
-    for (const d of this.ast.droppedSignals || []) this.info(`signal '${d.name}' (${d.width}-bit) was dropped entirely: every assignment to it was an ignored string literal and nothing reads it`);
+    for (const h of this.ast.ignoredHier || []) this.info(`ignored ${h.what} (line ${h.line}) — it references '${h.ref}', a net inside another module, which no netlist can reach except through a port, so no hardware was generated for it`);
+    for (const d of this.ast.droppedSignals || []) this.info(`signal '${d.name}' (${d.width}-bit) was dropped entirely: every assignment to it was ignored (${d.why}) and nothing reads it`);
     for (const a of this.ast.assigns) this.synthAssign(a);
     for (const blk of this.ast.always) {
       if (blk.sens === 'star') this.synthCombAlways(blk);
@@ -2737,7 +2981,14 @@ class Synthesizer {
 
   synthInstance(inst) {
     const iface = this.interfaces[inst.modType];
-    if (!iface) this.error(`Unknown module type '${inst.modType}' instantiated as '${inst.instName}' (line ${inst.line})`);
+    if (!iface) {
+      // A module defined below a 'Skip Synthesis' marker was never read, so an instance of it
+      // is unknown for a reason the source does not show at the instantiation site.
+      const hint = this.skipInfo && this.skipInfo.moduleNames.includes(inst.modType)
+        ? ` — it is defined below the 'Skip Synthesis' comment on line ${this.skipInfo.line}, which drops everything under it; move the marker below that module to synthesize it`
+        : '';
+      this.error(`Unknown module type '${inst.modType}' instantiated as '${inst.instName}' (line ${inst.line})${hint}`);
+    }
     let conns = inst.conns;
     if (!inst.named) {
       if (conns.length !== iface.ports.length) this.error(`Module '${inst.modType}' expects ${iface.ports.length} port connection${iface.ports.length === 1 ? '' : 's'}, got ${conns.length} (instance '${inst.instName}')`);
@@ -3376,9 +3627,16 @@ function synthesizeAll(src) {
   for (const m of modules) interfaces[m.name] = extractInterface(m);
   const results = {};
   const allLog = [];
+  /* File-level, so it is pushed unprefixed and BEFORE any module's log: the truncation is not
+     a fact about one module, and a reader who does not see it here would look for the missing
+     modules in a hierarchy that never mentions them. */
+  if (modules.skipInfo) {
+    const { line, droppedLines, moduleNames } = modules.skipInfo;
+    allLog.push({ level: 'info', msg: `ignored the ${droppedLines} line${droppedLines === 1 ? '' : 's'} from the 'Skip Synthesis' comment on line ${line} to the end of the file${moduleNames.length ? ` — not synthesized: ${moduleNames.join(', ')}` : ''}` });
+  }
   const adderRegistry = new Map(); // shared so +/- at the same width across every module reuse one addN/subN
   for (const m of modules) {
-    const synth = new Synthesizer(m, interfaces, adderRegistry);
+    const synth = new Synthesizer(m, interfaces, adderRegistry, modules.skipInfo);
     const result = synth.run();
     results[m.name] = result;
     for (const l of result.log) allLog.push({ ...l, msg: modules.length > 1 ? `[${m.name}] ${l.msg}` : l.msg });
@@ -4045,6 +4303,56 @@ document.addEventListener('click', () => {
   });
   apply(localStorage.getItem('netlistHierarchyVisible') === '1');
 })();
+
+/* ---- netlist viewer card expand (full-bleed to the browser width) ----
+   Same control as `simulator/index.html`'s waveform expand, and the same promise: the
+   view is NOT re-fitted. The graph keeps its pan/zoom and simply has more room, so
+   expanding is a change of visible area rather than a zoom - calling fitView() here
+   would silently make it one, and would throw away wherever the user had panned to.
+
+   Nothing has to be redrawn, and that is observable rather than assumed: the hierarchy
+   toggle above already takes 220px away from this same container without redrawing
+   anything, because React Flow watches its container itself. Expanding is the same kind
+   of width change, so it needs the same nothing. */
+let updateNetlistBleed = () => {};
+(() => {
+  const splitRow = document.getElementById('netlistSplitRow');
+  const btn = document.getElementById('netlistExpandBtn');
+  const grid = document.querySelector('.grid');
+  /* Measured, not calc()'d - see the .row-expanded rule for why 100vw is wrong. .grid's
+     width is a fixed max-width and a negative-margin child cannot feed width back into
+     it, so this reads the same value in either state and apply() is not re-entrant.
+     Math.max(0, ...) is what makes expanding a no-op rather than a SHRINK on a viewport
+     narrower than the grid. */
+  function measureBleed() {
+    const cs = getComputedStyle(document.body);
+    const contentW = document.documentElement.clientWidth
+      - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+    return Math.max(0, (contentW - grid.getBoundingClientRect().width) / 2);
+  }
+  updateNetlistBleed = () => {
+    if (splitRow.classList.contains('row-expanded')) {
+      splitRow.style.setProperty('--row-bleed', measureBleed() + 'px');
+    }
+  };
+  function apply(expanded) {
+    splitRow.style.setProperty('--row-bleed', (expanded ? measureBleed() : 0) + 'px');
+    splitRow.classList.toggle('row-expanded', expanded);
+    btn.classList.toggle('active', expanded);
+    btn.title = expanded ? 'Restore the card to the page width' : 'Expand to the full browser width';
+  }
+  btn.addEventListener('click', () => {
+    const expanded = !splitRow.classList.contains('row-expanded');
+    localStorage.setItem('netlistExpanded', expanded ? '1' : '0');
+    apply(expanded);
+  });
+  apply(localStorage.getItem('netlistExpanded') === '1');
+})();
+
+// The bleed is viewport-dependent, so it has to be recomputed on resize - otherwise an
+// expanded row keeps the margins measured for the old viewport and either falls short of
+// the edges or overhangs them.
+window.addEventListener('resize', () => updateNetlistBleed());
 
 /* ---- editor module hierarchy panel toggle ---- */
 (() => {

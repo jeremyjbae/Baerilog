@@ -409,6 +409,85 @@
       white-space: nowrap;
     }
 
+    /* --- CPU / memory model card ---
+       The register block fills COLUMN-major in FOUR groups of eight (r0-r7,
+       r8-r15, r16-r23, r24-r31), each group carrying its own "Expected | DUT"
+       header. Under grid-auto-flow: column it is the ROW count that drives the
+       wrap - the same trap verify/index.html and the emulator's register grid
+       both document - so the template is 9 rows (header + 8) by 4 columns, and
+       changing either count means changing the other.
+
+       pc/sp/sreg live in a SEPARATE container below rather than as more grid
+       items: they span the full width, and a 37th item in a 4x9 grid would start
+       a fifth column instead. The two containers share a rounded frame between
+       them (12px on the top corners, 12px on the bottom). */
+    .model-bind {
+      font: 11px/1.7 "SF Mono", Menlo, Consolas, monospace;
+      color: #3a3a3c;
+      background: #f2f2f7;
+      border-radius: 10px;
+      padding: 8px 12px;
+      margin-bottom: 12px;
+    }
+    .model-bind b { color: #1c1c1e; font-weight: 600; }
+    .model-bind .miss { color: #ff3b30; }
+    .model-bind .alias { color: #8e8e93; }
+    .model-verdict {
+      font-size: 12px;
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      background: #f2f2f7;
+      color: #3a3a3c;
+    }
+    .model-verdict.pass { background: #e8f7ec; color: #248a3d; }
+    .model-verdict.fail { background: #ffeceb; color: #d70015; }
+    .model-verdict b { font-weight: 600; }
+    .model-verdict .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+    .compare-grid {
+      display: grid; grid-auto-flow: column;
+      grid-template-rows: repeat(9, auto); grid-template-columns: repeat(4, 1fr);
+      gap: 1px; background: #1c1c1e; border-radius: 12px 12px 0 0; overflow: hidden;
+      font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+    }
+    /* Half width cannot hold four groups, so it becomes two of sixteen - and the
+       row count has to move with the column count or the items keep flowing
+       9-per-column and the arrangement is silently wrong. */
+    .card:not(.full) .compare-grid { grid-template-rows: repeat(17, auto); grid-template-columns: repeat(2, 1fr); }
+    .cmp-row { display: grid; grid-template-columns: 4ch 1fr 3.5ch; gap: 8px; padding: 3px 12px; background: #232326; }
+    .cmp-row .rn { color: #5ac8fa; }
+    .cmp-row .rv { color: #e5e5ea; text-align: right; }
+    .cmp-row .rv.ref { color: #8e8e93; }
+    .cmp-row.hdr { background: #1c1c1e; color: #8e8e93; font-size: 11px; }
+    .cmp-row.hdr .rv { color: #8e8e93; }
+    /* changed by this instruction - the same "about to be written" green the
+       other apps use for a pending write */
+    .cmp-row.chg { background: #2c2c2e; }
+    .cmp-row .was { color: #8e8e93; }
+    .cmp-row .now { color: #30d158; }
+    .cmp-row.diff { background: rgba(255,59,48,0.22); }
+    .cmp-row.diff .rv, .cmp-row.diff .rv.ref, .cmp-row.diff .now { color: #ff453a; font-weight: 700; }
+    .compare-foot {
+      background: #1c1c1e; border-radius: 0 0 12px 12px; overflow: hidden;
+      font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+      border-top: 1px solid #3a3a3c;
+    }
+    .cmp-foot { display: grid; grid-template-columns: 6ch 1fr 8ch; gap: 8px; padding: 3px 12px; background: #232326; }
+    .cmp-foot + .cmp-foot { border-top: 1px solid #1c1c1e; }
+    .cmp-foot .rn { color: #5ac8fa; }
+    .cmp-foot .rv { color: #e5e5ea; text-align: center; }
+    .cmp-foot .rv.ref { color: #8e8e93; text-align: right; }
+    .cmp-foot .was { color: #8e8e93; }
+    .cmp-foot .now { color: #30d158; }
+    .cmp-foot.diff { background: rgba(255,59,48,0.22); }
+    .cmp-foot.diff .rv, .cmp-foot.diff .rv.ref, .cmp-foot.diff .now { color: #ff453a; font-weight: 700; }
+    /* a flag letter: uppercase and bright when set, lowercase and dim when clear -
+       two encodings of one bit, so the row survives greyscale and colour blindness */
+    .flag { color: #3a3a3c; }
+    .flag.on { color: #e5e5ea; }
+    .cmp-foot.diff .flag { color: #ff453a; }
+    .cmp-foot.diff .flag.on { color: #ff453a; font-weight: 700; }
+
     /* --- memory viewer card --- */
     .mem-radix-toggle {
       display: flex;
@@ -611,6 +690,25 @@
         <div class="wave-empty" id="waveEmpty">No simulation data yet — run a design to see waveforms.</div>
         <div class="badge-row" id="badgeRow"></div>
       </div>
+    </div>
+
+    <div class="card full" id="card-model">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>CPU / Memory Model</h2>
+      <p>Runs a reference model of the AVR subset alongside the design and compares <code>pc</code>, <code>r0</code>–<code>r31</code> and the memories · the model implements correct AVR semantics, so a mismatch means the RTL and the ISA disagree</p>
+      <div class="toolbar">
+        <label class="mem-radix-toggle">
+          <input type="checkbox" id="modelStopCheckbox">
+          Stop Simulation when mismatching model
+        </label>
+        <span class="time-label">after:</span>
+        <input class="num-input" id="modelStopAfter" type="number" min="0" step="10" value="10">
+        <span class="time-label">time unit</span>
+      </div>
+      <div class="model-bind" id="modelBind"></div>
+      <div class="model-verdict" id="modelVerdict"></div>
+      <div class="compare-grid" id="modelGrid"></div>
+      <div class="compare-foot" id="modelFoot"></div>
+      <div class="wave-empty" id="modelEmpty">No simulation data yet — run a design to compare it against the model.</div>
     </div>
 
     <div class="card full" id="card-memory">
@@ -1855,6 +1953,18 @@ class Simulator {
   run() {
     this._changedThisDelta = 0;
     this._settle();
+    /* Snapshot every memory as it stands once the initial blocks have run and
+       before any time has passed - i.e. after $readmemh, and before the first
+       clock edge can overwrite anything. Memories carry no history, so this is
+       the only way to know what a design STARTED with, and the CPU model needs
+       exactly that: a program's initialised data (its strings, its globals) is
+       part of the image, and a model that read zeros there would diverge from
+       the design for a reason that is the harness's fault rather than the RTL's.
+       Pure observation - nothing reads it during the run. */
+    for (const name in this.memories) {
+      const mem = this.memories[name];
+      mem.initialCells = mem.cells.map(c => ({ v: c.v, x: c.x, z: c.z }));
+    }
     let steps = 0;
     while (!this.finished && steps < this.maxDeltaIters * 4) {
       steps++;
@@ -2432,13 +2542,15 @@ endmodule`,
 
   '4-bit Shift Register (hierarchical)': `// top module instantiates 4 copies of dff below - each bit
 // shifts into the next on the clock edge, LSB fed from serial_in
-module dff(clk, d, q);
-  input clk;
-  input d;
-  output q;
-  reg q;
+module dff(
+  input clk,
+  input d,
+  output reg q
+);
+
   always @(posedge clk)
     q <= d;
+
 endmodule
 
 module shiftreg_tb;
@@ -2466,38 +2578,16 @@ module shiftreg_tb;
   end
 endmodule`,
 
-  'Tri-State Bus (X/Z demo)': `module tristate_tb;
-  reg enable;
-  reg [3:0] data;
-  wire [3:0] bus;
-
-  // classic tri-state driver: the bus only carries data while enabled,
-  // and floats to Z (high-impedance/disconnected) the rest of the time
-  assign bus = enable ? data : 4'bzzzz;
-
-  initial begin
-    data = 4'hA;
-    enable = 0;
-    #10 $display("disabled: bus=%h", bus);
-    #10 enable = 1;
-    #10 $display("enabled:  bus=%h", bus);
-    #10 enable = 0;
-    #10 $display("disabled again: bus=%h (floats back to z)", bus);
-    data = 4'bxxxx;   // driver corrupted/uninitialized
-    #5 enable = 1;
-    #10 $display("driven by unknown data: bus=%h", bus);
-    #5 $finish;
-  end
-endmodule`,
-
-  '4-bit Adder': `module adder4(a, b, sum, cout);
-  input [3:0] a, b;
-  output [3:0] sum;
-  output cout;
+  '4-bit Adder': `module adder4(
+  input [3:0] a, b,
+  output [3:0] sum,
+  output cout
+);
 
   // carry-out via concatenation: {cout, sum} is 5 bits wide, so this widens
   // the addition itself and reads the extra top bit back off as the carry
   assign {cout, sum} = a + b;
+
 endmodule
 
 module adder4_tb;
@@ -2519,78 +2609,6 @@ module adder4_tb;
   end
 endmodule`,
 
-  '8-bit ROM': `module rom (input [7:0] addr, output [7:0] data);
-  reg [7:0] mem [0:'hff];
-
-  assign data = mem[addr];
-
-  // loads mem[] from a file attached via the Memory Viewer card below -
-  // this app has no real filesystem access over file://, so $readmemh can
-  // only resolve a filename the user has already attached there
-  initial $readmemh("rom.txt", mem, 0);
-endmodule
-
-module rom_tb;
-  reg  [7:0] addr;
-  wire [7:0] data;
-
-  rom u0 (addr, data);
-
-  always #10
-    addr = addr + 1;
-
-  initial begin
-    addr = 0;
-    #15 $display("addr=%d data=%h", addr, data);
-    #10 $display("addr=%d data=%h", addr, data);
-    #10 $display("addr=%d data=%h", addr, data);
-    #100 $finish;
-  end
-endmodule`,
-
-  '8-bit RAM': `module ram (input clk, input we, input [7:0] addr, input [7:0] wdata, output [7:0] rdata);
-  reg [7:0] mem [0:'hff];
-
-  always@(posedge clk)
-    if(we) mem[addr] = wdata;
-
-  assign rdata = mem[addr];
-
-  // loads mem[] from a file attached via the Memory Viewer card below -
-  // this app has no real filesystem access over file://, so $readmemh can
-  // only resolve a filename the user has already attached there
-  initial $readmemh("ram.txt", mem, 0);
-endmodule
-
-module ram_tb;
-  reg  clk, we;
-  reg  [7:0] addr, wdata;
-  wire [7:0] rdata;
-
-  ram u0 (clk, we, addr, wdata, rdata);
-
-  always#10
-    clk <= ~clk;
-
-  always@(posedge clk) begin
-    addr <= addr + 1;
-  end
-
-  initial begin
-    addr = 1;
-    wdata = 8'hA;
-    clk = 0;
-    we = 0;
-    #15 $display("addr=%d data=%h", addr, rdata);
-    #10 $display("addr=%d data=%h", addr, rdata);
-    #10 $display("addr=%d data=%h", addr, rdata);
-    we = 1;
-    #30 $display("addr=%d data=%h", addr, rdata);
-    #10 $display("addr=%d data=%h", addr, rdata);
-    #100 $finish;
-  end
-endmodule`,
-
   '8-bit Calculator': `/* 
 Instruction Set
 | Bit 7 | Bit 6 | Bit 5 | Bit 4 | Bit 3 | Bit 2 | Bit 1 | Bit 0 |           Function           |  Assembly code   |
@@ -2607,7 +2625,12 @@ Opcode
 |   1   |   1   |   SHR    | (not implemented)
 */
 
-module calc (input clk, input rst_n, output [7:0] addr, input [7:0] data);
+module calc (
+  input clk, 
+  input rst_n, 
+  output [7:0] addr, 
+  input [7:0] data
+);
   reg [7:0] results;
 
   always@(posedge clk or negedge rst_n) begin
@@ -2629,8 +2652,11 @@ module calc (input clk, input rst_n, output [7:0] addr, input [7:0] data);
 
 endmodule
 
-module pc (input clk, input rst_n, output [7:0] pc);
-  reg [7:0] pc;
+module pc (
+  input clk, 
+  input rst_n, 
+  output reg [7:0] pc
+);
 
   always@(posedge clk or negedge rst_n) begin
     if(!rst_n)
@@ -2641,7 +2667,12 @@ module pc (input clk, input rst_n, output [7:0] pc);
 
 endmodule
 
-module rom (input [7:0] addr, output [7:0] data);
+/* ---- Testbench (Skip Synthesis)  ---- */
+module rom (
+  input [7:0] addr, 
+  output [7:0] data
+);
+
   reg [7:0] mem [0:'hff];
 
   assign data = mem[addr];
@@ -2653,7 +2684,11 @@ module rom (input [7:0] addr, output [7:0] data);
 
 endmodule
 
-module system (input clk, input rst_n);
+module system (
+  input clk, 
+  input rst_n
+);
+
   wire [7:0] addr;
   wire [7:0] data;
 
@@ -2716,7 +2751,17 @@ Test Code (rom.txt)
 00100000 // NOP
 */        
 
-module cpu (input clk, input rst_n, output [7:0] iaddr, input [7:0] inst, output [7:0] daddr, output we, output [7:0] wdata, input [7:0] rdata);
+module cpu (
+  input clk, 
+  input rst_n, 
+  output [7:0] iaddr, 
+  input [7:0] inst, 
+  output [7:0] daddr, 
+  output we, 
+  output [7:0] wdata, 
+  input [7:0] rdata
+);
+
   reg [7:0] results;
   wire [7:0] daddr;
   wire      gt0;
@@ -2753,8 +2798,13 @@ module cpu (input clk, input rst_n, output [7:0] iaddr, input [7:0] inst, output
 
 endmodule
 
-module pc (input clk, input rst_n, input [7:0] inst, input gt0, output [7:0] pc);
-  reg [7:0] pc;
+module pc (
+  input clk, 
+  input rst_n, 
+  input [7:0] inst, 
+  input gt0, 
+  output reg [7:0] pc
+);
 
   always@(posedge clk or negedge rst_n) begin
     if(!rst_n)
@@ -2769,7 +2819,12 @@ module pc (input clk, input rst_n, input [7:0] inst, input gt0, output [7:0] pc)
 
 endmodule
 
-module rom (input [7:0] addr, output [7:0] data);
+/* ---- Testbench (Skip Synthesis)  ---- */
+module rom (
+  input [7:0] addr, 
+  output [7:0] data
+);
+
   reg [7:0] mem [0:'hff];
 
   assign data = mem[addr];
@@ -2781,7 +2836,14 @@ module rom (input [7:0] addr, output [7:0] data);
 
 endmodule
 
-module ram (input clk, input we, input [7:0] addr, input [7:0] wdata, output [7:0] rdata);
+module ram (
+  input clk, 
+  input we, 
+  input [7:0] addr, 
+  input [7:0] wdata, 
+  output [7:0] rdata
+);
+
   reg [7:0] mem [0:'hff];
 
   always@(posedge clk)
@@ -2795,7 +2857,11 @@ module ram (input clk, input we, input [7:0] addr, input [7:0] wdata, output [7:
   initial $readmemh("ram.txt", mem, 0);
 endmodule
 
-module system (input clk, input rst_n);
+module system (
+  input clk, 
+  input rst_n
+);
+
   wire [7:0] inst;
   wire [7:0] iaddr;
   wire [7:0] daddr;
@@ -2928,53 +2994,108 @@ module rf_tb;
   end
 endmodule`,
 
-  '8-bit CPU (16-bit instruction)': `
-/* reduced AVR2 instruction */        
+  '8-bit CPU (16-bit instruction)': `/* 8-bit CPU (reduced AVR2 instruction) */
 
-module cpu (input clk, input rst_n, output [15:0] iaddr, input [15:0] inst, output [7:0] daddr, output we, output [7:0] wdata, input [7:0] rdata);
-  wire [15:0] pc, pc_nxt;
-  wire [3:0] opcode;
+module cpu (
+  input clk, 
+  input rst_n, output [15:0] iaddr, 
+  input [15:0] inst, 
+  output [15:0] daddr, 
+  output we, 
+  output [7:0] wdata, 
+  input [7:0] rdata
+);
+
+  wire [15:0] pc;
+  reg [15:0] pc_nxt;
+  wire [15:0] sp, sp_nxt;
+  reg  [3:0] opcode;
   wire [7:0] rd, rr;
   wire [7:0] alu_out;
   wire [3:0] sreg;
+  reg sreg_we;
   reg [4:0] rf_idx_d, rf_idx_r;
   reg       rf_we;
   reg [7:0] rf_wdata;
-  reg [5*8-1:0] debug_inst;
+  wire retire;
+  reg [39:0] debug_inst;
 
-  assign pc_nxt = pc + 1;
+  assign sp = 16'b0;      // Not Implemented
+  assign sp_nxt = 16'b0;  // Not Implemented
   assign iaddr = pc;
-  assign daddr = 8'b0;    // Not Implemented
+  assign daddr = 16'b0;    // Not Implemented
   assign we = 1'b0;       // Not Implemented
   assign wdata = 8'b0;    // Not Implemented
+  assign retire = 1'b1;   // Not Implemented
 
   always@(*) begin
-    if(~inst[15] && ~inst[14]) begin
-      debug_inst <= u_alu.debug_alu; 
-      rf_we <= 1'b1;
-      opcode <= inst[13:10];
-      rf_idx_d <= inst[8:4];
-      rf_idx_r <= {inst[9], inst[3:0]};
-      rf_wdata <= alu_out;
-    end
-    else if(inst[15] && inst[14]) begin
-      debug_inst <= "LDI";
-      rf_we <= 1'b1;
-      rf_idx_d <= inst[7:4] + 5'b10000;
-      rf_wdata <= {inst[11:8], inst[3:0]};
-    end
-    else begin
-      debug_inst <= "ERR";
-    end
+    sreg_we <= 1'b0;
+    casex(inst[15:10])
+
+      6'b00xxxx: begin // alu
+        debug_inst <= u_alu.debug_alu; 
+        opcode <= inst[13:10];
+        if(opcode == 4'b0101)
+          rf_we <= 1'b0;
+        else rf_we <= 1'b1;
+        sreg_we <= 1'b1;
+        rf_idx_d <= inst[8:4];
+        rf_idx_r <= {inst[9], inst[3:0]};
+        rf_wdata <= alu_out;
+        pc_nxt <= pc + 1;
+      end
+
+      6'b1110xx: begin // ldi
+        debug_inst <= "LDI";
+        rf_we <= 1'b1;
+        rf_idx_d <= inst[7:4] + 5'b10000;
+        rf_wdata <= {inst[11:8], inst[3:0]};
+        pc_nxt <= pc + 1;
+      end
+
+      6'b1100xx: begin // rjmp (offset)
+        debug_inst <= "RJMP";
+        pc_nxt <= pc + {inst[11], inst[11], inst[11], inst[11], inst[11:0]} + 1;
+      end
+
+      6'b111100: begin // breq
+        debug_inst <= "BREQ";
+        if(sreg[1])
+          pc_nxt <= pc + {inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9:3]} + 1;
+        else
+          pc_nxt <= pc + 1;
+      end
+
+      6'b111101: begin // brne
+        debug_inst <= "BRNE";
+        if(~sreg[1])
+          pc_nxt <= pc + {inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9:3]} + 1;
+        else
+          pc_nxt <= pc + 1;
+      end
+      
+      default: begin
+        debug_inst <= "ERR"; 
+        pc_nxt <= pc + 1;
+      end
+    endcase
   end
 
-  alu u_alu (.clk(clk), .rst_n(rst_n), .opcode(opcode), .rd(rd), .rr(rr), .alu_out(alu_out), .sreg(sreg));
+  alu u_alu (.clk(clk), .rst_n(rst_n), .opcode(opcode), .rd(rd), .rr(rr), .sreg_we(sreg_we), .alu_out(alu_out), .sreg(sreg));
   rf u_rf (.clk(clk), .rst_n(rst_n), .rf_we(rf_we), .rf_idx_d(rf_idx_d), .rf_idx_r(rf_idx_r), .rf_wdata(rf_wdata), .rd(rd), .rr(rr));
   pc u_pc (.clk(clk), .rst_n(rst_n), .inst(inst), .pc_nxt(pc_nxt), .pc(pc));
 
 endmodule
 
-module alu (input clk, input rst_n, input [3:0] opcode, input [7:0] rd, rr, output reg [7:0] alu_out, output [3:0] sreg);
+module alu (
+  input clk, 
+  input rst_n, 
+  input [3:0] opcode, 
+  input [7:0] rd, rr, 
+  input sreg_we,
+  output reg [7:0] alu_out, 
+  output [3:0] sreg
+);
 
 reg sreg_v; // Overflow
 reg sreg_n; // Negative
@@ -2995,7 +3116,7 @@ begin
     sreg_z <= 4'b0;
     sreg_c <= 4'b0;
   end
-  else begin
+  else if(sreg_we) begin
     sreg_v <= v_nxt;
     sreg_n <= n_nxt;
     sreg_z <= z_nxt;
@@ -3045,7 +3166,7 @@ begin
   endcase
 end
 
-reg [3*8-1:0] debug_alu;
+reg [23:0] debug_alu;
 
 always@(*)
 begin
@@ -3065,7 +3186,14 @@ end
 
 endmodule
 
-module rf (input clk, input rst_n, input rf_we, input [4:0] rf_idx_d, rf_idx_r, input [7:0] rf_wdata, output [7:0] rd, rr);
+module rf (
+  input clk, 
+  input rst_n, 
+  input rf_we, 
+  input [4:0] rf_idx_d, rf_idx_r, 
+  input [7:0] rf_wdata, 
+  output [7:0] rd, rr
+);
 
 wire [7:0] r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31;
 wire [31:0] we_1h;
@@ -3080,7 +3208,13 @@ rf_rdec u_rdec_r (.idx(rf_idx_r), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .
 
 endmodule
 
-module rf_reg_32 (input clk, input rst_n, input [31:0] we_1h, input [7:0] rf_wdata, output [7:0] r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31);
+module rf_reg_32 (
+  input clk, 
+  input rst_n, 
+  input [31:0] we_1h, 
+  input [7:0] rf_wdata, 
+  output [7:0] r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31
+);
 
 rf_reg u_r0 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 0]), .wdata(rf_wdata), .r(r0 ));
 rf_reg u_r1 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 1]), .wdata(rf_wdata), .r(r1 ));
@@ -3224,8 +3358,13 @@ end
 
 endmodule
 
-module pc (input clk, input rst_n, input [15:0] inst, input [15:0] pc_nxt, output [15:0] pc);
-  reg [15:0] pc;
+module pc (
+  input clk, 
+  input rst_n, 
+  input [15:0] inst, 
+  input [15:0] pc_nxt, 
+  output reg [15:0] pc
+);
 
   always@(posedge clk or negedge rst_n) begin
     if(!rst_n)
@@ -3237,7 +3376,12 @@ module pc (input clk, input rst_n, input [15:0] inst, input [15:0] pc_nxt, outpu
 
 endmodule
 
-module rom_256x16 (input [15:0] addr, output [15:0] data);
+/* ---- Testbench (Skip Synthesis)  ---- */
+module rom_256x16 (
+  input [15:0] addr, 
+  output [15:0] data
+);
+
   reg [15:0] mem [0:'hff];
 
   assign data = mem[addr[15:0]];
@@ -3249,30 +3393,37 @@ module rom_256x16 (input [15:0] addr, output [15:0] data);
 
 endmodule
 
-module ram_256x8 (input clk, input we, input [7:0] addr, input [7:0] wdata, output [7:0] rdata);
-  reg [7:0] mem [0:'hff];
+module ram_4kx8 (
+  input clk, 
+  input we, 
+  input [7:0] addr, 
+  input [7:0] wdata, 
+  output [7:0] rdata
+);
+
+  reg [7:0] mem [0:'h10ff]; // 4K + 256
 
   always@(posedge clk)
     if(we) mem[addr] = wdata;
 
-  assign rdata = mem[addr];
+  assign rdata = mem[addr]; // 0x100 offset
 
   // loads mem[] from a file attached via the Memory Viewer card below -
   // this app has no real filesystem access over file://, so $readmemh can
   // only resolve a filename the user has already attached there
-  // initial $readmemh("ram.txt", mem, 0);
+  initial $readmemh("ram.txt", mem, 0);
 endmodule
 
 module system (input clk, input rst_n);
   wire [15:0] inst;
   wire [15:0] iaddr;
-  wire [7:0] daddr;
+  wire [16:0] daddr;
   wire [7:0] wdata;
   wire [7:0] rdata;
   wire we;
 
   rom_256x16 u_rom (iaddr, inst);
-  ram_256x8 u_ram (clk, we, daddr, wdata, rdata);
+  ram_4kx8 u_ram (clk, we, daddr, wdata, rdata);
   cpu u_cpu (clk, rst_n, iaddr, inst, daddr, we, wdata, rdata);
 
 endmodule
@@ -3432,6 +3583,637 @@ cffb // w07  rjmp -5        pc = 07 + 1 - 5 -> w03   backward
 };
 
 /* =========================================================================
+   CPU / MEMORY REFERENCE MODEL
+
+   A software model of the AVR subset the 16-bit-instruction CPU example
+   implements, plus a scoreboard that compares it against the design's own
+   register file, pc and memories - the same idea as verify/index.html, scoped
+   down to what this app can observe.
+
+   Three properties decide the whole shape of this code:
+
+   - It lives BELOW the EXAMPLES block on purpose. verify/index.html keeps a
+     byte-identical copy of everything from the LEXER banner up to EXAMPLES, so
+     putting the model here preserves that invariant by construction rather than
+     by remembering to re-sync.
+   - The Simulator is NOT touched. The check runs after a completed run, over the
+     recorded history, and a divergence is "stopped at" by re-running with a
+     lower maxTime - which is exact because a short run is a byte-identical
+     prefix of a long one (asserted in the harness, not assumed).
+   - MEMORIES HAVE NO HISTORY (they get the Memory Viewer's table instead of a
+     waveform row), so registers and pc are compared per clock while memory can
+     only be compared at end of run. Both are reported, each labelled with the
+     time it actually refers to; pretending the memory diff belongs to the
+     divergence would be the one genuinely misleading thing here.
+
+   The model is the AUTHORITY: it implements correct AVR semantics, so it reports
+   the example's real deviations rather than mirroring them.
+   ========================================================================= */
+
+/* Opcode table: [mask, match, mnemonic]. Order matters only in that every entry
+   is disjoint; the first match wins. Fields are AVR's: d = ir[8:4],
+   r = {ir[9], ir[3:0]}, LDI's d = 16 + ir[7:4] with K = ir[11:8]:ir[3:0].
+
+   The subset is everything `compiler/index.html` emits for its `ATmega644
+   (reduced AVR2)` target - LDI MOV LDS STS LD ST ADD ADC CP BREQ BRNE RJMP RCALL
+   RET - plus the ALU and branch forms the model already had (SUB SBC CPC AND EOR
+   OR NOP), which cost nothing to keep and which the hand-written test ROMs use.
+   So a compiled C program can be run against a design here, and anything OUTSIDE
+   the subset still stops the check rather than being guessed at.
+
+   Two mask facts are load-bearing, and both were checked against real encodings
+   rather than reasoned about:
+
+   - LDS/STS mask 0xfe0f pins the low nibble to zero, so PUSH (0x93cf) and POP
+     (0x900f) do NOT false-match them, and neither does LD Rd,Z+ (0x9001). Those
+     fall through to "outside the modelled subset", which is the honest answer:
+     the model does not implement them, and saying so beats silently executing a
+     post-increment load as a plain one.
+   - LD/ST are the LDD/STD q=0 encodings (0x8000 / 0x8200), and 0xfe0f pins q to
+     zero across all three of its scattered fields (ir[13], ir[11:10], ir[2:0]).
+     A nonzero displacement is therefore refused rather than executed as q=0.
+     The reduced-AVR2 backend only ever emits q=0, and only on Z. */
+const MODEL_OPS = [
+  [0xffff, 0x0000, 'NOP'],
+  [0xffff, 0x9508, 'RET'],
+  [0xfc00, 0x0c00, 'ADD'], [0xfc00, 0x1c00, 'ADC'],
+  [0xfc00, 0x1800, 'SUB'], [0xfc00, 0x0800, 'SBC'],
+  [0xfc00, 0x1400, 'CP'],  [0xfc00, 0x0400, 'CPC'],
+  [0xfc00, 0x2000, 'AND'], [0xfc00, 0x2400, 'EOR'],
+  [0xfc00, 0x2800, 'OR'],  [0xfc00, 0x2c00, 'MOV'],
+  [0xf000, 0xe000, 'LDI'], [0xf000, 0xc000, 'RJMP'],
+  [0xf000, 0xd000, 'RCALL'],
+  [0xfc07, 0xf001, 'BREQ'], [0xfc07, 0xf401, 'BRNE'],
+  [0xfe0f, 0x9000, 'LDS'], [0xfe0f, 0x9200, 'STS'],
+  [0xfe0f, 0x8000, 'LD'],  [0xfe0f, 0x8200, 'ST'],
+];
+
+// Two-word instructions: the operand word follows the opcode word in flash.
+const MODEL_TWO_WORD = new Set(['LDS', 'STS']);
+
+/* Data-space addresses that are NOT memory. Everything else - including the
+   printf ports below - is ordinary data memory, so a design with a flat RAM
+   matches the model byte for byte. */
+const MODEL_SPL = 0x5d, MODEL_SPH = 0x5e;
+/* The reduced-AVR2 backend lowers printf to a real USART write plus a small side
+   channel, so these are the addresses a compiled program uses to produce output:
+   UDR0 is the ATmega644's actual data register, while 0xfd-0xff are reserved
+   space that compiler/index.html uses as a simulator-only command port (they are
+   NOT silicon). The model STORES them like any other byte and additionally
+   decodes them for display - see writeData. */
+const MODEL_UDR0 = 0xc6, MODEL_ARG_L = 0xfd, MODEL_ARG_H = 0xfe, MODEL_CMD = 0xff;
+const MODEL_SVC_INT = 1, MODEL_SVC_EXIT = 10, MODEL_SVC_HEX = 34;
+
+function modelDecode(w) {
+  for (const [mask, match, name] of MODEL_OPS) if ((w & mask) === match) return name;
+  return null;
+}
+
+class CpuModel {
+  constructor(imem, dmemDepth, dinit) {
+    this.r = new Array(32).fill(0);
+    this.pc = 0;
+    /* SP is real state now: STS to SPL/SPH is how a compiled program sets up its
+       stack, and RCALL/RET move it. It resets to 0 as a real AVR's does - it is
+       the program's own `sts 0x5d/0x5e` that makes it usable, which keeps the
+       reset state honest and the program self-contained. */
+    this.sp = 0;
+    this.V = 0; this.N = 0; this.Z = 0; this.C = 0;
+    this.imem = imem;                       // array of 16-bit words, or null per word if X
+    /* Two separate structures on purpose. `dinit` is the data memory the design
+       STARTED with (its initialised globals and string literals) and is read-only;
+       `dmem` is only what the model itself wrote, which is what keeps
+       compareMemories' "the cells the model wrote" exact rather than drowning it
+       in every preloaded byte. */
+    this.dinit = dinit || null;             // array of bytes, or null per cell if X
+    this.dmem = new Map();                  // address -> byte, only what the model wrote
+    this.dmemDepth = dmemDepth || 0;        // the DESIGN's depth, for the out-of-range report
+    this.out = [];                          // characters the program printed (display only)
+    this.exitCode = null;
+  }
+
+  /* One data-space policy for all four memory instructions, so LDS/STS and LD/ST
+     cannot drift apart.
+
+     SPL/SPH are the stack pointer, not memory: `sts 0x5d, r16` MUST move SP or
+     RCALL/RET cannot work at all, and a design keeping SP in a register would
+     have no RAM byte there to compare against. The 0x00-0x1f window aliases the
+     register file exactly as the part does (and as the emulator's AvrCore does);
+     no compiled program reaches it, so the harness reaches it with a hand-built
+     ROM rather than leaving the branch untested. */
+  readData(addr) {
+    addr &= 0xffff;
+    if (addr < 32) return this.r[addr];
+    if (addr === MODEL_SPL) return this.sp & 0xff;
+    if (addr === MODEL_SPH) return (this.sp >> 8) & 0xff;
+    const v = this.dmem.get(addr);
+    if (v !== undefined) return v;
+    /* Fall back to what the design started with, then to 0. An X in the initial
+       image reads as 0 here deliberately: the model has to name SOME value, and
+       0 is what a zero-initialised RAM and the C standard's BSS both give. If
+       the design reads X there instead, its register goes X and the mismatch is
+       reported against the design - which is the right place for it. */
+    if (this.dinit) {
+      const d = this.dinit[addr];
+      if (d !== undefined && d !== null) return d & 0xff;
+    }
+    return 0;
+  }
+
+  writeData(addr, val) {
+    addr &= 0xffff;
+    val &= 0xff;
+    if (addr < 32) { this.r[addr] = val; return; }
+    if (addr === MODEL_SPL) { this.sp = (this.sp & 0xff00) | val; return; }
+    if (addr === MODEL_SPH) { this.sp = ((val << 8) | (this.sp & 0xff)) & 0xffff; return; }
+    this.dmem.set(addr, val);
+    /* The echo is DISPLAY ONLY and deliberately happens after the store: the byte
+       is in dmem either way, so a flat-RAM design still matches, and nothing here
+       can affect a comparison. */
+    if (addr === MODEL_UDR0) this.out.push(String.fromCharCode(val));
+    else if (addr === MODEL_CMD) this.service(val);
+  }
+
+  // The side channel's services. Only the ones the reduced-AVR2 backend uses:
+  // characters and strings go through UDR0 as real output.
+  service(which) {
+    const arg = (this.dmem.get(MODEL_ARG_L) || 0) | ((this.dmem.get(MODEL_ARG_H) || 0) << 8);
+    if (which === MODEL_SVC_INT) this.out.push(String((arg << 16) >> 16));  // int is 16-bit signed
+    else if (which === MODEL_SVC_HEX) this.out.push((arg & 0xffff).toString(16));
+    else if (which === MODEL_SVC_EXIT) this.exitCode = (arg << 16) >> 16;
+  }
+
+  word16(lo, hi) { return (this.r[lo] | (this.r[hi] << 8)) & 0xffff; }
+  push8(v) { this.writeData(this.sp, v); this.sp = (this.sp - 1) & 0xffff; }
+  pop8() { this.sp = (this.sp + 1) & 0xffff; return this.readData(this.sp); }
+
+  // One instruction. Returns {op} on success, or {stop:'reason'} when the model
+  // cannot honestly continue - an X instruction word or an opcode outside the
+  // subset. Stopping is not the same as agreeing, and the report says so.
+  step() {
+    const exitBefore = this.exitCode;
+    const w = this.imem[this.pc];
+    if (w === null || w === undefined) {
+      return { stop: 'instruction memory is X at word ' + hex16(this.pc) };
+    }
+    const op = modelDecode(w);
+    if (!op) {
+      return { stop: 'opcode ' + hex16(w) + ' at word ' + hex16(this.pc) + ' is outside the modelled subset' };
+    }
+    /* A two-word instruction's operand IS the following flash word, so an X there
+       is as fatal as an X opcode - executing LDS against an unknown address would
+       invent a load from nowhere. */
+    const isLong = MODEL_TWO_WORD.has(op);
+    const k16 = isLong ? this.imem[this.pc + 1] : 0;
+    if (isLong && (k16 === null || k16 === undefined)) {
+      return { stop: 'the operand word of ' + op + ' at word ' + hex16(this.pc) + ' is X' };
+    }
+    const d = (w >> 4) & 0x1f, s = ((w >> 5) & 0x10) | (w & 0xf);
+    const a = this.r[d], b = this.r[s];
+    let next = this.pc + (isLong ? 2 : 1), res;
+    // Flag rules are written out per the ISA manual rather than shared, because
+    // the subtle ones differ: SBC/CPC AND the previous Z into the new one, which
+    // is what makes a multi-byte compare answer for the whole value.
+    const addFlags = (res) => {
+      const o = res & 0xff;
+      this.C = res > 0xff ? 1 : 0;
+      this.V = ((a & 0x80) && (b & 0x80) && !(o & 0x80)) || (!(a & 0x80) && !(b & 0x80) && (o & 0x80)) ? 1 : 0;
+      this.N = (o & 0x80) ? 1 : 0;
+      this.Z = o === 0 ? 1 : 0;
+    };
+    const subFlags = (res, carryIn) => {
+      const o = res & 0xff;
+      this.C = res < 0 ? 1 : 0;
+      this.V = ((a & 0x80) && !(b & 0x80) && !(o & 0x80)) || (!(a & 0x80) && (b & 0x80) && (o & 0x80)) ? 1 : 0;
+      this.N = (o & 0x80) ? 1 : 0;
+      this.Z = carryIn ? (o === 0 && this.Z ? 1 : 0) : (o === 0 ? 1 : 0);
+    };
+    const logicFlags = (o) => { this.V = 0; this.N = (o & 0x80) ? 1 : 0; this.Z = o === 0 ? 1 : 0; };
+    const brDisp = () => { let k = (w >> 3) & 0x7f; return k & 0x40 ? k - 0x80 : k; };
+    switch (op) {
+      case 'NOP': break;
+      case 'ADD': res = a + b;          addFlags(res);      this.r[d] = res & 0xff; break;
+      case 'ADC': res = a + b + this.C; addFlags(res);      this.r[d] = res & 0xff; break;
+      case 'SUB': res = a - b;          subFlags(res, false); this.r[d] = res & 0xff; break;
+      case 'SBC': res = a - b - this.C; subFlags(res, true);  this.r[d] = res & 0xff; break;
+      case 'CP':  res = a - b;          subFlags(res, false); break;  // no write-back
+      case 'CPC': res = a - b - this.C; subFlags(res, true);  break;  // no write-back
+      case 'AND': this.r[d] = a & b; logicFlags(this.r[d]); break;
+      case 'EOR': this.r[d] = a ^ b; logicFlags(this.r[d]); break;
+      case 'OR':  this.r[d] = a | b; logicFlags(this.r[d]); break;
+      case 'MOV': this.r[d] = b; break;                              // MOV touches no flag
+      case 'LDI': this.r[16 + ((w >> 4) & 0xf)] = (((w >> 8) & 0xf) << 4) | (w & 0xf); break;
+      case 'RJMP': { let k = w & 0xfff; if (k & 0x800) k -= 0x1000; next = this.pc + 1 + k; break; }
+      case 'BREQ': if (this.Z) next = this.pc + 1 + brDisp(); break;
+      case 'BRNE': if (!this.Z) next = this.pc + 1 + brDisp(); break;
+
+      /* --- loads and stores. None of the four touches a flag. --- */
+      case 'LDS': this.r[d] = this.readData(k16); break;
+      case 'STS': this.writeData(k16, this.r[d]); break;
+      // LD/ST are the q=0 displacement forms on Z, which is r31:r30.
+      case 'LD':  this.r[d] = this.readData(this.word16(30, 31)); break;
+      case 'ST':  this.writeData(this.word16(30, 31), this.r[d]); break;
+
+      /* --- call and return. The pushed return address is a WORD address, which
+             is what a real AVR pushes and what the emulator's AvrCore does; note
+             compiler/index.html's own AvrSim pushes its BYTE-addressed pc
+             instead, so do not "fix" this to agree with that one. Lo goes to the
+             higher address, matching the frame layout documented in CLAUDE.md. */
+      case 'RCALL': {
+        let k = w & 0xfff; if (k & 0x800) k -= 0x1000;
+        const ret = (this.pc + 1) & 0xffff;
+        this.push8(ret & 0xff);
+        this.push8((ret >> 8) & 0xff);
+        next = this.pc + 1 + k;
+        break;
+      }
+      case 'RET': {
+        const hi = this.pop8();
+        const lo = this.pop8();
+        next = ((hi << 8) | lo) & 0xffff;
+        break;
+      }
+    }
+    this.pc = next & 0xffff;
+    /* A write to the command port asking for exit is the end of the program, not
+       a failure and not a limitation: without reporting it the model would carry
+       on into the helper bodies that follow _start and eventually stop on
+       something it does not implement, which reads as the model giving up at
+       exactly the moment the program in fact finished.
+
+       Reported only on the step that SET it, not on every step after - exitCode
+       stays set once written, and a caller that keeps stepping deserves one
+       answer per event rather than a latch. */
+    if (this.exitCode !== null && exitBefore === null) {
+      return { op, exited: true, code: this.exitCode };
+    }
+    return { op };
+  }
+}
+
+function hex16(v) { return (v >>> 0).toString(16).padStart(4, '0'); }
+
+/* The renderer's valueAtTime() does the same job but lives below the UI WIRING
+   banner, and everything above that banner has to stay extractable headlessly -
+   so this section keeps its own copy rather than reaching downwards.
+
+   The scoreboard samples ~33 signals at every clock edge, so a plain per-lookup
+   scan would be O(edges x history) - quadratic in run length, which is exactly
+   the shape of stall this app already documents at 812,000 history entries. The
+   sample times are monotonically increasing, so a cursor per signal makes the
+   whole sweep linear instead. Sampler.at() therefore REQUIRES ascending t. */
+function modelValueAt(sig, t) {
+  const hist = sig.history;
+  let v = hist[0][1];
+  for (let i = 0; i < hist.length && hist[i][0] <= t; i++) v = hist[i][1];
+  return v;
+}
+function makeSampler(sig) { return { hist: sig.history, i: 0, v: sig.history[0][1] }; }
+function sampleAt(s, t) {
+  while (s.i < s.hist.length && s.hist[s.i][0] <= t) { s.v = s.hist[s.i][1]; s.i++; }
+  return s.v;
+}
+/* The value a flip-flop would SAMPLE at the edge at time t, i.e. the one that was
+   already settled while the clock was still low - everything the edge itself
+   causes is timestamped t, so "strictly before t" is exactly the setup-time
+   value. Only `retire` is read this way (see the edge sweep below); a cursor must
+   be advanced by one function or the other and never by both, since the two leave
+   it at different places for the same t. */
+function sampleBefore(s, t) {
+  while (s.i < s.hist.length && s.hist[s.i][0] < t) { s.v = s.hist[s.i][1]; s.i++; }
+  return s.v;
+}
+
+/* ---- binding architectural state to RTL signals, by naming convention ----
+   A design passes register values through ports, so r0..r31 legitimately exist
+   at several scopes at once (in the CPU example: rf's own wires, rf_reg_32's
+   ports, and both read decoders' inputs) and so does pc. They are the same nets,
+   so their histories are identical - the rule is therefore "shallowest path
+   wins, but only after checking the candidates actually agree", and a genuine
+   disagreement is reported rather than silently resolved. */
+function bindCpuModel(result) {
+  const signals = result.signals, memories = result.memories || {};
+  const names = Object.keys(signals);
+  const leafOf = n => n.split('.').pop();
+  const byDepth = (a, b) => a.split('.').length - b.split('.').length || a.length - b.length;
+  const b = { missing: [], notes: [] };
+
+  const oneBit = names.filter(n => signals[n].width === 1);
+  b.clk = oneBit.filter(n => leafOf(n) === 'clk').sort(byDepth)[0] || null;
+  b.rst = oneBit.filter(n => leafOf(n) === 'rst_n').sort(byDepth)[0] || null;
+
+  // pc, sp and sreg all pick the shallowest candidate and all report a genuine
+  // alias disagreement rather than guessing - only pc is required.
+  const pickBy = (leaf, wide) => {
+    const c = names.filter(n => leafOf(n) === leaf && (wide ? signals[n].width > 1 : signals[n].width === 1)).sort(byDepth);
+    if (c.length > 1) {
+      const dis = c.slice(1).filter(n => !sameHistory(signals[c[0]], signals[n]));
+      if (dis.length && !b.ambiguous) b.ambiguous = leaf + ': ' + c[0] + ' and ' + dis[0] + ' are different signals';
+    }
+    return { pick: c[0] || null, aliases: c.length };
+  };
+  const pickWide = (leaf) => pickBy(leaf, true);
+
+  /* `retire` is the design's own statement that the instruction in flight has
+     just finished, and it is what the edge sweep below uses to decide WHICH clock
+     edges are instruction boundaries. It is OPTIONAL: without it every posedge is
+     taken as a boundary, which is what the one-instruction-per-clock designs here
+     do, and the card says which rule it used. 1-bit by definition, so the width
+     filter stops a multi-bit signal that merely shares the name from binding. */
+  const retirePick = pickBy('retire', false);
+  b.retire = retirePick.pick; b.retireAliases = retirePick.aliases;
+
+  const pcPick = pickWide('pc');
+  b.pc = pcPick.pick; b.pcAliases = pcPick.aliases;
+  const spPick = pickWide('sp');
+  b.sp = spPick.pick; b.spAliases = spPick.aliases;
+  const sregPick = pickWide('sreg');
+  b.sreg = sregPick.pick; b.sregAliases = sregPick.aliases;
+  b.sregWidth = b.sreg ? signals[b.sreg].width : 0;
+
+  /* The four flags are bound INDIVIDUALLY by name, which is what makes them
+     comparable at all: a packed `sreg` word carries no statement about which bit
+     is which, so comparing against it would be guessing at the bit order - and
+     guessing wrong reports a correct design as broken. `sreg_v`/`_n`/`_z`/`_c`
+     name themselves.
+
+     Each is independent and OPTIONAL: a design that has only implemented Z gets
+     Z checked and the rest reported as absent, which is the useful behaviour
+     while a core is being built up. They are 1-bit by definition, so the width
+     filter is what stops a 4-bit `sreg_v` bus (a different signal that merely
+     shares a prefix) from binding. The packed `sreg` binding above stays as the
+     display fallback for a design that only exposes the word. */
+  b.flags = {};
+  b.flagAliases = {};
+  for (const [flag, leaf] of [['V', 'sreg_v'], ['N', 'sreg_n'], ['Z', 'sreg_z'], ['C', 'sreg_c']]) {
+    const p = pickBy(leaf, false);
+    b.flags[flag] = p.pick;
+    b.flagAliases[flag] = p.aliases;
+  }
+  b.flagNames = ['V', 'N', 'Z', 'C'].filter(f => b.flags[f]);
+
+  const groups = new Map();
+  for (const n of names) {
+    const m = /^(.*\.)?r(\d+)$/.exec(n);
+    if (!m || +m[2] > 31 || signals[n].width !== 8) continue;
+    const p = m[1] || '';
+    if (!groups.has(p)) groups.set(p, new Set());
+    groups.get(p).add(+m[2]);
+  }
+  const full = [...groups.entries()].filter(([, s]) => s.size === 32).map(([p]) => p).sort(byDepth);
+  b.regPrefix = full[0] || null;
+  b.regAliases = full.length;
+  if (full.length > 1 && !b.ambiguous) {
+    const dis = full.slice(1).filter(p =>
+      !Array.from({ length: 32 }, (_, i) => i).every(i => sameHistory(signals[full[0] + 'r' + i], signals[p + 'r' + i])));
+    if (dis.length) b.ambiguous = 'register file: ' + full[0] + 'r* and ' + dis[0] + 'r* are different signals';
+  }
+
+  const mems = Object.entries(memories);
+  const wide = mems.filter(([, m]) => m.elemWidth > 8);
+  const byte = mems.filter(([, m]) => m.elemWidth <= 8);
+  b.imem = wide.length === 1 ? wide[0][0] : null;
+  b.dmem = byte.length === 1 ? byte[0][0] : null;
+  if (!b.imem && wide.length > 1) b.notes.push(wide.length + ' memories are wider than a byte - cannot tell which is instruction memory');
+  if (!b.imem && wide.length === 0) b.notes.push('no memory wider than a byte, so nothing holds 16-bit instructions');
+
+  if (!b.clk) b.missing.push('a 1-bit clk');
+  if (!b.pc) b.missing.push('a multi-bit pc');
+  if (!b.regPrefix) b.missing.push('an 8-bit r0..r31 register file');
+  if (!b.imem) b.missing.push('a 16-bit instruction memory');
+  b.ok = b.missing.length === 0 && !b.ambiguous;
+  return b;
+}
+
+function sameHistory(a, b) {
+  if (a.history.length !== b.history.length) return false;
+  for (let i = 0; i < a.history.length; i++) {
+    const [t1, v1] = a.history[i], [t2, v2] = b.history[i];
+    if (t1 !== t2 || v1.v !== v2.v || v1.x !== v2.x || v1.z !== v2.z) return false;
+  }
+  return true;
+}
+
+/* ---- the scoreboard ----
+   Compared in this order, stopping at the first mismatch: X-check, pc, then
+   r0..r31. An X in a compared field is a failure in its OWN right - coercing it
+   to 0 is how a real bug reads as a match.
+
+   The sample points are the posedges of the bound clock with reset released,
+   filtered by `retire` when the design has one; the model steps once per sample
+   and is compared immediately after. `retire` is the design's own statement that
+   the instruction in flight has just finished, so a multi-cycle core is checked at
+   its instruction boundaries instead of being compared mid-instruction against a
+   model that has already run ahead.
+
+   It is read PRE-EDGE - the value settled while the clock was still low - because
+   that is what "this cycle is the instruction's last" means and what a flip-flop
+   would sample; the same convention verify/index.html's core drives, where the
+   harness reads retire before poking clk=1. The edge then commits that
+   instruction, which is why the state compared AT t is still the post-edge value.
+   The distinction is invisible on a design that ties retire to 1 and decisive on
+   one where it is a function of state that the edge itself changes.
+
+   Without a retire signal every posedge is a boundary, which is exactly what the
+   one-instruction-per-clock designs here do and what this used to assume
+   unconditionally. */
+function checkCpuModel(result) {
+  const bind = bindCpuModel(result);
+  if (!bind.ok) return { bind, bound: false };
+
+  const imemDecl = result.memories[bind.imem];
+  const imem = imemDecl.cells.map(c => (c.x | c.z) ? null : (c.v >>> 0));
+  /* The instruction memory is read from its FINAL cells because nothing writes
+     it, but the data memory has to come from the initial snapshot: a program's
+     strings and initialised globals are part of its image, and by end of run the
+     design may have overwritten them. */
+  const dmemDecl = bind.dmem ? result.memories[bind.dmem] : null;
+  const dinit = dmemDecl && dmemDecl.initialCells
+    ? dmemDecl.initialCells.map(c => (c.x | c.z) ? null : (c.v & 0xff))
+    : null;
+  const model = new CpuModel(imem, dmemDecl ? dmemDecl.depth : 0, dinit);
+
+  /* The disassembly of a word, taken from the COMMENTS $readmemh recorded while
+     loading the instruction memory - a `rom.txt` from compiler/index.html carries
+     one per word, so the scoreboard can name the failing instruction in the
+     program's own terms instead of leaving a bare instruction number to be
+     counted out by hand. Keyed exactly as the Memory Viewer keys it (`mem.lo + i`,
+     one number that indexes cells, keys comments and is what gets displayed), so
+     the text quoted in the verdict is the text on that row of the table. A ROM
+     with no comments returns null everywhere and the verdict reads as it did. */
+  const asmAt = (word) => {
+    if (!imemDecl.comments || word < 0) return null;
+    return imemDecl.comments.get(imemDecl.lo + word) || null;
+  };
+
+  const clk = result.signals[bind.clk], rst = bind.rst ? result.signals[bind.rst] : null;
+  /* One cursor for retire, advanced STRICTLY before each edge (see sampleBefore).
+     Edges are visited in ascending order, so this stays linear in history length -
+     the same reason every other sampler here is a cursor. */
+  const retireSampler = bind.retire ? makeSampler(result.signals[bind.retire]) : null;
+  const edges = [];
+  let posedges = 0, retireX = 0;
+  for (let i = 1; i < clk.history.length; i++) {
+    const prev = clk.history[i - 1][1], [t, v] = clk.history[i];
+    if ((prev.x | prev.z) || (v.x | v.z)) continue;
+    if ((prev.v & 1) !== 0 || (v.v & 1) !== 1) continue;
+    if (rst) { const r = modelValueAt(rst, t); if ((r.x | r.z) || (r.v & 1) !== 1) continue; }
+    posedges++;
+    if (retireSampler) {
+      const rv = sampleBefore(retireSampler, t);
+      // An X retire is not an assertion of anything, so the edge is not a sample
+      // point - but it is COUNTED, because a design that leaves retire undriven
+      // would otherwise compare nothing and read as a pass.
+      if (rv.x | rv.z) { retireX++; continue; }
+      if ((rv.v & 1) !== 1) continue;
+    }
+    edges.push(t);
+  }
+  const sampling = { sampledBy: bind.retire ? 'retire' : 'posedge', posedges, retireX, sampled: edges.length };
+  /* Every verdict below carries how it was sampled, so the card can state the rule
+     it used rather than leave it to be inferred - stamped in one place instead of
+     being spelled out at each of the six exits. */
+  const done = (o) => Object.assign(o, sampling);
+  /* Stopping is not the same as agreeing: a design whose retire never asserts has
+     no instruction boundaries at all, and saying so is the honest report. Reported
+     with a named reason rather than as "0 instructions matched" with no
+     explanation, and only when there were posedges to filter in the first place -
+     no clock activity at all is a different (and pre-existing) situation. */
+  if (bind.retire && edges.length === 0 && posedges > 0) {
+    return done({ bind, bound: true, stopped: 'retire is never 1 at a clock edge ('
+               + retireX + ' of ' + posedges + ' posedges had retire = X), so no instruction boundary was found',
+             instructions: 0, edges: 0, lastTime: null, model, prev: snapshotModel(model),
+             memory: compareMemories(bind, model, result) });
+  }
+
+  const pcSampler = makeSampler(result.signals[bind.pc]);
+  const regSamplers = Array.from({ length: 32 }, (_, i) => makeSampler(result.signals[bind.regPrefix + 'r' + i]));
+  /* Samplers are cursors that only ever move forward, so they must be built once
+     here and advanced in edge order - one per bound optional signal, created only
+     when the signal exists. */
+  const spSampler = bind.sp ? makeSampler(result.signals[bind.sp]) : null;
+  const flagSamplers = {};
+  for (const f of bind.flagNames) flagSamplers[f] = makeSampler(result.signals[bind.flags[f]]);
+  let n = 0, lastTime = null;
+  // The view shows "changed by this instruction" as an old -> new transition, so
+  // the state from BEFORE the last step has to be kept. Copied per edge rather
+  // than diffed from history, because the model's value is the one being
+  // described and history only holds the design's.
+  let prev = snapshotModel(model);
+  for (const t of edges) {
+    const before = snapshotModel(model);
+    const s = model.step();
+    // prev must describe the last instruction the view is BLAMING: the
+    // mismatching one on a divergence, but the last SUCCESSFUL one when the
+    // sweep stops - overwriting it before the stop check would leave the
+    // transition empty in exactly the case where it is still meaningful.
+    if (!s.stop) prev = before;
+    if (s.stop) return done({ bind, bound: true, stopped: s.stop, instructions: n, edges: edges.length, at: t,
+                         lastTime, model, prev, memory: compareMemories(bind, model, result) });
+    n++;
+    const dpc = sampleAt(pcSampler, t);
+    /* Where each side thinks it is, in the program's own terms, built once for
+       whichever field ends up being blamed. `before.pc` is the word the model just
+       EXECUTED (the instruction the verdict is about), while `dpc` is the design's
+       pc AFTER this edge - the same instant `model.pc` describes, which is what
+       makes the two comparable. When they disagree the design's word is named and
+       disassembled too, because on the classic two-word-STS divergence "the design
+       is sitting on the operand word" is the whole finding, and a bare `0005`
+       beside `0006` does not say that. */
+    const dutPc = (dpc.x | dpc.z) ? null : (dpc.v >>> 0);
+    const where = {
+      insWord: before.pc, insAsm: asmAt(before.pc),
+      dutPc: dutPc !== null && dutPc !== model.pc ? dutPc : null,
+      dutAsm: dutPc !== null && dutPc !== model.pc ? asmAt(dutPc) : null,
+    };
+    if ((dpc.x | dpc.z) || (dpc.v >>> 0) !== model.pc) {
+      return done(mismatch(bind, t, n, 'pc', model.pc, dpc, edges.length, model, result, 4, prev, where));
+    }
+    for (let i = 0; i < 32; i++) {
+      const dv = sampleAt(regSamplers[i], t);
+      if ((dv.x | dv.z) || (dv.v & 0xff) !== model.r[i]) {
+        return done(mismatch(bind, t, n, 'r' + i, model.r[i], dv, edges.length, model, result, 2, prev, where));
+      }
+    }
+    /* SP and the flags, compared only where the design exposes them. An X is a
+       failure in its own right here for the same reason it is for pc and the
+       registers: coercing it to 0 is how a real bug reads as a match. */
+    if (spSampler) {
+      const dv = sampleAt(spSampler, t);
+      if ((dv.x | dv.z) || (dv.v & 0xffff) !== (model.sp & 0xffff)) {
+        return done(mismatch(bind, t, n, 'sp', model.sp, dv, edges.length, model, result, 4, prev, where));
+      }
+    }
+    for (const f of bind.flagNames) {
+      const dv = sampleAt(flagSamplers[f], t);
+      if ((dv.x | dv.z) || (dv.v & 1) !== model[f]) {
+        return done(mismatch(bind, t, n, f, model[f], dv, edges.length, model, result, 1, prev, where));
+      }
+    }
+    lastTime = t;   // this instruction compared clean, so it is the newest state both sides share
+    /* Checked AFTER the comparison, because the instruction that asks to exit is
+       an ordinary STS and its effect on pc and the registers is as worth checking
+       as any other. Everything up to and including it matched; the clock edges
+       after it are explicitly not compared. */
+    if (s.exited) {
+      return done({ bind, bound: true, pass: true, exited: s.code, instructions: n,
+               edges: edges.length, lastTime, model, prev,
+               memory: compareMemories(bind, model, result) });
+    }
+  }
+  return done({ bind, bound: true, pass: true, instructions: n, edges: edges.length,
+           lastTime, model, prev, memory: compareMemories(bind, model, result) });
+}
+
+function mismatch(bind, t, n, field, modelVal, designVal, edges, model, result, digits, prev, where) {
+  return {
+    bind, bound: true, pass: false, time: t, instruction: n, field,
+    modelValue: modelVal, designValue: designVal, digits,
+    edges, model, prev, memory: compareMemories(bind, model, result),
+    ...(where || {}),
+  };
+}
+function snapshotModel(m) {
+  return { r: m.r.slice(), pc: m.pc, sp: m.sp, V: m.V, N: m.N, Z: m.Z, C: m.C };
+}
+
+/* Memory is compared at END OF RUN, because memories carry no history - so this
+   is reported separately from the per-clock verdict and labelled with the time
+   it belongs to, rather than being folded into a divergence that happened
+   earlier. Only cells the model wrote are compared for data memory; the rest of
+   a real design's RAM is legitimately X. */
+function compareMemories(bind, model, result) {
+  const out = { imem: null, dmem: null };
+  if (bind.imem) {
+    const cells = result.memories[bind.imem].cells;
+    let changed = 0;
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i], m = model.imem[i];
+      const cv = (c.x | c.z) ? null : (c.v >>> 0);
+      if (cv !== m) changed++;
+    }
+    out.imem = { name: bind.imem, changed, total: cells.length };
+  }
+  if (bind.dmem && model.dmem.size) {
+    const cells = result.memories[bind.dmem].cells;
+    const diffs = [], outside = [];
+    for (const [addr, want] of model.dmem) {
+      /* "Your RAM cannot hold this address" and "your RAM holds the wrong byte"
+         are different findings and must read differently. A compiled program puts
+         its stack at RAMEND and its data at 0x100, so a design with a small data
+         memory produces hundreds of the first kind - reporting those as ordinary
+         value mismatches would bury the one real one. */
+      if (addr >= cells.length) { outside.push(addr); continue; }
+      const c = cells[addr];
+      const got = !c || (c.x | c.z) ? null : (c.v & 0xff);
+      if (got !== want) diffs.push({ addr, model: want, design: got });
+    }
+    out.dmem = { name: bind.dmem, written: model.dmem.size, diffs, outside, depth: cells.length };
+  }
+  return out;
+}
+
+/* =========================================================================
    UI WIRING
    ========================================================================= */
 const codeInput = document.getElementById('codeInput');
@@ -3463,6 +4245,15 @@ const waveZoomLevelEl = document.getElementById('waveZoomLevel');
 const waveStartInput = document.getElementById('waveStartInput');
 const waveEndInput = document.getElementById('waveEndInput');
 const waveApplyBtn = document.getElementById('waveApplyBtn');
+const cardModelEl = document.getElementById('card-model');
+const modelStopCheckbox = document.getElementById('modelStopCheckbox');
+const modelStopAfter = document.getElementById('modelStopAfter');
+const modelBindEl = document.getElementById('modelBind');
+const modelVerdictEl = document.getElementById('modelVerdict');
+const modelGridEl = document.getElementById('modelGrid');
+const modelFootEl = document.getElementById('modelFoot');
+const modelEmpty = document.getElementById('modelEmpty');
+let modelCheck = null;   // result of the last checkCpuModel(), or null if not run
 const memorySelect = document.getElementById('memorySelect');
 const memAttachBtn = document.getElementById('memAttachBtn');
 const memFileInput = document.getElementById('memFileInput');
@@ -4103,6 +4894,25 @@ document.querySelectorAll('[data-collapse]').forEach(btn => {
   wireHeight('consoleHeight', document.getElementById('consoleBox'), document.getElementById('consoleHeightDec'), document.getElementById('consoleHeightInc'));
 })();
 
+/* ---- CPU / Memory Model controls ----
+   Persisted like every other control here. Ticking the box does NOT re-run the
+   simulation: the check needs a run to read, and silently re-running on a click
+   would hide which Run produced the verdict on screen. It re-renders instead,
+   and says to press Run. */
+(() => {
+  if (localStorage.getItem('modelStopEnabled') === '1') modelStopCheckbox.checked = true;
+  const savedAfter = parseInt(localStorage.getItem('modelStopAfter'), 10);
+  if (!isNaN(savedAfter) && savedAfter >= 0) modelStopAfter.value = savedAfter;
+  modelStopCheckbox.addEventListener('change', () => {
+    localStorage.setItem('modelStopEnabled', modelStopCheckbox.checked ? '1' : '0');
+    if (!modelStopCheckbox.checked) modelCheck = null;
+    renderModelCard();
+  });
+  modelStopAfter.addEventListener('change', () => {
+    localStorage.setItem('modelStopAfter', readModelStopAfter());
+  });
+})();
+
 /* ---- module hierarchy panel toggle ---- */
 (() => {
   const splitRow = document.getElementById('waveSplitRow');
@@ -4216,6 +5026,10 @@ resetBtn.addEventListener('click', () => {
   memHexCheckbox.checked = true;
   memBinCheckbox.checked = true;
   renderMemorySelect();
+  // The verdict belongs to a run that no longer exists, so it goes with it. The
+  // checkbox itself is a user preference and survives, like the layout controls.
+  modelCheck = null;
+  renderModelCard();
 });
 
 runBtn.addEventListener('click', runSimulation);
@@ -4358,7 +5172,32 @@ function runSimulation() {
     logLine('<span class="err">Simulator crashed: ' + escapeHtml(e.message) + '</span>');
     renderBadges(null);
     renderHierarchyTree(ast.tree); // tree structure is still valid even though the run itself crashed
+    modelCheck = null;
+    renderModelCard();
     return;
+  }
+
+  // Model check, and the "stop" that goes with it. The Simulator is untouched:
+  // the check reads the completed run's history, and stopping means RE-RUNNING
+  // with a lower maxTime. That is exact rather than approximate because a short
+  // run is a byte-identical prefix of a long one (the harness asserts it over
+  // every signal at several caps), so the truncated waveform is the real thing
+  // and not a redraw of a clipped view.
+  modelCheck = null;
+  if (modelStopCheckbox.checked) {
+    modelCheck = checkCpuModel(result);
+    if (modelCheck.bound && modelCheck.pass === false) {
+      const after = readModelStopAfter();
+      const stopAt = Math.min(modelCheck.time + after, maxTime);
+      if (stopAt < result.time) {
+        try {
+          result = new Simulator(ast, { maxTime: stopAt, memFiles: attachedMemFiles }).run();
+          modelCheck.stoppedAt = stopAt;
+        } catch (e) {
+          logLine('<span class="err">Re-run for the model stop failed: ' + escapeHtml(e.message) + '</span>');
+        }
+      }
+    }
   }
 
   lastResult = result;
@@ -4384,9 +5223,339 @@ function runSimulation() {
     logLine('<span class="info">Simulation finished at t=' + result.time + '.</span>');
   }
 
+  if (modelCheck && modelCheck.bound && modelCheck.pass === false) {
+    const mv = modelCheck.designValue;
+    const dv = (mv.x | mv.z) ? 'X' : hexPad(mv.v, modelCheck.digits);
+    logLine('<span class="err">Model mismatch at t=' + modelCheck.time + ' (instruction #'
+      + modelCheck.instruction + ', ' + modelCheck.field + ': model=' + hexPad(modelCheck.modelValue, modelCheck.digits)
+      + ', design=' + dv + ')</span>');
+    if (modelCheck.stoppedAt !== undefined) {
+      logLine('<span class="info">Stopped by the model check at t=' + modelCheck.stoppedAt
+        + ' (' + readModelStopAfter() + ' time units after the mismatch).</span>');
+    }
+    // The cursor lands ON the divergence rather than at the end of the run, so
+    // the value column is showing the mismatching state when the card is read.
+    cursorTime = Math.min(modelCheck.time, result.time);
+  }
+
   renderBadges(result);
   drawWaveform(result);
+  renderModelCard();
 }
+
+/* ---- CPU / Memory Model card ---- */
+function hexPad(v, digits) { return (v >>> 0).toString(16).padStart(digits || 2, '0'); }
+
+function readModelStopAfter() {
+  const raw = parseInt(modelStopAfter.value, 10);
+  const n = isNaN(raw) || raw < 0 ? 10 : raw;
+  if (String(n) !== modelStopAfter.value) modelStopAfter.value = n; // never honour a different number than the one shown
+  return n;
+}
+
+/* "Is there any sign this design is a CPU?" - a DIFFERENT question from bind.ok
+   ("can the model be checked"), with a different consequence: bind.ok being false
+   is what the card's "needs an 8-bit r0..r31 register file" message exists to
+   explain, so keying visibility on it would hide the guidance exactly when it is
+   wanted, and would hide the disagreeing-aliases message too.
+
+   clk and dmem are excluded deliberately, and that exclusion is the whole
+   substance of the rule: measured across the 12 examples, a clk alone would keep
+   the card on the D flip-flop, the counter, the shift register and the 8-bit RAM,
+   and a byte-wide memory alone would keep it on the 8-bit ROM. pc / r0..r31 /
+   16-bit imem are held by exactly the three CPU-ish designs and nothing else. */
+function looksLikeCpu(bind) { return !!(bind.pc || bind.regPrefix || bind.imem); }
+
+function renderModelCard() {
+  const bindEl = modelBindEl, verdictEl = modelVerdictEl, gridEl = modelGridEl, footEl = modelFootEl;
+  if (!lastResult) {
+    // Hide on EVIDENCE, never on the absence of it: with no run there is nothing
+    // to bind against, so the card stays with its empty state rather than
+    // vanishing and making the feature look broken after a Reset.
+    cardModelEl.style.display = '';
+    modelEmpty.style.display = 'block';
+    bindEl.style.display = verdictEl.style.display = gridEl.style.display = 'none';
+    footEl.style.display = 'none';
+    return;
+  }
+
+  const bind = modelCheck ? modelCheck.bind : bindCpuModel(lastResult);
+  if (!looksLikeCpu(bind)) {
+    // Nothing here resembles a CPU, so the card has nothing to say about this
+    // design at all. Note visibility depends only on the BINDING, never on the
+    // verdict - a red verdict must not make the card disappear at the moment it
+    // most wants reading.
+    cardModelEl.style.display = 'none';
+    return;
+  }
+  cardModelEl.style.display = '';
+  modelEmpty.style.display = 'none';
+  bindEl.style.display = 'block';
+  verdictEl.style.display = 'block';
+
+  const rows = [];
+  const show = (label, value, extra) =>
+    rows.push('<b>' + label + '</b> ' + (value ? escapeHtml(value) : '<span class="miss">not found</span>')
+      + (extra ? ' <span class="alias">' + escapeHtml(extra) + '</span>' : ''));
+  show('clk', bind.clk);
+  show('rst_n', bind.rst, bind.rst ? '' : '(optional - checking starts at t=0)');
+  /* A sampling control rather than architectural state, so it sits with clk: it
+     decides WHICH edges are instruction boundaries, read pre-edge. Absent, every
+     posedge is one. */
+  show('retire', bind.retire, bind.retire
+    ? (bind.retireAliases > 1 ? '(' + bind.retireAliases + ' aliases, histories agree) sampled pre-edge' : '(sampled pre-edge)')
+    : '(optional - without it, one instruction per posedge)');
+  show('pc', bind.pc, bind.pcAliases > 1 ? '(' + bind.pcAliases + ' aliases, histories agree)' : '');
+  show('regs', bind.regPrefix ? bind.regPrefix + 'r0..r31' : null,
+       bind.regAliases > 1 ? '(' + bind.regAliases + ' aliases, histories agree)' : '');
+  show('sp', bind.sp, bind.sp ? '' : '(optional - not compared without it)');
+  /* The four flags are what get COMPARED; the packed `sreg` is only a display
+     fallback for a design that exposes the word and not the bits, since a word
+     carries no statement about which bit is which. */
+  if (bind.flagNames.length) {
+    const parts = ['V', 'N', 'Z', 'C'].map(f => bind.flags[f]
+      ? f + '=' + bind.flags[f].split('.').pop()
+      : '<span class="miss">' + f + '=not found</span>');
+    rows.push('<b>flags</b> ' + parts.join(', ')
+      + ' <span class="alias">(' + bind.flagNames.join('') + ' compared)</span>');
+    if (bind.sreg) show('sreg', bind.sreg, '(' + bind.sregWidth + ' bits, shown only — the flags above are what is compared)');
+  } else {
+    show('sreg', bind.sreg, bind.sreg
+      ? '(' + bind.sregWidth + ' bits, shown only — declare sreg_v/_n/_z/_c to have flags compared)'
+      : '(optional - declare sreg_v/_n/_z/_c to have flags compared)');
+  }
+  show('imem', bind.imem);
+  show('dmem', bind.dmem, bind.dmem ? '' : '(optional)');
+  bindEl.innerHTML = rows.join('<br>');
+
+  if (!bind.ok) {
+    verdictEl.className = 'model-verdict';
+    verdictEl.innerHTML = bind.ambiguous
+      ? 'Cannot bind: <span class="mono">' + escapeHtml(bind.ambiguous) + '</span>. Two candidates with the same name are different signals, so which one is architectural state is genuinely unclear.'
+      : 'This design has no CPU binding — needs ' + escapeHtml(bind.missing.join(', ')) + '.'
+        + (bind.notes.length ? ' ' + escapeHtml(bind.notes.join(' ')) : '');
+    gridEl.style.display = 'none';
+    footEl.style.display = 'none';
+    return;
+  }
+  if (!modelStopCheckbox.checked) {
+    verdictEl.className = 'model-verdict';
+    verdictEl.innerHTML = 'Bound, but not checked — tick <b>Stop Simulation when mismatching model</b> and Run to compare.';
+    gridEl.style.display = 'none';
+    footEl.style.display = 'none';
+    return;
+  }
+
+  const r = modelCheck;
+  if (r.stopped) {
+    verdictEl.className = 'model-verdict pass';
+    verdictEl.innerHTML = '<b>' + r.instructions + ' instructions matched</b>, then checking stopped: '
+      + escapeHtml(r.stopped) + '. Nothing beyond that point was compared.';
+  } else if (r.exited !== undefined) {
+    /* The program said it was done. Distinguished from both a pass-to-the-end and
+       a stop, because "ran to completion and agreed" is a stronger statement than
+       either, and the clock edges after it genuinely mean nothing. */
+    verdictEl.className = 'model-verdict pass';
+    verdictEl.innerHTML = '<b>Match</b> — the program ran to completion and exited with code '
+      + r.exited + ' after ' + r.instructions + ' instructions; pc, r0–r31'
+      + (bind.sp ? ', sp' : '') + (bind.flagNames.length ? ' and ' + bind.flagNames.join('/') : '')
+      + ' agreed throughout. The remaining clock edges are not compared.';
+  } else if (r.pass) {
+    verdictEl.className = 'model-verdict pass';
+    verdictEl.innerHTML = '<b>Match</b> — ' + r.instructions + ' instructions over '
+      + (r.sampledBy === 'retire'
+          ? r.sampled + ' retire edge' + (r.sampled === 1 ? '' : 's') + ' of ' + r.posedges + ' clock edges'
+          : r.edges + ' clock edges')
+      + ', no divergence in pc or r0–r31.';
+  } else {
+    const dv = (r.designValue.x | r.designValue.z) ? 'X' : hexPad(r.designValue.v, r.digits);
+    verdictEl.className = 'model-verdict fail';
+    /* The instruction's own disassembly, quoted from the ROM's comments, so the
+       report names what failed rather than only how far in it was - "instruction
+       #5" is a number the reader would otherwise have to count out against the
+       listing. Absent (a ROM with no comments), the line reads exactly as it did
+       before, which is why this cannot make an uncommented image worse. */
+    verdictEl.innerHTML = '<b>Mismatch at t=' + r.time + '</b> — instruction #' + r.instruction
+      + (r.insAsm ? ' <span class="mono">‘' + escapeHtml(r.insAsm) + '’</span><br>' : ', ')
+      + '<span class="mono">' + r.field + '</span>: model <span class="mono">'
+      + hexPad(r.modelValue, r.digits) + '</span>, design <span class="mono">' + dv + '</span>.'
+      /* Where the DESIGN went, named only when it went somewhere else. On the
+         two-word-STS divergence it is sitting on the operand word, and that - not
+         the number 0005 - is the finding. */
+      + (r.dutPc !== null && r.dutPc !== undefined
+          ? ' The design’s pc was at word <span class="mono">' + hexPad(r.dutPc, 4) + '</span>'
+            + (r.dutAsm ? ' <span class="mono">‘' + escapeHtml(r.dutAsm) + '’</span>' : '') + '.'
+          : '')
+      + (r.stoppedAt !== undefined ? ' Run stopped at t=' + r.stoppedAt + '.' : '');
+  }
+  /* How the sample points were chosen belongs on every verdict, not just the
+     passing one: which edges were compared is as much a part of the claim as the
+     values compared at them. The X count is disclosed for the same reason the
+     never-asserted case gets a named reason - posedges quietly dropped because
+     retire was X would otherwise make a thin check read like a thorough one. */
+  if (r.sampledBy === 'retire') {
+    verdictEl.innerHTML += '<br><span style="color:#8e8e93">Sampled at '
+      + escapeHtml(bind.retire.split('.').pop()) + ' = 1 (read pre-edge): '
+      + r.sampled + ' of ' + r.posedges + ' clock edges'
+      + (r.retireX ? ', with ' + r.retireX + ' skipped because retire was X' : '') + '.</span>';
+  }
+  // Memory is compared at END OF RUN, and says so: memories carry no history, so
+  // it cannot be pinned to the divergence the way pc and the registers can.
+  const mem = r.memory || {};
+  const memParts = [];
+  if (mem.imem) {
+    memParts.push(mem.imem.changed === 0
+      ? escapeHtml(mem.imem.name) + ' matches the model in all ' + mem.imem.total + ' words'
+      : escapeHtml(mem.imem.name) + ' differs from the model in ' + mem.imem.changed + ' of ' + mem.imem.total + ' words');
+  }
+  if (mem.dmem) {
+    /* Out-of-range is reported separately from a wrong byte, because they are
+       different findings: a compiled program puts its stack at RAMEND and its
+       data at 0x100, so a design with a small data memory produces hundreds of
+       the first kind and reporting those as value mismatches would bury the one
+       real one. */
+    const d = mem.dmem;
+    const parts = [];
+    if (d.diffs.length === 0) parts.push('matches for all ' + (d.written - d.outside.length) + ' cells the model wrote inside it');
+    else parts.push('differs at ' + d.diffs.length + ' of ' + (d.written - d.outside.length) + ' comparable cells');
+    if (d.outside.length) {
+      parts.push(d.outside.length + ' of the model’s writes are outside its '
+        + d.depth + ' cells (highest 0x' + hexPad(Math.max.apply(null, d.outside), 4)
+        + ') — the data memory is too small for this program');
+    }
+    memParts.push(escapeHtml(d.name) + ' ' + parts.join('; '));
+  } else if (r.model && r.model.dmem.size === 0) {
+    memParts.push('the model wrote no data memory, so there is nothing to compare there');
+  }
+  if (memParts.length) {
+    verdictEl.innerHTML += '<br><span style="color:#8e8e93">At end of run (t=' + lastResult.time
+      + '): ' + memParts.join('; ') + '.</span>';
+  }
+
+  // The grid shows state at the divergence, or at the last compared edge.
+  // BOTH columns must describe the same instant, or the comparison on screen is
+  // meaningless. That instant is the last instruction the scoreboard actually
+  // compared: the mismatching one on a divergence, and r.lastTime otherwise -
+  // NOT the last clock edge of the run, which on a stop is far later than
+  // anything the model saw.
+  const sampleTime = (r.pass || r.stopped) ? (r.lastTime === undefined ? null : r.lastTime) : r.time;
+  const dutAt = (name, digits) => {
+    const sig = lastResult.signals[name];
+    if (!sig || sampleTime === null) return '\u2014';
+    const v = modelValueAt(sig, sampleTime);
+    return (v.x | v.z) ? 'X' : hexPad(v.v, digits);
+  };
+
+  // Expected = the model, DUT = the design. The Expected side shows an
+  // "old -> new" transition when this instruction changed the value, which is
+  // what the green means; the DUT side shows its value only.
+  const expected = (now, was, digits) => (was !== undefined && was !== now)
+    ? '<span class="was">' + hexPad(was, digits) + '</span> \u2192 <span class="now">' + hexPad(now, digits) + '</span>'
+    : hexPad(now, digits);
+
+  gridEl.style.display = 'grid';
+  const prev = r.prev || null;
+  const cells = [];
+  for (let g = 0; g < 4; g++) {
+    cells.push('<div class="cmp-row hdr"><span class="rn"></span><span class="rv">Expected</span><span class="rv ref">DUT</span></div>');
+    for (let k = 0; k < 8; k++) {
+      const i = g * 8 + k;
+      const was = prev ? prev.r[i] : undefined;
+      const changed = was !== undefined && was !== r.model.r[i];
+      cells.push('<div class="cmp-row' + (r.field === 'r' + i ? ' diff' : changed ? ' chg' : '')
+        + '"><span class="rn">r' + i + '</span><span class="rv">'
+        + expected(r.model.r[i], was, 2) + '</span><span class="rv ref">'
+        + dutAt(bind.regPrefix + 'r' + i, 2) + '</span></div>');
+    }
+  }
+  gridEl.innerHTML = cells.join('');
+
+  // pc/sp/sreg span the full width, so they are a separate container - a 37th
+  // item in a 4x9 grid would start a fifth column instead.
+  //
+  // A foot row is red when its two columns DIFFER, not only when it is the field
+  // the verdict blames. The comparison stops at the first mismatching field in
+  // its order (pc, then registers, then sp, then flags), so a later field can be
+  // visibly different while another one is being blamed - and showing 00ff beside
+  // 0000 with no marking at all is the one reading of this panel that would be
+  // actively misleading.
+  const foot = [];
+  const dutRaw = (name) => {
+    const sig = name ? lastResult.signals[name] : null;
+    if (!sig || sampleTime === null) return null;
+    return modelValueAt(sig, sampleTime);
+  };
+  const wordDiffers = (name, want, bits) => {
+    const v = dutRaw(name);
+    if (v === null) return false;                 // nothing sampled: not a claim
+    if (v.x | v.z) return true;                   // X is a mismatch in its own right
+    return (v.v & bits) !== (want & bits);
+  };
+  foot.push(footRow('pc', expected(r.model.pc, prev ? prev.pc : undefined, 4),
+                    dutAt(bind.pc, 4), r.field === 'pc' || wordDiffers(bind.pc, r.model.pc, 0xffff)));
+  if (bind.sp) {
+    // Compared now: STS to SPL/SPH is how a program sets up its stack and
+    // RCALL/RET move it, so the model has real authority over it.
+    foot.push(footRow('sp', expected(r.model.sp, prev ? prev.sp : undefined, 4),
+                      dutAt(bind.sp, 4),
+                      r.field === 'sp' || wordDiffers(bind.sp, r.model.sp, 0xffff)));
+  }
+  if (bind.flagNames.length) {
+    /* Per-flag, from the individually bound signals. Only the flags the design
+       actually has are drawn - inventing I/T/H/S letters would imply state that
+       is not there - and the one that diverged is outlined rather than the whole
+       row, so the report points at the flag rather than at "sreg". */
+    const mBits = { V: r.model.V, N: r.model.N, Z: r.model.Z, C: r.model.C };
+    /* The LETTER'S CASE carries the value - `V` is set, `v` is clear - so a row
+       reads as a value (`vNZc`) rather than as a list of names that needs its
+       colours decoded. The brightness stays as a second encoding of the same
+       fact, which is what keeps the row legible in a greyscale screenshot and to
+       a reader who cannot separate the two colours. `X` stays uppercase and has
+       no lowercase counterpart: unknown is not a value, and this app writes X
+       uppercase everywhere it appears (the waveform's boxes do the same). */
+    const cell = (f, on, isDiff) => '<span class="flag' + (on ? ' on' : '')
+      + (isDiff ? ' diff' : '') + '">' + (on ? f : f.toLowerCase()) + '</span>';
+    const mTxt = [], dTxt = [];
+    let differs = false;
+    for (const f of ['V', 'N', 'Z', 'C']) {
+      if (!bind.flags[f]) continue;
+      const dv = sampleTime === null ? null : modelValueAt(lastResult.signals[bind.flags[f]], sampleTime);
+      const unknown = dv === null || (dv.x | dv.z);
+      const dBit = unknown ? null : (dv.v & 1);
+      const bad = r.field === f || (dBit !== null && dBit !== mBits[f]) || (dv !== null && unknown);
+      if (bad) differs = true;
+      mTxt.push(cell(f, mBits[f], bad));
+      dTxt.push(unknown ? cell('X', true, bad) : cell(f, dBit, bad));
+    }
+    foot.push(footRow('flags', mTxt.join(' '), dTxt.join(' '), differs));
+  } else if (bind.sreg) {
+    const sig = lastResult.signals[bind.sreg];
+    const dv = sampleTime === null ? null : modelValueAt(sig, sampleTime);
+    const width = bind.sregWidth;
+    // The packed fallback, for a design that exposes the word but not the bits.
+    // Its bit order is this design's {V,N,Z,C} guess, which is exactly why the
+    // word is shown and never used to fail the check.
+    const names = ['I', 'T', 'H', 'S', 'V', 'N', 'Z', 'C'].slice(8 - width);
+    const modelBits = { I: 0, T: 0, H: 0, S: 0, V: r.model.V, N: r.model.N, Z: r.model.Z, C: r.model.C };
+    // Same case rule as the per-flag row above, so the two never disagree about
+    // how a set bit looks - even though this row is display-only.
+    const packed = (f, on) => '<span class="flag' + (on ? ' on' : '') + '">'
+      + (on ? f : f.toLowerCase()) + '</span>';
+    const mTxt = names.map(f => packed(f, modelBits[f])).join(' ');
+    const dTxt = dv === null || (dv.x | dv.z)
+      ? '<span class="flag">X</span>'
+      : names.map((f, k) => packed(f, (dv.v >> (width - 1 - k)) & 1)).join(' ');
+    foot.push(footRow('sreg', mTxt, dTxt, false));
+  }
+  footEl.style.display = 'block';
+  footEl.innerHTML = foot.join('');
+}
+
+function footRow(name, expectedHtml, dutHtml, diff) {
+  return '<div class="cmp-foot' + (diff ? ' diff' : '') + '"><span class="rn">' + name
+    + '</span><span class="rv">' + expectedHtml + '</span><span class="rv ref">' + dutHtml + '</span></div>';
+}
+
 
 /* ---- badges ---- */
 function renderBadges(result) {
