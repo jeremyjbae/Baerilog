@@ -81,6 +81,7 @@ module cpu (
   reg [7:0] rf_wdata;
   wire retire;
   reg [39:0] debug_inst;
+  reg [15:0] pc_add;
 
   assign sp = 16'b0;      // Not Implemented
   assign sp_nxt = 16'b0;  // Not Implemented
@@ -92,6 +93,14 @@ module cpu (
 
   always@(*) begin
     sreg_we <= 1'b0;
+    opcode <= 4'b0;
+    rf_we <= 1'b0;
+    rf_idx_d <= 5'b0;
+    rf_idx_r <= 5'b0;
+    rf_wdata <= 8'b0;
+    pc_add <= 16'b0;
+    pc_nxt <= pc + pc_add + 1'b1;
+
     casex(inst[15:10])
 
       6'b00xxxx: begin // alu
@@ -104,40 +113,34 @@ module cpu (
         rf_idx_d <= inst[8:4];
         rf_idx_r <= {inst[9], inst[3:0]};
         rf_wdata <= alu_out;
-        pc_nxt <= pc + 1;
       end
 
       6'b1110xx: begin // ldi
         debug_inst <= "LDI";
         rf_we <= 1'b1;
-        rf_idx_d <= inst[7:4] + 5'b10000;
+        rf_idx_d <= {1'b1, inst[7:4]};
         rf_wdata <= {inst[11:8], inst[3:0]};
-        pc_nxt <= pc + 1;
       end
 
-      /* TODO: all three of these just step to the next instruction, so no branch or
-         jump in the program ever happens. RJMP takes its 12-bit displacement from
-         inst[11:0]; BREQ and BRNE take 7 bits from inst[9:3] and are conditional on
-         Z, which is sreg[1] - BREQ when it is set, BRNE when it is clear. Sign-extend
-         the displacement to 16 bits and remember the + 1. */
       6'b1100xx: begin // rjmp (offset)
         debug_inst <= "RJMP";
-        pc_nxt <= pc + 1;
+        pc_add <= {inst[11], inst[11], inst[11], inst[11], inst[11:0]};
       end
 
       6'b111100: begin // breq
         debug_inst <= "BREQ";
-        pc_nxt <= pc + 1;
+        if(sreg[1])
+          pc_add <= {inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9:3]};
       end
 
       6'b111101: begin // brne
         debug_inst <= "BRNE";
-        pc_nxt <= pc + 1;
+        if(~sreg[1])
+          pc_add <= {inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9:3]};
       end
       
       default: begin
         debug_inst <= "ERR"; 
-        pc_nxt <= pc + 1;
       end
     endcase
   end
