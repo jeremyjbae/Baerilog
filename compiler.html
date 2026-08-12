@@ -2,50 +2,206 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 26'%3E%3Cstyle%3Epath,rect%7Bfill:none;stroke:%231f2328;stroke-width:3;stroke-linecap:round;stroke-linejoin:round%7D%40media(prefers-color-scheme:dark)%7Bpath,rect%7Bstroke:%23e6edf3%7D%7D%3C/style%3E%3Cpath d='M 37.7373 21.25 C 37.752447 18.600017 37.722157 13.899983 37.7373 11.25 C 37.722157 8.899983 35.2373 6.25 32.7373 6.25 C 30.143462 6.25 32.549622 6.25 29.955782 6.25 C 23.70574 6.25 22.45574 11.25 22.501176 13.75 C 22.45574 16.25 23.70574 21.25 29.955782 21.25 C 30.8163 21.25 31.67682 21.25 32.53734 21.25'/%3E%3Cpath d='M 2.2184386 2.5 C 2.2184386 7.5 2.2184386 16.25 2.2184386 21.25 C 4.7184386 21.25 7.139786 21.23971 9.999958 21.25 C 16.249958 21.25 17.508377 16.090111 17.499958 13.75 C 17.508377 11.090111 16.249958 6.25 9.999958 6.25 C 8.027672 6.25 9.095067 6.25 7.4284 6.25'/%3E%3Cpath d='M 58.03152 6.25 C 55.53152 6.25 53.11017 6.26029 50.25 6.25 C 44 6.25 42.74158 11.409889 42.75 13.75 C 42.74158 16.409889 44 21.25 50.25 21.25 C 52.222286 21.25 56.5836 21.25 58.25027 21.25'/%3E%3Crect x='47.95' y='13.625' width='9.8' height='.125'/%3E%3C/svg%3E">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>C Compiler</title>
+<title>Compiler</title>
 <style>
+    /* =====================================================================
+       The shared visual language for every app in this repo: GitHub's Primer,
+       light and dark. This file is the source of truth and is inlined as the
+       FIRST block of each app's <style> tag - byte for byte, checked by
+       tools/check_theme.py, because the hand-paste convention had quietly rotted
+       into four different variants before that check existed.
+
+       Two token sets, and the split matters:
+
+         page tokens    (--canvas-*, --fg-*, --border-*, --accent-*, ...)
+                        redefined under prefers-color-scheme: dark, so every
+                        light surface follows the reader's OS.
+
+         panel tokens   (--panel-*) the SAME in both modes. The editors,
+                        consoles, listings, register grids and memory tables are
+                        dark either way - a dark code block on a light page, the
+                        way GitHub renders one - so they must not flip. They use
+                        GitHub's dark code colours rather than the page ones.
+
+       Anything app-specific belongs in that app's own additions section below
+       this block, never here.
+       ===================================================================== */
+    :root {
+      /* Renders the browser's own chrome - form controls, scrollbars - for the
+         active mode. Without it a number input keeps its light-mode look on a
+         dark page, which is the one part of this CSS cannot reach. */
+      color-scheme: light dark;
+
+      --canvas-default: #ffffff;
+      --canvas-subtle: #f6f8fa;
+      --border-default: #d1d9e0;
+      --border-muted: #d8dee4;
+      --fg-default: #1f2328;
+      --fg-muted: #59636e;
+      --fg-on-emphasis: #ffffff;
+      --accent-fg: #0969da;
+      --accent-subtle: #ddf4ff;
+      --success-fg: #1a7f37;
+      --success-subtle: #dafbe1;
+      --danger-fg: #cf222e;
+      --danger-subtle: #ffebe9;
+      --attention-fg: #9a6700;
+      --btn-primary-bg: #1f883d;
+      --btn-primary-hover: #1a7f37;
+      --header-bg: #24292f;
+      --header-fg: #ffffff;
+      --header-muted: rgba(255, 255, 255, 0.7);
+      --shadow-overlay: 0 8px 24px rgba(31, 35, 40, 0.2);
+      --radius: 6px;
+      --radius-lg: 12px;
+
+      /* Dark panels, identical in both modes - GitHub's dark code colours. */
+      --panel-bg: #0d1117;
+      --panel-bg-alt: #161b22;
+      --panel-bg-hi: #21262d;
+      --panel-fg: #e6edf3;
+      --panel-dim: #8b949e;
+      --panel-line: #30363d;
+      --panel-blue: #79c0ff;
+      --panel-green: #7ee787;
+      --panel-red: #ff7b72;
+      --panel-yellow: #d29922;
+      --panel-purple: #d2a8ff;
+
+      /* The waveform trace colours, as ONE token holding the whole list: the
+         renderers split it, so the palette lives here with every other colour
+         rather than as eight tokens or a JS array. Primer's data colours. */
+      --wave-palette: #0969da,#1a7f37,#9a6700,#cf222e,#8250df,#1b7c83,#bc4c00,#6e7781;
+
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+                   Helvetica, Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+                   "Liberation Mono", monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --canvas-default: #0d1117;
+        --canvas-subtle: #161b22;
+        --border-default: #3d444d;
+        --border-muted: #2f353d;
+        --fg-default: #e6edf3;
+        --fg-muted: #9198a1;
+        --accent-fg: #4493f8;
+        --accent-subtle: #121d2f;
+        --success-fg: #3fb950;
+        --success-subtle: #0f2417;
+        --danger-fg: #f85149;
+        --danger-subtle: #2d1214;
+        --attention-fg: #d29922;
+        --btn-primary-bg: #238636;
+        --btn-primary-hover: #2ea043;
+        --header-bg: #010409;
+        --header-fg: #e6edf3;
+        --header-muted: #9198a1;
+        --shadow-overlay: 0 8px 24px rgba(1, 4, 9, 0.85);
+        --wave-palette: #79c0ff,#7ee787,#d29922,#ff7b72,#d2a8ff,#56d4dd,#ffa657,#8b949e;
+      }
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
-      background: #f2f2f7;
-      color: #1c1c1e;
-      padding: 24px;
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
+      background: var(--canvas-default);
+      color: var(--fg-default);
+      padding: 0 0 32px;
     }
+
+    /* --- the header bar, on every app: dark in light mode too, as github.com's is --- */
+    .gh-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--header-bg);
+      color: var(--header-fg);
+      border-bottom: 1px solid var(--border-default);
+      margin-bottom: 24px;
+    }
+    .gh-header-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .gh-mark {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--header-fg);
+      text-decoration: none;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    /* The bae wordmark is 2.21:1, so it is sized by HEIGHT with the width left to
+       follow - the old placeholder mark was square, and giving this one a square box
+       squashes it.
+
+       The invert is UNCONDITIONAL, and that is not a shortcut: --header-bg is
+       #24292f in light mode and #010409 in dark, so this bar is dark in BOTH and the
+       black artwork has to become white in both. Putting the filter inside a
+       prefers-color-scheme block - the obvious reading of "invert it when the
+       background is dark" - would leave the logo black on a dark bar in light mode.
+       Anywhere the logo lands on a light surface, drop the filter rather than
+       adding a query here. */
+    .gh-mark svg { height: 18px; width: auto; filter: invert(1); }
+    .gh-nav { display: flex; gap: 14px; margin-left: auto; font-size: 13px; flex-wrap: wrap; }
+    .gh-nav a { color: var(--header-muted); text-decoration: none; }
+    .gh-nav a:hover { color: var(--header-fg); }
+    .gh-nav a.here { color: var(--header-fg); font-weight: 600; }
+
     h1 {
       text-align: center;
       font-size: 20px;
-      font-weight: 700;
+      font-weight: 600;
       margin-bottom: 6px;
-      color: #1c1c1e;
+      color: var(--fg-default);
     }
     h1 a { color: inherit; text-decoration: none; }
     h1 a:hover { text-decoration: underline; }
     .subtitle {
       text-align: center;
       font-size: 13px;
-      color: #8e8e93;
+      color: var(--fg-muted);
       margin-bottom: 24px;
     }
     .grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 18px;
-      max-width: 1100px;
+      gap: 16px;
+      max-width: 1280px;
       margin: 0 auto;
+      padding: 0 24px;
     }
+    /* Primer's Box: a 1px edge instead of a shadow, 6px corners. */
     .card {
-      background: #fff;
-      border-radius: 16px;
-      padding: 20px 22px 16px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+      background: var(--canvas-default);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius);
+      padding: 0 16px 16px;
     }
     .card.full { grid-column: 1 / -1; }
+    /* The h2 is the Box header, so it escapes the card's own padding. */
     .card h2 {
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 600;
-      margin-bottom: 4px;
-      color: #1c1c1e;
+      color: var(--fg-default);
+      background: var(--canvas-subtle);
+      border-bottom: 1px solid var(--border-default);
+      border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+      margin: 0 -16px 12px;
+      padding: 10px 16px;
       display: flex;
       justify-content: flex-start;
       align-items: center;
@@ -54,22 +210,30 @@
       cursor: pointer;
       font-size: 8px;
       font-weight: 600;
-      color: #1c1c1e;
+      color: var(--fg-muted);
       user-select: none;
       flex-shrink: 0;
       margin-right: 6px;
-      width: 13px;
-      height: 13px;
-      border: 1px solid #1c1c1e;
-      border-radius: 4px;
+      width: 14px;
+      height: 14px;
+      border: 1px solid var(--border-default);
+      border-radius: 3px;
+      background: var(--canvas-default);
       display: inline-flex;
       align-items: center;
       justify-content: center;
       line-height: 1;
     }
-    .card-collapse-btn:hover { border-color: #3a3a3c; color: #3a3a3c; }
+    .card-collapse-btn:hover { border-color: var(--fg-muted); color: var(--fg-default); }
     .card.collapsed > *:not(:first-child) { display: none !important; }
-    .card.collapsed { padding-bottom: 20px; }
+    /* A collapsed card is its header and nothing else, so the header keeps all
+       four corners and the empty space below it goes away. */
+    .card.collapsed { padding-bottom: 0; }
+    .card.collapsed h2 {
+      margin-bottom: 0;
+      border-bottom: none;
+      border-radius: calc(var(--radius) - 1px);
+    }
     .header-controls {
       display: flex;
       align-items: center;
@@ -85,20 +249,20 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 18px;
-      border: 1px solid #c7c7cc;
-      border-radius: 5px;
-      color: #8e8e93;
-      background: #fff;
+      width: 24px;
+      height: 20px;
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius);
+      color: var(--fg-muted);
+      background: var(--canvas-default);
     }
-    .layout-btn:hover { border-color: #8e8e93; color: #3a3a3c; }
-    .layout-btn.active { border-color: #007aff; color: #007aff; }
+    .layout-btn:hover { border-color: var(--fg-muted); color: var(--fg-default); }
+    .layout-btn.active { border-color: var(--accent-fg); color: var(--accent-fg); }
     .layout-btn svg { width: 13px; height: 13px; display: block; }
     .grid.stack-editor-console .layout-pair { grid-column: 1 / -1; }
     .card p {
       font-size: 12px;
-      color: #8e8e93;
+      color: var(--fg-muted);
       margin-bottom: 14px;
     }
     canvas { width: 100% !important; }
@@ -114,7 +278,7 @@
       align-items: center;
       gap: 6px;
       font-size: 12px;
-      color: #3a3a3c;
+      color: var(--fg-default);
     }
     .dot {
       width: 10px; height: 10px;
@@ -123,70 +287,130 @@
     }
     .badge-row {
       display: flex;
-      gap: 10px;
+      gap: 8px;
       flex-wrap: wrap;
       margin-top: 2px;
     }
+    /* Primer's Label. */
     .badge {
-      background: #f2f2f7;
-      border-radius: 8px;
-      padding: 6px 12px;
+      background: var(--canvas-subtle);
+      border: 1px solid var(--border-muted);
+      border-radius: 2em;
+      padding: 3px 11px;
       font-size: 12px;
-      color: #3a3a3c;
+      color: var(--fg-muted);
     }
-    .badge span { font-weight: 700; color: #007aff; }
-    .badge.error span { color: #ff3b30; }
+    .badge span { font-weight: 600; color: var(--fg-default); }
+    .badge.error span { color: var(--danger-fg); }
 
     /* --- toolbar groups (zoom controls, range inputs) --- */
     .toolbar-group {
       display: flex;
       align-items: center;
       gap: 6px;
-      background: #f2f2f7;
-      border-radius: 10px;
+      background: var(--canvas-subtle);
+      border: 1px solid var(--border-muted);
+      border-radius: var(--radius);
       padding: 5px 8px;
     }
-    .toolbar-group .btn.secondary { background: #fff; }
-    .toolbar-group .btn.secondary:hover { background: #e5e5ea; }
-    .toolbar-group .num-input { background: #fff; width: 84px; }
-    .icon-btn { padding: 6px 11px; font-weight: 700; }
+    .toolbar-group .btn.secondary { background: var(--canvas-default); }
+    .toolbar-group .btn.secondary:hover { background: var(--border-muted); }
+    .toolbar-group .num-input { background: var(--canvas-default); width: 84px; }
+    .icon-btn { padding: 5px 10px; font-weight: 600; }
     .zoom-level {
       font-size: 11px;
-      color: #8e8e93;
+      color: var(--fg-muted);
       font-variant-numeric: tabular-nums;
       min-width: 40px;
       text-align: center;
     }
-    .num-input.error { box-shadow: 0 0 0 1.5px #ff3b30 inset; }
+    .num-input.error { border-color: var(--danger-fg); box-shadow: 0 0 0 2px var(--danger-subtle) inset; }
+
+    /* --- the (?) help popover on a card header ---
+       Shared because every card uses it now: a card's title carries a ? and the
+       detail lives behind it, rather than as a paragraph above the content. The
+       popup is a dark panel in BOTH colour modes, like the other inset surfaces,
+       and `white-space: nowrap` is what stops it wrapping mid-phrase - which is why
+       its content is written as one fact per line rather than as prose. The handler
+       is generic (any .help-icon toggles its nextElementSibling), so nothing here
+       is per-card. --- */
+    .help-wrap {
+      position: relative;
+      display: inline-flex;
+    }
+    .help-icon {
+      cursor: pointer;
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--fg-muted);
+      user-select: none;
+      flex-shrink: 0;
+      width: 13px;
+      height: 13px;
+      border: 1px solid var(--fg-muted);
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: 2px;
+    }
+    .help-icon:hover { border-color: var(--fg-default); color: var(--fg-default); }
+    .help-popup {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: 6px;
+      width: max-content;
+      max-width: 480px;
+      background: var(--panel-bg);
+      color: var(--panel-fg);
+      font-size: 11px;
+      font-weight: 400;
+      line-height: 1.5;
+      padding: 8px 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      z-index: 10;
+      cursor: default;
+    }
+    /* One <div> per fact, wrapping, with a hanging indent so a line that runs on
+       aligns under its own text and not under the bullet. The rule this replaced was
+       `white-space: nowrap`, which suited synthesis's short lines and made any longer
+       one overflow the box and render OUTSIDE the dark background. */
+    .help-popup > div { padding-left: 11px; text-indent: -11px; }
+    .help-popup > div + div { margin-top: 3px; }
+    .help-popup.visible { display: block; }
 
     /* --- radix picker popup for waveform value column --- */
     .radix-popup {
       position: fixed;
       display: none;
-      background: #fff;
-      border-radius: 12px;
+      background: var(--canvas-default);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius);
       padding: 8px;
       font-size: 12px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      box-shadow: var(--shadow-overlay);
       z-index: 1000;
       min-width: 130px;
     }
     .radix-popup-title {
-      font-weight: 700;
+      font-weight: 600;
       font-size: 12px;
-      color: #1c1c1e;
+      color: var(--fg-default);
       padding: 4px 8px 6px;
     }
     .radix-opt {
       padding: 6px 8px;
-      border-radius: 8px;
-      color: #8e8e93;
+      border-radius: var(--radius);
+      color: var(--fg-default);
       cursor: pointer;
     }
-    .radix-opt:hover { background: #f2f2f7; }
+    .radix-opt:hover { background: var(--canvas-subtle); }
     .radix-opt.selected {
-      color: #007aff;
-      border: 1.5px solid #007aff;
+      color: var(--accent-fg);
+      border: 1px solid var(--accent-fg);
       font-weight: 600;
     }
 
@@ -194,7 +418,7 @@
     .split-row {
       grid-column: 1 / -1;
       display: flex;
-      gap: 18px;
+      gap: 16px;
       align-items: flex-start;
     }
     .split-row > .card:first-child { flex: 0 0 220px; width: 220px; }
@@ -206,25 +430,85 @@
       align-items: center;
       gap: 4px;
       padding: 5px 6px;
-      border-radius: 6px;
+      border-radius: var(--radius);
       cursor: pointer;
-      color: #3a3a3c;
+      color: var(--fg-default);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .hierarchy-node-row:hover { background: #f2f2f7; }
-    .hierarchy-node-row.active { background: #e8f1ff; color: #007aff; font-weight: 600; }
-    .hierarchy-node-type { color: #8e8e93; font-size: 10px; }
+    .hierarchy-node-row:hover { background: var(--canvas-subtle); }
+    .hierarchy-node-row.active { background: var(--accent-subtle); color: var(--accent-fg); font-weight: 600; }
+    .hierarchy-node-type { color: var(--fg-muted); font-size: 10px; font-family: var(--font-mono); }
+    .hierarchy-fold-box {
+      flex-shrink: 0;
+      width: 14px;
+      height: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-default);
+      border-radius: 3px;
+      color: var(--fg-muted);
+      font: 700 12px/1 var(--font-mono);
+      cursor: pointer;
+    }
+    .hierarchy-fold-box:hover { border-color: var(--fg-muted); color: var(--fg-default); }
+    .hierarchy-fold-spacer { flex-shrink: 0; width: 14px; height: 14px; }
     .hierarchy-node-icon {
       width: 13px;
       height: 13px;
-      color: #8e8e93;
+      color: var(--fg-muted);
       flex-shrink: 0;
     }
-    .hierarchy-children { margin-left: 12px; border-left: 1px solid #e5e5ea; padding-left: 6px; }
+    .hierarchy-children { margin-left: 12px; border-left: 1px solid var(--border-default); padding-left: 6px; }
+              /* --- additions for editor / console / assembly listing / register & memory panel, same visual language --- */
+    /* The frontend radios, in the editor card's own header. Each label is a pill
+       so the pair reads as one control rather than as two stray form controls,
+       and the whole label is the hit target so the word "Python" is clickable
+       too.
 
-    /* --- additions for editor / console / assembly listing / register & memory panel, same visual language --- */
+       HEIGHT IS 20px BECAUSE `.layout-btn` IS, and that is the whole reason it is
+       stated rather than eyeballed: every card's h2 already contains a row of
+       those buttons, so with `* { box-sizing: border-box }` a 20px pill cannot
+       make this header taller than the console's beside it. A pill sized by its
+       own padding measured ~22px and would have grown one card's header by a few
+       pixels - the kind of thing only a screenshot catches, and headless Chrome
+       was unavailable in the session this was written (the SingletonSocket abort
+       CLAUDE.md records). Matching an existing control turns that measurement
+       into an argument.
+
+       The selected one gets the site's existing active idiom (`--accent-subtle`
+       fill, `--accent-fg` border, the same treatment `.layout-btn.active` and the
+       practice hub's chips use), because the native radio dot alone is a 6px
+       difference. The class is WRITTEN by syncLangControl rather than derived
+       with `:has(input:checked)`, so the two encodings of the selection move
+       together in one place and the headless stub - which models no radio-group
+       exclusivity - sees the same state a browser would. */
+    .lang-group { display: flex; gap: 4px; margin-left: 10px; }
+    .lang-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 20px;
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1;
+      padding: 0 8px;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      background: var(--canvas-subtle);
+      color: var(--fg-muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    .lang-toggle:hover { background: var(--border-muted); color: var(--fg-default); }
+    .lang-toggle.on {
+      background: var(--accent-subtle);
+      border-color: var(--accent-fg);
+      color: var(--fg-default);
+    }
+    .lang-toggle input { margin: 0; cursor: pointer; width: 12px; height: 12px; }
     .toolbar {
       display: flex;
       gap: 8px;
@@ -238,28 +522,28 @@
       border: none;
       border-radius: 8px;
       padding: 7px 12px;
-      background: #f2f2f7;
-      color: #1c1c1e;
+      background: var(--canvas-subtle);
+      color: var(--fg-default);
       cursor: pointer;
     }
     select { flex: 1 1 auto; min-width: 120px; }
     .num-input { width: 64px; cursor: text; text-align: center; }
     .btn {
-      background: #007aff;
-      color: #fff;
+      background: var(--btn-primary-bg);
+      color: var(--fg-on-emphasis);
       font-weight: 600;
       transition: background 0.15s ease;
     }
-    .btn:hover { background: #0066d6; }
-    .btn.secondary { background: #f2f2f7; color: #1c1c1e; }
-    .btn.secondary:hover { background: #e5e5ea; }
-    .btn:disabled { background: #c7c7cc; cursor: default; }
-    .time-label { font-size: 12px; color: #8e8e93; margin-right: -2px; }
+    .btn:hover { background: var(--btn-primary-hover); }
+    .btn.secondary { background: var(--canvas-subtle); color: var(--fg-default); }
+    .btn.secondary:hover { background: var(--border-default); }
+    .btn:disabled { background: var(--border-muted); cursor: default; }
+    .time-label { font-size: 12px; color: var(--fg-muted); margin-right: -2px; }
 
     .editor-wrap {
       display: flex;
-      background: #1c1c1e;
-      border-radius: 12px;
+      background: var(--panel-bg);
+      border-radius: var(--radius);
       overflow: hidden;
       height: 360px;
     }
@@ -269,8 +553,8 @@
       padding: 12px 6px 12px 0;
       text-align: right;
       font: 12px/1.55 "SF Mono", Menlo, Consolas, monospace;
-      color: #5a5a5e;
-      background: #232326;
+      color: var(--panel-dim);
+      background: var(--panel-bg-alt);
       overflow: hidden;
       user-select: none;
       white-space: pre;
@@ -279,8 +563,8 @@
     /* One block per line, no flex/margins, so each row is exactly one text
        line-height tall and stays aligned with the textarea beside it. */
     .gutter-line { position: relative; }
-    .gutter-line:hover { color: #e5e5ea; }
-    .gutter-line.current { color: #5ac8fa; font-weight: 700; }
+    .gutter-line:hover { color: var(--border-default); }
+    .gutter-line.current { color: var(--accent-fg); font-weight: 700; }
     .bp-dot {
       position: absolute;
       left: 4px;
@@ -292,10 +576,10 @@
       box-sizing: border-box;
     }
     .gutter-line:hover .bp-dot { background: rgba(255,59,48,0.4); }
-    .gutter-line.bp .bp-dot, .gutter-line.bp:hover .bp-dot { background: #ff3b30; }
+    .gutter-line.bp .bp-dot, .gutter-line.bp:hover .bp-dot { background: var(--danger-fg); }
     /* breakpoint on a line the compiler generated no code for: it can never hit */
     .gutter-line.bp-unmapped .bp-dot,
-    .gutter-line.bp-unmapped:hover .bp-dot { background: transparent; border: 1.5px solid #ff3b30; }
+    .gutter-line.bp-unmapped:hover .bp-dot { background: transparent; border: 1.5px solid var(--danger-fg); }
 
     /* Positioning context for the current-line band. The textarea is
        transparent, so the band behind it shows through. */
@@ -311,7 +595,7 @@
       right: 0;
       display: none;
       background: rgba(90,200,250,0.16);
-      border-left: 2px solid #5ac8fa;
+      border-left: 2px solid var(--accent-fg);
       pointer-events: none;
     }
     textarea#codeInput {
@@ -322,7 +606,7 @@
       border: none;
       outline: none;
       background: transparent;
-      color: #e5e5ea;
+      color: var(--border-default);
       font: 12px/1.55 "SF Mono", Menlo, Consolas, monospace;
       padding: 12px 12px 12px 8px;
       tab-size: 2;
@@ -332,17 +616,17 @@
     .console-box {
       height: 360px;
       overflow-y: auto;
-      background: #1c1c1e;
-      border-radius: 12px;
+      background: var(--panel-bg);
+      border-radius: var(--radius);
       padding: 12px 14px;
       font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
-      color: #b6f2b6;
+      color: var(--panel-green);
       white-space: pre-wrap;
       word-break: break-word;
     }
-    .console-box .err { color: #ff8a80; }
-    .console-box .info { color: #8e8e93; }
-    .console-box .time-tag { color: #5ac8fa; }
+    .console-box .err { color: var(--panel-red); }
+    .console-box .info { color: var(--panel-dim); }
+    .console-box .time-tag { color: var(--panel-blue); }
 
     /* --- assembly listing card --- */
     .asm-listing {
@@ -351,8 +635,8 @@
       /* rows are white-space:pre with a nowrap comment pinned right, so at half
          width they run wider than the card - scroll rather than clip them */
       overflow-x: auto;
-      background: #1c1c1e;
-      border-radius: 12px;
+      background: var(--panel-bg);
+      border-radius: var(--radius);
       padding: 8px 0;
       font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
     }
@@ -367,24 +651,24 @@
     .asm-line.current-pc { background: rgba(90,200,250,0.16); }
     .asm-addr {
       position: relative;
-      color: #5a5a5e;
+      color: var(--panel-dim);
       flex-shrink: 0;
       width: 152px;
       padding-left: 14px;
     }
-    .asm-code { color: #48484a; }
-    .asm-line:hover .asm-code { color: #8e8e93; }
+    .asm-code { color: var(--panel-line); }
+    .asm-line:hover .asm-code { color: var(--fg-muted); }
     .asm-addr[data-index] { cursor: pointer; }
-    .asm-line:hover .asm-addr[data-index] { color: #e5e5ea; }
+    .asm-line:hover .asm-addr[data-index] { color: var(--border-default); }
     .asm-line:hover .asm-addr[data-index] .bp-dot { background: rgba(255,59,48,0.4); }
     /* an instruction breakpoint set right here */
     .asm-line.bp-explicit .asm-addr .bp-dot,
-    .asm-line.bp-explicit:hover .asm-addr .bp-dot { background: #ff3b30; }
+    .asm-line.bp-explicit:hover .asm-addr .bp-dot { background: var(--danger-fg); }
     /* trapped only because a C-line breakpoint covers this instruction */
     .asm-line.bp-inherited .asm-addr .bp-dot,
     .asm-line.bp-inherited:hover .asm-addr .bp-dot {
       background: transparent;
-      border: 1.5px solid #ff3b30;
+      border: 1.5px solid var(--danger-fg);
     }
     /* The border is present (transparent) on every row and merely coloured in on
        the current one, so the text never shifts sideways as the highlight moves.
@@ -393,10 +677,10 @@
       border-left: 2px solid transparent;
       padding-left: 8px;
     }
-    .asm-line.current-pc .asm-mnem { border-left-color: #5ac8fa; }
-    .asm-label { color: #5ac8fa; flex-shrink: 0; }
-    .asm-mnem { color: #e5e5ea; }
-    .asm-comment { color: #8e8e93; font-style: italic; margin-left: auto; padding-left: 12px; white-space: nowrap; }
+    .asm-line.current-pc .asm-mnem { border-left-color: var(--accent-fg); }
+    .asm-label { color: var(--accent-fg); flex-shrink: 0; }
+    .asm-mnem { color: var(--border-default); }
+    .asm-comment { color: var(--fg-muted); font-style: italic; margin-left: auto; padding-left: 12px; white-space: nowrap; }
 
     /* --- register grid --- */
     /* Column-major fill: x0..x7 down the first column, then x8.. down the next.
@@ -408,8 +692,8 @@
       grid-template-rows: repeat(8, auto);
       grid-template-columns: repeat(4, 1fr);
       gap: 1px;
-      background: #1c1c1e;
-      border-radius: 12px;
+      background: var(--panel-bg);
+      border-radius: var(--radius);
       overflow: hidden;
       font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
     }
@@ -420,12 +704,12 @@
        about to change it. */
     .sreg-flag {
       display: inline-block; width: 15px; text-align: center;
-      font-weight: 600; color: #c7c7cc; border-radius: 3px;
+      font-weight: 600; color: var(--border-muted); border-radius: 3px;
       border: 1px solid transparent;
     }
-    .sreg-flag.on { color: #0a84ff; background: rgba(10,132,255,0.12); }
-    .sreg-flag.changing { border-color: #34c759; }
-    .sreg-hex { color: #8e8e93; margin-left: 4px; }
+    .sreg-flag.on { color: var(--accent-fg); background: rgba(10,132,255,0.12); }
+    .sreg-flag.changing { border-color: var(--success-fg); }
+    .sreg-hex { color: var(--fg-muted); margin-left: 4px; }
 
     .reg-pc {
       display: flex;
@@ -433,7 +717,7 @@
       gap: 8px;
       padding: 6px 12px;
       margin-top: 1px;
-      background: #2c2c2e;
+      background: var(--panel-bg-hi);
       border-radius: 0;
       font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
     }
@@ -443,7 +727,7 @@
        is still :last-child - so renderRegisters marks it rather than CSS
        guessing. */
     .reg-pc.reg-pc-last { border-radius: 0 0 12px 12px; }
-    .reg-grid { border-radius: 12px 12px 0 0; }
+    .reg-grid { border-radius: var(--radius) 12px 0 0; }
     /* A grid item defaults to min-width:auto, i.e. it refuses to shrink below its
        content's min-content width. The assembly listing is white-space:pre, so
        without this a half-width Assembly card would balloon its column and steal
@@ -462,19 +746,19 @@
       justify-content: space-between;
       gap: 8px;
       padding: 6px 12px;
-      background: #232326;
+      background: var(--panel-bg-alt);
     }
-    .reg-cell.current { background: #2c2c2e; }
+    .reg-cell.current { background: var(--panel-bg-hi); }
     /* the value the highlighted (not yet executed) instruction is about to write */
-    .reg-cell.pending { background: #2c2c2e; }
-    .reg-next { color: #30d158; }
+    .reg-cell.pending { background: var(--panel-bg-hi); }
+    .reg-next { color: var(--success-fg); }
     /* a register the highlighted instruction READS - name only, amber, so it
        stays distinct from the green "about to be written" arrow */
-    .reg-cell.src .reg-xnum, .reg-cell.src .reg-abi { color: #ffd60a; }
-    .reg-name { color: #5ac8fa; }
+    .reg-cell.src .reg-xnum, .reg-cell.src .reg-abi { color: var(--panel-yellow); }
+    .reg-name { color: var(--accent-fg); }
     .reg-xnum { display: inline-block; width: 3ch; }
-    .reg-abi { color: #8e8e93; }
-    .reg-value { color: #e5e5ea; }
+    .reg-abi { color: var(--fg-muted); }
+    .reg-value { color: var(--border-default); }
 
     /* --- radix checkbox, shared by the register and memory cards --- */
     .radix-toggle {
@@ -482,7 +766,7 @@
       align-items: center;
       gap: 6px;
       font-size: 12px;
-      color: #3a3a3c;
+      color: var(--fg-default);
       cursor: pointer;
       user-select: none;
       flex-shrink: 0;
@@ -493,34 +777,34 @@
     .memory-table-wrap {
       max-height: 320px;
       overflow-y: auto;
-      border-radius: 12px;
-      background: #1c1c1e;
+      border-radius: var(--radius);
+      background: var(--panel-bg);
     }
     table.memory-table {
       width: 100%;
       table-layout: fixed;
       border-collapse: collapse;
       font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
-      color: #e5e5ea;
+      color: var(--border-default);
     }
     table.memory-table th {
       position: sticky;
       top: 0;
-      background: #232326;
+      background: var(--panel-bg-alt);
       text-align: left;
       padding: 6px 12px;
-      color: #8e8e93;
+      color: var(--panel-dim);
       font-weight: 600;
     }
     table.memory-table td {
       padding: 4px 12px;
-      border-top: 1px solid #2c2c2e;
+      border-top: 1px solid var(--panel-bg-hi);
     }
-    table.memory-table td.mem-addr { color: #5ac8fa; white-space: nowrap; }
+    table.memory-table td.mem-addr { color: var(--accent-fg); white-space: nowrap; }
     /* sp/fp marker, inline after the address in the stack table - dim, so it
        never competes with the green pending-write or amber load-read highlights */
-    table.memory-table .mem-mark { color: #8e8e93; white-space: nowrap; }
-    table.memory-table td.mem-hint { color: #8e8e93; white-space: nowrap; }
+    table.memory-table .mem-mark { color: var(--fg-muted); white-space: nowrap; }
+    table.memory-table td.mem-hint { color: var(--fg-muted); white-space: nowrap; }
     /* Fixed widths so a column doesn't resize as you step: reserve room for the
        widest possible content (a pending "old → new" word, or an address with a
        "sp/fp" marker) even on renders where that content isn't present. Set on
@@ -536,27 +820,27 @@
     table.memory-table.stack-table th:first-child { width: calc(13ch + 24px); }
     /* Rows below sp: abandoned leftovers from calls that already returned, so
        the address and value are dimmed to keep the live stack prominent. */
-    table.memory-table tr.mem-dead td.mem-addr { color: #2f5a6b; }
-    table.memory-table tr.mem-dead td { color: #5a5a5e; }
+    table.memory-table tr.mem-dead td.mem-addr { color: var(--panel-bg-hi); }
+    table.memory-table tr.mem-dead td { color: var(--panel-dim); }
     /* Region label. A <caption> rather than a spanning <th>, because the th rule
        above is position:sticky and two sticky rows in one thead would overlap. */
     table.memory-table caption {
       caption-side: top;
       text-align: left;
       padding: 8px 12px 2px;
-      color: #8e8e93;
+      color: var(--fg-muted);
       font-weight: 600;
     }
     table.memory-table + table.memory-table { margin-top: 6px; }
-    table.memory-table tr.pending td { background: #2c2c2e; }
-    table.memory-table td .mem-next { color: #30d158; }
+    table.memory-table tr.pending td { background: var(--panel-bg-hi); }
+    table.memory-table td .mem-next { color: var(--success-fg); }
     /* the row a load instruction is about to read from */
-    table.memory-table tr.reading td { background: #2c2c2e; }
-    table.memory-table tr.reading td.mem-addr { color: #ffd60a; }
+    table.memory-table tr.reading td { background: var(--panel-bg-hi); }
+    table.memory-table tr.reading td.mem-addr { color: var(--panel-yellow); }
 
     .panel-empty {
       font-size: 12px;
-      color: #8e8e93;
+      color: var(--fg-muted);
       text-align: center;
       padding: 40px 0;
     }
@@ -571,22 +855,46 @@
     .footer {
       text-align: center;
       font-size: 12px;
-      color: #8e8e93;
+      color: var(--fg-muted);
       margin-top: 24px;
     }
-    .footer a { color: #8e8e93; text-decoration: none; }
-    .footer a:hover { color: #007aff; }
+    .footer a { color: var(--fg-muted); text-decoration: none; }
+    .footer a:hover { color: var(--accent-fg); }
 </style>
 </head>
 <body>
 
-  <h1><a href="https://jeremyjbae.github.io/Baerilog">Baerilog</a>: C Compiler</h1>
-  <div class="subtitle">Write · Compile · Run — a C subset to RISC-V or AVR, all in the browser</div>
+  <header class="gh-header">
+    <div class="gh-header-inner">
+      <a class="gh-mark" href="index.html"><svg viewBox="0 0 60 26" fill="none" stroke="black" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M 37.7373 21.25 C 37.752447 18.600017 37.722157 13.899983 37.7373 11.25 C 37.722157 8.899983 35.2373 6.25 32.7373 6.25 C 30.143462 6.25 32.549622 6.25 29.955782 6.25 C 23.70574 6.25 22.45574 11.25 22.501176 13.75 C 22.45574 16.25 23.70574 21.25 29.955782 21.25 C 30.8163 21.25 31.67682 21.25 32.53734 21.25"/><path d="M 2.2184386 2.5 C 2.2184386 7.5 2.2184386 16.25 2.2184386 21.25 C 4.7184386 21.25 7.139786 21.23971 9.999958 21.25 C 16.249958 21.25 17.508377 16.090111 17.499958 13.75 C 17.508377 11.090111 16.249958 6.25 9.999958 6.25 C 8.027672 6.25 9.095067 6.25 7.4284 6.25"/><path d="M 58.03152 6.25 C 55.53152 6.25 53.11017 6.26029 50.25 6.25 C 44 6.25 42.74158 11.409889 42.75 13.75 C 42.74158 16.409889 44 21.25 50.25 21.25 C 52.222286 21.25 56.5836 21.25 58.25027 21.25"/><rect x="47.95" y="13.625" width="9.8" height=".125"/></svg><span>Baerilog</span></a>
+      <nav class="gh-nav"><a href="simulator.html">Simulator</a><a href="synthesis.html">Synthesizer</a><a href="compiler.html" class="here">Compiler</a><a href="index.html">Practice</a></nav>
+    </div>
+  </header>
+
+  <h1><a href="https://jeremyjbae.github.io/Baerilog">Baerilog</a>: Compiler</h1>
+  <div class="subtitle">Write · Compile · Run — a C or Python subset to RISC-V or AVR, all in the browser</div>
 
   <div class="grid">
 
     <div class="card layout-pair" id="card-editor">
-      <h2><span class="card-collapse-btn" data-collapse>▾</span>C Editor
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Source Editor
+        <!-- The frontend belongs on the heading because it names what this card
+             HOLDS, where the Target select below names what the program is
+             compiled to. Two radios rather than a checkbox: there are exactly two
+             languages, neither is a modifier of the other, and a radio pair says
+             that where "Python ☐" implied C was the unmarked default. The h2 is
+             already a flex row and .header-controls keeps its margin-left:auto,
+             so this sits left-adjacent to the title with no new layout. -->
+        <span class="lang-group">
+          <label class="lang-toggle on" for="langPyRadio">
+            <input type="radio" name="langSel" id="langPyRadio" value="py" checked>
+            <span>Python</span>
+          </label>
+          <label class="lang-toggle" for="langCRadio">
+            <input type="radio" name="langSel" id="langCRadio" value="c">
+            <span>C</span>
+          </label>
+        </span>
         <span class="header-controls">
           <span class="layout-toggle">
             <span class="layout-btn" id="editorHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
@@ -605,7 +913,7 @@
           </span>
         </span>
       </h2>
-      <p>Behavioral subset: int/char, arrays, pointers, if/while/for, functions &amp; recursion, printf (literal format strings)</p>
+      <p id="subsetNote">Behavioral subset: int/char, arrays, pointers, if/while/for, functions &amp; recursion, printf (literal format strings)</p>
       <div class="toolbar">
         <select id="exampleSelect"></select>
         <button class="btn secondary" id="openBtn">Open…</button>
@@ -638,7 +946,10 @@
         </div>
       </div>
       <!-- Target on its own row: it is the widest control here, and sharing a
-           row with Compile squeezed the memory field on a narrow card. -->
+           row with Compile squeezed the memory field on a narrow card. The
+           frontend used to sit beside it, on the grounds that both are codegen
+           inputs; it now lives on the card's heading instead, where it says what
+           the editor holds. Both still invalidate the compile. -->
       <div class="toolbar" style="margin-top:10px; margin-bottom:0;">
         <span class="time-label">Target:</span>
         <select id="isaSelect" style="flex:0 1 auto; min-width:0;">
@@ -652,6 +963,7 @@
 
     <div class="card layout-pair" id="card-console">
       <h2><span class="card-collapse-btn" data-collapse>▾</span>Console
+        <span class="help-wrap"><span class="help-icon">?</span><div class="help-popup"><div>&middot; printf output and program status</div></div></span>
         <span class="header-controls">
           <span class="layout-toggle">
             <span class="layout-btn" id="consoleHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
@@ -667,13 +979,13 @@
           </span>
         </span>
       </h2>
-      <p>printf output and program status</p>
       <div class="console-box" id="consoleBox"><span class="info">Click Compile to generate assembly…</span></div>
       <div class="badge-row" id="badgeRow"></div>
     </div>
 
     <div class="card full" id="card-asm">
       <h2><span class="card-collapse-btn" data-collapse>▾</span><span id="asmCardTitle">Assembly</span>
+        <span class="help-wrap"><span class="help-icon">?</span><div class="help-popup"><div>&middot; Generated instruction listing for the program above — Run executes exactly these instructions, not a separate rendering</div><div id="asmAddrNote"></div></div></span>
         <span class="header-controls">
           <span class="layout-toggle">
             <span class="layout-btn" id="asmHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
@@ -692,7 +1004,6 @@
           </span>
         </span>
       </h2>
-      <p>Generated instruction listing for the program above — Run executes exactly these instructions, not a separate rendering</p>
       <div class="toolbar">
         <button class="btn" id="runBtn" disabled>▶ Run</button>
         <button class="btn secondary" id="stepBtn" disabled title="Execute one instruction">⤼ Step</button>
@@ -729,11 +1040,13 @@
       </div>
       <div class="reg-grid" id="regGrid"></div>
       <div class="reg-pc" id="regPc"></div>
+      <div class="reg-pc" id="regSp"></div>
       <div class="reg-pc" id="regSreg" style="display:none"></div>
     </div>
 
     <div class="card full" id="card-data">
       <h2><span class="card-collapse-btn" data-collapse>▾</span>Data Segment
+        <span class="help-wrap"><span class="help-icon">?</span><div class="help-popup"><div>&middot; Globals and string constants, from address 0 up. Global arrays live here too.</div></div></span>
         <span class="header-controls">
           <span class="layout-toggle">
             <span class="layout-btn" id="dataHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
@@ -752,13 +1065,13 @@
           </span>
         </span>
       </h2>
-      <p>Globals and string constants, from address 0 up. Global arrays live here too.</p>
       <div class="memory-table-wrap" id="dataTableWrap"></div>
       <div class="panel-empty" id="dataEmpty">Compile the program to see the data segment.</div>
     </div>
 
     <div class="card full" id="card-stack">
       <h2><span class="card-collapse-btn" data-collapse>▾</span>Stack
+        <span class="help-wrap"><span class="help-icon">?</span><div class="help-popup"><div>&middot; The live stack, from <code>sp</code> up to the top of memory — <code>fp</code> marks the current frame base</div></div></span>
         <span class="header-controls">
           <span class="layout-toggle">
             <span class="layout-btn" id="stackHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
@@ -774,7 +1087,6 @@
           </span>
         </span>
       </h2>
-      <p>The live stack, from <code>sp</code> up to the top of memory — <code>fp</code> marks the current frame base</p>
       <div class="toolbar">
         <div class="toolbar-group">
           <span class="time-label">rows</span>
@@ -1244,6 +1556,1129 @@ function parseC(src) {
   const toks = lex(src);
   const p = new Parser(toks);
   return p.parseProgram();
+}
+
+/* =========================================================================
+   PYTHON LEXER
+
+   Python's grammar is line- and indentation-sensitive, so unlike lex() this
+   emits three structural tokens the C lexer has no notion of: `newline` ends a
+   logical line, and `indent`/`dedent` open and close a block. Everything else is
+   the same shape as the C token stream, which is what lets the two parsers share
+   their expression-node vocabulary.
+
+   Two deliberate rejections. A tab in indentation is an error rather than an
+   8-column stop: mixing tabs and spaces is the one lexical bug in Python that
+   changes a program's meaning while leaving it looking correct, and this subset
+   has no reason to inherit it. And a triple-quoted string is an error too, since
+   a docstring would be a bare expression statement with nowhere to go.
+   ========================================================================= */
+
+const PY_KEYWORDS = new Set([
+  'def', 'return', 'if', 'elif', 'else', 'while', 'for', 'in',
+  'and', 'or', 'not', 'global', 'pass', 'True', 'False', 'None',
+]);
+
+// Longest-munch order matters: '//=' must be tried before '//', which must be
+// tried before '/'. Note '/' is lexed but rejected by the parser - this subset
+// has no floats, so true division has no meaning and '//' is the only divide.
+const PY_OPS3 = ['//=', '<<=', '>>=', '**='];
+const PY_OPS2 = ['==', '!=', '<=', '>=', '<<', '>>', '//', '**', '->',
+  '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^='];
+const PY_OPS1 = '+-*/%=<>!&|^~()[],:';
+
+function lexPy(src) {
+  const toks = [];
+  const stack = [0];       // open indentation levels, innermost last
+  let i = 0, line = 1, depth = 0, atLineStart = true;
+  const n = src.length;
+
+  function isDigit(c) { return c >= '0' && c <= '9'; }
+  function isHexDigit(c) { return isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'); }
+  function isIdentStart(c) { return c === '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
+  function isIdentChar(c) { return isIdentStart(c) || isDigit(c); }
+  function push(type, value) { toks.push({ type, value, line }); }
+
+  // The same escape set the C lexer accepts, so a string means the same thing in
+  // either language and the two frontends' output can be compared byte for byte.
+  function readEscape() {
+    const c = src[i++];
+    switch (c) {
+      case 'n': return 10;
+      case 't': return 9;
+      case '0': return 0;
+      case '\\': return 92;
+      case "'": return 39;
+      case '"': return 34;
+      case 'r': return 13;
+      default: throw new Error('Lex error: unknown escape \'\\' + c + '\' at line ' + line);
+    }
+  }
+
+  // Reads a quoted body, applying escapes. Braces are left alone: an f-string's
+  // fields are split out later, and `{{`/`}}` are its own escaping mechanism.
+  function readQuoted(quote) {
+    let s = '';
+    while (i < n && src[i] !== quote) {
+      if (src[i] === '\n') throw new Error('Lex error: unterminated string literal at line ' + line);
+      if (src[i] === '\\') { i++; s += String.fromCharCode(readEscape()); }
+      else { s += src[i]; i++; }
+    }
+    if (i >= n) throw new Error('Lex error: unterminated string literal at line ' + line);
+    i++;
+    return s;
+  }
+
+  while (i < n) {
+    // ---- start of a logical line: measure indentation ----
+    // Only outside brackets: inside them Python joins lines implicitly, which is
+    // what lets a long call or a list span several lines.
+    if (atLineStart && depth === 0) {
+      let col = 0, j = i;
+      while (j < n && (src[j] === ' ' || src[j] === '\t')) {
+        if (src[j] === '\t') {
+          throw new Error('Lex error: tab in indentation at line ' + line + ' - use spaces');
+        }
+        col++; j++;
+      }
+      // A blank or comment-only line carries no structure: it emits neither a
+      // newline nor an indent, so it cannot open a block or end a statement.
+      if (j >= n || src[j] === '\n' || src[j] === '#') {
+        while (j < n && src[j] !== '\n') j++;
+        if (j < n) { j++; line++; }
+        i = j;
+        continue;
+      }
+      i = j;
+      atLineStart = false;
+      if (col > stack[stack.length - 1]) {
+        stack.push(col);
+        push('indent', null);
+      } else {
+        while (col < stack[stack.length - 1]) {
+          stack.pop();
+          push('dedent', null);
+        }
+        if (col !== stack[stack.length - 1]) {
+          throw new Error('Lex error: inconsistent indentation at line ' + line);
+        }
+      }
+      continue;
+    }
+
+    const c = src[i];
+
+    if (c === '\n') {
+      i++;
+      if (depth === 0) { push('newline', null); atLineStart = true; }
+      line++;
+      continue;
+    }
+    if (c === '\\' && src[i + 1] === '\n') { i += 2; line++; continue; }  // explicit join
+    if (c === ' ' || c === '\t' || c === '\r') { i++; continue; }
+    if (c === '#') { while (i < n && src[i] !== '\n') i++; continue; }
+
+    // numbers
+    if (isDigit(c)) {
+      let j = i;
+      if (c === '0' && (src[i + 1] === 'x' || src[i + 1] === 'X')) {
+        j = i + 2;
+        while (j < n && isHexDigit(src[j])) j++;
+        push('num', parseInt(src.slice(i, j), 16) | 0);
+      } else {
+        while (j < n && isDigit(src[j])) j++;
+        if (src[j] === '.') throw new Error('Lex error: floating point is not supported, at line ' + line);
+        push('num', parseInt(src.slice(i, j), 10) | 0);
+      }
+      i = j;
+      continue;
+    }
+
+    // f-string: kept as its own token type carrying the RAW body, because its
+    // fields have to be split and parsed where the surrounding print() is known.
+    if ((c === 'f' || c === 'F') && (src[i + 1] === '"' || src[i + 1] === "'")) {
+      const quote = src[i + 1];
+      i += 2;
+      if (src[i] === quote && src[i + 1] === quote) {
+        throw new Error('Lex error: triple-quoted strings are not supported, at line ' + line);
+      }
+      push('fstr', readQuoted(quote));
+      continue;
+    }
+
+    // identifiers / keywords
+    if (isIdentStart(c)) {
+      let j = i + 1;
+      while (j < n && isIdentChar(src[j])) j++;
+      const word = src.slice(i, j);
+      push(PY_KEYWORDS.has(word) ? 'kw' : 'ident', word);
+      i = j;
+      continue;
+    }
+
+    // strings - both quote styles, since Python makes no distinction
+    if (c === '"' || c === "'") {
+      if (src[i + 1] === c && src[i + 2] === c) {
+        throw new Error('Lex error: triple-quoted strings are not supported, at line ' + line);
+      }
+      i++;
+      push('str', readQuoted(c));
+      continue;
+    }
+
+    const three = src.slice(i, i + 3);
+    if (PY_OPS3.includes(three)) { push('op', three); i += 3; continue; }
+    const two = src.slice(i, i + 2);
+    if (PY_OPS2.includes(two)) { push('op', two); i += 2; continue; }
+    if (PY_OPS1.includes(c)) {
+      if (c === '(' || c === '[') depth++;
+      if (c === ')' || c === ']') depth--;
+      push('op', c);
+      i++;
+      continue;
+    }
+
+    throw new Error('Lex error: unexpected character \'' + c + '\' at line ' + line);
+  }
+
+  if (!atLineStart) push('newline', null);
+  while (stack.length > 1) { stack.pop(); push('dedent', null); }
+  push('eof', null);
+  return toks;
+}
+
+/* =========================================================================
+   PYTHON PARSER -> THE SAME AST
+
+   This produces exactly the node set documented above the C parser and nothing
+   else, which is the whole reason a second frontend is cheap: buildProgramMeta,
+   all three backends, both interpreters, the encoders and the entire debugger
+   are untouched by it. Four things Python has and C does not are resolved HERE,
+   by desugaring, rather than by teaching any backend a new node:
+
+     for i in range(a,b,s)  ->  For{init,cond,post,body}
+     print(...) / f-strings ->  Call{name:'printf', args:[StringLit(fmt), ...]}
+     x += 1                 ->  Assign(x, Binary('+', x, 1))
+     first assignment to x  ->  a VarDecl, hoisted to the top of the function
+
+   That last one is the load-bearing one. Python has no declaration statement,
+   so buildProgramMeta's per-VarDecl slot walk would have nothing to walk; and
+   Python is FUNCTION-scoped, so a name first assigned inside an `if` has to stay
+   visible after it. Hoisting every synthesized declaration to the top of the
+   function delivers both at once, and leaves buildProgramMeta byte-identical.
+
+   It is deliberately a TWO-PASS parse. A body may call a function defined later
+   in the file and may read a global declared later, so pass 1 collects every
+   `def` signature and every module-level annotation - both of which are written
+   out explicitly, so no inference is involved - and pass 2 parses the bodies
+   against that table. This is also what makes mutual recursion work without C's
+   forward declarations.
+   ========================================================================= */
+
+const PY_INT = { base: 'int', ptr: 0, arraySize: null };
+const PY_CHAR = { base: 'char', ptr: 0, arraySize: null };
+const PY_STR = { base: 'char', ptr: 1, arraySize: null };
+
+// The annotations this subset understands. `str` is a char pointer rather than a
+// string object - there is no heap here - so it can be indexed and walked but
+// not concatenated or resized.
+const PY_SCALAR_ANNOS = { int: PY_INT, char: PY_CHAR, str: PY_STR };
+
+class PyParser {
+  constructor(toks) {
+    this.toks = toks;
+    this.i = 0;
+    this.pass = 1;
+    this.globals = new Map();   // name -> ctype, from module-level annotations
+    this.funcs = new Map();     // name -> { params:[{name,ctype}], retType }
+    this.fn = null;             // per-function state while parsing a body
+    this.allowChr = false;      // set only where a printf conversion is being chosen
+  }
+
+  /* ---- token helpers, same shape as the C parser's ---- */
+  peek(off) { return this.toks[this.i + (off || 0)]; }
+  at(type, value) {
+    const t = this.peek();
+    if (t.type !== type) return false;
+    if (value !== undefined && t.value !== value) return false;
+    return true;
+  }
+  atKw(w) { return this.at('kw', w); }
+  atOp(o) { return this.at('op', o); }
+  next() { return this.toks[this.i++]; }
+  expect(type, value) {
+    if (!this.at(type, value)) this.err('expected ' + (value !== undefined ? '\'' + value + '\'' : type));
+    return this.next();
+  }
+  err(msg) {
+    const t = this.peek();
+    const shown = t.value === null ? t.type : t.value;
+    throw new Error('Parse error at line ' + t.line + ': ' + msg + ', got ' + t.type + ' \'' + shown + '\'');
+  }
+  skipNewlines() { while (this.at('newline')) this.next(); }
+
+  /* ---- module ---- */
+  parseModule() {
+    this.pass = 1;
+    this.i = 0;
+    this.scanTop();
+    this.pass = 2;
+    this.i = 0;
+    return this.buildTop();
+  }
+
+  // Pass 1. Records signatures and module-level annotations, skipping bodies -
+  // which is why it can run before any of them has been understood.
+  scanTop() {
+    this.skipNewlines();
+    while (!this.at('eof')) {
+      if (this.atKw('def')) { this.parseFuncDef(); }
+      else if (this.at('ident') && this.peek(1).type === 'op' && this.peek(1).value === ':') {
+        this.parseAnnotatedGlobal();
+      } else {
+        this.err('only `def` definitions and annotated global variables may sit at '
+          + 'module level (there is no module-level code; main() is the entry point)');
+      }
+      this.skipNewlines();
+    }
+  }
+
+  buildTop() {
+    const decls = [];
+    this.skipNewlines();
+    while (!this.at('eof')) {
+      if (this.atKw('def')) decls.push(this.parseFuncDef());
+      else decls.push(...this.parseAnnotatedGlobal());
+      this.skipNewlines();
+    }
+    return { type: 'Program', decls };
+  }
+
+  /* ---- annotations ---- */
+  // `int` / `char` / `str`, or `list[int]` / `list[char]`. A list annotation
+  // carries no size: the size comes from its `[fill] * N` initialiser, which is
+  // the only list form this subset accepts (C has no array initialiser lists).
+  parseAnnotation() {
+    const t = this.expect('ident');
+    if (t.value === 'list') {
+      this.expect('op', '[');
+      const el = this.expect('ident').value;
+      if (el !== 'int' && el !== 'char') this.err('a list may hold int or char, not \'' + el + '\'');
+      this.expect('op', ']');
+      return { base: el, ptr: 0, arraySize: -1 };   // size filled in from the initialiser
+    }
+    if (t.value === 'None') return { base: 'void', ptr: 0, arraySize: null };
+    const s = PY_SCALAR_ANNOS[t.value];
+    if (!s) this.err('unknown type annotation \'' + t.value + '\'');
+    return { base: s.base, ptr: s.ptr, arraySize: null };
+  }
+
+  // Return annotations allow `None`, which lexes as a keyword rather than an ident.
+  parseReturnAnnotation() {
+    if (this.atKw('None')) { this.next(); return { base: 'void', ptr: 0 }; }
+    const c = this.parseAnnotation();
+    if (c.arraySize !== null) this.err('a function cannot return a list');
+    return { base: c.base, ptr: c.ptr };
+  }
+
+  parseAnnotatedGlobal() {
+    const line = this.peek().line;
+    const name = this.expect('ident').value;
+    this.expect('op', ':');
+    const ctype = this.parseAnnotation();
+    let init = null;
+    if (ctype.arraySize === -1) {
+      this.expect('op', '=');
+      const spec = this.parseListInit();
+      ctype.arraySize = spec.size;
+      // Globals need no zeroing loop: the data segment is zero-filled, and a
+      // nonzero fill is what the loop below exists for.
+      init = null;
+      if (this.pass === 2 && spec.fill !== 0) {
+        this.err('a global list must be initialised with [0] * N; a nonzero fill '
+          + 'would need code to run before main');
+      }
+    } else if (this.atOp('=')) {
+      this.next();
+      init = this.parseExpr();
+    }
+    this.expect('newline');
+    if (this.pass === 1) {
+      if (this.globals.has(name)) this.err('duplicate global \'' + name + '\'');
+      this.globals.set(name, ctype);
+      return [];
+    }
+    return [{ type: 'VarDecl', name, ctype, init, line }];
+  }
+
+  // `[fill] * N`
+  parseListInit() {
+    this.expect('op', '[');
+    const fillTok = this.peek();
+    const fill = this.parseExpr();
+    if (this.atOp(',')) {
+      throw new Error('Parse error at line ' + fillTok.line + ': there are no list literals here - '
+        + 'write [fill] * N and assign the elements individually');
+    }
+    this.expect('op', ']');
+    if (!this.atOp('*')) {
+      this.i--;   // point the error at the ']' we just consumed
+      this.err('a list must be written [fill] * N - there are no list literals here');
+    }
+    this.next();
+    const sizeTok = this.peek();
+    const size = this.parseExpr();
+    if (size.type !== 'Num' || size.value <= 0) {
+      throw new Error('Parse error at line ' + sizeTok.line
+        + ': a list size must be a positive integer literal');
+    }
+    if (fill.type !== 'Num') {
+      throw new Error('Parse error at line ' + fillTok.line
+        + ': a list fill must be an integer literal');
+    }
+    return { fill: fill.value, size: size.value };
+  }
+
+  /* ---- functions ---- */
+  parseFuncDef() {
+    const line = this.peek().line;
+    this.expect('kw', 'def');
+    const name = this.expect('ident').value;
+    this.expect('op', '(');
+    const params = [];
+    if (!this.atOp(')')) {
+      do {
+        const pname = this.expect('ident').value;
+        this.expect('op', ':');
+        const ctype = this.parseAnnotation();
+        if (ctype.arraySize === -1) {
+          // A list parameter is a pointer, exactly as an array argument decays in C.
+          ctype.arraySize = null;
+          ctype.ptr = 1;
+        }
+        params.push({ name: pname, ctype });
+      } while (this.atOp(',') && this.next());
+    }
+    this.expect('op', ')');
+    let retType = { base: 'void', ptr: 0 };
+    if (this.atOp('->')) { this.next(); retType = this.parseReturnAnnotation(); }
+    this.expect('op', ':');
+
+    if (this.pass === 1) {
+      if (this.funcs.has(name)) this.err('duplicate function \'' + name + '\'');
+      this.funcs.set(name, { params, retType });
+      this.skipSuite();
+      return null;
+    }
+
+    this.fn = {
+      params: new Map(params.map(p => [p.name, p.ctype])),
+      locals: new Map(),
+      globalNames: new Set(),
+      decls: [],
+      tmpSeq: 0,
+    };
+    const body = this.parseSuite();
+    // The hoisted declarations go in front of the body, which is what makes a
+    // name first assigned inside a branch visible for the whole function.
+    body.stmts = this.fn.decls.concat(body.stmts);
+    this.fn = null;
+    return { type: 'FuncDecl', name, retType, params, body, line };
+  }
+
+  // Pass 1 only needs to get past a body, not understand it.
+  skipSuite() {
+    if (!this.at('newline')) { while (!this.at('newline') && !this.at('eof')) this.next(); }
+    this.expect('newline');
+    this.skipNewlines();
+    this.expect('indent');
+    let depth = 1;
+    while (depth > 0) {
+      if (this.at('eof')) this.err('unexpected end of file inside a block');
+      if (this.at('indent')) depth++;
+      else if (this.at('dedent')) depth--;
+      this.next();
+    }
+  }
+
+  parseSuite() {
+    // A one-line suite (`if x: return 1`) is legal Python and cheap to accept.
+    if (!this.at('newline')) {
+      const stmts = this.parseSimpleStmtLine();
+      return { type: 'Block', stmts };
+    }
+    this.expect('newline');
+    this.skipNewlines();
+    this.expect('indent');
+    const stmts = [];
+    while (!this.at('dedent')) {
+      if (this.at('eof')) this.err('unexpected end of file inside a block');
+      stmts.push(...this.parseStmt());
+      this.skipNewlines();
+    }
+    this.expect('dedent');
+    return { type: 'Block', stmts };
+  }
+
+  /* ---- statements ---- */
+  // Stamps the source line onto every statement, exactly as the C parser does -
+  // which is what makes the gutter, the current-line band, the breakpoint
+  // mapping and executableLines work for Python with no changes at all.
+  parseStmt() {
+    const line = this.peek().line;
+    const stmts = this.parseStmtInner();
+    for (const s of stmts) if (s.line === undefined) s.line = line;
+    return stmts;
+  }
+
+  parseStmtInner() {
+    if (this.atKw('if')) return [this.parseIf()];
+    if (this.atKw('while')) {
+      this.next();
+      const cond = this.parseExpr();
+      this.expect('op', ':');
+      return [{ type: 'While', cond, body: this.parseSuite() }];
+    }
+    if (this.atKw('for')) return this.parseFor();
+    if (this.atKw('def')) this.err('nested functions are not supported');
+    return this.parseSimpleStmtLine();
+  }
+
+  // Everything that lives on one logical line and is terminated by a newline.
+  parseSimpleStmtLine() {
+    const out = this.parseSimpleStmt();
+    this.expect('newline');
+    return out;
+  }
+
+  parseSimpleStmt() {
+    const line = this.peek().line;
+    if (this.atKw('pass')) { this.next(); return [{ type: 'Block', stmts: [] }]; }
+    if (this.atKw('return')) {
+      this.next();
+      let expr = null;
+      if (!this.at('newline')) expr = this.parseExpr();
+      return [{ type: 'Return', expr }];
+    }
+    if (this.atKw('global')) {
+      this.next();
+      do {
+        const g = this.expect('ident').value;
+        if (!this.globals.has(g)) this.err('\'' + g + '\' is not a module-level variable');
+        this.fn.globalNames.add(g);
+      } while (this.atOp(',') && this.next());
+      return [];
+    }
+
+    // annotated local: `x: int = 0` / `buf: list[int] = [0] * 8`
+    if (this.at('ident') && this.peek(1).type === 'op' && this.peek(1).value === ':') {
+      return this.parseAnnotatedLocal(line);
+    }
+
+    const expr = this.parseExpr();
+
+    // augmented assignment - desugared, so no backend learns a new node
+    const aug = this.peek();
+    if (aug.type === 'op' && aug.value.length >= 2 && aug.value.endsWith('=')
+        && !['==', '!=', '<=', '>='].includes(aug.value)) {
+      this.next();
+      const op = aug.value.slice(0, -1);
+      this.requireRepeatableTarget(expr, aug.line);
+      const rhs = this.parseExpr();
+      const target = this.assignTarget(expr, aug.line);
+      return [{ type: 'ExprStmt', expr: { type: 'Assign', target, value: this.binary(op, expr, rhs, aug.line) } }];
+    }
+
+    if (this.atOp('=')) {
+      const eq = this.next();
+      const value = this.parseExpr();
+      if (this.atOp('=')) this.err('chained assignment (a = b = c) is not supported');
+      const target = this.assignTarget(expr, eq.line);
+      this.noteAssignment(target, value, eq.line);
+      return [{ type: 'ExprStmt', expr: { type: 'Assign', target, value } }];
+    }
+
+    return [{ type: 'ExprStmt', expr }];
+  }
+
+  parseAnnotatedLocal(line) {
+    const name = this.expect('ident').value;
+    this.expect('op', ':');
+    const ctype = this.parseAnnotation();
+    if (ctype.arraySize === -1) {
+      this.expect('op', '=');
+      const spec = this.parseListInit();
+      ctype.arraySize = spec.size;
+      this.declareLocal(name, ctype, line);
+      // A frame slot holds whatever was there before, so `[0] * N` only keeps its
+      // promise if something writes the zeros. Synthesised as an ordinary For over
+      // ordinary nodes, so this costs the backends nothing.
+      return [this.zeroFillLoop(name, spec, line)];
+    }
+    this.declareLocal(name, ctype, line);
+    if (!this.atOp('=')) return [];
+    this.next();
+    const value = this.parseExpr();
+    return [{ type: 'ExprStmt', expr: { type: 'Assign', target: { type: 'Ident', name }, value } }];
+  }
+
+  zeroFillLoop(name, spec, line) {
+    const idx = this.freshTmp(line);
+    return {
+      type: 'For',
+      init: { type: 'ExprStmt', expr: { type: 'Assign', target: { type: 'Ident', name: idx }, value: { type: 'Num', value: 0 } } },
+      cond: { type: 'Binary', op: '<', left: { type: 'Ident', name: idx }, right: { type: 'Num', value: spec.size } },
+      post: { type: 'Assign', target: { type: 'Ident', name: idx }, value: { type: 'Binary', op: '+', left: { type: 'Ident', name: idx }, right: { type: 'Num', value: 1 } } },
+      body: {
+        type: 'Block',
+        stmts: [{
+          type: 'ExprStmt',
+          expr: {
+            type: 'Assign',
+            target: { type: 'Index', array: { type: 'Ident', name }, index: { type: 'Ident', name: idx } },
+            value: { type: 'Num', value: spec.fill },
+          },
+          line,
+        }],
+      },
+      line,
+    };
+  }
+
+  freshTmp(line) {
+    // Not a legal Python identifier, so it cannot collide with a user name.
+    const name = '.t' + (this.fn.tmpSeq++);
+    this.declareLocal(name, PY_INT, line);
+    return name;
+  }
+
+  declareLocal(name, ctype, line) {
+    if (!this.fn) throw new Error('Parse error at line ' + line + ': assignment outside a function');
+    if (this.fn.params.has(name)) return;
+    if (this.fn.locals.has(name)) return;
+    this.fn.locals.set(name, ctype);
+    this.fn.decls.push({ type: 'VarDecl', name, ctype, init: null, line });
+  }
+
+  // The first assignment to a bare name is what DECLARES it, unless the name is
+  // a parameter or was pulled in with `global`. The declaration is hoisted; the
+  // statement itself stays a plain assignment.
+  noteAssignment(target, value, line) {
+    if (target.type !== 'Ident') return;
+    const name = target.name;
+    if (this.fn.params.has(name) || this.fn.locals.has(name) || this.fn.globalNames.has(name)) return;
+    if (this.globals.has(name)) {
+      throw new Error('Parse error at line ' + line + ': \'' + name + '\' is a module-level '
+        + 'variable; add `global ' + name + '` to assign it here');
+    }
+    const ctype = this.inferInitType(value);
+    if (!ctype) {
+      throw new Error('Parse error at line ' + line + ': cannot infer the type of \'' + name
+        + '\' from its first assignment - annotate it, e.g. `' + name + ': int = ...`');
+    }
+    this.declareLocal(name, ctype, line);
+  }
+
+  assignTarget(expr, line) {
+    if (expr.type === 'Ident' || expr.type === 'Index') return expr;
+    throw new Error('Parse error at line ' + line + ': cannot assign to this expression');
+  }
+
+  // An augmented assignment reads its target and then writes it, so the target is
+  // evaluated twice. That is only safe when evaluating it has no side effects and
+  // costs nothing surprising - a[f()] += 1 would call f twice.
+  requireRepeatableTarget(expr, line) {
+    if (expr.type === 'Ident') return;
+    if (expr.type === 'Index' && expr.array.type === 'Ident'
+        && (expr.index.type === 'Num' || expr.index.type === 'Ident')) return;
+    throw new Error('Parse error at line ' + line + ': the target of an augmented assignment '
+      + 'must be a name or name[i] - write it out in full instead');
+  }
+
+  parseIf() {
+    this.expect('kw', 'if');
+    const cond = this.parseExpr();
+    this.expect('op', ':');
+    const then = this.parseSuite();
+    let els = null;
+    this.skipNewlines();
+    if (this.atKw('elif')) {
+      // `elif` is just a nested if in the else branch, which is what C's chain is.
+      const line = this.peek().line;
+      this.toks[this.i] = { type: 'kw', value: 'if', line };
+      const nested = this.parseIf();
+      nested.line = line;
+      els = { type: 'Block', stmts: [nested] };
+    } else if (this.atKw('else')) {
+      this.next();
+      this.expect('op', ':');
+      els = this.parseSuite();
+    }
+    return { type: 'If', cond, then, els };
+  }
+
+  // `for NAME in range(...)` and nothing else: a general iterator protocol needs
+  // objects, and this machine has no heap.
+  parseFor() {
+    const line = this.peek().line;
+    this.expect('kw', 'for');
+    const name = this.expect('ident').value;
+    this.expect('kw', 'in');
+    if (!this.at('ident', 'range')) this.err('only `for <name> in range(...)` is supported');
+    this.next();
+    this.expect('op', '(');
+    const args = [this.parseExpr()];
+    while (this.atOp(',') && this.next()) args.push(this.parseExpr());
+    this.expect('op', ')');
+    this.expect('op', ':');
+    if (args.length > 3) this.err('range() takes at most three arguments');
+
+    let start = { type: 'Num', value: 0 }, stop = args[0], step = { type: 'Num', value: 1 };
+    if (args.length >= 2) { start = args[0]; stop = args[1]; }
+    if (args.length === 3) step = args[2];
+
+    // The stop and step are re-read every iteration, where Python reads them once,
+    // so they have to be things that cannot change or cost anything to re-read.
+    for (const [what, e] of [['stop', stop], ['step', step]]) {
+      if (e.type !== 'Num' && e.type !== 'Ident') {
+        throw new Error('Parse error at line ' + line + ': range()\'s ' + what + ' must be a '
+          + 'literal or a variable here - assign it to one first');
+      }
+    }
+    if (step.type !== 'Num' || step.value === 0) {
+      throw new Error('Parse error at line ' + line + ': range()\'s step must be a nonzero '
+        + 'integer literal, since its sign decides the loop\'s direction');
+    }
+
+    this.declareLocal(name, PY_INT, line);
+    const idx = { type: 'Ident', name };
+    return [{
+      type: 'For',
+      init: { type: 'ExprStmt', expr: { type: 'Assign', target: idx, value: start } },
+      cond: { type: 'Binary', op: step.value > 0 ? '<' : '>', left: idx, right: stop },
+      post: { type: 'Assign', target: idx, value: { type: 'Binary', op: '+', left: idx, right: step } },
+      body: this.parseSuite(),
+      line,
+    }];
+  }
+
+  /* ---- expressions ---- */
+  // Python's precedence, which differs from C's: `not` binds tighter than the
+  // comparisons in C but looser in Python, and bitwise ops sit ABOVE comparison
+  // here rather than below. Writing the ladder out separately is what keeps
+  // `a & 1 == 0` meaning what a Python reader expects.
+  parseExpr() { return this.parseOr(); }
+
+  parseOr() {
+    let left = this.parseAnd();
+    while (this.atKw('or')) { this.next(); left = { type: 'Binary', op: '||', left, right: this.parseAnd() }; }
+    return left;
+  }
+  parseAnd() {
+    let left = this.parseNot();
+    while (this.atKw('and')) { this.next(); left = { type: 'Binary', op: '&&', left, right: this.parseNot() }; }
+    return left;
+  }
+  parseNot() {
+    if (this.atKw('not')) { this.next(); return { type: 'Unary', op: '!', expr: this.parseNot() }; }
+    return this.parseComparison();
+  }
+  parseComparison() {
+    const left = this.parseBitOr();
+    const ops = ['==', '!=', '<', '>', '<=', '>='];
+    if (this.at('op') && ops.includes(this.peek().value)) {
+      const t = this.next();
+      const right = this.parseBitOr();
+      if (this.at('op') && ops.includes(this.peek().value)) {
+        throw new Error('Parse error at line ' + this.peek().line + ': chained comparison '
+          + '(a < b < c) is not supported - write `a < b and b < c`');
+      }
+      return { type: 'Binary', op: t.value, left, right };
+    }
+    return left;
+  }
+  parseBitOr() {
+    let left = this.parseBitXor();
+    while (this.atOp('|')) { this.next(); left = { type: 'Binary', op: '|', left, right: this.parseBitXor() }; }
+    return left;
+  }
+  parseBitXor() {
+    let left = this.parseBitAnd();
+    while (this.atOp('^')) { this.next(); left = { type: 'Binary', op: '^', left, right: this.parseBitAnd() }; }
+    return left;
+  }
+  parseBitAnd() {
+    let left = this.parseShift();
+    while (this.atOp('&')) { this.next(); left = { type: 'Binary', op: '&', left, right: this.parseShift() }; }
+    return left;
+  }
+  parseShift() {
+    let left = this.parseAdditive();
+    while (this.atOp('<<') || this.atOp('>>')) {
+      const op = this.next().value;
+      left = { type: 'Binary', op, left, right: this.parseAdditive() };
+    }
+    return left;
+  }
+  parseAdditive() {
+    let left = this.parseMultiplicative();
+    while (this.atOp('+') || this.atOp('-')) {
+      const t = this.next();
+      left = this.binary(t.value, left, this.parseMultiplicative(), t.line);
+    }
+    return left;
+  }
+  parseMultiplicative() {
+    let left = this.parseUnary();
+    for (;;) {
+      if (this.atOp('*') || this.atOp('//') || this.atOp('%')) {
+        const t = this.next();
+        left = this.binary(t.value, left, this.parseUnary(), t.line);
+        continue;
+      }
+      if (this.atOp('/')) {
+        throw new Error('Parse error at line ' + this.peek().line + ': `/` is float division, '
+          + 'and there are no floats here - use `//`');
+      }
+      if (this.atOp('**')) {
+        throw new Error('Parse error at line ' + this.peek().line + ': `**` is not supported');
+      }
+      break;
+    }
+    return left;
+  }
+  parseUnary() {
+    if (this.atOp('-') || this.atOp('~')) {
+      const op = this.next().value;
+      const e = this.parseUnary();
+      // Fold a sign onto a numeric literal. Not an optimisation: `range(10, 0, -2)`
+      // has to read its step's SIGN at parse time to know which way the loop
+      // counts, and without this fold `-2` is a Unary node with no value to read.
+      if (e.type === 'Num') return { type: 'Num', value: op === '-' ? -e.value | 0 : ~e.value | 0 };
+      return { type: 'Unary', op, expr: e };
+    }
+    if (this.atOp('+')) { this.next(); return this.parseUnary(); }
+    return this.parsePostfix();
+  }
+
+  // `//` is C's `/`, and `%` keeps C's sign rule - see the note on divergences.
+  binary(op, left, right, line) {
+    if (op === '//') op = '/';
+    if (op === '**') throw new Error('Parse error at line ' + line + ': `**` is not supported');
+    // Python's `+` on strings is concatenation, and `*` repeats them. Neither is
+    // expressible without a heap, and both would otherwise compile silently into
+    // arithmetic on the string's ADDRESS - a plausible-looking number that means
+    // nothing. So a string operand is refused here rather than mis-lowered.
+    for (const side of [left, right]) {
+      const t = side.type === 'StringLit' ? PY_STR : this.inferInitType(side);
+      if (t && t.ptr === 1 && t.base === 'char') {
+        throw new Error('Parse error at line ' + line + ': cannot use \'' + op + '\' on a string - '
+          + 'this subset has no string operations (index it with s[i] instead)');
+      }
+    }
+    return { type: 'Binary', op, left, right };
+  }
+
+  parsePostfix() {
+    let expr = this.parsePrimary();
+    for (;;) {
+      if (this.atOp('[')) {
+        this.next();
+        const index = this.parseExpr();
+        if (this.atOp(':')) this.err('slicing is not supported');
+        this.expect('op', ']');
+        expr = { type: 'Index', array: expr, index };
+        continue;
+      }
+      if (this.atOp('(')) {
+        if (expr.type !== 'Ident') this.err('calls require a plain function name');
+        this.next();
+        const call = this.parseCallArgs(expr.name);
+        this.expect('op', ')');
+        expr = call;
+        continue;
+      }
+      break;
+    }
+    return expr;
+  }
+
+  parsePrimary() {
+    const t = this.peek();
+    if (t.type === 'num') { this.next(); return { type: 'Num', value: t.value }; }
+    if (t.type === 'str') { this.next(); return { type: 'StringLit', value: t.value }; }
+    if (t.type === 'fstr') {
+      this.err('an f-string is only allowed as a direct argument of print()');
+    }
+    if (t.type === 'ident') { this.next(); return { type: 'Ident', name: t.value }; }
+    if (this.atKw('True')) { this.next(); return { type: 'Num', value: 1 }; }
+    if (this.atKw('False')) { this.next(); return { type: 'Num', value: 0 }; }
+    if (this.atKw('None')) { this.next(); return { type: 'Num', value: 0 }; }
+    if (this.atOp('(')) {
+      this.next();
+      const e = this.parseExpr();
+      this.expect('op', ')');
+      return e;
+    }
+    if (this.atOp('[')) this.err('a list is only allowed as [fill] * N in an annotated declaration');
+    this.err('expected an expression');
+  }
+
+  parseCallArgs(name) {
+    if (name === 'print') return this.parsePrint();
+    const args = [];
+    const kwLine = this.peek().line;
+    if (!this.atOp(')')) {
+      do {
+        if (this.at('fstr')) this.err('an f-string is only allowed as a direct argument of print()');
+        args.push(this.parseExpr());
+      } while (this.atOp(',') && this.next());
+    }
+    // `ord('A')` folds to a plain number: Python has no char literal, so this is
+    // how a character constant is written, and folding keeps it a compile-time
+    // constant exactly like C's 'A'.
+    if (name === 'ord') {
+      if (args.length !== 1 || args[0].type !== 'StringLit' || args[0].value.length !== 1) {
+        throw new Error('Parse error at line ' + kwLine + ': ord() takes one one-character string literal');
+      }
+      return { type: 'Num', value: args[0].value.charCodeAt(0) };
+    }
+    if (name === 'chr') {
+      // chr() is not a real function here - there is no char type to return. It is
+      // a request for printf's %c, so it is legal only where a conversion is being
+      // chosen, and `allowChr` is set exactly there. formatFor then checks it is
+      // the WHOLE argument, so a nested one cannot leak into the AST.
+      if (!this.allowChr) {
+        throw new Error('Parse error at line ' + kwLine + ': chr() is only meaningful inside print()');
+      }
+      if (args.length !== 1) {
+        throw new Error('Parse error at line ' + kwLine + ': chr() takes one argument');
+      }
+      return { type: 'Call', name: 'chr', args };
+    }
+    if (name === 'range') {
+      throw new Error('Parse error at line ' + kwLine + ': range() is only usable in a for statement');
+    }
+    return { type: 'Call', name, args };
+  }
+
+  /* ---- print, lowered to printf at compile time ---- */
+  // print() carries no format string, so the format is BUILT here from each
+  // argument's static type - which is the same compile-time-literal constraint
+  // genPrintf already imposes, so no backend changes and both frontends share
+  // one lowering.
+  parsePrint() {
+    const line = this.peek().line;
+    const parts = [];      // { lit } | { spec, arg }
+    let sep = ' ', end = '\n', first = true;
+    if (!this.atOp(')')) {
+      do {
+        if (this.atOp(')')) break;   // trailing comma
+        // keyword arguments, literal strings only
+        if (this.at('ident') && this.peek(1).type === 'op' && this.peek(1).value === '='
+            && (this.peek().value === 'sep' || this.peek().value === 'end')) {
+          const kw = this.next().value;
+          this.next();
+          const v = this.peek();
+          if (v.type !== 'str') this.err(kw + '= must be a literal string');
+          this.next();
+          if (kw === 'sep') sep = v.value; else end = v.value;
+          continue;
+        }
+        if (!first) parts.push({ sepHere: true });
+        first = false;
+        if (this.at('fstr')) {
+          const t = this.next();
+          parts.push(...this.splitFString(t.value, t.line));
+        } else {
+          const e = this.parseInPrintArg();
+          parts.push(this.formatFor(e, '', line));
+        }
+      } while (this.atOp(',') && this.next());
+    }
+
+    let fmt = '';
+    const args = [];
+    for (const p of parts) {
+      if (p.sepHere) { fmt += escapePercent(sep); continue; }
+      if (p.lit !== undefined) { fmt += escapePercent(p.lit); continue; }
+      fmt += p.spec;
+      if (p.arg) args.push(p.arg);
+    }
+    fmt += escapePercent(end);
+    return { type: 'Call', name: 'printf', args: [{ type: 'StringLit', value: fmt }].concat(args) };
+  }
+
+  // Splits an f-string body into literal fragments and replacement fields. The
+  // field's expression is lexed and parsed with the same machinery, against the
+  // same symbol tables, so it is an ordinary expression in every respect.
+  splitFString(raw, line) {
+    const out = [];
+    let lit = '';
+    for (let k = 0; k < raw.length; k++) {
+      const c = raw[k];
+      if (c === '{' && raw[k + 1] === '{') { lit += '{'; k++; continue; }
+      if (c === '}' && raw[k + 1] === '}') { lit += '}'; k++; continue; }
+      if (c === '}') throw new Error('Parse error at line ' + line + ': unmatched \'}\' in an f-string');
+      if (c !== '{') { lit += c; continue; }
+      let depth = 1, j = k + 1, body = '';
+      while (j < raw.length && depth > 0) {
+        if (raw[j] === '{') depth++;
+        else if (raw[j] === '}') { depth--; if (!depth) break; }
+        body += raw[j];
+        j++;
+      }
+      if (depth > 0) throw new Error('Parse error at line ' + line + ': unterminated \'{\' in an f-string');
+      if (lit) { out.push({ lit }); lit = ''; }
+      let spec = '';
+      const colon = splitOnTopLevelColon(body);
+      if (colon) { body = colon[0]; spec = colon[1]; }
+      if (!body.trim()) throw new Error('Parse error at line ' + line + ': empty {} in an f-string');
+      out.push(this.formatFor(this.subExpr(body, line), spec, line));
+      k = j;
+    }
+    if (lit) out.push({ lit });
+    return out;
+  }
+
+  // Parses an f-string field's expression, sharing this parser's tables and
+  // per-function state so it can see locals, globals and functions alike.
+  subExpr(text, line) {
+    const sub = new PyParser(lexPy(text));
+    sub.pass = 2;
+    sub.globals = this.globals;
+    sub.funcs = this.funcs;
+    sub.fn = this.fn;
+    sub.allowChr = true;   // a field is a conversion site, same as a print argument
+    let e;
+    try {
+      e = sub.parseExpr();
+    } catch (err) {
+      throw new Error('Parse error at line ' + line + ': in f-string field \'' + text.trim()
+        + '\': ' + String(err.message).replace(/^Parse error at line \d+: /, ''));
+    }
+    if (!sub.at('newline') && !sub.at('eof')) {
+      throw new Error('Parse error at line ' + line + ': unexpected text after \''
+        + text.trim() + '\' in an f-string field');
+    }
+    return e;
+  }
+
+  // An expression in a position where a printf conversion is being chosen, which
+  // is the only place chr() means anything.
+  parseInPrintArg() {
+    const was = this.allowChr;
+    this.allowChr = true;
+    try { return this.parseExpr(); } finally { this.allowChr = was; }
+  }
+
+  // Which printf conversion an argument needs. `%d` for an int, `%s` for a char
+  // pointer, `%c` for chr(...) or an explicit :c - decided from the static type,
+  // because there is no runtime type information to dispatch on.
+  formatFor(e, spec, line) {
+    if (e.type === 'Call' && e.name === 'chr') {
+      assertNoChr(e.args[0], line);
+      return { spec: '%c', arg: e.args[0] };
+    }
+    // chr() anywhere but the root of the argument would survive into the AST as a
+    // Call to a function that does not exist, so it is refused rather than emitted.
+    assertNoChr(e, line);
+    if (spec) {
+      const map = { d: '%d', x: '%x', c: '%c', s: '%s' };
+      if (!map[spec]) {
+        throw new Error('Parse error at line ' + line + ': unsupported format spec \'' + spec
+          + '\' - this subset has d, x, c and s');
+      }
+      return { spec: map[spec], arg: e };
+    }
+    if (e.type === 'StringLit') return { lit: e.value };
+    const t = this.inferInitType(e);
+    if (!t) {
+      throw new Error('Parse error at line ' + line + ': cannot tell what type this print() '
+        + 'argument has - assign it to an annotated variable first');
+    }
+    if (t.ptr === 1 && t.base === 'char') return { spec: '%s', arg: e };
+    if (t.ptr > 0) {
+      throw new Error('Parse error at line ' + line + ': cannot print a pointer');
+    }
+    return { spec: '%d', arg: e };
+  }
+
+  /* ---- the one place types are inferred ----
+     Deliberately six rules and NO propagation, so this cannot quietly grow into
+     a second type system alongside CodegenBase.typeOf. Anything it cannot answer
+     is an error telling the user to annotate, never a guess. */
+  inferInitType(e) {
+    switch (e.type) {
+      case 'Num': return { base: 'int', ptr: 0, arraySize: null };
+      case 'StringLit': return { base: 'char', ptr: 1, arraySize: null };
+      case 'Ident': {
+        const v = this.lookupType(e.name);
+        if (!v) return null;
+        // A list used as a value decays to a pointer, exactly as an array does in C.
+        if (v.arraySize != null) return { base: v.base, ptr: 1, arraySize: null };
+        return { base: v.base, ptr: v.ptr, arraySize: null };
+      }
+      case 'Index': {
+        const a = e.array.type === 'Ident' ? this.lookupType(e.array.name) : null;
+        if (!a) return null;
+        return { base: a.base, ptr: 0, arraySize: null };
+      }
+      case 'Call': {
+        const f = this.funcs.get(e.name);
+        if (!f) return null;
+        return { base: f.retType.base, ptr: f.retType.ptr, arraySize: null };
+      }
+      case 'Binary': case 'Unary':
+        // No pointer arithmetic is expressible in this subset - there is no `&`
+        // and no `*` deref - so every operator result is an int.
+        return { base: 'int', ptr: 0, arraySize: null };
+    }
+    return null;
+  }
+
+  lookupType(name) {
+    if (this.fn) {
+      if (this.fn.locals.has(name)) return this.fn.locals.get(name);
+      if (this.fn.params.has(name)) return this.fn.params.get(name);
+    }
+    if (this.globals.has(name)) return this.globals.get(name);
+    return null;
+  }
+}
+
+// chr() is lowered to a %c conversion, so it never survives into the AST. Nothing
+// downstream would recognise a Call to it, and the failure would be a link-time
+// "unknown function" a long way from the line that wrote it.
+function assertNoChr(node, line) {
+  if (node === null || typeof node !== 'object') return;
+  if (Array.isArray(node)) { for (const x of node) assertNoChr(x, line); return; }
+  if (node.type === 'Call' && node.name === 'chr') {
+    throw new Error('Parse error at line ' + line + ': chr(...) must be the whole print() '
+      + 'argument or f-string field, not part of a larger expression');
+  }
+  for (const k of Object.keys(node)) if (k !== 'type') assertNoChr(node[k], line);
+}
+
+// A literal fragment goes into a printf format string, so a percent sign in it
+// has to be doubled or it would be read as a conversion.
+function escapePercent(s) { return s.replace(/%/g, '%%'); }
+
+// Finds the ':' that separates an f-string field's expression from its format
+// spec, ignoring any inside brackets - `buf[i:j]` has no top-level colon.
+function splitOnTopLevelColon(body) {
+  let depth = 0;
+  for (let k = 0; k < body.length; k++) {
+    const c = body[k];
+    if (c === '(' || c === '[') depth++;
+    else if (c === ')' || c === ']') depth--;
+    else if (c === ':' && depth === 0) return [body.slice(0, k), body.slice(k + 1).trim()];
+  }
+  return null;
+}
+
+function parsePy(src) {
+  return new PyParser(lexPy(src)).parseModule();
 }
 
 /* =========================================================================
@@ -2497,6 +3932,36 @@ function assignAddresses(instrs, widthOf) {
 // Every RV32 instruction is exactly one 32-bit word.
 function rv32InstrBytes() { return 4; }
 
+/* The one place a byte address becomes the number a reader sees, so the
+   listing's address column, the pc row and the paused-at message cannot end up
+   disagreeing about the unit. Which unit that is belongs to the target
+   (`codeAddr`): bytes on RV32, flash words on either ATmega644.
+
+   Note this converts for DISPLAY only. `ins.addr`, `program.addrs`,
+   `addrToIndex`, AvrSim's pc and the return address RCALL pushes are all byte
+   addresses and stay that way - halving them here rather than there is what
+   keeps a two-word instruction's arithmetic in one unit. */
+function codeAddrText(target, byteAddr) {
+  const u = target.codeAddr;
+  return Math.floor((byteAddr >>> 0) / u.perUnit).toString(16).padStart(u.digits, '0');
+}
+
+/* A return address sitting on the stack, named in the unit the LISTING prints,
+   so a reader can go from the two bytes on screen to the row execution resumes
+   at without reassembling the pair by hand (lo lives at the higher address).
+
+   No arithmetic: since AvrSim pushes a word address, as the part does, the
+   stored value already IS the number the listing shows. That was not true while
+   it pushed a byte-addressed pc, and this note used to halve it - a conversion
+   that read correctly and was compensating for the wrong push. Empty on a
+   byte-addressed target: RV32 keeps its return address in `ra` and labels the
+   saved copy by name, so there is no pair to reassemble and no unit to name. */
+function returnAddrNote(target, storedAddr) {
+  if (target.codeAddr.perUnit === 1 || storedAddr == null) return '';
+  return ' → ' + target.codeAddr.note + ' '
+    + (storedAddr >>> 0).toString(16).padStart(target.codeAddr.digits, '0');
+}
+
 /* =========================================================================
    LABEL RESOLUTION
    Resolves each branch/jump's target once every label's instruction index is
@@ -2547,18 +4012,88 @@ function executableLines(instrs) {
   return set;
 }
 
+/* =========================================================================
+   THE LANGUAGE REGISTRY
+
+   The mirror image of TARGETS: that registry holds everything that differs
+   between MACHINES, this one everything that differs between SOURCE LANGUAGES,
+   so adding a frontend is an entry plus the parser it names rather than a flag
+   threaded through the pipeline and the UI.
+
+   What makes a second frontend cheap is that the AST is the whole contract - the
+   node set documented above the PARSER banner and nothing else. A parser that
+   emits only those nodes needs no change in buildProgramMeta, in any of the
+   three backends, in either interpreter, in the encoders, or anywhere in the
+   debugger; a parser that invents a node silently reaches TinyAvrCodegen's
+   inherited paths, where only assertOnlySubset() would notice. So "the AST is
+   the contract" is worth asserting mechanically rather than trusting.
+
+   A descriptor carries the parser, the examples the dropdown offers, and the
+   things the editor card says about itself (its label, the file extension Save
+   uses, and what the Open dialog accepts). `subtitle` is here rather than in the
+   markup because it names the supported subset, which is per-language.
+   ========================================================================= */
+
+const LANGUAGES = {
+  c: {
+    id: 'c', label: 'C', ext: '.c', accept: '.c,.h,.txt',
+    parse: parseC,
+    // A GETTER, not a reference: EXAMPLES is a `const` declared far below this
+    // point, so naming it directly here would be a temporal-dead-zone throw the
+    // moment this object literal is evaluated. Deferring the read to call time
+    // is what lets the registry sit beside compileSource, where it belongs,
+    // rather than being pushed below the examples it indexes.
+    get examples() { return EXAMPLES; },
+    subtitle: 'Behavioral subset: int/char, arrays, pointers, if/while/for, '
+      + 'functions &amp; recursion, printf (literal format strings)',
+  },
+
+  /* The same pipeline from the AST down, so the machine, the ABI, the listing and
+     the debugger are all identical - only the notation changes. What Python does
+     NOT get is a pointer: there is no `&` or `*` to write one with, so the two
+     pointer-shaped C examples have list- and string-indexing counterparts instead.
+
+     Two documented divergences from real Python, both deliberate. `int` is the
+     target's int (16-bit on AVR, 32-bit on RV32) rather than arbitrary precision,
+     so arithmetic wraps - the same honest limitation the AVR C target already has.
+     And `%` keeps C's sign rule, taking the DIVIDEND's sign, because it lowers to
+     the same __divmod helper; Python's takes the divisor's. */
+  py: {
+    id: 'py', label: 'Python', ext: '.py', accept: '.py,.txt',
+    parse: parsePy,
+    get examples() { return PY_EXAMPLES; },
+    subtitle: 'Typed subset: int/char/str, list[int], if/elif/while, '
+      + 'for-in-range, functions &amp; recursion, print (f-strings)',
+  },
+};
+
+// Named once, so the UI's initial state and compileSource's fallback cannot
+// drift apart - the same rule DEFAULT_TARGET_ID follows for the machine. Note
+// this is what a compileSource() call with no `lang` gets: the C entry point is
+// compileC, which names LANGUAGES.c explicitly and is unaffected by this.
+const DEFAULT_LANGUAGE_ID = 'py';
+
 // `opts.target` is a TARGETS entry; it decides which backend runs and carries
-// the ABI the frontend lays memory out with. Falls back to the same default the
-// UI starts on, so a caller that only cares about the C frontend need not name a
-// target and still gets what the app would have compiled.
-function compileC(src, opts) {
+// the ABI the frontend lays memory out with. `opts.lang` is a LANGUAGES entry
+// and decides only which parser runs, since every frontend produces the same
+// AST. Both fall back to the same defaults the UI starts on, so a caller that
+// cares about neither still gets what the app would have compiled.
+function compileSource(src, opts) {
   const target = (opts && opts.target) || TARGETS[DEFAULT_TARGET_ID];
-  const ast = parseC(src);
+  const lang = (opts && opts.lang) || LANGUAGES[DEFAULT_LANGUAGE_ID];
+  const ast = lang.parse(src);
   const meta = buildProgramMeta(ast, target.abi);
   const cg = new target.Codegen(ast, meta, Object.assign({}, target.codegenOpts, {
     memSize: opts && opts.memSize, target,
   }));
   return cg.generate();
+}
+
+// Kept as a thin wrapper on the C frontend rather than renamed away: this is the
+// entry point every headless harness recipe in CLAUDE.md names, so removing it
+// would break each of them for no gain.
+function compileC(src, opts) {
+  return compileSource(src, Object.assign({}, opts, { lang: LANGUAGES.c }));
 }
 
 /* =========================================================================
@@ -3141,10 +4676,19 @@ function labelsByIndex(labels) {
   return byIndex;
 }
 
+/* The listing's first line, and the only place the address column's unit is
+   stated in the listing itself - so it travels with the text a Save writes,
+   rather than living only in the card that renders it. Both formatters use it,
+   which is what stops one from claiming a unit the other does not show. */
+function asmHeaderText(program) {
+  return '; target: ' + program.target.asmLabel
+    + '  -  addresses in ' + program.target.codeAddr.label;
+}
+
 function formatAsm(program) {
   const byIndex = labelsByIndex(program.labels);
   const lines = [];
-  lines.push({ kind: 'header', text: '; target: ' + program.target.asmLabel });
+  lines.push({ kind: 'header', text: asmHeaderText(program) });
   for (let i = 0; i < program.instrs.length; i++) {
     for (const name of (byIndex.get(i) || [])) lines.push({ kind: 'label', text: name + ':' });
     const ins = program.instrs[i];
@@ -3425,6 +4969,22 @@ class AvrSim extends SimBase {
   pop8() { const sp = this.getSp() + 1; this.setSp(sp); return this.readByte(sp); }
   push16(v) { this.push8(v & 0xff); this.push8((v >> 8) & 0xff); }
   pop16() { const hi = this.pop8(); const lo = this.pop8(); return lo | (hi << 8); }
+
+  /* A return address is pushed as a WORD address, which is what this part does:
+     an AVR's PC counts words, and RCALL stores PC+1. This machine's own `pc`
+     field is a BYTE address (see the class comment), so the two conversions here
+     are the whole of the difference and they are deliberately in one place.
+
+     Worth stating because it was wrong for a long time and was survivable: this
+     used to push the byte-addressed pc, which is self-consistent (RET popped
+     back what RCALL pushed, so every program ran correctly) and disagreed with
+     the silicon, with the emulator's uzem-verified AvrCore, with verify's
+     reference RTL core and with the simulator's own CpuModel - all four of which
+     push a word. The only visible symptoms were the two bytes on the stack
+     reading double, and workbench's co-simulator needing a conversion on every
+     call to stop reporting a divergence. Both are gone now. */
+  pushReturnAddress(bytePc) { this.push16((bytePc >>> 1) & 0xffff); }
+  popReturnAddress() { return (this.pop16() << 1) & 0xffff; }
 
   /* The side channel. Only the services a byte-wide UART cannot express live
      here: characters and strings go through UDR0 as real output. Service numbers
@@ -3792,10 +5352,10 @@ class AvrSim extends SimBase {
              instruction cannot skew them the way a byte offset could. --- */
       case 'RJMP': case 'JMP': jumpTo(); break;
       case 'RCALL': case 'CALL':
-        this.push16(nextPc);
+        this.pushReturnAddress(nextPc);
         jumpTo();
         break;
-      case 'RET': nextPc = this.pop16(); break;
+      case 'RET': nextPc = this.popReturnAddress(); break;
       case 'BREQ': case 'BRNE': case 'BRLT': case 'BRGE':
       case 'BRCS': case 'BRCC': case 'BRMI': case 'BRPL':
         if (this.branchTaken(ins.op)) jumpTo();
@@ -6214,7 +7774,7 @@ function avrFormatInstr(ins) {
 function avrFormatAsm(program) {
   const byIndex = labelsByIndex(program.labels);
   const lines = [];
-  lines.push({ kind: 'header', text: '; target: ' + program.target.asmLabel });
+  lines.push({ kind: 'header', text: asmHeaderText(program) });
   for (let i = 0; i < program.instrs.length; i++) {
     for (const name of (byIndex.get(i) || [])) lines.push({ kind: 'label', text: name + ':' });
     const ins = program.instrs[i];
@@ -6564,6 +8124,25 @@ function avrFrameWindows(program) {
   return map;
 }
 
+/* On AVR sp is NOT a register: it lives in SPL/SPH inside the data space, so a
+   pending change to it arrives as two ordinary memory writes and has to be
+   reassembled from them. Bytes the instruction does not touch keep the value they
+   have now, which is what makes a single-byte update (a small ADIW on SPL that
+   does not carry) come out right rather than reading as a half-written pointer.
+   Shared by both AVR targets, since the register file and the I/O map are the
+   same part - only the instruction subset differs between them. */
+function avrStackPointerAfter(r, pend) {
+  const lo = AVR_IO_ADDR(AVR_IO.SPL), hi = AVR_IO_ADDR(AVR_IO.SPH);
+  let sp = r.sp | 0;
+  // In journal order, so the last write to a byte wins - the same rule
+  // previewStep applies to registers.
+  for (const w of pend.mem) {
+    if (w.addr === lo) sp = (sp & 0xff00) | (w.to & 0xff);
+    else if (w.addr === hi) sp = (sp & 0x00ff) | ((w.to & 0xff) << 8);
+  }
+  return sp;
+}
+
 function avrBuildStackHints(program, result, lo, hi, retired) {
   const hints = new Map();
   if (!program || !result) return hints;
@@ -6615,15 +8194,20 @@ function avrBuildStackHints(program, result, lo, hi, retired) {
     }
     put(fp + fs + 1, fnName + "() · saved caller's Y (high byte)");
     put(fp + fs + 2, fnName + "() · saved caller's Y");
+    /* Read before labelling, so the cells can name the row they return to.
+       RCALL pushes a WORD address, while everything this walk navigates by -
+       addrToIndex, the function extents - is in bytes, so the one conversion is
+       here and `retByte` is what the rest of the loop uses. */
+    const ret = word(fp + fs + 3);
+    const retByte = ret == null ? null : (ret << 1) & 0xffff;
     put(fp + fs + 3, fnName + '() · return address (high byte)');
-    put(fp + fs + 4, fnName + '() · return address');
+    put(fp + fs + 4, fnName + '() · return address' + returnAddrNote(program.target, ret));
 
     // Follow the chain: the caller's Y, and who its return address points into.
     const callerFp = word(fp + fs + 1);
-    const ret = word(fp + fs + 3);
-    if (callerFp == null || ret == null || callerFp <= fp) break;
+    if (callerFp == null || retByte == null || callerFp <= fp) break;
     // The return address points at the instruction AFTER the call.
-    const caller = functionContaining(index, ret - 2);
+    const caller = functionContaining(index, retByte - 2);
     if (!caller) break;
     fp = callerFp;
     fnName = caller;
@@ -6718,14 +8302,19 @@ function tinyBuildStackHints(program, result, lo, hi) {
     const l = byte(a), h = byte(a - 1);
     if (l == null || h == null) break;
     const ret = l | (h << 8);
-    // Back up one instruction to land on the RCALL itself, which is both
-    // certainly inside the caller and the thing that names the callee.
-    const site = program.addrToIndex.get(ret - 2);
-    const caller = functionContaining(index, ret - 2);
+    /* RCALL pushes a WORD address; addrToIndex and the function extents are keyed
+       by BYTE address, so convert once here. An RCALL is one word, hence -2 bytes
+       to land back on the call itself - which is both certainly inside the caller
+       and the thing that names the callee. */
+    const retByte = (ret << 1) & 0xffff;
+    const site = program.addrToIndex.get(retByte - 2);
+    const caller = functionContaining(index, retByte - 2);
     const callIns = site === undefined ? null : program.instrs[site];
     const callee = callIns && callIns.op === 'RCALL' ? callIns.targetLabel : null;
     const label = caller ? 'return into ' + caller + '()' : 'return address';
-    put(a, label);
+    // The note goes on the low byte only - one pointer, named once, at the cell
+    // whose address the walk itself steps by.
+    put(a, label + returnAddrNote(program.target, ret));
     put(a - 1, label + ' (high byte)');
     a -= 2;
 
@@ -6785,11 +8374,20 @@ function rv32Target(id, label, asmLabel, useM) {
     // register panel
     regNames: REG_NAMES, regPrefix: 'x', regHexDigits: 8, pcHexDigits: 8,
     zeroReg: 0, hasSreg: false,
+    // The unit every code address is DISPLAYED in. RV32 is byte-addressed, so
+    // this is the identity and every listing here is unchanged.
+    codeAddr: { perUnit: 1, digits: 5, label: 'bytes', note: '' },
     // memory panel: one flat 4-byte-word address space
     viewWordBytes: 4, wordLabel: 'Word (hex)',
     mem: { unit: 'KB', min: 4, max: 65536, step: 256, default: 1024, minStack: 1024 },
     // where the debugger finds the stack and frame pointers, and how it walks frames
     stackPointer: r => r.regs[REG.sp] | 0,
+    // What sp will be after the highlighted instruction, for the panel's green
+    // arrow. sp IS a register here, so the answer is in the pending register set.
+    stackPointerAfter: (r, pend) => {
+      const w = pend.regs.find(x => x.i === REG.sp);
+      return w ? w.to | 0 : r.regs[REG.sp] | 0;
+    },
     framePointer: r => r.regs[REG.s0] | 0,
     // sp points AT the lowest live word on RV32
     stackFloor: r => r.regs[REG.sp] | 0,
@@ -6837,8 +8435,23 @@ const TARGETS = {
     regNames: TINY_REG_NAMES, regPrefix: 'r', regHexDigits: 2, pcHexDigits: 4,
     zeroReg: null,
     hasSreg: true, sregOrder: SREG_FLAG_ORDER, sregBits: SF,
+    /* Every code address is DISPLAYED as a flash word - the listing's address
+       column, the pc row and the paused-at message - while everything the
+       machine navigates by stays a byte address (see codeAddrText).
+
+       This is the unit the part itself counts in: an AVR pc holds a word
+       address and a branch displacement counts words. It also means ONE number
+       serves every purpose, which is the whole reason to prefer it: a listing
+       row's address is simultaneously the element index of that instruction in
+       the rom.txt this target saves, the row simulator/index.html's Memory
+       Viewer shows it on, and what the design's pc holds when it fetches it.
+       The cost, accepted: avr-objdump prints byte addresses, so comparing
+       against one means doubling. */
+    codeAddr: { perUnit: 2, digits: 4, label: 'flash words', note: 'flash word' },
     viewWordBytes: 1, wordLabel: 'Byte (hex)',
     stackPointer: r => r.sp,
+    // sp is in SPL/SPH, not a register, so a pending change is memory traffic
+    stackPointerAfter: avrStackPointerAfter,
     framePointer: r => r.regs[AREG.Y] | (r.regs[AREG.Y + 1] << 8),
     stackFloor: r => r.sp + 1,
     buildStackHints: tinyBuildStackHints,
@@ -6851,8 +8464,8 @@ const TARGETS = {
     /* Saving the assembly writes a ROM image, not a listing - the shape
        simulator/index.html's $readmemh consumes (see buildRomDumpText). One
        16-bit word per element, packed contiguously from 0, which is how flash is
-       indexed; the byte address a design fetches with is the viewer's business,
-       derived there from the element width. */
+       indexed and what an AVR pc counts in - so an element's index here is the
+       very address this target's listing prints for that instruction. */
     romDump: { file: 'rom.txt', wordBits: 16 },
     formatAsm: avrFormatAsm, formatInstr: avrFormatInstr, encodeInstr: avrEncodeInstr,
     sourceRegs: avrSourceRegs, loadOps: AVR_LOAD_OPS,
@@ -6882,11 +8495,16 @@ const TARGETS = {
     regNames: AVR_REG_NAMES, regPrefix: 'r', regHexDigits: 2, pcHexDigits: 4,
     zeroReg: null,  // AVR has no hardwired-zero register; r1 is a convention
     hasSreg: true, sregOrder: SREG_FLAG_ORDER, sregBits: SF,
+    // Same silicon as the entry above, so the same display unit - which is also
+    // what lets the two listings be read side by side row for row.
+    codeAddr: { perUnit: 2, digits: 4, label: 'flash words', note: 'flash word' },
     // One BYTE per row, not one 16-bit word: this is an 8-bit machine, its frame
     // cells start at an odd address (Y+1), and a byte-per-row view is the only one
     // in which every "Holds" label lands on exactly the cell it describes.
     viewWordBytes: 1, wordLabel: 'Byte (hex)',
     stackPointer: r => r.sp,
+    // sp is in SPL/SPH, not a register, so a pending change is memory traffic
+    stackPointerAfter: avrStackPointerAfter,
     framePointer: r => r.regs[AREG.Y] | (r.regs[AREG.Y + 1] << 8),
     // AVR's PUSH writes AT sp and then decrements, so sp is one BELOW the lowest
     // live byte - the opposite of RV32's convention.
@@ -6900,8 +8518,8 @@ const TARGETS = {
     /* Saving the assembly writes a ROM image, not a listing - the shape
        simulator/index.html's $readmemh consumes (see buildRomDumpText). One
        16-bit word per element, packed contiguously from 0, which is how flash is
-       indexed; the byte address a design fetches with is the viewer's business,
-       derived there from the element width. */
+       indexed and what an AVR pc counts in - so an element's index here is the
+       very address this target's listing prints for that instruction. */
     romDump: { file: 'rom.txt', wordBits: 16 },
     formatAsm: avrFormatAsm, formatInstr: avrFormatInstr, encodeInstr: avrEncodeInstr,
     sourceRegs: avrSourceRegs, loadOps: AVR_LOAD_OPS,
@@ -6923,6 +8541,26 @@ int main() {
   printf("Hello, %s!\\n", name);
   printf("%d + %d = %d\\n", a, b, a + b);
   printf("%d in hex is %x, and '%c' is char %d\\n", 255, 255, 'A', 'A');
+  return 0;
+}
+`,
+
+  'Function call': `// The simplest call there is: one argument in, one value back.
+// func1 is not on a call-graph cycle, so on the reduced-AVR2 target its
+// parameter and locals sit at fixed data addresses and it gets no frame at
+// all - the opposite of the recursive example below.
+int func1(int n) {
+  return n + 2;
+}
+
+int main() {
+  int results = 1;
+
+  results = func1(results);
+  results = results + 3;
+
+  printf("results: %d\\n", results);
+
   return 0;
 }
 `,
@@ -7044,6 +8682,167 @@ int main() {
 `,
 };
 
+/* The Python counterparts. Four keep their C names so the two dropdowns can be
+   read side by side - same program, same target, same output, different notation.
+   The two pointer-based C examples have no direct port, because there is no `&`
+   or `*` to write a pointer with here, so they become list- and string-indexing
+   versions of the same algorithms.
+
+   As with EXAMPLES: never write a backtick, and never write a dollar-brace.
+   These are template literals, so either one ends the literal and turns the rest
+   of the program into JavaScript - a failure that surfaces hundreds of lines away. */
+
+const PY_EXAMPLES = {
+  'Hello, print': `# print() carries no format string, so the format is built at compile time
+# from each argument's declared type - then lowered to exactly the print
+# syscalls the C frontend emits.
+name: str = "Baerilog"
+
+def main() -> int:
+    global name
+    a = 2
+    b = 40
+    print(f"Hello, {name}!")
+    print(f"{a} + {b} = {a + b}")
+    print(f"{255} in hex is {255:x}, and '{ord('A'):c}' is char {ord('A')}")
+    return 0
+`,
+
+  'Function call': `# An annotated parameter and return type are what make this reach the same
+# backend as the C version: the types are declared, not inferred. The bare
+# "results = 1" needs no annotation because its initialiser is a literal.
+def func1(n: int) -> int:
+    return n + 2
+
+def main() -> int:
+    results = 1
+
+    results = func1(results)
+    results = results + 3
+
+    print(f"results: {results}")
+
+    return 0
+`,
+
+  'Factorial (recursion)': `# A function on a call-graph cycle gets a real stack frame; every other
+# function here has its locals placed at fixed addresses instead.
+def fact(n: int) -> int:
+    if n <= 1:
+        return 1
+    return n * fact(n - 1)
+
+def main() -> int:
+    for i in range(1, 11):
+        print(f"{i}! = {fact(i)}")
+    return 0
+`,
+
+  'Fibonacci (loop + list)': `# list[int] = [0] * 15 declares a fixed-size array and fills it: the size
+# is part of the declaration, and the zeros are written by a real loop.
+def main() -> int:
+    f: list[int] = [0] * 15
+    f[0] = 0
+    f[1] = 1
+    for i in range(2, 15):
+        f[i] = f[i - 1] + f[i - 2]
+    print("fib:", end="")
+    for i in range(15):
+        print(f" {f[i]}", end="")
+    print()
+    return 0
+`,
+
+  'Array sum (globals + while)': `# A module-level variable is a global: it needs an annotation, and a
+# function has to say "global" before assigning one.
+arr: list[int] = [0] * 8
+
+def main() -> int:
+    global arr
+    i = 0
+    while i < 8:
+        arr[i] = (i + 1) * (i + 1)
+        i += 1
+
+    total = 0
+    largest = 0
+    i = 0
+    while i < 8:
+        total += arr[i]
+        if arr[i] > largest:
+            largest = arr[i]
+        i += 1
+    print(f"squares 1..8 sum to {total} (0x{total:x}), max = {largest}")
+    print(f"average = {total // 8} remainder {total % 8}")
+    return 0
+`,
+
+  'List sort (in place)': `# There is no & and no * here, so a list is passed the way a C array is:
+# it decays to its base address, which is enough to sort it in place.
+# Note range()'s stop must be a name or a literal, so the inner bound is
+# given a name - it is re-read on every iteration.
+data: list[int] = [0] * 8
+
+def swap(v: list[int], i: int, j: int) -> None:
+    t = v[i]
+    v[i] = v[j]
+    v[j] = t
+
+def sort(v: list[int], n: int) -> None:
+    for i in range(n):
+        last = n - 1 - i
+        for j in range(last):
+            if v[j] > v[j + 1]:
+                swap(v, j, j + 1)
+
+def main() -> int:
+    global data
+    data[0] = 5
+    data[1] = 2
+    data[2] = 9
+    data[3] = 1
+    data[4] = 7
+    data[5] = 3
+    data[6] = 8
+    data[7] = 4
+
+    print("before:", end="")
+    for i in range(8):
+        print(f" {data[i]}", end="")
+    print()
+
+    sort(data, 8)
+
+    print("after: ", end="")
+    for i in range(8):
+        print(f" {data[i]}", end="")
+    print()
+    return 0
+`,
+
+  'String walk (str + list[char])': `# A str is a pointer to bytes, so it can be indexed but not concatenated,
+# and s[i] is the byte's value. ord() folds to a constant at compile time;
+# the :c conversion prints a value as a character.
+src: str = "Hello, Baerilog"
+upper: list[char] = [0] * 32
+
+def main() -> int:
+    global src, upper
+    n = 0
+    while src[n] != 0:
+        c = src[n]
+        if c >= ord('a') and c <= ord('z'):
+            c = c - 32
+        upper[n] = c
+        n += 1
+    upper[n] = 0
+
+    print(f"{src} -> {upper} ({n} chars)")
+    print(f"first={upper[0]:c} last={upper[n - 1]:c}")
+    return 0
+`,
+};
+
 /* =========================================================================
    UI WIRING
    ========================================================================= */
@@ -7056,9 +8855,11 @@ const runBtn = $('runBtn'), stepBtn = $('stepBtn'), resetBtn = $('resetBtn');
 const saveRomBtn = $('saveRomBtn'), saveRamBtn = $('saveRamBtn');
 const compileBtn = $('compileBtn');
 const isaSelect = $('isaSelect'), maxStepsInput = $('maxStepsInput'), memSizeInput = $('memSizeInput');
+const langRadios = [$('langPyRadio'), $('langCRadio')], subsetNote = $('subsetNote');
 const asmListing = $('asmListing'), asmEmpty = $('asmEmpty'), regGrid = $('regGrid'), badgeRow = $('badgeRow');
-const regPc = $('regPc'), regSreg = $('regSreg');
+const regPc = $('regPc'), regSp = $('regSp'), regSreg = $('regSreg');
 const memUnitLabel = $('memUnitLabel'), asmCardTitle = $('asmCardTitle'), regCardNote = $('regCardNote');
+const asmAddrNote = $('asmAddrNote');
 const regHexCheckbox = $('regHexCheckbox');
 const dataTableWrap = $('dataTableWrap'), dataEmpty = $('dataEmpty');
 const stackTableWrap = $('stackTableWrap'), stackEmpty = $('stackEmpty');
@@ -7225,15 +9026,38 @@ codeInput.addEventListener('keydown', (e) => {
 });
 
 /* ---- example dropdown ---- */
-let currentFileName = 'program.c';
-for (const name of Object.keys(EXAMPLES)) {
-  const opt = document.createElement('option');
-  opt.value = name; opt.textContent = name;
-  exampleSelect.appendChild(opt);
+let currentFileName = 'program' + LANGUAGES[DEFAULT_LANGUAGE_ID].ext;
+
+// Rebuilt whenever the frontend changes, since the examples are per-language.
+// The options are cleared and re-appended wholesale, and the caller is then
+// obliged to load one by name: assigning a `.value` that no <option> carries is
+// silently ignored by a real browser, after which the change handler never fires
+// and the editor is left holding the other language's source.
+//
+// Takes the language as an ARGUMENT rather than calling selectedLanguage(), so
+// that applyLanguage can populate for the language it is switching TO before
+// committing to it. The initial population happens there too, at the bottom of
+// the file - there is deliberately no call here, because the language has to be
+// read out of localStorage first and this runs long before that.
+function populateExamples(lang) {
+  exampleSelect.innerHTML = '';
+  for (const name of Object.keys(lang.examples)) {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    exampleSelect.appendChild(opt);
+  }
 }
+
+// What the editor holds when an example is loaded, so a later language switch can
+// tell an untouched buffer from edited work worth confirming before replacing.
+let loadedExampleSource = null;
+
 function loadExample(name) {
-  codeInput.value = EXAMPLES[name];
-  currentFileName = name.replace(/[^A-Za-z0-9_-]+/g, '_') + '.c';
+  const lang = selectedLanguage();
+  codeInput.value = lang.examples[name];
+  loadedExampleSource = codeInput.value;
+  exampleSelect.value = name;
+  currentFileName = name.replace(/[^A-Za-z0-9_-]+/g, '_') + lang.ext;
   updateGutter();
   invalidateCompile(); // setting .value in script does not fire an 'input' event
 }
@@ -7321,10 +9145,10 @@ function buildRomDumpText(program, spec) {
       const shift = Math.pow(2, spec.wordBits * (words - 1 - w));
       const word = Math.floor(value / shift) % Math.pow(2, spec.wordBits);
       /* No `@` address: words go out in flash order and $readmemh's own counter
-         places them, one per element. An explicit `@` would be actively
-         misleading here, because it takes an array INDEX while the Memory Viewer
-         shows the byte address the design fetches with - two different numbers
-         for the same row. */
+         places them, one per element. An explicit `@` would buy nothing and
+         could only go wrong - the array INDEX it takes is already what every
+         other surface shows for this row, from the Memory Viewer that loads it
+         to the assembly listing that generated it. */
       out.push(word.toString(16).padStart(digits, '0') + ' // '
         + (w === 0 ? prefix + text : '(word ' + (w + 1) + ' of ' + text + ')'));
     }
@@ -7386,7 +9210,9 @@ document.getElementById('asmSaveBtn').addEventListener('click', () => {
     logLine('<span class="err">' + escapeHtml(e.message) + '</span>');
     return;
   }
-  downloadText(spec ? spec.file : currentFileName.replace(/\.c$/i, '') + '.s', text);
+  // Strip whatever source extension the current frontend uses, rather than `.c`
+  // specifically - the listing is named after the program, not the language.
+  downloadText(spec ? spec.file : currentFileName.replace(/\.[A-Za-z0-9]+$/, '') + '.s', text);
 });
 
 /* The two explicit buttons. `Save rom.txt` shares buildRomDumpText with the
@@ -7572,6 +9398,83 @@ function readMaxSteps() {
 // The target the dropdown currently selects - what the next Compile will use.
 function selectedTarget() { return TARGETS[isaSelect.value] || TARGETS[DEFAULT_TARGET_ID]; }
 
+// Which frontend the next Compile will parse with. Held in a variable rather than
+// read off the radios on every use, because applyLanguage() below has to be able
+// to put them back when the user cancels a switch.
+let currentLangId = DEFAULT_LANGUAGE_ID;
+function selectedLanguage() { return LANGUAGES[currentLangId] || LANGUAGES[DEFAULT_LANGUAGE_ID]; }
+
+/* Both encodings of the selection - which radio is checked and which pill carries
+   `.on` - are written HERE and nowhere else, so neither can be changed alone. It
+   also means nothing relies on a browser unchecking the sibling radio for us,
+   which is what lets the headless stub DOM (no radio-group exclusivity) observe
+   the same state a browser would. */
+function syncLangControl() {
+  for (const r of langRadios) {
+    r.checked = r.value === currentLangId;
+    r.parentElement.classList.toggle('on', r.checked);
+  }
+}
+
+/* Switching frontend, which is four separate obligations:
+
+   1. The prior compile is stale - the language is a codegen input exactly as the
+      target and the memory size are.
+   2. The examples are per-language, so the dropdown is rebuilt and then one is
+      loaded BY NAME. Assigning a `.value` no <option> carries is silently ignored
+      by a real browser, after which the change handler never fires and the editor
+      is left holding source the new parser cannot read.
+   3. The card describes the subset it accepts, and the file extension and the
+      Open dialog's filter follow the language too.
+   4. Edited work is confirmed before it is replaced. This app assigns
+      codeInput.value directly rather than going through an undo-preserving
+      insertText, so a silent replacement cannot be recovered with Cmd-Z.
+
+   The confirm has to happen BEFORE anything else moves, and cancelling has to put
+   the radios back - otherwise the control claims Python while the C parser is
+   still what Compile would run, which is the worst state available here.
+
+   Note obligation 1 needs no code of its own: loadExample calls
+   invalidateCompile, and the newly loaded example never matches compiledSource,
+   so Run is already disabled by the time this returns. An explicit
+   `compiledSource = null` here was redundant, and being unreachable it was also
+   untestable - the mutation that deleted it changed nothing. */
+function applyLanguage(id) {
+  currentLangId = LANGUAGES[id] ? id : DEFAULT_LANGUAGE_ID;
+  const lang = selectedLanguage();
+  syncLangControl();
+  subsetNote.innerHTML = lang.subtitle;
+  fileOpenInput.setAttribute('accept', lang.accept);
+  localStorage.setItem('compilerLang', currentLangId);
+  populateExamples(lang);
+  loadExample(Object.keys(lang.examples)[0]);
+}
+
+// True when the editor holds something other than the example that was loaded
+// into it - i.e. when replacing it would destroy work.
+function editorIsDirty() {
+  return loadedExampleSource !== null && codeInput.value !== loadedExampleSource;
+}
+
+/* The language comes from the radio that FIRED, never from inspecting which one
+   is checked: that is true in a browser and in the stub DOM alike, where a
+   `.checked` sweep would depend on group exclusivity nothing implements. */
+function wantLanguage(ev) { return (ev.target && ev.target.value) || currentLangId; }
+
+for (const radio of langRadios) radio.addEventListener('change', ev => {
+  const want = wantLanguage(ev);
+  if (want === currentLangId) return;
+  if (editorIsDirty()) {
+    const other = LANGUAGES[want].label;
+    if (!confirm('Switching to ' + other + ' will replace the editor contents.\n\n'
+        + 'Your edits are not saved and cannot be undone. Continue?')) {
+      syncLangControl();   // the control must not lie
+      return;
+    }
+  }
+  applyLanguage(want);
+});
+
 // The target the on-screen program was actually compiled for. Rendering must use
 // this and never the dropdown: changing the dropdown invalidates the compile but
 // deliberately leaves the listing and panels on screen, so they have to keep
@@ -7651,11 +9554,13 @@ function compileProgram() {
 
   // lex -> parse -> meta -> codegen. Lex/parse and semantic errors both surface
   // here, already prefixed by whichever stage threw them. memSize is a codegen
-  // input because _start bakes the stack top in as an immediate.
+  // input because _start bakes the stack top in as an immediate; the language is
+  // one too, in the sense that a prior compile of the other frontend's source is
+  // just as stale as one for the other machine.
   const memSize = readMemSize(target);
   let program;
   try {
-    program = compileC(src, { target, memSize });
+    program = compileSource(src, { lang: selectedLanguage(), target, memSize });
   } catch (e) {
     lastProgram = null;
     compiledSource = null;
@@ -7808,7 +9713,12 @@ function renderConsoleFromState() {
     logLine('<span class="info">Exited with code ' + r.exitCode + ' after ' + r.steps + ' instructions.</span>');
     return;
   }
-  const where = 'pc=0x' + (r.pc >>> 0).toString(16).padStart(5, '0')
+  // pc in the unit the listing shows, named when that is not the byte address
+  // the machine holds - a bare number here would be the one place the reader has
+  // nothing on screen to tell them which of the two it is.
+  const t = shownTarget();
+  const where = 'pc=0x' + codeAddrText(t, r.pc)
+    + (t.codeAddr.note ? ' (' + t.codeAddr.note + ')' : '')
     + (r.line != null ? ', line ' + r.line : '')
     + ', ' + r.steps + ' instruction' + (r.steps === 1 ? '' : 's') + ' executed';
   if (r.hitBreakpoint) {
@@ -7825,6 +9735,16 @@ function renderTargetChrome() {
   asmCardTitle.textContent = t.label + ' Assembly';
   regCardNote.innerHTML = t.label + ' register file at the current position — a green '
     + '<code>→</code> shows the value the highlighted instruction is about to write';
+  /* The address column's unit, stated from the same descriptor that decides it -
+     so the card cannot claim one unit while the column prints another. On AVR the
+     number is worth naming for what else it is: the element index of the saved
+     rom.txt, which is also the row simulator/index.html's Memory Viewer shows. */
+  asmAddrNote.innerHTML = t.codeAddr.perUnit === 1
+    ? '&middot; The address column is a byte address, and every instruction is 4 bytes wide'
+    : '&middot; The address column is a <b>flash word</b> address — what this part’s '
+      + '<code>pc</code> counts in, and the element index of the same instruction in the '
+      + '<code>rom.txt</code> Save writes. A two-word <code>lds</code>/<code>sts</code> '
+      + 'therefore advances it by 2, and avr-objdump’s byte addresses read double.';
 }
 
 /* The memory control counts KB for RV32 and bytes for AVR, so its bounds, step
@@ -7908,8 +9828,9 @@ function renderAsm() {
   // shows where a run that hit the step cap or an error came to rest.
   const stopIndex = lastResult && !lastResult.finished ? lastResult.index : -1;
   const lineTraps = trapIndicesForLines(lastProgram.instrs, breakpointLines);
+  const t = shownTarget();
   let html = '';
-  for (const line of shownTarget().formatAsm(lastProgram)) {
+  for (const line of t.formatAsm(lastProgram)) {
     if (line.kind === 'header') {
       html += '<div class="asm-line"><span class="asm-comment" style="margin:0">' + escapeHtml(line.text) + '</span></div>';
     } else if (line.kind === 'label') {
@@ -7921,7 +9842,7 @@ function renderAsm() {
       const cls = 'asm-line' + (line.index === stopIndex ? ' current-pc' : '') + bp;
       html += '<div class="' + cls + '">'
         + '<span class="asm-addr" data-index="' + line.index + '" title="Click to toggle a breakpoint here">'
-        + '<span class="bp-dot"></span>' + line.addr.toString(16).padStart(5, '0') + ': '
+        + '<span class="bp-dot"></span>' + codeAddrText(t, line.addr) + ': '
         + '<span class="asm-code">(' + line.code + ')</span></span>'
         + '<span class="asm-mnem">' + escapeHtml(line.text) + '</span>'
         + (line.comment ? '<span class="asm-comment"># ' + escapeHtml(line.comment) + '</span>' : '')
@@ -7980,10 +9901,13 @@ function currentInstr() {
   return idx >= 0 && idx < lastProgram.instrs.length ? lastProgram.instrs[idx] : null;
 }
 
-// pc and sreg are stacked under the grid; only the bottom-most VISIBLE one gets
-// the rounded corners that close the block off.
+// pc, sp and sreg are stacked under the grid; only the bottom-most VISIBLE one
+// gets the rounded corners that close the block off. sp is always shown - every
+// target here has one - so pc is never last, and which of sp/sreg is depends on
+// whether the machine has flags.
 function markLastRegRow(sregShown) {
-  regPc.classList.toggle('reg-pc-last', !sregShown);
+  regPc.classList.remove('reg-pc-last');
+  regSp.classList.toggle('reg-pc-last', !sregShown);
   regSreg.classList.toggle('reg-pc-last', sregShown);
 }
 
@@ -7992,6 +9916,7 @@ function renderRegisters() {
     regGrid.innerHTML = '<div class="reg-cell" style="grid-column:1/-1; justify-content:center; color:#8e8e93">'
       + 'Compile to see the register file.</div>';
     regPc.innerHTML = '';
+    regSp.innerHTML = '';
     regSreg.style.display = 'none';
     regSreg.innerHTML = '';
     markLastRegRow(false);
@@ -8025,10 +9950,37 @@ function renderRegisters() {
   }
   regGrid.innerHTML = html;
 
+  /* pc is shown in the same unit as the listing's address column, so the two can
+     be read against each other - on AVR that is a flash WORD, which is what the
+     part itself counts in and what the saved rom.txt is indexed by. The byte
+     address the interpreter actually holds is in the hover title, since it is
+     what a stack dump's return address and avr-objdump both speak in. */
   const nextPc = pendingWrite ? pendingWrite.nextPc : null;
+  const perUnit = t.codeAddr.perUnit;
   regPc.innerHTML = '<span class="reg-name">pc</span>'
-    + '<span class="reg-value">' + formatRegValue(lastResult.pc, t.pcHexDigits)
-    + (nextPc !== null ? ' <span class="reg-next">→ ' + formatRegValue(nextPc, t.pcHexDigits) + '</span>' : '')
+    + '<span class="reg-value"' + (perUnit === 1 ? '' : ' title="byte address 0x'
+      + (lastResult.pc >>> 0).toString(16).padStart(t.pcHexDigits, '0') + '"') + '>'
+    + formatRegValue(Math.floor((lastResult.pc >>> 0) / perUnit), t.pcHexDigits)
+    + (nextPc !== null ? ' <span class="reg-next">→ '
+      + formatRegValue(Math.floor((nextPc >>> 0) / perUnit), t.pcHexDigits) + '</span>' : '')
+    + '</span>';
+
+  /* sp gets its own row for the same reason pc does: on AVR it is not a register
+     at all - it lives in SPL/SPH inside the data space - so without this the
+     Registers card showed no stack pointer whatsoever on either AVR target. On
+     RV32 it IS x2, so the row restates a value the grid already carries; that is
+     worth the duplication, because one labelled row is findable where the same
+     word among thirty-one others is not, and it keeps the special-register block
+     the same shape on every target.
+
+     The value comes from the target's own accessor rather than from a register
+     index, which is exactly what stops this from having to know where a given
+     machine keeps it. */
+  const sp = t.stackPointer(lastResult) | 0;
+  const nextSp = pendingWrite && t.stackPointerAfter ? t.stackPointerAfter(lastResult, pendingWrite) | 0 : sp;
+  regSp.innerHTML = '<span class="reg-name">sp</span>'
+    + '<span class="reg-value">' + formatRegValue(sp, t.pcHexDigits)
+    + (nextSp !== sp ? ' <span class="reg-next">→ ' + formatRegValue(nextSp, t.pcHexDigits) + '</span>' : '')
     + '</span>';
 
   // SREG is not a general register, so it gets its own row beside pc - shown as
@@ -8259,7 +10211,17 @@ function regionTableHtml(region, pendBytes, readBytes, marks, hints, deadBelow) 
 }
 
 /* ---- initial state ---- */
-loadExample(Object.keys(EXAMPLES)[0]);
+// The language is applied FIRST, and it is what loads the example: it decides
+// which set of examples exists, so choosing one before it is settled would load
+// out of the wrong set.
+//
+// The stored preference is honoured in BOTH directions - any id the registry
+// carries is taken, anything else falls back to the default. The old form
+// (`=== 'py' ? 'py' : 'c'`) only ever turned Python on, so with Python as the
+// default a deliberate choice of C would have come back as Python on reload:
+// the same one-directional bug the Scoreboard's checkbox had.
+const storedLang = localStorage.getItem('compilerLang');
+applyLanguage(LANGUAGES[storedLang] ? storedLang : DEFAULT_LANGUAGE_ID);
 applyMemControl();
 stackRowsInput.value = localStorage.getItem('compilerStackRows') || '';
 initState();
@@ -8268,6 +10230,22 @@ initState();
 
 
 
+
+/* ---- (?) help popovers on card headers (generic: any .help-icon toggles the
+   element right after it, and a click anywhere closes them all) ---- */
+document.querySelectorAll('.help-icon').forEach(btn => {
+  const popup = btn.nextElementSibling;
+  if (!popup || !popup.classList.contains('help-popup')) return;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const willShow = !popup.classList.contains('visible');
+    document.querySelectorAll('.help-popup.visible').forEach(p => p.classList.remove('visible'));
+    if (willShow) popup.classList.add('visible');
+  });
+});
+document.addEventListener('click', () => {
+  document.querySelectorAll('.help-popup.visible').forEach(p => p.classList.remove('visible'));
+});
 </script>
 </body>
 </html>

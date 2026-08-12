@@ -1,0 +1,1213 @@
+/* practice-synth.js - the synthesizer half of a practice page.
+ *
+ * Loaded only by a page whose manifest entry says "synthesis": true, after
+ * synth.js (the engine) and after practice.js. It adds two cards below the
+ * Waveform Viewer - the read-only gate-level netlist and the Netlist Viewer -
+ * and writes the synthesis log into the simulator's own Console.
+ *
+ * Three things about the arrangement are load-bearing:
+ *
+ *  - The ENGINE is window.SYNTH, an IIFE, because the two Verilog front ends
+ *    collide on six top-level names (EXAMPLES, KEYWORDS, Parser, lex,
+ *    parseVerilog, parseTopLevelModules) and classic scripts share one global
+ *    lexical environment, where a duplicate const/class is a SyntaxError that
+ *    kills the page. See Baerilog/tools/build.py.
+ *
+ *  - Everything on the Verilog side is REUSED rather than duplicated. This file
+ *    calls app.js's spliceEditorChangesBack / editorFullSource / logLine /
+ *    escapeHtml directly, the way practice.js calls setEditorText - a classic
+ *    script's top-level bindings are visible to the next one.
+ *
+ *  - The cards are built with createElement, not one innerHTML string. The stub
+ *    DOM the harnesses use does not parse injected markup, so a card built from
+ *    a string has no elements to click and the whole feature is untestable
+ *    headlessly. Same reason the hub builds its filter chips this way.
+ *
+ * The viewer is dependency-free on purpose. synthesis.html renders its netlist
+ * with React Flow from a CDN, behind an ES-module script tag and an importmap;
+ * neither works here, because a practice page must load over file:// with no
+ * network (build.py --check greps for exactly those, which is also why this
+ * comment does not spell the tag out - the grep is a substring match and a
+ * quotation would read as the real thing). So the node shapes and the handle
+ * geometry are copied out of that module script and drawn as ordinary
+ * absolutely-positioned .rf-node divs over an SVG edge layer, which is what
+ * React Flow itself does - so synth.css's node rules apply unchanged.
+ */
+'use strict';
+
+(function () {
+  /* `typeof` rather than `window.PRACTICE_META`, and the same for ICON below: shell.js
+     declares both with a top-level `var`, so in a browser either form works - but the
+     harness hands them to a scope as parameters, where only this one does. A guard that
+     is silently false headlessly would make the whole feature untestable. */
+  if (typeof PRACTICE_META === 'undefined' || !PRACTICE_META || !PRACTICE_META.synthesis) return;
+  if (!window.SYNTH) return;
+
+  var S = window.SYNTH;
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  /* =====================================================================
+     1. geometry, copied from synthesis.html's viewer
+     ===================================================================== */
+
+  /* Gate body/bubble geometry lifted from synthesis/symbol/*.svg via
+     synthesis.html's module script, verbatim. All seven gates share one pin
+     convention - inputs at 20%/80% of the left edge, output at 50% of the right -
+     which is why the handle table below can be percentages rather than per-shape
+     coordinates, and why nothing here needs React's <Handle>. */
+  var GATE_BODY_D = 'M10,10 L40,10 C40,10 70,10 70,40 C70,70 40,70 40,70 L10,70 Z';
+  var GATE_SHIELD_D = 'M10,10 L40,10 C40,10 50,10 60,20 C70,30 70,40 70,40 C70,40 70,50 60,60 C50,70 40,70 40,70 L10,70 C10,70 20,60 20,40 C20,20 10,10 10,10 Z';
+  var GATE_XSHIELD_D = 'M20,10 L50,10 C50,10 60,10 70,20 C80,30 80,40 80,40 C80,40 80,50 70,60 C60,70 50,70 50,70 L20,70 C20,70 30,60 30,40 C30,20 20,10 20,10 Z';
+  var GATE_XCURVE_D = 'M10,10 C10,10 20,23.0017 20,40 C20,56.9983 10,70 10,70';
+  var GATE_NOT_D = 'M10,15 L57.5,40 L10,65 Z';
+
+  var GATE_DEFS = {
+    and: { viewBox: '0 0 80 80', body: GATE_BODY_D, stubs: [[0, 16, 16, 16], [0, 64, 16, 64], [70, 40, 80, 40]] },
+    nand: { viewBox: '0 0 90 80', body: GATE_BODY_D, stubs: [[0, 16, 16, 16], [0, 64, 16, 64], [82, 40, 89, 40]], bubble: { cx: 76, cy: 40 } },
+    or: { viewBox: '0 0 80 80', body: GATE_SHIELD_D, stubs: [[0, 16, 16, 16], [0, 64, 16, 64], [70, 40, 80, 40]] },
+    nor: { viewBox: '0 0 90 80', body: GATE_SHIELD_D, stubs: [[0, 16, 16, 16], [0, 64, 16, 64], [82, 40, 89, 40]], bubble: { cx: 76, cy: 40 } },
+    xor: { viewBox: '0 0 90 80', body: GATE_XSHIELD_D, extra: GATE_XCURVE_D, stubs: [[0, 16, 14, 16], [0, 64, 14, 64], [81, 40, 89, 40]] },
+    xnor: { viewBox: '0 0 100 80', body: GATE_XSHIELD_D, extra: GATE_XCURVE_D, stubs: [[0, 16, 14, 16], [0, 64, 14, 64], [92, 40, 99, 40]], bubble: { cx: 86, cy: 40 } },
+    not: { viewBox: '0 13 75 54', body: GATE_NOT_D, stubs: [[0, 40.5, 16, 40.5], [67, 40, 74, 40]], bubble: { cx: 61, cy: 40 } },
+    buf: { viewBox: '0 13 75 54', body: GATE_NOT_D, stubs: [[0, 40.5, 16, 40.5], [67, 40, 74, 40]] },
+    mux2: { viewBox: '0 0 55 65', body: 'M 20 2.5 L 40 17.5 L 40 47.5 L 20 62.5 Z', stubs: [[0, 8.808153, 20.000004, 8.808153], [0, 32.808153, 20.000004, 32.808153], [0, 56.80815, 20.000004, 56.80815], [40, 32.5, 55, 32.5]] },
+    add: {
+      viewBox: '0 0 65 80',
+      body: 'M 20 0 L 50 15 L 50 60 L 20 80 L 20 50 L 30 40 L 20 30 Z',
+      stubs: [[0, 15, 20, 15], [0, 40, 20, 40], [0, 65, 20, 65], [50, 30, 65, 30], [50, 50, 65, 50]],
+      extra: 'M 40 35 L 40 45 M 45 40 L 35 40',
+      scale: 2
+    },
+    sub: {
+      viewBox: '0 0 65 80',
+      body: 'M 20 0 L 50 15 L 50 60 L 20 80 L 20 50 L 30 40 L 20 30 Z',
+      stubs: [[0, 15, 20, 15], [0, 40, 20, 40], [0, 65, 20, 65], [50, 30, 65, 30], [50, 50, 65, 50]],
+      extra: 'M 45 40 L 35 40',
+      scale: 2
+    },
+    dff: {
+      viewBox: '0 0 90 90',
+      body: 'M 24 10 L 70 10 L 70 80 L 24 80 Z',
+      stubs: [[0, 30, 24, 30], [0, 60, 16, 60], [40, 80, 40, 90], [70, 30, 90, 30]],
+      bubble: { cx: 20, cy: 60, r: 4 },
+      notch: 'M 34 80 L 40 70 L 46 80 Z',
+      label: { text: 'DFF', x: 47, y: 49 }
+    }
+  };
+
+  // One px-per-SVG-unit factor for every kind, so not.svg's smaller 75x54 viewBox
+  // really renders smaller than and.svg's 80x80 instead of being stretched to match.
+  var GATE_PX_PER_UNIT = 52 / 80;
+  Object.keys(GATE_DEFS).forEach(function (k) {
+    var def = GATE_DEFS[k];
+    var vb = def.viewBox.split(' ').map(Number);
+    var scale = def.scale || 1;
+    def.width = Math.round(vb[2] * GATE_PX_PER_UNIT * scale);
+    def.height = Math.round(vb[3] * GATE_PX_PER_UNIT * scale);
+  });
+
+  var PORT_D = 'M0,8 A8,8 0 0 1 8,0 L72,0 L100,20 L72,40 L8,40 A8,8 0 0 1 0,32 Z';
+
+  /* Every node's box, in the same numbers the CSS and the inline styles use, so an
+     edge endpoint and the drawn shape cannot disagree. Only the constant node is an
+     ESTIMATE: synth.css sizes it by its content (width: max-content), and an edge
+     start cannot be computed from that without reading layout back. The width is
+     therefore fixed here from the label length and set inline, which makes the box
+     and the endpoint agree by construction - the residual risk is a label a couple
+     of pixels tighter or looser in its box, not a wire that starts in mid-air. */
+  function constWidth(label) { return Math.max(56, 20 + 7 * String(label || '').length); }
+
+  function nodeSize(n) {
+    switch (n.type) {
+      case 'port': return n.data.isBus ? { width: 104, height: 36 } : { width: 92, height: 32 };
+      case 'gate': return GATE_DEFS[n.data.kind];
+      case 'dff': return GATE_DEFS.dff;
+      case 'fa': case 'adder': return GATE_DEFS[n.data.op === 'sub' ? 'sub' : 'add'];
+      case 'mux2': return GATE_DEFS.mux2;
+      case 'const': return { width: constWidth(n.data.label), height: 28 };
+      case 'instance': {
+        var slots = Math.max(n.data.inSlots.length, n.data.outSlots.length, 1);
+        return { width: 130, height: Math.max(74, slots * 20 + 40) };
+      }
+      default: return { width: 92, height: 32 };
+    }
+  }
+
+  /* handle id -> [side, fraction along that side]. Transcribed from the node
+     components in synthesis.html's module script; a port's single handle is called
+     'y' whether it is a source or a target, so DIRECTION decides the side. */
+  function handleSpecs(n) {
+    var out = {};
+    switch (n.type) {
+      case 'port': out.y = n.data.dir === 'in' ? ['r', 0.5] : ['l', 0.5]; return out;
+      case 'gate':
+        if (n.data.unary) { out.a = ['l', 0.5]; out.y = ['r', 0.5]; return out; }
+        out.a = ['l', 0.2]; out.b = ['l', 0.8]; out.y = ['r', 0.5];
+        return out;
+      case 'dff':
+        out.d = ['l', 1 / 3]; out.rstn = ['l', 2 / 3];
+        out.clk = ['b', 0.4444]; out.q = ['r', 1 / 3];
+        return out;
+      case 'fa': case 'adder':
+        out.a = ['l', 0.1875]; out.cin = ['l', 0.5]; out.b = ['l', 0.8125];
+        out.sum = ['r', 0.375]; out.cout = ['r', 0.625];
+        return out;
+      case 'mux2':
+        out.sel = ['l', 0.1308]; out.a = ['l', 0.5]; out.b = ['l', 0.8692]; out.y = ['r', 0.5];
+        return out;
+      case 'const': out.y = ['r', 0.5]; return out;
+      case 'instance':
+        n.data.inSlots.forEach(function (s, i) { out[s.id] = ['l', (i + 1) / (n.data.inSlots.length + 1)]; });
+        n.data.outSlots.forEach(function (s, i) { out[s.id] = ['r', (i + 1) / (n.data.outSlots.length + 1)]; });
+        return out;
+      default: return out;
+    }
+  }
+
+  function handlePoint(n, id) {
+    var spec = handleSpecs(n)[id];
+    if (!spec) return null;
+    var sz = nodeSize(n), p = n.position;
+    if (spec[0] === 'l') return { x: p.x, y: p.y + sz.height * spec[1] };
+    if (spec[0] === 'r') return { x: p.x + sz.width, y: p.y + sz.height * spec[1] };
+    return { x: p.x + sz.width * spec[1], y: p.y + sz.height };
+  }
+
+  /* =====================================================================
+     2. state
+     ===================================================================== */
+
+  var currentAll = null;          // last synthesizeAll() result
+  var viewStack = [];             // breadcrumb: module names, top down to the viewed one
+  var lastGraph = { nodes: [], edges: [] };
+  var netlistFullText = '';
+  var netlistSegments = [];
+  var netlistSelectedModule = '(all)';
+  var view = { k: 1, x: 0, y: 0 };  // the viewer's pan/zoom, the whole of it
+  var stale = false;                // does the netlist still describe the editor?
+  /* Counted, not inferred: re-synthesizing an unedited design produces the same text and
+     the same diagram, so "Run did not synthesize" is not observable from the panels. */
+  var syntheses = 0;
+  var cardsShown = false;          // ... and so: is a successful synthesis on screen?
+
+  /* Both cards carry the same band, because both are showing the same stale thing -
+     and the log carries it too, since a reader who scrolls the Console rather than the
+     cards would otherwise see a synthesis report with nothing marking it as past. */
+  function markStale(on) {
+    var next = !!on && !!currentAll;
+    var moved = next !== stale;
+    stale = next;
+    var show = stale ? '' : 'none';
+    if (netlistStale) netlistStale.style.display = show;
+    if (viewerStale) viewerStale.style.display = show;
+    // Only on a real transition: `input` fires per keystroke, and re-rendering the
+    // console section on each one would be work nobody asked for.
+    if (moved && synthLines.length) renderSynthSection();
+  }
+
+  /* localStorage keys are deliberately NOT synthesis.html's own
+     (netlistBundleMultibit, netlistHeight, netlistExpanded): both apps live on one
+     origin, so sharing a key would let a control set here silently change that app
+     and vice versa - the trap CLAUDE.md records for the Scoreboard's checkbox.
+     Every one of them is honoured in both directions for the same reason. */
+  var K_BUNDLE = 'practiceNetlistBundle';
+  var K_HEIGHT = 'practiceNetlistHeight';
+  var K_VIEW_HEIGHT = 'practiceNetlistViewHeight';
+  var K_EXPANDED = 'practiceNetlistExpanded';
+  var K_MODPANEL = 'practiceNetlistModPanel';
+
+  /* =====================================================================
+     3. the two cards
+     ===================================================================== */
+
+  function mk(tag, cls, id) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (id) e.id = id;
+    return e;
+  }
+
+  function heightBtn(id, up) {
+    var b = mk('span', 'layout-btn', id);
+    b.setAttribute('title', (up ? 'Increase' : 'Decrease') + ' height');
+    b.innerHTML = up
+      ? '<svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg>'
+      : '<svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg>';
+    return b;
+  }
+
+  /* Byte-identical to the glyph the other nine hierarchy toggles draw (checked by
+     Baerilog/test.py against shell.js's copy, the way tools/check_theme.py checks the
+     other nine against each other) - one control, one meaning, one drawing. */
+  var HIER_GLYPH = '<svg viewBox="0 0 42.5 35" fill="currentColor"><rect x="0" y="0" width="10" height="10"/><rect x="7.5" y="2.5" width="25" height="5"/><rect x="15" y="2.5" width="5" height="30"/><rect x="32.5" y="0" width="10" height="10"/><rect x="17.5" y="15" width="15" height="5"/><rect x="32.5" y="12.5" width="10" height="10"/><rect x="17.5" y="27.5" width="15" height="5"/><rect x="32.5" y="25" width="10" height="10"/></svg>';
+
+  function help(lines) {
+    var wrap = mk('span', 'help-wrap');
+    var ic = mk('span', 'help-icon');
+    ic.textContent = '?';
+    wrap.appendChild(ic);
+    // The popup must be the icon's next ELEMENT: the handler uses
+    // nextElementSibling, so anything between them silently breaks the popover.
+    var pop = mk('div', 'help-popup');
+    lines.forEach(function (t) {
+      var d = mk('div');
+      d.textContent = '· ' + t;
+      pop.appendChild(d);
+    });
+    wrap.appendChild(pop);
+    return wrap;
+  }
+
+  function cardHead(title, helpLines, controls) {
+    var h = document.createElement('h2');
+    var collapse = mk('span', 'card-collapse-btn');
+    collapse.setAttribute('data-collapse', '');
+    collapse.textContent = '▾';
+    h.appendChild(collapse);
+    h.appendChild(document.createTextNode(title));
+    h.appendChild(help(helpLines));
+    if (controls) h.appendChild(controls);
+    return h;
+  }
+
+  function buildNetlistCard() {
+    var card = mk('div', 'card full', 'card-netlist');
+
+    var controls = mk('span', 'header-controls');
+    var g1 = mk('span', 'layout-toggle');
+    g1.appendChild(heightBtn('netlistHeightDec', false));
+    g1.appendChild(heightBtn('netlistHeightInc', true));
+    var copy = mk('span', 'layout-btn', 'netlistCopyBtn');
+    copy.setAttribute('title', 'Copy to clipboard');
+    copy.innerHTML = '<svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3" width="8" height="8" rx="1"/><rect x="6.5" y="0.7" width="8" height="8" rx="1"/></svg>';
+    g1.appendChild(copy);
+    var save = mk('span', 'layout-btn', 'netlistSaveBtn');
+    save.setAttribute('title', 'Save to file');
+    save.innerHTML = '<svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 0.8 V7.5 M5 4.5 L8 7.5 L11 4.5"/><path d="M1.5 8.5 V10.2 a1 1 0 0 0 1 1 H13.5 a1 1 0 0 0 1-1 V8.5"/></svg>';
+    g1.appendChild(save);
+    controls.appendChild(g1);
+    var g2 = mk('span', 'layout-toggle');
+    var hierBtn = mk('span', 'layout-btn', 'codeOutHierarchyToggleBtn');
+    hierBtn.setAttribute('title', 'Show/hide module hierarchy');
+    hierBtn.innerHTML = HIER_GLYPH;
+    g2.appendChild(hierBtn);
+    controls.appendChild(g2);
+
+    card.appendChild(cardHead('Synthesized Gate-level Verilog Netlist (Read-only)', [
+      'the same design as gates: a top module instantiating primitive cells, then the behavioural definition of each cell it used',
+      'the testbench is not synthesized - everything from module tb down is dropped first',
+      'read-only, and regenerated on every Run: edit the design above, not this'
+    ], controls));
+
+    var row = mk('div', 'editor-hierarchy-row hierarchy-collapsed', 'codeOutHierarchyRow');
+    row.appendChild(mk('div', 'editor-hierarchy-panel', 'codeOutHierarchyPanel'));
+    row.appendChild(mk('pre', 'code-out', 'codeOut'));
+    /* The stale band sits ABOVE the text, where the editor's own merge warning does,
+       because it qualifies everything below it: the netlist stays readable but is no
+       longer a description of what is in the editor. Same class, so it is the same
+       warning in the same colour rather than a second idiom for one meaning. */
+    var stale = mk('div', 'editor-sync-warning', 'netlistStale');
+    stale.style.display = 'none';
+    stale.textContent = 'The design has changed since this was synthesized — press Synthesize.';
+    card.appendChild(stale);
+    card.appendChild(row);
+    // An empty dark panel reads as a rendering fault rather than as "nothing yet",
+    // which is why this sits beside it instead of inside it.
+    var empty = mk('div', 'wave-empty', 'netlistEmpty');
+    empty.textContent = 'Nothing synthesized yet - press Synthesize.';
+    card.appendChild(empty);
+    return card;
+  }
+
+  function buildViewerCard() {
+    var row = mk('div', 'split-row', 'netlistSplitRow');
+    var card = mk('div', 'card', 'card-netlist-view');
+
+    var controls = mk('span', 'header-controls');
+    var g1 = mk('span', 'layout-toggle');
+    g1.appendChild(heightBtn('netlistViewHeightDec', false));
+    g1.appendChild(heightBtn('netlistViewHeightInc', true));
+    controls.appendChild(g1);
+    var g2 = mk('span', 'layout-toggle');
+    var expand = mk('span', 'layout-btn', 'netlistExpandBtn');
+    expand.setAttribute('title', 'Expand to the full browser width');
+    expand.innerHTML = '<svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1 V11 M15 1 V11"/><path d="M4.5 6 H11.5 M6.5 3.8 L4.3 6 L6.5 8.2 M9.5 3.8 L11.7 6 L9.5 8.2"/></svg>';
+    g2.appendChild(expand);
+    controls.appendChild(g2);
+
+    card.appendChild(cardHead('Netlist Viewer', [
+      'drag to pan, scroll or pinch to zoom - the view refits itself on every new graph',
+      'double-click a sub-module block to drill into its own netlist; the breadcrumb comes back out',
+      'bundle multi-bit logic collapses same-width cell chains into one N-bit box'
+    ], controls));
+
+    var bar = mk('div', 'toolbar');
+    bar.style.marginBottom = '8px';
+    var crumbs = mk('div', 'breadcrumb-row', 'breadcrumbRow');
+    crumbs.style.flex = '1 1 auto';
+    crumbs.style.marginBottom = '0';
+    bar.appendChild(crumbs);
+    var vstale = mk('span', 'editor-sync-warning', 'viewerStale');
+    vstale.style.display = 'none';
+    vstale.style.marginBottom = '0';
+    vstale.textContent = 'Design changed — press Synthesize.';
+    bar.appendChild(vstale);
+    var label = mk('label', 'bundle-toggle');
+    label.setAttribute('title', 'Bundle same-width mux/dff/gate chains into one N-bit box, or show every individual 1-bit cell');
+    var cb = mk('input', null, 'bundleMultibitCheckbox');
+    cb.setAttribute('type', 'checkbox');
+    cb.type = 'checkbox';
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' Bundle multi-bit logic'));
+    bar.appendChild(label);
+    card.appendChild(bar);
+
+    var root = mk('div', null, 'flowRoot');
+    var edges = document.createElementNS(SVG_NS, 'svg');
+    edges.setAttribute('class', 'pn-edges');
+    edges.id = 'pnEdges';
+    var edgeG = document.createElementNS(SVG_NS, 'g');
+    edgeG.id = 'pnEdgeG';
+    edges.appendChild(edgeG);
+    root.appendChild(edges);
+    var nodes = mk('div', 'pn-nodes', 'pnNodes');
+    root.appendChild(nodes);
+    var placeholder = mk('div', 'flow-placeholder', 'flowPlaceholder');
+    placeholder.textContent = 'Nothing synthesized yet - press Synthesize.';
+    root.appendChild(placeholder);
+    card.appendChild(root);
+
+    /* Five entries, not synthesis.html's nine. Its legend dots are nine literal iOS
+       colours from before the Primer conversion, and its own .rf-node rules no longer
+       paint them - several kinds now share one token, so nine rows would name
+       distinctions that are not on the screen. Each row here names everything drawn in
+       that colour, and the colours are the tokens the shapes actually use. */
+    var legend = mk('div', 'legend-row');
+    [['--success-fg', 'input port'],
+     ['--attention-fg', 'output port, mux'],
+     ['--accent-fg', 'gate, dff, sub-module'],
+     ['--danger-fg', 'adder / subtractor'],
+     ['--fg-muted', 'constant']].forEach(function (pair) {
+      var item = mk('div', 'legend-item');
+      var dot = mk('span', 'dot');
+      dot.style.background = 'var(' + pair[0] + ')';
+      item.appendChild(dot);
+      item.appendChild(document.createTextNode(pair[1]));
+      legend.appendChild(item);
+    });
+    card.appendChild(legend);
+
+    row.appendChild(card);
+    return row;
+  }
+
+  var grid = document.querySelector('.grid');
+  var waveRow = document.getElementById('waveSplitRow');
+  if (!grid) return;
+  var netlistCard = buildNetlistCard();
+  var viewerRow = buildViewerCard();
+  // Below the Waveform Viewer, above the Memory Viewer. insertBefore(x, null)
+  // appends, which is what happens if the waveform row is somehow last.
+  var after = null;
+  if (waveRow) {
+    var kids = grid.children;
+    for (var ki = 0; ki < kids.length; ki++) {
+      if (kids[ki] === waveRow) { after = kids[ki + 1] || null; break; }
+    }
+  }
+  grid.insertBefore(netlistCard, after);
+  grid.insertBefore(viewerRow, after);
+  /* Both cards start HIDDEN and are revealed only by a synthesis that succeeded. That
+     is what lets the flag go on a page whose design the synthesizer cannot handle at
+     all - eight of the eighteen - without putting an error panel under every learner's
+     waveform: press Synthesize there and the Console says what it could not do, while
+     the cards simply never appear. So "the cards are on screen" means "a successful
+     synthesis is on screen", and a later failure takes them away again. */
+  netlistCard.style.display = 'none';
+  viewerRow.style.display = 'none';
+
+  var codeOut = document.getElementById('codeOut');
+  var codeOutPanel = document.getElementById('codeOutHierarchyPanel');
+  var codeOutRow = document.getElementById('codeOutHierarchyRow');
+  var netlistEmpty = document.getElementById('netlistEmpty');
+  var netlistStale = document.getElementById('netlistStale');
+  var viewerStale = document.getElementById('viewerStale');
+  var flowRoot = document.getElementById('flowRoot');
+  var nodesLayer = document.getElementById('pnNodes');
+  var edgeLayer = document.getElementById('pnEdgeG');
+  var edgeSvg = document.getElementById('pnEdges');
+  var placeholderEl = document.getElementById('flowPlaceholder');
+  var crumbRow = document.getElementById('breadcrumbRow');
+  var bundleBox = document.getElementById('bundleMultibitCheckbox');
+
+  /* The Synthesize button, beside the run-length field in the editor card's own
+     toolbar - so the two things a learner can ask for sit together, and Run keeps
+     meaning exactly one thing. It is injected here rather than living in the
+     simulator's markup because the simulator has no synthesizer.
+
+     It is GREEN, the same `.btn` as Run Simulation, which is a deliberate departure
+     from Primer's one-primary-per-card rule that the rest of this repo follows. The
+     reason: these two are the card's two actions and they are peers - neither is the
+     lesser way to use the page - and styling one of them as secondary said the opposite.
+     Nothing else on the page pairs two primaries, so the rule still holds everywhere it
+     is describing a real hierarchy. */
+  var synthBtn = mk('button', 'btn', 'synthBtn');
+  synthBtn.setAttribute('type', 'button');
+  synthBtn.textContent = 'Synthesize';
+  (function () {
+    var maxInput = document.getElementById('maxTimeInput');
+    var bar = maxInput ? maxInput.parentElement : null;
+    if (bar) bar.appendChild(synthBtn);          // after the "time units" label
+    else document.querySelector('.grid').appendChild(synthBtn);
+  })();
+
+  /* =====================================================================
+     4. the generic wiring app.js already did for its own cards
+     ===================================================================== */
+
+  /* app.js wires [data-collapse] and .help-icon with querySelectorAll AT LOAD, and
+     these cards did not exist then - this file runs after it. So the same two
+     handlers are attached here, to these cards only. */
+  var newCards = [netlistCard, document.getElementById('card-netlist-view')];
+  newCards.forEach(function (card) {
+    card.querySelectorAll('[data-collapse]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var c = btn.closest('.card');
+        c.classList.toggle('collapsed');
+        btn.textContent = c.classList.contains('collapsed') ? '▸' : '▾';
+      });
+    });
+    card.querySelectorAll('.help-icon').forEach(function (btn) {
+      var popup = btn.nextElementSibling;
+      if (!popup || !popup.classList.contains('help-popup')) return;
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var willShow = !popup.classList.contains('visible');
+        document.querySelectorAll('.help-popup.visible').forEach(function (p) { p.classList.remove('visible'); });
+        if (willShow) popup.classList.add('visible');
+      });
+    });
+  });
+
+  // Same constants as app.js's own height controls, so every panel on the page
+  // steps by the same amount.
+  function wireHeight(key, el, dec, inc, after) {
+    var MIN = 200, MAX = 1000, STEP = 80;
+    var saved = parseInt(localStorage.getItem(key), 10);
+    if (!isNaN(saved)) el.style.height = saved + 'px';
+    function adjust(delta) {
+      var now = el.getBoundingClientRect().height || parseInt(el.style.height, 10) || MIN;
+      var next = Math.max(MIN, Math.min(MAX, now + delta));
+      el.style.height = next + 'px';
+      localStorage.setItem(key, next);
+      if (after) after();
+    }
+    dec.addEventListener('click', function () { adjust(-STEP); });
+    inc.addEventListener('click', function () { adjust(STEP); });
+  }
+  wireHeight(K_HEIGHT, codeOut,
+             document.getElementById('netlistHeightDec'),
+             document.getElementById('netlistHeightInc'));
+  // The viewer's fit depends on its own height, so resizing it must refit - the same
+  // obligation the waveform's container has.
+  wireHeight(K_VIEW_HEIGHT, flowRoot,
+             document.getElementById('netlistViewHeightDec'),
+             document.getElementById('netlistViewHeightInc'),
+             function () { fitView(); });
+
+  (function () {
+    var btn = document.getElementById('codeOutHierarchyToggleBtn');
+    function apply(visible) {
+      codeOutRow.classList.toggle('hierarchy-collapsed', !visible);
+      btn.classList.toggle('active', visible);
+    }
+    btn.addEventListener('click', function () {
+      var visible = codeOutRow.classList.contains('hierarchy-collapsed');
+      localStorage.setItem(K_MODPANEL, visible ? '1' : '0');
+      apply(visible);
+    });
+    apply(localStorage.getItem(K_MODPANEL) === '1');
+  })();
+
+  /* Full-bleed expand, the simulator's mechanism: --row-bleed is MEASURED from
+     documentElement.clientWidth rather than calc(50% - 50vw), because 100vw includes
+     the vertical scrollbar and the textbook trick pops a horizontal one. */
+  (function () {
+    var row = document.getElementById('netlistSplitRow');
+    var btn = document.getElementById('netlistExpandBtn');
+    function measureBleed() {
+      var cs = window.getComputedStyle(document.body);
+      var contentW = document.documentElement.clientWidth
+        - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+      return Math.max(0, (contentW - grid.getBoundingClientRect().width) / 2);
+    }
+    function apply(expanded) {
+      row.style.setProperty('--row-bleed', (expanded ? measureBleed() : 0) + 'px');
+      row.classList.toggle('row-expanded', expanded);
+      btn.classList.toggle('active', expanded);
+      btn.setAttribute('title', expanded ? 'Restore the card to the page width'
+                                         : 'Expand to the full browser width');
+      fitView();   // more pixels for the same graph, so the fit has to be redone
+    }
+    btn.addEventListener('click', function () {
+      var expanded = !row.classList.contains('row-expanded');
+      localStorage.setItem(K_EXPANDED, expanded ? '1' : '0');
+      apply(expanded);
+    });
+    apply(localStorage.getItem(K_EXPANDED) === '1');
+  })();
+
+  bundleBox.checked = localStorage.getItem(K_BUNDLE) !== '0';
+  S.setBundleMultibit(bundleBox.checked);
+  bundleBox.addEventListener('change', function () {
+    localStorage.setItem(K_BUNDLE, bundleBox.checked ? '1' : '0');
+    S.setBundleMultibit(bundleBox.checked);
+    // Re-derives the graph from the SAME synthesis result: bundling is a view of the
+    // netlist, not a different netlist, so this must not re-parse the source.
+    showCurrentView();
+  });
+
+  document.getElementById('netlistCopyBtn').addEventListener('click', function () {
+    var ta = document.createElement('textarea');
+    ta.value = netlistFullText;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
+  document.getElementById('netlistSaveBtn').addEventListener('click', function () {
+    if (!netlistFullText) return;
+    var blob = new Blob([netlistFullText], { type: 'text/plain' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = PRACTICE_META.slug + '_netlist.v';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  /* Two more tabs, and they follow the cards rather than the page: a tab pointing at a
+     hidden card is the dead control practice.js's strip is built to avoid, and these
+     cards are hidden until a synthesis succeeds. practice.js rebuilds only its own tabs
+     (inserting them before whatever is already there), so these two can be added and
+     removed independently and always sit at the end. */
+  var synthTabs = [];
+  function syncSynthTabs(show) {
+    var strip = document.getElementById('exTabs');
+    if (!strip) return;
+    if (!show) {
+      synthTabs.forEach(function (b) { b.remove(); });
+      synthTabs = [];
+      return;
+    }
+    if (synthTabs.length) return;
+    [['tabNetlist', 'Netlist', 'code', 'card-netlist'],
+     ['tabNetlistView', 'Viewer', 'chip', 'card-netlist-view']].forEach(function (t) {
+      var b = mk('button', 'gh-tab', t[0]);
+      b.setAttribute('type', 'button');
+      b.innerHTML = ((typeof ICON !== 'undefined' && ICON[t[2]]) || '') + '<span>' + t[1] + '</span>';
+      b.addEventListener('click', function () {
+        strip.querySelectorAll('.gh-tab').forEach(function (o) { o.classList.remove('selected'); });
+        b.classList.add('selected');
+        var card = document.getElementById(t[3]);
+        if (card && card.scrollIntoView) card.scrollIntoView({ block: 'start' });
+      });
+      strip.appendChild(b);
+      synthTabs.push(b);
+    });
+  }
+
+  /* The cards and their tabs move together, and the fit has to happen AFTER they are
+     visible: #flowRoot has no width while it is display:none, so a fit computed then
+     would place every node against a fallback width and the first thing the reader sees
+     would be a badly framed diagram. */
+  function showCards(on) {
+    cardsShown = !!on;
+    netlistCard.style.display = cardsShown ? '' : 'none';
+    viewerRow.style.display = cardsShown ? '' : 'none';
+    syncSynthTabs(cardsShown);
+    if (cardsShown) fitView();
+  }
+
+  /* =====================================================================
+     5. running the synthesizer
+     ===================================================================== */
+
+  /* The synthesis log goes in the SIMULATOR's console, under a rule that separates it
+     from the simulation output above - and it is kept in memory as well as printed,
+     because Run and Synthesize now share one box that only Run clears. So the lines
+     are the truth and the console is a rendering of them: Synthesize replaces the
+     section, Run re-prints whatever the last Synthesize produced. Both halves stay on
+     screen, which is the only arrangement where neither button silently discards the
+     other's output.
+
+     Nothing here prints the words PASS or FAIL, so the verdict pill - which counts
+     them over the whole console - cannot be moved by a synthesis. */
+  var synthLines = [];      // {level, msg}, the last synthesis's log - the truth
+  var printedEls = [];      // the console rows currently showing it
+  function synthLog(level, msg) {
+    synthLines.push({ level: level, msg: msg });
+    printSynthLine(level, msg);
+  }
+  function printSynthLine(level, msg) {
+    logLine('<span class="' + level + '">' + escapeHtml(msg) + '</span>');
+    // logLine appends one div and hands nothing back, so the row it just made is the
+    // console's last child. Keeping the element is what lets this section be removed
+    // again without touching a line the simulation printed.
+    var kids = consoleBox.children;
+    var el = kids[kids.length - 1];
+    if (el) printedEls.push(el);
+  }
+  function dropPrintedSynthLines() {
+    printedEls.forEach(function (el) {
+      if (el.parentElement) el.parentElement.removeChild(el);
+    });
+    printedEls = [];
+  }
+  // After something else has cleared the console, or after the stale flag moved: the
+  // rows are gone (or wrong), the lines are not.
+  function renderSynthSection() {
+    dropPrintedSynthLines();
+    if (!synthLines.length) return;
+    synthLines.forEach(function (l) { printSynthLine(l.level, l.msg); });
+    /* The band on the two cards is not visible to a reader who is scrolling the
+       Console, so the section says it too - otherwise the log reads as a report of the
+       design in the editor when it is a report of an older one. Not pushed into
+       synthLines: it is a fact about the flag, not a line the synthesizer produced, and
+       storing it would accumulate one per re-render. */
+    if (stale) printSynthLine('warn', '(the design has changed since this synthesis)');
+  }
+
+  /* Why a failed synthesis gets a HINT as well as the error. The synthesizer's subset is
+     narrower than the simulator's, and where a design steps outside it the message is
+     about the token the parser tripped on rather than about the gap: `a << b` reports
+     `expected 'ident' but got '<'`, and a `reg [7:0] mem [0:255]` reports `expected ';'
+     but got '['`. Both read as "your Verilog is broken" for designs that are correct and
+     simulate perfectly on the same page - which, now that eight of the eighteen enabled
+     pages are exactly those designs, is the message most learners will meet.
+
+     So each entry is a pattern in the SOURCE plus the thing the subset does not cover,
+     and a hint is only offered when the pattern is really present. Deliberately not a
+     claim about the cause: it says what is here and unsupported, not "this is why". */
+  var SUBSET_GAPS = [
+    [/<<|>>/, 'shift operators (<< and >>)'],
+    [/\b(?:reg|wire)\b[^;=\n]*\]\s*\w+\s*\[/, 'memory arrays (reg [N:0] name [0:M])'],
+    [/[^0-9a-zA-Z_]'[hdbo]/i, "unsized literals ('hff rather than 8'hff)"]
+  ];
+  function subsetHints(src) {
+    var found = [];
+    SUBSET_GAPS.forEach(function (g) { if (g[0].test(src)) found.push(g[1]); });
+    return found;
+  }
+
+  /* The testbench must go before the source reaches the synthesizer, and this is not
+     cosmetic: the synthesizer's lexer has no #delay, so handing it a whole exercise
+     file fails with `Lex error: unexpected character '#'` and the card would report a
+     parse error on every page. The site's convention is that the testbench is the
+     LAST module and is named tb, which is what makes this a rule rather than a guess. */
+  function designOnly(src) {
+    var re = /^[ \t]*module\s+tb\b/gm, m, last = -1;
+    while ((m = re.exec(src)) !== null) last = m.index;
+    if (last < 0) return { src: src, dropped: 0 };
+    return { src: src.slice(0, last), dropped: src.slice(last).split('\n').length };
+  }
+
+  function renderNetlistView() {
+    var text = netlistFullText;
+    if (netlistSelectedModule !== '(all)') {
+      var seg = netlistSegments.filter(function (s) { return s.name === netlistSelectedModule; })[0];
+      if (seg) text = netlistFullText.slice(seg.start, seg.end);
+    }
+    codeOut.textContent = text;
+    netlistEmpty.style.display = netlistFullText ? 'none' : '';
+  }
+
+  function renderModulePanel() {
+    codeOutPanel.innerHTML = '';
+    ['(all)'].concat(netlistSegments.map(function (s) { return s.name; })).forEach(function (name) {
+      var row = mk('div', 'editor-module-row' + (name === netlistSelectedModule ? ' active' : ''));
+      row.textContent = name;
+      row.addEventListener('click', function () {
+        if (name === netlistSelectedModule) return;
+        netlistSelectedModule = name;
+        renderNetlistView();
+        renderModulePanel();
+      });
+      codeOutPanel.appendChild(row);
+    });
+  }
+
+  function renderBreadcrumb() {
+    crumbRow.innerHTML = '';
+    viewStack.forEach(function (name, i) {
+      if (i > 0) {
+        var sep = mk('span', 'sep');
+        sep.textContent = '/';
+        crumbRow.appendChild(sep);
+      }
+      var b = mk('button', 'crumb');
+      b.setAttribute('type', 'button');
+      b.textContent = name;
+      if (i < viewStack.length - 1) {
+        b.addEventListener('click', function () {
+          viewStack = viewStack.slice(0, i + 1);
+          showCurrentView();
+        });
+      }
+      crumbRow.appendChild(b);
+    });
+  }
+
+  function drillInto(modType) {
+    if (!currentAll) return;
+    if (modType !== 'FA_PRIMITIVE' && !currentAll.results[modType]) return;
+    viewStack.push(modType);
+    showCurrentView();
+  }
+
+  /* Returns whether it managed to render, because "the synthesis succeeded" is not the
+     same event as "there is something to show": adder-4bit's starter parses and
+     elaborates, then fails while the netlist is being built (`no driver found for net
+     'cout'`, its unwritten output). Revealing the cards on the strength of
+     synthesizeAll alone put an empty pair of cards on that page. */
+  function showCurrentView() {
+    if (!currentAll) return false;
+    var modName = viewStack[viewStack.length - 1];
+    try {
+      var v = S.synthesizeModuleView(currentAll, modName);
+      // The structural text always starts from the real top module, whichever
+      // sub-module the graph happens to be showing.
+      var results = [currentAll.results[currentAll.top.name]];
+      Object.keys(currentAll.results).forEach(function (k) {
+        if (k !== currentAll.top.name) results.push(currentAll.results[k]);
+      });
+      var gen = S.genVerilog(results);
+      netlistFullText = gen.text;
+      netlistSegments = gen.segments;
+      renderNetlistView();
+      renderModulePanel();
+      lastGraph = S.toFlowElements(v.graph, v.layout);
+      renderGraph(lastGraph);
+      renderBreadcrumb();
+      return true;
+    } catch (e) {
+      // Do not leave the breadcrumb pointing at a level whose graph failed, but never
+      // pop the last one: an unrenderable top view should stay named.
+      if (viewStack.length > 1) viewStack.pop();
+      synthLog('err', 'error showing ' + modName + ': ' + e.message);
+      renderBreadcrumb();
+      return false;
+    }
+  }
+
+  function clearNetlist(reason) {
+    currentAll = null;
+    netlistFullText = '';
+    netlistSegments = [];
+    netlistSelectedModule = '(all)';
+    renderNetlistView();
+    renderModulePanel();
+    crumbRow.innerHTML = '';
+    lastGraph = { nodes: [], edges: [] };
+    renderGraph(lastGraph, reason);
+  }
+
+  function runSynthesis() {
+    syntheses++;
+    // The editor is the simulator's: merging the visible module back is what makes
+    // this synthesize what is on screen rather than a stale copy of the file.
+    spliceEditorChangesBack();
+    var whole = editorFullSource;
+    var cut = designOnly(whole);
+    /* This synthesis's own log replaces the last one's, in memory and on screen. The
+       console cannot be cleared here - the simulation output above it belongs to Run -
+       so the previous section's rows are removed individually. */
+    dropPrintedSynthLines();
+    synthLines = [];
+    synthLog('info', '— synthesis —');
+    if (cut.dropped) {
+      synthLog('info', 'ignored the ' + cut.dropped + ' lines from module tb down: the '
+                     + 'synthesizer has no #delay, $display or initial, and a testbench '
+                     + 'is not hardware');
+    }
+    netlistSelectedModule = '(all)';
+    try {
+      currentAll = S.synthesizeAll(cut.src);
+    } catch (e) {
+      clearNetlist(e.message);
+      synthLog('err', 'error: ' + e.message);
+      subsetHints(cut.src).forEach(function (gap) {
+        synthLog('info', 'this design uses ' + gap + ', which the synthesizer\'s subset '
+                       + 'does not cover - the simulator above does');
+      });
+      // Nothing was synthesized, so there is nothing to show: the cards go away (or stay
+      // away), and the Console carries the whole of the answer.
+      showCards(false);
+      markStale(false);
+      return;
+    }
+    currentAll.log.forEach(function (l) { synthLog(l.level, '[' + l.level + '] ' + l.msg); });
+    viewStack = [currentAll.top.name];
+    /* Shown BEFORE the graph is laid out, so the fit measures the real card width - and
+       taken away again if the render failed, since the rule is that these cards are on
+       the page only while a synthesis is on them. */
+    showCards(true);
+    if (!showCurrentView()) {
+      clearNetlist('the netlist could not be built');
+      showCards(false);
+      markStale(false);
+      return;
+    }
+    markStale(false);
+    synthLog('ok', 'synthesized top module ' + currentAll.top.name + ' into '
+                 + lastGraph.nodes.length + ' nodes and ' + lastGraph.edges.length + ' nets');
+  }
+
+  /* =====================================================================
+     6. the viewer
+     ===================================================================== */
+
+  function svg(tag, attrs) {
+    var e = document.createElementNS(SVG_NS, tag);
+    Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+    return e;
+  }
+
+  function gateSymbolHtml(kind) {
+    var def = GATE_DEFS[kind];
+    var s = '<svg viewBox="' + def.viewBox + '" preserveAspectRatio="none">';
+    def.stubs.forEach(function (st) {
+      s += '<line x1="' + st[0] + '" y1="' + st[1] + '" x2="' + st[2] + '" y2="' + st[3]
+         + '" class="gate-stroke" stroke-width="3" stroke-linecap="butt"/>';
+    });
+    s += '<path d="' + def.body + '" fill="white" class="gate-stroke" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>';
+    if (def.notch) s += '<path d="' + def.notch + '" fill="white" class="gate-stroke" stroke-width="3" stroke-linejoin="round"/>';
+    if (def.bubble) s += '<circle cx="' + def.bubble.cx + '" cy="' + def.bubble.cy + '" r="' + (def.bubble.r || 6) + '" fill="white" class="gate-stroke" stroke-width="3"/>';
+    if (def.extra) s += '<path d="' + def.extra + '" fill="none" class="gate-stroke" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>';
+    if (def.label) s += '<text x="' + def.label.x + '" y="' + def.label.y + '" font-family="Helvetica" font-size="15" font-weight="bold" class="gate-fill-stroke" text-anchor="middle">' + def.label.text + '</text>';
+    return s + '</svg>';
+  }
+
+  function rangeHtml(data) {
+    return data.isBus && data.range ? '<div class="rf-node-range">' + escapeHtml(data.range) + '</div>' : '';
+  }
+
+  function buildNode(n) {
+    var d = n.data, sz = nodeSize(n);
+    var e = mk('div', 'rf-node');
+    e.style.left = n.position.x + 'px';
+    e.style.top = n.position.y + 'px';
+    if (n.type === 'const') {
+      e.classList.add('rf-node-const');
+      e.style.width = sz.width + 'px';
+      e.innerHTML = '<div class="rf-node-label">' + escapeHtml(d.label) + '</div>';
+      return e;
+    }
+    if (n.type !== 'instance') { e.style.width = sz.width + 'px'; e.style.height = sz.height + 'px'; }
+    switch (n.type) {
+      case 'port':
+        e.classList.add('rf-node-port');
+        e.classList.add(d.dir === 'in' ? 'port-in' : 'port-out');
+        if (d.isBus) e.classList.add('is-bus');
+        e.innerHTML = '<svg viewBox="0 0 100 40" preserveAspectRatio="none"><path d="' + PORT_D
+          + '" fill="white" class="port-stroke" stroke-width="3" stroke-linejoin="round"/></svg>'
+          + '<div class="rf-node-label">' + escapeHtml(d.label) + '</div>'
+          + (d.isBus && d.range ? '<div class="rf-node-range">' + escapeHtml(d.range) + '</div>' : '');
+        break;
+      case 'gate':
+        e.classList.add('rf-node-gate');
+        if (d.inverted) e.classList.add('inverted');
+        if (d.isBus) e.classList.add('is-bus');
+        e.setAttribute('title', d.label);
+        e.innerHTML = gateSymbolHtml(d.kind) + rangeHtml(d);
+        break;
+      case 'dff':
+        e.classList.add('rf-node-dff');
+        if (d.isBus) e.classList.add('is-bus');
+        e.setAttribute('title', 'DFF');
+        e.innerHTML = gateSymbolHtml('dff') + rangeHtml(d);
+        break;
+      case 'fa':
+        e.classList.add('rf-node-fa');
+        if (d.isBus) e.classList.add('is-bus');
+        e.setAttribute('title', d.label + ' — double-click to view gate-level internals');
+        e.style.cursor = 'pointer';
+        e.innerHTML = gateSymbolHtml(d.op === 'sub' ? 'sub' : 'add') + rangeHtml(d);
+        e.addEventListener('dblclick', function () { drillInto('FA_PRIMITIVE'); });
+        break;
+      case 'adder':
+        e.classList.add('rf-node-fa');
+        e.setAttribute('title', d.modType + ' (' + d.width + '-bit) — double-click to view internals');
+        e.style.cursor = 'pointer';
+        e.innerHTML = gateSymbolHtml(d.op === 'sub' ? 'sub' : 'add')
+          + '<div class="rf-node-range">[' + (d.width - 1) + ':0]</div>';
+        e.addEventListener('dblclick', function () { drillInto(d.modType); });
+        break;
+      case 'mux2':
+        e.classList.add('rf-node-mux2');
+        if (d.isBus) e.classList.add('is-bus');
+        e.setAttribute('title', 'MUX2');
+        e.innerHTML = gateSymbolHtml('mux2') + rangeHtml(d);
+        break;
+      case 'instance':
+        e.classList.add('rf-node-instance');
+        e.style.height = sz.height + 'px';
+        e.setAttribute('title', 'double-click to view ' + d.modType + "'s netlist");
+        e.innerHTML = '<div class="rf-node-modtype">' + escapeHtml(d.modType) + '</div>'
+          + '<div class="rf-node-instname">' + escapeHtml(d.instName) + '</div>'
+          + '<div class="rf-node-drill-hint">⤢ double-click</div>';
+        e.addEventListener('dblclick', function () { drillInto(d.modType); });
+        break;
+      default:
+        e.innerHTML = '<div class="rf-node-label">' + escapeHtml(d.label || n.type) + '</div>';
+    }
+    return e;
+  }
+
+  /* A polyline with its interior corners rounded. One helper for both routes below,
+     so a forward wire and a feedback wire cannot end up drawn in two idioms. */
+  function roundedPath(pts, r) {
+    if (pts.length < 2) return '';
+    var d = 'M' + pts[0].x + ',' + pts[0].y;
+    for (var i = 1; i < pts.length - 1; i++) {
+      var p = pts[i - 1], c = pts[i], q = pts[i + 1];
+      var d1 = Math.hypot(c.x - p.x, c.y - p.y), d2 = Math.hypot(q.x - c.x, q.y - c.y);
+      var rr = Math.min(r, d1 / 2, d2 / 2);
+      if (!(rr > 0.5)) { d += ' L' + c.x + ',' + c.y; continue; }
+      d += ' L' + (c.x + (p.x - c.x) / d1 * rr) + ',' + (c.y + (p.y - c.y) / d1 * rr);
+      d += ' Q' + c.x + ',' + c.y + ' ' + (c.x + (q.x - c.x) / d2 * rr) + ',' + (c.y + (q.y - c.y) / d2 * rr);
+    }
+    var last = pts[pts.length - 1];
+    return d + ' L' + last.x + ',' + last.y;
+  }
+
+  /* Left-to-right wires take the middle-column route React Flow's 'smoothstep' draws.
+     A wire that runs BACKWARDS is a real case here, not an edge case - a register's Q
+     feeding the mux in front of its own D is what every counter looks like - so it is
+     routed out of the source, under both nodes and back in, rather than drawn through
+     them. */
+  function edgePoints(a, b) {
+    if (b.x - a.x >= 30) {
+      var mx = (a.x + b.x) / 2;
+      if (Math.abs(a.y - b.y) < 0.5) return [a, b];
+      return [a, { x: mx, y: a.y }, { x: mx, y: b.y }, b];
+    }
+    var out = a.x + 22, back = b.x - 22;
+    var below = Math.max(a.y, b.y) + 34;
+    return [a, { x: out, y: a.y }, { x: out, y: below }, { x: back, y: below }, { x: back, y: b.y }, b];
+  }
+
+  function midOf(pts) {
+    var total = 0, i;
+    for (i = 1; i < pts.length; i++) total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    var want = total / 2, acc = 0;
+    for (i = 1; i < pts.length; i++) {
+      var len = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      if (acc + len >= want) {
+        var t = len ? (want - acc) / len : 0;
+        return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+                 y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t };
+      }
+      acc += len;
+    }
+    return pts[pts.length - 1];
+  }
+
+  function applyTransform() {
+    var t = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.k + ')';
+    nodesLayer.style.transform = t;
+    edgeLayer.setAttribute('transform', 'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')');
+  }
+
+  function graphBounds() {
+    if (!lastGraph.nodes.length) return null;
+    var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    lastGraph.nodes.forEach(function (n) {
+      var sz = nodeSize(n);
+      x0 = Math.min(x0, n.position.x); y0 = Math.min(y0, n.position.y);
+      x1 = Math.max(x1, n.position.x + sz.width); y1 = Math.max(y1, n.position.y + sz.height);
+    });
+    return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) };
+  }
+
+  function viewportSize() {
+    // A stub DOM reports no layout, so fall back to the height synth.css gives
+    // #flowRoot - that keeps the fit deterministic headlessly instead of dividing
+    // by zero and putting every node at NaN.
+    return {
+      w: flowRoot.clientWidth || 900,
+      h: flowRoot.getBoundingClientRect().height || parseInt(flowRoot.style.height, 10) || 520
+    };
+  }
+
+  function fitView() {
+    var b = graphBounds();
+    if (!b) { view = { k: 1, x: 0, y: 0 }; applyTransform(); return; }
+    var vp = viewportSize(), pad = 28;
+    var k = Math.min((vp.w - 2 * pad) / b.w, (vp.h - 2 * pad) / b.h, 1.5);
+    view.k = Math.max(0.05, k);
+    view.x = (vp.w - b.w * view.k) / 2 - b.x * view.k;
+    view.y = (vp.h - b.h * view.k) / 2 - b.y * view.k;
+    applyTransform();
+  }
+
+  function renderGraph(g, reason) {
+    nodesLayer.innerHTML = '';
+    edgeLayer.innerHTML = '';
+    var byId = {};
+    g.nodes.forEach(function (n) {
+      byId[n.id] = n;
+      nodesLayer.appendChild(buildNode(n));
+    });
+    var dropped = 0;
+    g.edges.forEach(function (e) {
+      var from = byId[e.source], to = byId[e.target];
+      var a = from && handlePoint(from, e.sourceHandle);
+      var b = to && handlePoint(to, e.targetHandle);
+      // React Flow silently drops an edge whose handle does not exist. Counting them
+      // instead is the difference between a diagram that is missing wires and a
+      // diagram that says so.
+      if (!a || !b) { dropped++; return; }
+      var pts = edgePoints(a, b);
+      var thick = e.style && e.style.strokeWidth === 3;
+      edgeLayer.appendChild(svg('path', {
+        class: 'pn-edge' + (thick ? ' bus' : ''),
+        d: roundedPath(pts, 8)
+      }));
+      if (e.label) {
+        var m = midOf(pts);
+        var t = svg('text', { class: 'pn-edge-label', x: m.x, y: m.y - 3 });
+        t.textContent = e.label;
+        edgeLayer.appendChild(t);
+      }
+    });
+    if (dropped) synthLog('warn', dropped + ' net(s) could not be drawn: no such pin on the cell');
+    placeholderEl.style.display = g.nodes.length ? 'none' : '';
+    if (!g.nodes.length) {
+      placeholderEl.textContent = reason
+        ? 'Nothing to draw — ' + reason
+        : 'Nothing synthesized yet - press Synthesize.';
+    }
+    fitView();
+  }
+
+  /* ---- pan and zoom. The whole of the view state is {k, x, y}, and every gesture
+     funnels into it - the same shape as the waveform's viewStart/viewEnd. Node
+     dragging is deliberately absent, so a drag anywhere pans. ---- */
+  var MIN_K = 0.05, MAX_K = 4;
+  function zoomAbout(px, py, factor) {
+    var k = Math.max(MIN_K, Math.min(MAX_K, view.k * factor));
+    if (k === view.k) return;
+    view.x = px - (px - view.x) * (k / view.k);
+    view.y = py - (py - view.y) * (k / view.k);
+    view.k = k;
+    applyTransform();
+  }
+
+  flowRoot.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var r = flowRoot.getBoundingClientRect();
+    zoomAbout(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
+  });
+
+  var drag = null;
+  flowRoot.addEventListener('mousedown', function (e) {
+    drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
+    flowRoot.style.cursor = 'grabbing';
+  });
+  document.addEventListener('mousemove', function (e) {
+    if (!drag) return;
+    view.x = drag.vx + (e.clientX - drag.x);
+    view.y = drag.vy + (e.clientY - drag.y);
+    applyTransform();
+  });
+  document.addEventListener('mouseup', function () {
+    drag = null;
+    flowRoot.style.cursor = '';
+  });
+
+  var touch = null;
+  function touchMid(t) {
+    return { x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 };
+  }
+  function touchGap(t) {
+    return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  }
+  flowRoot.addEventListener('touchstart', function (e) {
+    var t = e.touches;
+    if (t.length === 1) touch = { mode: 'pan', x: t[0].clientX, y: t[0].clientY, vx: view.x, vy: view.y };
+    else if (t.length >= 2) touch = { mode: 'pinch', gap: touchGap(t), k: view.k, mid: touchMid(t) };
+  });
+  flowRoot.addEventListener('touchmove', function (e) {
+    if (!touch) return;
+    e.preventDefault();
+    var t = e.touches;
+    if (touch.mode === 'pan' && t.length === 1) {
+      view.x = touch.vx + (t[0].clientX - touch.x);
+      view.y = touch.vy + (t[0].clientY - touch.y);
+      applyTransform();
+    } else if (touch.mode === 'pinch' && t.length >= 2 && touch.gap > 0) {
+      var r = flowRoot.getBoundingClientRect();
+      // Zoom about the pinch's own midpoint, so a two-finger gesture does not also pan.
+      zoomAbout(touch.mid.x - r.left, touch.mid.y - r.top,
+                (touchGap(t) / touch.gap) * (touch.k / view.k));
+    }
+  });
+  flowRoot.addEventListener('touchend', function () { touch = null; });
+  window.addEventListener('resize', function () { fitView(); });
+
+  /* =====================================================================
+     7. when it runs
+     ===================================================================== */
+
+  /* Synthesis happens when Synthesize is pressed and at no other time - Run simulates
+     and nothing else, which is why this button exists at all. Two consequences have to
+     be handled rather than left implicit, both because one Console is shared:
+
+     Run and Reset CLEAR that console, so whoever clears it owes the synthesis section
+     again - otherwise the two cards would go on showing a netlist whose log had been
+     silently wiped. These listeners are registered after app.js's and practice.js's,
+     and a classic script's handlers fire in registration order, so the simulation
+     output and the verdict pill are already written by the time this re-prints.
+
+     And an edit makes the cards STALE rather than wrong: the netlist stays readable,
+     with a band saying it no longer describes the editor. That is the shape
+     Baerilog/compiler.html already uses for an invalidated compile, and the reason to
+     keep the text on screen is that it is the thing being read. */
+  synthBtn.addEventListener('click', runSynthesis);
+  ['runBtn', 'resetBtn'].forEach(function (id) {
+    var b = document.getElementById(id);
+    if (b) b.addEventListener('click', renderSynthSection);
+  });
+  codeInput.addEventListener('input', function () { if (currentAll) markStale(true); });
+
+  // Nothing is synthesized on load, for the reason nothing is simulated on load - and
+  // here that means the two cards are not on the page at all yet. Pressing Synthesize
+  // is what puts them there.
+  markStale(false);
+
+  // Named for the harness, which drives all of this without a browser.
+  window.PRACTICE_SYNTH_API = {
+    runSynthesis: runSynthesis,
+    designOnly: designOnly,
+    netlistText: function () { return netlistFullText; },
+    segments: function () { return netlistSegments.slice(); },
+    graph: function () { return lastGraph; },
+    isStale: function () { return stale; },
+    syntheses: function () { return syntheses; },
+    cardsShown: function () { return cardsShown; },
+    subsetHints: subsetHints,
+    synthLog: function () { return synthLines.slice(); },
+    nodeSize: nodeSize,
+    handlePoint: handlePoint,
+    edgePoints: edgePoints,
+    view: function () { return { k: view.k, x: view.x, y: view.y }; },
+    fitView: fitView,
+    zoomAbout: zoomAbout,
+    breadcrumb: function () { return viewStack.slice(); },
+    drillInto: drillInto,
+    hierGlyph: function () { return HIER_GLYPH; }
+  };
+})();
