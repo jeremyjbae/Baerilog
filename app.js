@@ -1745,17 +1745,28 @@ function formatDisplay(args) {
    EXAMPLES
    ========================================================================= */
 const EXAMPLES = {
-  'D Flip-Flop': `module dff_tb;
+  'D Flip-Flop': `// The design under test: one flip-flop, and nothing about how it is exercised.
+module dff(
+  input clk,
+  input d,
+  output reg q
+);
+  // q follows d on the rising edge of clk
+  always @(posedge clk)
+    q <= d;
+endmodule
+
+// ======== TESTBENCH ========
+
+module dff_tb;
   reg clk;
   reg d;
-  reg q;
+  wire q;
+
+  dff u_dut (.clk(clk), .d(d), .q(q));
 
   // clock generator: toggles every 5 time units
   always #5 clk = ~clk;
-
-  // D flip-flop: q follows d on the rising edge of clk
-  always @(posedge clk)
-    q <= d;
 
   initial begin
     clk = 0;
@@ -1768,40 +1779,64 @@ const EXAMPLES = {
   end
 endmodule`,
 
-  '4-bit Counter (sync reset)': `module counter_tb;
-  reg clk;
-  reg rst;
-  reg [3:0] count;
-
-  always #5 clk = ~clk;
-
+  '4-bit Counter (sync reset)': `// The design under test: the counter itself, with its synchronous reset.
+module counter4(
+  input clk,
+  input rst,
+  output reg [3:0] count
+);
   always @(posedge clk) begin
     if (rst)
       count <= 0;
     else
       count <= count + 1;
   end
+endmodule
+
+// ======== TESTBENCH ========
+
+module counter_tb;
+  reg clk;
+  reg rst;
+  wire [3:0] count;
+
+  counter4 u_dut (.clk(clk), .rst(rst), .count(count));
+
+  always #5 clk = ~clk;
 
   initial begin
     clk = 0;
     rst = 1;
-    count = 0;
+    // count is the DUT's output now, so the testbench cannot seed it: it reads
+    // X until the first clock edge with rst high, which is what real hardware does.
     #12 rst = 0;
     #180 $finish;
   end
 endmodule`,
 
-  '4-bit ALU (mux-based)': `module alu_tb;
-  reg [3:0] a;
-  reg [3:0] b;
-  reg [1:0] sel;
-  reg [3:0] y;
-
+  '4-bit ALU (mux-based)': `// The design under test: one continuous assignment, selected four ways.
+module alu4(
+  input [3:0] a,
+  input [3:0] b,
+  input [1:0] sel,
+  output [3:0] y
+);
   // continuous assignment: y updates immediately whenever inputs change
   assign y = (sel == 2'd0) ? (a + b) :
              (sel == 2'd1) ? (a - b) :
              (sel == 2'd2) ? (a & b) :
                              (a | b);
+endmodule
+
+// ======== TESTBENCH ========
+
+module alu_tb;
+  reg [3:0] a;
+  reg [3:0] b;
+  reg [1:0] sel;
+  wire [3:0] y;
+
+  alu4 u_dut (.a(a), .b(b), .sel(sel), .y(y));
 
   initial begin
     a = 4'd5; b = 4'd3; sel = 2'd0;
@@ -1826,6 +1861,8 @@ module dff(
     q <= d;
 
 endmodule
+
+// ======== TESTBENCH ========
 
 module shiftreg_tb;
   reg clk;
@@ -1863,6 +1900,8 @@ endmodule`,
   assign {cout, sum} = a + b;
 
 endmodule
+
+// ======== TESTBENCH ========
 
 module adder4_tb;
   reg [3:0] a, b;
@@ -1942,6 +1981,8 @@ module pc (
 endmodule
 
 /* ---- Testbench (Skip Synthesis)  ---- */
+// ======== TESTBENCH ========
+
 module rom (
   input [7:0] addr, 
   output [7:0] data
@@ -2094,6 +2135,8 @@ module pc (
 endmodule
 
 /* ---- Testbench (Skip Synthesis)  ---- */
+// ======== TESTBENCH ========
+
 module rom (
   input [7:0] addr, 
   output [7:0] data
@@ -2239,6 +2282,8 @@ always@(*)
       we_1h = 4'b0000;
 
 endmodule
+
+// ======== TESTBENCH ========
 
 module rf_tb;
   reg clk, rst_n;
@@ -2653,6 +2698,8 @@ module pc (
 endmodule
 
 /* ---- Testbench (Skip Synthesis)  ---- */
+// ======== TESTBENCH ========
+
 module rom_256x16 (
   input [15:0] addr, 
   output [15:0] data
@@ -3494,12 +3541,77 @@ function compareMemories(bind, model, result) {
    ========================================================================= */
 const codeInput = document.getElementById('codeInput');
 const gutter = document.getElementById('gutter');
+const tbInput = document.getElementById('tbInput');
+const tbGutter = document.getElementById('tbGutter');
+const tbEmpty = document.getElementById('tbEmpty');
 const editorHierarchyPanel = document.getElementById('editorHierarchyPanel');
 const editorSyncWarning = document.getElementById('editorSyncWarning');
 let editorFullSource = '';
 let editorSelectedModule = '(all)';
 let editorModuleSpan = null;   // {start, end} of the selected module inside editorFullSource, null in (all) view
 let lastGoodModuleNames = [];  // module list from the last parse that succeeded, so a syntax error doesn't empty the panel
+let tbSpan = null;             // {start, end} of the testbench region, null when the document has no marker
+
+/* ---- the design / testbench split ----------------------------------------
+
+   One document, two editors. `editorFullSource` is still the whole file and
+   still the only truth; a TESTBENCH marker line inside it says where the design
+   stops, and each textarea is a VIEW of one span - exactly what the module
+   browser already does for a single module, which is why the merge below needed
+   no new machinery.
+
+   The marker is a `//` comment, so the split costs the Verilog subset nothing:
+   the composed source is what the parser has always seen, a saved file
+   round-trips through Open with its boundary intact, and a file written before
+   any of this existed simply has no marker.
+
+   NO MARKER MEANS NO TESTBENCH REGION, and that is what keeps this neutral: the
+   design span is then the whole file, the Testbench card shows its empty state,
+   and every path below behaves as it did. */
+const TB_MARKER_RE = /^[ \t]*\/\/[ \t]*=+[ \t]*TESTBENCH[ \t]*=+[ \t]*$/m;
+const TB_MARKER = '// ======== TESTBENCH ========';
+
+/* A document only HAS a testbench region where there is a second editor to show
+   it in. That is not a nicety: this script is also carried, markup and all, by
+   apps that render one editor (workbench/index.html embeds the whole body as a
+   slice but keeps its own markup), and there a marked document would put the
+   design on screen while the merge treated it as the whole file - silently
+   dropping the testbench, which is exactly how the workbench's ROM went missing
+   and five of its checks failed. One editor therefore means one span. */
+function hasTestbenchEditor() { return !!tbInput; }
+
+// Where the marker line starts, or -1. The marker itself belongs to NEITHER
+// view: it is the boundary, so the design ends before it and the testbench
+// begins after its newline.
+function tbMarkerAt(src) {
+  if (!hasTestbenchEditor()) return -1;
+  const m = TB_MARKER_RE.exec(src);
+  return m ? m.index : -1;
+}
+function designSpan(src) {
+  const at = tbMarkerAt(src);
+  return { start: 0, end: at < 0 ? src.length : at };
+}
+function testbenchSpan(src) {
+  const at = tbMarkerAt(src);
+  if (at < 0) return null;
+  const nl = src.indexOf('\n', at);
+  if (nl < 0) return { start: src.length, end: src.length };
+  /* Blank lines between the marker and the first module belong to the BOUNDARY,
+     not to the view: the document reads better with a gap after the marker, and
+     the editor reads better starting on `module ...` rather than on an empty
+     line. Recomposition stays exact because the boundary is whatever lies
+     between the two spans, and it is spliced back untouched. */
+  let start = nl + 1;
+  while (start < src.length) {
+    const eol = src.indexOf('\n', start);
+    const line = src.slice(start, eol < 0 ? src.length : eol);
+    if (line.trim() !== '') break;
+    if (eol < 0) { start = src.length; break; }
+    start = eol + 1;
+  }
+  return { start, end: src.length };
+}
 const exampleSelect = document.getElementById('exampleSelect');
 const openBtn = document.getElementById('openBtn');
 const fileOpenInput = document.getElementById('fileOpenInput');
@@ -3786,15 +3898,27 @@ function waveScrollRight() { waveScrollBy(0.5); }
 // waveScrollBy's clamping), so zooming near t=0 or the end doesn't silently
 // change the span the caller asked for.
 const WAVE_MIN_SPAN = 1; // same floor waveZoomAt uses
-function waveSetSpanAround(anchorTime, anchorFrac, span) {
-  if (!lastResult) return;
+// The shift-don't-shrink clamp, factored out because a re-run now wants it too: a
+// window of `span` time units with `anchorTime` at fractional position `anchorFrac`
+// across it is moved back inside the data rather than narrowed, so a zoom near t=0 or
+// the end cannot silently change the span the caller asked for. The second caller is a
+// re-run keeping the view it had (see runSimulation), where the new run may be SHORTER
+// than the window - exactly the case a hand-rolled clamp gets wrong. It RETURNS the
+// window rather than assigning it, because that caller is mid-run and must not draw
+// yet. (waveScrollBy states the same rule on an already-valid span of its own, and is
+// left alone: routing it through here would be a behaviour claim about its inputs.)
+function waveFitWindow(anchorTime, anchorFrac, span) {
   const [fullMin, fullMax] = waveFullRange();
   span = Math.max(WAVE_MIN_SPAN, Math.min(fullMax - fullMin, span));
   let start = anchorTime - anchorFrac * span;
   let end = start + span;
   if (start < fullMin) { start = fullMin; end = fullMin + span; }
   if (end > fullMax) { end = fullMax; start = fullMax - span; }
-  viewStart = start; viewEnd = end;
+  return [start, end];
+}
+function waveSetSpanAround(anchorTime, anchorFrac, span) {
+  if (!lastResult) return;
+  [viewStart, viewEnd] = waveFitWindow(anchorTime, anchorFrac, span);
   drawWaveform(lastResult);
 }
 function waveApplyRange() {
@@ -3831,7 +3955,7 @@ function loadExample(name) {
   setEditorText(EXAMPLES[name]);
   currentFileName = name.replace(/[^A-Za-z0-9_-]+/g, '_') + '.v';
   resetEditorHierarchyState();
-  tryApplyAutoFinishTime(codeInput.value);
+  tryApplyAutoFinishTime(editorFullSource);
 }
 exampleSelect.addEventListener('change', () => loadExample(exampleSelect.value));
 loadExample(Object.keys(EXAMPLES)[0]);
@@ -3849,7 +3973,7 @@ fileOpenInput.addEventListener('change', () => {
     currentFileName = file.name;
     exampleSelect.selectedIndex = -1;
     resetEditorHierarchyState();
-    tryApplyAutoFinishTime(codeInput.value);
+    tryApplyAutoFinishTime(editorFullSource);
   };
   reader.readAsText(file);
 });
@@ -4007,75 +4131,91 @@ function renderMemoryTable() {
   memoryTable.innerHTML = html + '</tbody>';
 }
 
-/* ---- editor: line-number gutter + tab handling ---- */
-function updateGutter() {
-  const lines = codeInput.value.split('\n').length;
+/* ---- editor: line-number gutter + tab handling ----
+
+   Written against a (textarea, gutter) PAIR rather than against `codeInput`,
+   because there are two editors now and the second must behave exactly like the
+   first - two-space Tab, shift-Tab outdent, a gutter that scrolls in lockstep.
+   Parameterising was the alternative to a second copy that could drift; the
+   named wrappers below keep every existing caller (including practice.js's
+   setEditorText) working unchanged. */
+function renderGutter(ta, gut) {
+  const lines = ta.value.split('\n').length;
   let s = '';
   for (let i = 1; i <= lines; i++) s += i + '\n';
-  gutter.textContent = s;
+  gut.textContent = s;
 }
+function updateGutter() { renderGutter(codeInput, gutter); }
+function updateTbGutter() { if (tbInput) renderGutter(tbInput, tbGutter); }
 
-// Replaces the whole editor contents *without* destroying the textarea's native
-// undo stack, which a plain `codeInput.value = ...` silently wipes. Every
-// programmatic swap goes through here, because that stack is the last line of
-// defence for an edit the module view couldn't merge: Cmd-Z gets it back.
-// execCommand needs the textarea focused, so this steals focus - guarded on the
-// editor already having content, which is what keeps the initial example load
-// (empty textarea, nothing to undo to) from yanking focus on page load.
-function setEditorText(text) {
-  if (codeInput.value === text) return;
+// Replaces a textarea's whole contents *without* destroying its native undo
+// stack, which a plain `.value = ...` silently wipes. Every programmatic swap
+// goes through here, because that stack is the last line of defence for an edit
+// the module view couldn't merge: Cmd-Z gets it back. execCommand needs the
+// textarea focused, so this steals focus - guarded on the editor already having
+// content, which is what keeps the initial example load (empty textarea,
+// nothing to undo to) from yanking focus on page load.
+function setTextIn(ta, gut, text) {
+  if (ta.value === text) return;
   let ok = false;
-  if (codeInput.value !== '' && text !== '') {
-    codeInput.focus();
-    codeInput.setSelectionRange(0, codeInput.value.length);
+  if (ta.value !== '' && text !== '') {
+    ta.focus();
+    ta.setSelectionRange(0, ta.value.length);
     ok = document.execCommand('insertText', false, text);
   }
-  if (!ok) codeInput.value = text;
-  updateGutter();
+  if (!ok) ta.value = text;
+  renderGutter(ta, gut);
 }
-codeInput.addEventListener('input', updateGutter);
-codeInput.addEventListener('scroll', () => { gutter.scrollTop = codeInput.scrollTop; });
-codeInput.addEventListener('keydown', (e) => {
-  if (e.key !== 'Tab') return;
-  e.preventDefault();
-  const v = codeInput.value;
-  const s = codeInput.selectionStart, en = codeInput.selectionEnd;
-  if (e.shiftKey) {
+function setEditorText(text) { setTextIn(codeInput, gutter, text); }
+function setTestbenchText(text) { if (tbInput) setTextIn(tbInput, tbGutter, text); }
+
+function wireEditor(ta, gut) {
+  ta.addEventListener('input', () => renderGutter(ta, gut));
+  ta.addEventListener('scroll', () => { gut.scrollTop = ta.scrollTop; });
+  ta.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    e.preventDefault();
+    const v = ta.value;
+    const s = ta.selectionStart, en = ta.selectionEnd;
+    if (e.shiftKey) {
+      const lineStart = v.lastIndexOf('\n', s - 1) + 1;
+      let lineEnd = v.indexOf('\n', en);
+      if (lineEnd === -1) lineEnd = v.length;
+      const lines = v.slice(lineStart, lineEnd).split('\n');
+      let startRemoved = 0, totalRemoved = 0;
+      const outdented = lines.map((l, i) => {
+        const m = l.match(/^ {1,2}|^\t/);
+        const removed = m ? m[0].length : 0;
+        if (i === 0) startRemoved = removed;
+        totalRemoved += removed;
+        return l.slice(removed);
+      }).join('\n');
+      ta.setSelectionRange(lineStart, lineEnd);
+      document.execCommand('insertText', false, outdented);
+      const newStart = Math.max(lineStart, s - startRemoved);
+      const newEnd = Math.max(newStart, en - totalRemoved);
+      ta.setSelectionRange(newStart, newEnd);
+      renderGutter(ta, gut);
+      return;
+    }
+    if (s === en) {
+      document.execCommand('insertText', false, '  ');
+      renderGutter(ta, gut);
+      return;
+    }
     const lineStart = v.lastIndexOf('\n', s - 1) + 1;
     let lineEnd = v.indexOf('\n', en);
     if (lineEnd === -1) lineEnd = v.length;
     const lines = v.slice(lineStart, lineEnd).split('\n');
-    let startRemoved = 0, totalRemoved = 0;
-    const outdented = lines.map((l, i) => {
-      const m = l.match(/^ {1,2}|^\t/);
-      const removed = m ? m[0].length : 0;
-      if (i === 0) startRemoved = removed;
-      totalRemoved += removed;
-      return l.slice(removed);
-    }).join('\n');
-    codeInput.setSelectionRange(lineStart, lineEnd);
-    document.execCommand('insertText', false, outdented);
-    const newStart = Math.max(lineStart, s - startRemoved);
-    const newEnd = Math.max(newStart, en - totalRemoved);
-    codeInput.setSelectionRange(newStart, newEnd);
-    updateGutter();
-    return;
-  }
-  if (s === en) {
-    document.execCommand('insertText', false, '  ');
-    updateGutter();
-    return;
-  }
-  const lineStart = v.lastIndexOf('\n', s - 1) + 1;
-  let lineEnd = v.indexOf('\n', en);
-  if (lineEnd === -1) lineEnd = v.length;
-  const lines = v.slice(lineStart, lineEnd).split('\n');
-  const indented = lines.map(l => '  ' + l).join('\n');
-  codeInput.setSelectionRange(lineStart, lineEnd);
-  document.execCommand('insertText', false, indented);
-  codeInput.setSelectionRange(s + 2, en + lines.length * 2);
-  updateGutter();
-});
+    const indented = lines.map(l => '  ' + l).join('\n');
+    ta.setSelectionRange(lineStart, lineEnd);
+    document.execCommand('insertText', false, indented);
+    ta.setSelectionRange(s + 2, en + lines.length * 2);
+    renderGutter(ta, gut);
+  });
+}
+wireEditor(codeInput, gutter);
+if (tbInput) wireEditor(tbInput, tbGutter);
 
 /* ---- editor: module hierarchy view (browse/edit one module definition at a
    time out of the single underlying source file) ---- */
@@ -4104,14 +4244,60 @@ function showModuleInEditor(name) {
       return;
     }
     showEditorSyncWarning(parseErr
-      ? 'Showing the whole file — a single module can\'t be sliced out while the source has a syntax error (' + parseErr + ').'
-      : 'Showing the whole file — module \'' + name + '\' no longer exists.');
+      ? 'Showing the whole design — a single module can\'t be sliced out while the source has a syntax error (' + parseErr + ').'
+      : 'Showing the whole design — module \'' + name + '\' no longer exists.');
   } else {
     showEditorSyncWarning(null);
   }
+  /* `(all)` is the DESIGN span, not the whole document: with a testbench region
+     present the testbench belongs to the other editor, and showing it here too
+     would put the same text on screen twice with two merges racing for it. With
+     no marker the span is the whole file, so this is the old line. */
   editorSelectedModule = '(all)';
-  editorModuleSpan = null;
-  setEditorText(editorFullSource);
+  editorModuleSpan = designSpan(editorFullSource);
+  setEditorText(editorFullSource.slice(editorModuleSpan.start, editorModuleSpan.end));
+}
+
+/* The testbench editor is a view of the span after the marker, and it is shown
+   only when there IS one - a document with no testbench region gets the card's
+   empty state rather than an editable void that would silently become the
+   file's tail on the first keystroke. */
+function showTestbenchInEditor() {
+  if (!tbInput) return;
+  const span = testbenchSpan(editorFullSource);
+  tbSpan = span;
+  setTestbenchText(span ? editorFullSource.slice(span.start, span.end) : '');
+  tbInput.disabled = !span;
+  tbInput.style.display = span ? '' : 'none';
+  tbGutter.style.display = span ? '' : 'none';
+  if (tbEmpty) tbEmpty.style.display = span ? 'none' : '';
+}
+
+/* The whole document, as a FUNCTION - because a function declaration becomes a
+   property of `window` and a top-level `let` does not.
+
+   That distinction is not trivia here. cloud-sync.js is a separate classic script
+   that saves and restores a page's work, and it reached the document as
+   `window.editorFullSource`, which is `undefined` in a browser however correct it
+   looks; it then fell back to `codeInput.value`. That was harmless while the
+   textarea held the whole file, and became data loss the moment it held only the
+   design half: the testbench was dropped from every save, and restoring one put a
+   markerless document back on screen - a design editor holding everything and a
+   Testbench card correctly reporting that there is no marker to split on.
+
+   So anything outside this script that wants the document calls this. Note the
+   merge first: the views are the truth only after they are merged back. */
+function currentFullSource() {
+  spliceEditorChangesBack();
+  return editorFullSource;
+}
+
+/* And the counterpart: put a whole document back, splitting it across the two
+   editors. Restoring through setEditorText alone writes the DESIGN editor, which
+   is what silently un-split a restored file. */
+function loadFullSource(text) {
+  setEditorText(text);
+  resetEditorHierarchyState();
 }
 
 // Merges whatever is currently visible in the textarea back into
@@ -4125,18 +4311,46 @@ function showModuleInEditor(name) {
 // span across merges (rather than re-deriving it from a parse) is what lets a
 // currently-unparseable module keep being edited and merged.
 function spliceEditorChangesBack() {
-  if (editorSelectedModule === '(all)') {
+  /* The testbench half first, because the design half's splice moves every
+     offset after it and `tbSpan` would then point into the wrong place. Both are
+     plain textual splices of a tracked span - the same merge, twice. */
+  if (tbInput && tbSpan) {
+    const s = tbSpan.start;
+    editorFullSource = editorFullSource.slice(0, s) + tbInput.value + editorFullSource.slice(tbSpan.end);
+    tbSpan = { start: s, end: s + tbInput.value.length };
+  }
+  if (editorSelectedModule === '(all)' && !tbSpan) {
+    /* No testbench region, so the textarea IS the document - replace it wholesale,
+       exactly as this always did. Keeping this path is not an optimisation: an
+       external caller may swap the editor's text without re-deriving the document
+       (workbench does, between VL.setEditorText and VL.runSimulation), and a
+       span-based splice would then merge the new text into the OLD document at a
+       stale offset. Measured: 5 of the workbench's harness checks fail that way,
+       with the design's ROM simply absent from the result. */
     editorFullSource = codeInput.value;
+    editorModuleSpan = designSpan(editorFullSource);
     return;
   }
-  if (!editorModuleSpan) return; // unreachable: the two are always set together
+  if (!editorModuleSpan) {   // no span tracked yet: the view is the whole document
+    editorFullSource = codeInput.value;
+    tbSpan = testbenchSpan(editorFullSource);
+    return;
+  }
   const start = editorModuleSpan.start;
+  const delta = codeInput.value.length - (editorModuleSpan.end - editorModuleSpan.start);
   editorFullSource = editorFullSource.slice(0, start) + codeInput.value + editorFullSource.slice(editorModuleSpan.end);
   editorModuleSpan = { start, end: start + codeInput.value.length };
+  // The design sits BEFORE the testbench, so editing it shifts the testbench span.
+  if (tbSpan) tbSpan = { start: tbSpan.start + delta, end: tbSpan.end + delta };
 }
 
+/* The panel lists the DESIGN's modules, not the document's: a testbench module
+   is not editable here (it belongs to the other card), so offering it would open
+   a view the merge cannot own. Parsing the design span alone is also what keeps
+   the list honest while the testbench half is mid-edit and does not parse. */
 function renderEditorHierarchyList() {
-  try { lastGoodModuleNames = [...parseTopLevelModules(editorFullSource).keys()]; }
+  const s = designSpan(editorFullSource);
+  try { lastGoodModuleNames = [...parseTopLevelModules(editorFullSource.slice(s.start, s.end)).keys()]; }
   catch (e) { /* keep the last-good list: a transient syntax error shouldn't empty the panel */ }
   editorHierarchyPanel.innerHTML = '';
   for (const name of ['(all)', ...lastGoodModuleNames]) {
@@ -4155,12 +4369,19 @@ function selectEditorModule(name) {
   renderEditorHierarchyList();
 }
 
+/* Called with a whole DOCUMENT in codeInput (a loaded example, an opened file),
+   which is then split across the two editors. Everything downstream reads
+   `editorFullSource`, so this is the one place a document becomes two views. */
 function resetEditorHierarchyState() {
   editorFullSource = codeInput.value;
   editorSelectedModule = '(all)';
   editorModuleSpan = null;
   lastGoodModuleNames = []; // a new document: don't carry the old file's module list
   showEditorSyncWarning(null);
+  showTestbenchInEditor();
+  // after the testbench half is on screen, show the design half in this one
+  editorModuleSpan = designSpan(editorFullSource);
+  setEditorText(editorFullSource.slice(editorModuleSpan.start, editorModuleSpan.end));
   renderEditorHierarchyList();
 }
 
@@ -4168,6 +4389,7 @@ codeInput.addEventListener('blur', () => {
   spliceEditorChangesBack();
   renderEditorHierarchyList();
 });
+if (tbInput) tbInput.addEventListener('blur', () => { spliceEditorChangesBack(); });
 
 /* ---- collapse buttons (generic, works for any .card-collapse-btn) ---- */
 document.querySelectorAll('[data-collapse]').forEach(btn => {
@@ -4202,18 +4424,27 @@ document.querySelectorAll('[data-collapse]').forEach(btn => {
 /* ---- per-card resizable height (+/- buttons, persisted independently) ---- */
 (() => {
   const MIN_HEIGHT = 200, MAX_HEIGHT = 1000, STEP = 80;
-  function wireHeight(storageKey, el, decBtn, incBtn) {
+  /* `els` is a list, not one element, because the two editors sit side by side:
+     they share a stored height and resizing either moves BOTH, so the row cannot
+     go ragged. A shared storage key alone would only agree after a reload, which
+     is the kind of half-fix that reads as correct until you watch it. The first
+     element is the one measured, so the pair steps together from one number. */
+  function wireHeight(storageKey, els, decBtn, incBtn) {
+    els = [].concat(els).filter(Boolean);
+    if (!els.length || !decBtn || !incBtn) return;
     const saved = parseInt(localStorage.getItem(storageKey), 10);
-    if (!isNaN(saved)) el.style.height = saved + 'px';
+    if (!isNaN(saved)) els.forEach(el => { el.style.height = saved + 'px'; });
     function adjust(delta) {
-      const next = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, el.getBoundingClientRect().height + delta));
-      el.style.height = next + 'px';
+      const next = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, els[0].getBoundingClientRect().height + delta));
+      els.forEach(el => { el.style.height = next + 'px'; });
       localStorage.setItem(storageKey, next);
     }
     decBtn.addEventListener('click', () => adjust(-STEP));
     incBtn.addEventListener('click', () => adjust(STEP));
   }
-  wireHeight('editorHeight', document.getElementById('editorWrap'), document.getElementById('editorHeightDec'), document.getElementById('editorHeightInc'));
+  const editorWrap = document.getElementById('editorWrap'), tbWrap = document.getElementById('tbWrap');
+  wireHeight('editorHeight', [editorWrap, tbWrap], document.getElementById('editorHeightDec'), document.getElementById('editorHeightInc'));
+  wireHeight('editorHeight', [editorWrap, tbWrap], document.getElementById('tbHeightDec'), document.getElementById('tbHeightInc'));
   wireHeight('consoleHeight', document.getElementById('consoleBox'), document.getElementById('consoleHeightDec'), document.getElementById('consoleHeightInc'));
 })();
 
@@ -4337,6 +4568,112 @@ function escapeHtml(s) {
 }
 
 /* ---- run / reset ---- */
+
+/* The Run button has two states, and the WORDING of neither is written here: the
+   markup carries the fresh label and the other is derived from it by turning `Run`
+   into `Re-run`, so `simulator.html` stays the single source of what the button says
+   and an app whose markup says something shorter keeps it short (`workbench`'s is
+   `▶ Run`, so it becomes `▶ Re-run` rather than being clobbered with this one's
+   longer form).
+   It matters because Run and Reset are genuinely different operations and used to look
+   identical: a re-run keeps everything you set up in the Waveform Viewer - which rows
+   are shown, their radix, the hierarchy's expansion, and now the zoom - while Reset is
+   what throws all of that away. `Re-run Simulation` beside `Reset` is the panel saying
+   so. Keyed on `lastResult`, the same test the Scoreboard's empty state uses, so a run
+   that failed to parse (which returns early without touching it) does not relabel. */
+const RUN_LABEL_FRESH = runBtn.textContent;
+const RUN_LABEL_AGAIN = RUN_LABEL_FRESH.replace(/\bRun\b/, 'Re-run');
+/* Still exactly ONE writer of this label, which is what the busy state forced to be
+   made explicit: `syncRunLabel` is called again when the state is set and when it is
+   cleared, and it asks the button which form to write. Writing the ⏲ form directly
+   from the busy helper instead would have it silently overwritten mid-run - the first
+   Run relabels Run -> Re-run through here while the job is still notionally busy. */
+function syncRunLabel() {
+  const base = lastResult ? RUN_LABEL_AGAIN : RUN_LABEL_FRESH;
+  runBtn.textContent = runBtn.hasAttribute('data-busy') ? busyLabel(base) : base;
+}
+
+/* ---- "that click landed", for a job that blocks the main thread ----
+
+   `withBusyButton` turns the button amber and swaps its leading glyph for ⏲ while a
+   blocking job runs. Five things about it are the whole design, and each is a
+   constraint rather than a preference:
+
+   - **The busy state is NOT painted during the work, and cannot be.** `runSimulation`
+     is synchronous, so nothing renders between the click and the result - a browser
+     has no frame to draw. Deferring the run by a frame would fix that in principle and
+     is deliberately not done: measured, an exercise runs in 0.3-64ms, at most four
+     frames, so nobody could see the difference - while the deferral would break every
+     headless check that clicks Run and reads the result on the next line.
+   - **So the HOLD is what makes it visible at all.** The state is cleared BUSY_MIN_MS
+     after the click rather than when the work ends; against a 0.3ms run a one-frame
+     flash is a glitch, not feedback. On a job slower than the hold there is nothing
+     left to wait for and it clears as soon as the work does.
+   - **The label is written by the CALLER's own function**, handed in as `relabel` and
+     called once on the way in and once on the way out, because which words belong on
+     the button is that caller's business (Run/Re-run here, Synthesize/Re-synthesize on
+     a practice page) and a job may legitimately change them while it runs.
+   - **The width is pinned first.** ⏲ is a colour emoji and renders about twice as wide
+     as ▶ on most platforms, so the button would visibly resize mid-flash. Measured per
+     press, since the label's own width changes with Run/Re-run.
+   - **The work runs even if the chrome throws.** A stub DOM with no `setTimeout`, or a
+     glyph swap on a detached node, must never cost a simulation - so the decoration is
+     set inside a try, cleared in a finally, and the job is what the caller came for. */
+const BUSY_MIN_MS = 320;
+const BUSY_GLYPH = '⏲';
+/* Replaces a leading GLYPH if the label has one (`▶ Run Simulation`, `⚙︎ Synthesize`)
+   and prepends otherwise, because the buttons that use this are written differently and
+   neither should have to know about the other. Getting this wrong is not subtle - a
+   blind replace of the first character turns Synthesize into `⏲ynthesize`.
+   The optional ︎ is the text-presentation selector some glyphs carry (Synthesize's
+   gear does; Run's ▶ does not). It has to be consumed with the character it belongs to,
+   or it survives the swap and silently re-presents the ⏲ that replaced it - so the two
+   buttons would show the same glyph in different renderings for no stated reason. */
+function busyLabel(s) {
+  return /^\s*[^\s\w]/.test(s) ? s.replace(/^\s*\S︎?/, BUSY_GLYPH) : BUSY_GLYPH + ' ' + s;
+}
+function nowMs() {
+  return typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+}
+function withBusyButton(btn, work, relabel) {
+  let started = 0, marked = false, restore = null;
+  try {
+    if (btn) {
+      /* BOTH dimensions, and the height is the one that was learned the hard way. ⏲ is
+         a colour emoji: it is about twice as wide as ▶, and it comes from a fallback
+         font whose ascent and descent are taller than the text font's, so the button
+         grew in both directions the moment it was pressed. `.btn` now sets an explicit
+         line-height, which fixes the height properly; this pins the measured box as
+         well, because that rule can only govern fonts the browser lays out normally and
+         an emoji is exactly the case where platforms differ. Belt and braces on a
+         control whose size must not move under the pointer. */
+      const box = btn.getBoundingClientRect ? btn.getBoundingClientRect() : null;
+      if (box && box.width) btn.style.minWidth = box.width + 'px';
+      if (box && box.height) btn.style.height = box.height + 'px';
+      restore = btn.textContent;
+      btn.setAttribute('data-busy', '');
+      if (relabel) relabel(); else btn.textContent = busyLabel(restore);
+      started = nowMs();
+      marked = true;
+    }
+  } catch (e) { /* chrome is never allowed to cost you the run */ }
+  try {
+    work();
+  } finally {
+    if (marked) {
+      const clear = () => {
+        btn.removeAttribute('data-busy');
+        if (relabel) relabel(); else btn.textContent = restore;
+        btn.style.minWidth = '';
+        btn.style.height = '';
+      };
+      const left = Math.max(0, BUSY_MIN_MS - (nowMs() - started));
+      if (left > 0 && typeof setTimeout === 'function') setTimeout(clear, left);
+      else clear();
+    }
+  }
+}
+
 resetBtn.addEventListener('click', () => {
   clearConsole();
   logLine('<span class="info">Click Run to simulate…</span>');
@@ -4361,9 +4698,14 @@ resetBtn.addEventListener('click', () => {
   // checkbox itself is a user preference and survives, like the layout controls.
   modelCheck = null;
   renderModelCard();
+  // Reset is what makes the next Run a first run again, so the button says Run.
+  syncRunLabel();
 });
 
-runBtn.addEventListener('click', runSimulation);
+/* The busy state belongs to the CLICK, not to `runSimulation` - which is called
+   directly by `workbench/index.html` at load and by every headless harness, where
+   decorating a button would be noise at best. */
+runBtn.addEventListener('click', () => withBusyButton(runBtn, runSimulation, syncRunLabel));
 
 // Best-effort static detection of when $finish executes, so "run for N time
 // units" can be auto-filled instead of guessed. Walks every `initial`
@@ -4476,7 +4818,11 @@ function runSimulation() {
   computeDeclMeta(ast);
   lastMemoryDecls = ast.decls.filter(d => d.array);
   renderMemorySelect();
-  if (ast.tree.modType !== lastTopModuleName) {
+  /* Whether this is a first look at this design decides two things now - which
+     signals are shown, and whether the zoom survives - so it is read ONCE, before the
+     block below consumes it by updating lastTopModuleName. */
+  const freshDesign = ast.tree.modType !== lastTopModuleName;
+  if (freshDesign) {
     // first run against this top-level module (a fresh design, or Reset was
     // clicked): show only the top module's own signals, collapse every
     // direct child instance - hiding a child transitively hides everything
@@ -4531,10 +4877,27 @@ function runSimulation() {
     }
   }
 
+  /* A RE-RUN keeps the view you were looking at, and that is what the button's
+     `Re-run Simulation` label is promising: the point of pressing it is usually to see
+     whether an edit fixed the glitch you had just zoomed in on, and re-zooming by hand
+     every time is the whole friction. Reset is what goes back to the full run, and says
+     so. Two things make it safe rather than merely convenient. It is only done for the
+     SAME top module - a genuinely different design (and a Reset, which nulls
+     lastTopModuleName) still opens on its whole run, since a window inherited from
+     unrelated hardware means nothing. And the window is put through waveFitWindow
+     against the NEW run, so a run that now ends earlier than the window began is
+     shifted back inside with its span intact instead of leaving the plot empty. */
+  const keepView = !freshDesign && lastResult;
+  const prevSpan = viewEnd - viewStart, prevStart = viewStart, prevCursor = cursorTime;
   lastResult = result;
-  viewStart = 0;
-  viewEnd = Math.max(result.time, 1);
-  cursorTime = viewEnd;
+  if (keepView) {
+    [viewStart, viewEnd] = waveFitWindow(prevStart, 0, prevSpan);
+    cursorTime = Math.max(viewStart, Math.min(viewEnd, prevCursor));
+  } else {
+    viewStart = 0;
+    viewEnd = Math.max(result.time, 1);
+    cursorTime = viewEnd;
+  }
   hideRadixPopup();
   renderHierarchyTree(ast.tree); // re-render now that lastResult/hiddenSignals reflect this run
   renderMemoryTable();
@@ -4572,11 +4935,21 @@ function runSimulation() {
     // The cursor lands ON the divergence rather than at the end of the run, so
     // the value column is showing the mismatching state when the card is read.
     cursorTime = Math.min(modelCheck.time, result.time);
+    /* And the window has to CONTAIN it, which only became reachable once a re-run kept
+       its zoom: drawWaveform clamps the cursor into the view, so a divergence outside a
+       preserved window would silently land on the window's edge and the value column
+       would be showing the wrong instant while the card named the right one. The
+       divergence is what this run is about, so it wins over the kept view - shifted, not
+       zoomed out, so the magnification you chose survives. */
+    if (cursorTime < viewStart || cursorTime > viewEnd) {
+      [viewStart, viewEnd] = waveFitWindow(cursorTime, 0.5, viewEnd - viewStart);
+    }
   }
 
   renderBadges(result);
   drawWaveform(result);
   renderModelCard();
+  syncRunLabel();   // there is a result now, so the button offers to run it again
 }
 
 /* ---- CPU / Memory Model card ---- */

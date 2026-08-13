@@ -295,7 +295,7 @@
 
     card.appendChild(cardHead('Synthesized Gate-level Verilog Netlist (Read-only)', [
       'the same design as gates: a top module instantiating primitive cells, then the behavioural definition of each cell it used',
-      'the testbench is not synthesized - everything from module tb down is dropped first',
+      'the testbench is not synthesized - everything below the TESTBENCH marker is dropped first, which is exactly what the Testbench Editor holds',
       'read-only, and regenerated on every Run: edit the design above, not this'
     ], controls));
 
@@ -337,6 +337,10 @@
 
     card.appendChild(cardHead('Netlist Viewer', [
       'drag to pan, scroll or pinch to zoom - the view refits itself on every new graph',
+      'click a wire to name its net and light up every segment of it; Escape, or a click on the '
+        + 'background, clears that again',
+      'the zoom buttons step in and out about the centre, and fit brings the whole diagram '
+        + 'back - zooming out stops there, so the diagram is never lost in empty space',
       'double-click a sub-module block to drill into its own netlist; the breadcrumb comes back out',
       'bundle multi-bit logic collapses same-width cell chains into one N-bit box'
     ], controls));
@@ -347,6 +351,9 @@
     crumbs.style.flex = '1 1 auto';
     crumbs.style.marginBottom = '0';
     bar.appendChild(crumbs);
+    var netSel = mk('span', 'pn-net-readout', 'netlistSelectedNet');
+    netSel.style.display = 'none';
+    bar.appendChild(netSel);
     var vstale = mk('span', 'editor-sync-warning', 'viewerStale');
     vstale.style.display = 'none';
     vstale.style.marginBottom = '0';
@@ -360,6 +367,25 @@
     label.appendChild(cb);
     label.appendChild(document.createTextNode(' Bundle multi-bit logic'));
     bar.appendChild(label);
+    /* Zoom out / in / fit, to the right of the checkbox. `.layout-btn` in a
+       `.layout-toggle` group is the control this card already uses for its height -/+ and
+       expand buttons, so this needs no CSS of its own and reads as the same kind of thing.
+       They stay live at the clamps and a click simply does nothing, exactly how the height
+       buttons clamp silently - a disabled style would be the only one on the site. */
+    var zoomGroup = mk('span', 'layout-toggle');
+    var MAG = '<circle cx="6.5" cy="5.5" r="4"/><path d="M9.6 8.6 L14.4 11.4"/>';
+    [['netlistZoomOutBtn', 'Zoom out', MAG + '<path d="M4.5 5.5 H8.5"/>'],
+     ['netlistZoomInBtn', 'Zoom in', MAG + '<path d="M4.5 5.5 H8.5 M6.5 3.5 V7.5"/>'],
+     ['netlistZoomFitBtn', 'Zoom to fit the whole diagram',
+      '<path d="M1 4 V1.5 H4 M12 1.5 H15 V4 M15 8 V10.5 H12 M4 10.5 H1 V8"/>']
+    ].forEach(function (b) {
+      var el = mk('span', 'layout-btn', b[0]);
+      el.setAttribute('title', b[1]);
+      el.innerHTML = '<svg viewBox="0 0 16 12" fill="none" stroke="currentColor" '
+        + 'stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">' + b[2] + '</svg>';
+      zoomGroup.appendChild(el);
+    });
+    bar.appendChild(zoomGroup);
     card.appendChild(bar);
 
     var root = mk('div', null, 'flowRoot');
@@ -439,6 +465,7 @@
   var placeholderEl = document.getElementById('flowPlaceholder');
   var crumbRow = document.getElementById('breadcrumbRow');
   var bundleBox = document.getElementById('bundleMultibitCheckbox');
+  var netReadout = document.getElementById('netlistSelectedNet');
 
   /* The Synthesize button, beside the run-length field in the editor card's own
      toolbar - so the two things a learner can ask for sit together, and Run keeps
@@ -453,7 +480,34 @@
      is describing a real hierarchy. */
   var synthBtn = mk('button', 'btn', 'synthBtn');
   synthBtn.setAttribute('type', 'button');
-  synthBtn.textContent = 'Synthesize';
+  /* `⚙︎` is U+2699 GEAR followed by U+FE0E, the text-presentation selector, and the
+     selector is the whole point: bare U+2699 renders as a colour emoji on most
+     platforms, which would sit wrong on the green fill beside Run's monochrome `▶` and
+     - as the busy `⏲` proved - is drawn from a fallback font tall enough to change the
+     button's height. `▶` (U+25B6) needs no selector because it already defaults to text
+     presentation. */
+  synthBtn.textContent = '⚙︎ Synthesize';
+  /* Two states, the same rule Run's label follows in app.js and derived the same way -
+     the fresh wording written once, the other made from it. The two buttons are
+     deliberate peers (see above), so one of them tracking whether it has anything to
+     show while the other sat still would read as an oversight rather than a distinction.
+     Keyed on `cardsShown`, i.e. "a successful synthesis is on the page", so a synthesis
+     that FAILS and takes the cards away puts the verb back with them.
+
+     The derivation replaces the WORD, exactly as app.js replaces `Run`, so the leading
+     glyph is not part of the rule and cannot be mangled by it. It used to prefix `Re-`
+     to the whole string, which was correct only while the label began with a letter -
+     with `⚙︎` in front that reads `Re-⚙︎ Synthesize`. */
+  var SYNTH_LABEL_FRESH = synthBtn.textContent;
+  var SYNTH_LABEL_AGAIN = SYNTH_LABEL_FRESH.replace(/\bSynthesize\b/, 'Re-synthesize');
+  /* One writer, the same arrangement app.js's syncRunLabel has and for the same reason:
+     the ⏲ form is derived HERE rather than written by the busy helper, so a synthesis
+     that changes the verb while it runs (the first one, Synthesize -> Re-synthesize)
+     cannot silently overwrite the busy glyph or be overwritten by it. */
+  function syncSynthLabel() {
+    var base = cardsShown ? SYNTH_LABEL_AGAIN : SYNTH_LABEL_FRESH;
+    synthBtn.textContent = synthBtn.hasAttribute('data-busy') ? busyLabel(base) : base;
+  }
   (function () {
     var maxInput = document.getElementById('maxTimeInput');
     var bar = maxInput ? maxInput.parentElement : null;
@@ -513,7 +567,7 @@
   wireHeight(K_VIEW_HEIGHT, flowRoot,
              document.getElementById('netlistViewHeightDec'),
              document.getElementById('netlistViewHeightInc'),
-             function () { fitView(); });
+             function () { invalidateFit(); fitView(); });
 
   (function () {
     var btn = document.getElementById('codeOutHierarchyToggleBtn');
@@ -547,6 +601,7 @@
       btn.classList.toggle('active', expanded);
       btn.setAttribute('title', expanded ? 'Restore the card to the page width'
                                          : 'Expand to the full browser width');
+      invalidateFit();
       fitView();   // more pixels for the same graph, so the fit has to be redone
     }
     btn.addEventListener('click', function () {
@@ -565,6 +620,24 @@
     // Re-derives the graph from the SAME synthesis result: bundling is a view of the
     // netlist, not a different netlist, so this must not re-parse the source.
     showCurrentView();
+  });
+
+  /* One ratio per click, anchored on the viewport CENTRE: a button press has no pointer to
+     zoom about, and centring is what stops repeated clicks from walking the diagram out of
+     frame. Being a ratio, in-then-out returns to exactly the scale it started from. */
+  var ZOOM_STEP = 1.3;
+  function zoomFromButton(factor) {
+    var vp = viewportSize();
+    zoomAbout(vp.w / 2, vp.h / 2, factor);
+  }
+  document.getElementById('netlistZoomInBtn').addEventListener('click', function () {
+    zoomFromButton(ZOOM_STEP);
+  });
+  document.getElementById('netlistZoomOutBtn').addEventListener('click', function () {
+    zoomFromButton(1 / ZOOM_STEP);
+  });
+  document.getElementById('netlistZoomFitBtn').addEventListener('click', function () {
+    fitView();
   });
 
   document.getElementById('netlistCopyBtn').addEventListener('click', function () {
@@ -614,7 +687,16 @@
         var card = document.getElementById(t[3]);
         if (card && card.scrollIntoView) card.scrollIntoView({ block: 'start' });
       });
-      strip.appendChild(b);
+      /* BEFORE the Reset button, not appended to the strip. Reset is pushed right by
+         `margin-left: auto`, and an auto margin absorbs the space before its own item -
+         it does not hold anything appended afterwards back. So appending here would put
+         the netlist pair to the right of Reset on every successful synthesis, which is
+         exactly the "rightmost" the button is meant to be. Inserting keeps DOM order,
+         keyboard order and visual order in agreement. */
+      var pin = (window.PRACTICE_API && window.PRACTICE_API.resetButton
+                 && window.PRACTICE_API.resetButton()) || null;
+      if (pin && pin.parentElement === strip) strip.insertBefore(b, pin);
+      else strip.appendChild(b);
       synthTabs.push(b);
     });
   }
@@ -628,6 +710,7 @@
     netlistCard.style.display = cardsShown ? '' : 'none';
     viewerRow.style.display = cardsShown ? '' : 'none';
     syncSynthTabs(cardsShown);
+    syncSynthLabel();   // the label follows the cards, and syncSynthLabel is its only writer
     if (cardsShown) fitView();
   }
 
@@ -705,13 +788,18 @@
   /* The testbench must go before the source reaches the synthesizer, and this is not
      cosmetic: the synthesizer's lexer has no #delay, so handing it a whole exercise
      file fails with `Lex error: unexpected character '#'` and the card would report a
-     parse error on every page. The site's convention is that the testbench is the
-     LAST module and is named tb, which is what makes this a rule rather than a guess. */
+     parse error on every page.
+
+     The boundary is the TESTBENCH marker, which is the same line the two editors
+     split on - so what gets synthesized is exactly what the design card shows, by
+     construction rather than by a second rule that could disagree with it. This
+     replaced a search for the last `module tb`, which was a guess dressed up as a
+     convention: it could not see that a rom, a ram model and the system wrapper are
+     testbench too, so on the three CPU designs it fed all of them to the synthesizer. */
   function designOnly(src) {
-    var re = /^[ \t]*module\s+tb\b/gm, m, last = -1;
-    while ((m = re.exec(src)) !== null) last = m.index;
-    if (last < 0) return { src: src, dropped: 0 };
-    return { src: src.slice(0, last), dropped: src.slice(last).split('\n').length };
+    var m = /^[ \t]*\/\/[ \t]*=+[ \t]*TESTBENCH[ \t]*=+[ \t]*$/m.exec(src);
+    if (!m) return { src: src, dropped: 0 };
+    return { src: src.slice(0, m.index), dropped: src.slice(m.index).split('\n').length };
   }
 
   function renderNetlistView() {
@@ -788,7 +876,7 @@
       netlistSegments = gen.segments;
       renderNetlistView();
       renderModulePanel();
-      lastGraph = S.toFlowElements(v.graph, v.layout);
+      lastGraph = packColumns(S.toFlowElements(v.graph, v.layout));
       renderGraph(lastGraph);
       renderBreadcrumb();
       return true;
@@ -828,7 +916,7 @@
     synthLines = [];
     synthLog('info', '— synthesis —');
     if (cut.dropped) {
-      synthLog('info', 'ignored the ' + cut.dropped + ' lines from module tb down: the '
+      synthLog('info', 'ignored the ' + cut.dropped + ' lines below the TESTBENCH marker: the '
                      + 'synthesizer has no #delay, $display or initial, and a testbench '
                      + 'is not hardware');
     }
@@ -966,6 +1054,48 @@
     return e;
   }
 
+  /* ---- net selection ----
+     A click selects the NET, not the one wire, and that is the whole point of it: the
+     16-bit CPU draws 622 edges carrying only 238 distinct nets, and its busiest net is
+     drawn as 46 separate segments. "Where does this signal go" is answerable only if all
+     46 light up. The label is drawn ONCE, at the wire that was clicked - labelling 46
+     segments would rebuild the clutter this replaced. */
+  var drawn = [];            // {net, wire, mid} per drawn edge
+  var byNet = {};            // net name -> those records
+  var selectedNet = null;
+  var selectedLabel = null;  // the one <text> element, or null
+
+  function clearNetSelection() {
+    if (selectedLabel && selectedLabel.parentElement) {
+      selectedLabel.parentElement.removeChild(selectedLabel);
+    }
+    selectedLabel = null;
+    if (selectedNet && byNet[selectedNet]) {
+      byNet[selectedNet].forEach(function (r) { r.wire.classList.remove('sel'); });
+    }
+    selectedNet = null;
+    if (netReadout) { netReadout.textContent = ''; netReadout.style.display = 'none'; }
+  }
+
+  function selectNet(net, at) {
+    var again = net === selectedNet;
+    clearNetSelection();
+    if (again || !net || !byNet[net]) return;   // clicking the selected net again clears it
+    selectedNet = net;
+    byNet[net].forEach(function (r) { r.wire.classList.add('sel'); });
+    var point = at || byNet[net][0].mid;
+    selectedLabel = svg('text', { class: 'pn-edge-label sel', x: point.x, y: point.y - 3 });
+    selectedLabel.textContent = net;
+    edgeLayer.appendChild(selectedLabel);
+    /* Also said in words beside the breadcrumb, because the label can be panned
+       off-screen while the highlight is still on. */
+    if (netReadout) {
+      netReadout.textContent = 'net: ' + net + ' (' + byNet[net].length
+        + (byNet[net].length === 1 ? ' segment)' : ' segments)');
+      netReadout.style.display = '';
+    }
+  }
+
   /* A polyline with its interior corners rounded. One helper for both routes below,
      so a forward wire and a feedback wire cannot end up drawn in two idioms. */
   function roundedPath(pts, r) {
@@ -1021,6 +1151,34 @@
     edgeLayer.setAttribute('transform', 'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')');
   }
 
+  /* The engine lays out on a fixed grid - `COL = 200, ROW = 84`, node k of a column at
+     `y = k * ROW` - and it cannot do better, because a node's HEIGHT is the viewer's
+     knowledge: it comes from the SVG symbols' viewBoxes and from how many pins an
+     instance has, neither of which exists yet when layoutGraph runs. Boxes are routinely
+     taller than one row (an adder is 104px, a five-pin instance 140, and before the
+     engine's bus-pin pass a nineteen-pin one was 420), so blocks lapped the ones below
+     them: measured across the enabled pages, 3 overlapping pairs on the 16-bit CPU, 6 on
+     traffic-light, 4 on the register file.
+
+     So the columns are re-stacked here, where the sizes are known. The engine's decisions
+     are kept exactly - which column a node is in, and the order within it - and only the
+     y's move, which is what preserves its layered ranking. `clk` keeps its place at the
+     bottom of its own column, since layoutGraph already gives it the largest y there. */
+  var COLUMN_GAP = 24;
+  function packColumns(g) {
+    var cols = {};
+    g.nodes.forEach(function (n) { (cols[n.position.x] || (cols[n.position.x] = [])).push(n); });
+    Object.keys(cols).forEach(function (x) {
+      var col = cols[x].slice().sort(function (a, b) { return a.position.y - b.position.y; });
+      var y = 0;
+      col.forEach(function (n) {
+        n.position = { x: n.position.x, y: y };
+        y += nodeSize(n).height + COLUMN_GAP;
+      });
+    });
+    return g;
+  }
+
   function graphBounds() {
     if (!lastGraph.nodes.length) return null;
     var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -1042,12 +1200,34 @@
     };
   }
 
+  /* The scale at which the whole diagram fits. Factored out because it now has two
+     readers - the Fit button and the zoom-out FLOOR - and two guesses at one number is how
+     they would come to disagree. The 1.5 cap is part of it: on a small design Fit does not
+     magnify past 1.5, so "no further out than Fit" means no further out than that. */
+  var FIT_PAD = 28, FIT_MAX_K = 1.5;
+  /* Cached, and that is not premature: every wheel event now needs the floor, and
+     viewportSize() reads getBoundingClientRect - a forced layout per notch of the wheel is
+     the cost this repo already measured in verify's render loop, where one such read per
+     frame was three quarters of the work. It depends only on the graph and the container,
+     so it is invalidated where those change: a new diagram, a resize, the expand toggle and
+     the height buttons. */
+  var fitCache = null;
+  function invalidateFit() { fitCache = null; }
+  function fitScale() {
+    if (fitCache !== null) return fitCache;
+    var b = graphBounds();
+    if (!b) return 1;
+    var vp = viewportSize();
+    fitCache = Math.max(MIN_K, Math.min((vp.w - 2 * FIT_PAD) / b.w,
+                                        (vp.h - 2 * FIT_PAD) / b.h, FIT_MAX_K));
+    return fitCache;
+  }
+
   function fitView() {
     var b = graphBounds();
     if (!b) { view = { k: 1, x: 0, y: 0 }; applyTransform(); return; }
-    var vp = viewportSize(), pad = 28;
-    var k = Math.min((vp.w - 2 * pad) / b.w, (vp.h - 2 * pad) / b.h, 1.5);
-    view.k = Math.max(0.05, k);
+    var vp = viewportSize();
+    view.k = fitScale();
     view.x = (vp.w - b.w * view.k) / 2 - b.x * view.k;
     view.y = (vp.h - b.h * view.k) / 2 - b.y * view.k;
     applyTransform();
@@ -1062,6 +1242,12 @@
       nodesLayer.appendChild(buildNode(n));
     });
     var dropped = 0;
+    /* A new diagram is a new set of nets, so nothing carries over: the selection is
+       cleared here rather than in every caller (Synthesize, drill, the bundle toggle). */
+    clearNetSelection();
+    invalidateFit();          // a new diagram has new bounds
+    drawn = [];
+    byNet = {};
     g.edges.forEach(function (e) {
       var from = byId[e.source], to = byId[e.target];
       var a = from && handlePoint(from, e.sourceHandle);
@@ -1072,16 +1258,30 @@
       if (!a || !b) { dropped++; return; }
       var pts = edgePoints(a, b);
       var thick = e.style && e.style.strokeWidth === 3;
-      edgeLayer.appendChild(svg('path', {
-        class: 'pn-edge' + (thick ? ' bus' : ''),
-        d: roundedPath(pts, 8)
-      }));
-      if (e.label) {
-        var m = midOf(pts);
-        var t = svg('text', { class: 'pn-edge-label', x: m.x, y: m.y - 3 });
-        t.textContent = e.label;
-        edgeLayer.appendChild(t);
-      }
+      var d = roundedPath(pts, 8);
+      var wire = svg('path', { class: 'pn-edge' + (thick ? ' bus' : ''), d: d });
+      edgeLayer.appendChild(wire);
+      /* No label is drawn until a net is asked for. The old behaviour labelled every
+         edge, and on the 16-bit CPU that is 622 labels of which 69 landed inside a block
+         - so the diagram was unreadable in exactly the places it mattered. */
+      if (!e.label) return;
+      /* A 1.5px line is not clickable, so every wire gets a transparent companion 12px
+         wide. It lives in the same transformed <g>, so it pans and zooms with the wire it
+         belongs to; `.pn-edges` stays pointer-events: none and only these re-enable it,
+         which is what keeps a drag on the background panning. */
+      var hit = svg('path', { class: 'pn-edge-hit', d: d });
+      var title = svg('title', {});
+      title.textContent = e.label;
+      hit.appendChild(title);
+      hit.addEventListener('click', function (ev) {
+        if (ev.stopPropagation) ev.stopPropagation();   // or the background handler clears it
+        if (suppressClick) { suppressClick = false; return; }
+        selectNet(e.label, midOf(pts));
+      });
+      edgeLayer.appendChild(hit);
+      var rec = { net: e.label, wire: wire, mid: midOf(pts) };
+      drawn.push(rec);
+      (byNet[e.label] || (byNet[e.label] = [])).push(rec);
     });
     if (dropped) synthLog('warn', dropped + ' net(s) could not be drawn: no such pin on the cell');
     placeholderEl.style.display = g.nodes.length ? 'none' : '';
@@ -1098,7 +1298,14 @@
      dragging is deliberately absent, so a drag anywhere pans. ---- */
   var MIN_K = 0.05, MAX_K = 4;
   function zoomAbout(px, py, factor) {
-    var k = Math.max(MIN_K, Math.min(MAX_K, view.k * factor));
+    /* No gesture may show more empty space than Fit does - the buttons, the wheel and the
+       pinch all come through here, so the viewer has ONE idea of how far out is too far.
+       `Math.min(..., view.k)` is what keeps that a floor rather than a jump: a view already
+       further out than Fit (a diagram that grew under it) is left where it is instead of
+       being yanked inwards by a zoom-OUT click. MIN_K survives as the backstop for a graph
+       with no bounds to fit. */
+    var floor = Math.min(fitScale(), view.k);
+    var k = Math.max(floor, Math.min(MAX_K, view.k * factor));
     if (k === view.k) return;
     view.x = px - (px - view.x) * (k / view.k);
     view.y = py - (py - view.y) * (k / view.k);
@@ -1113,19 +1320,40 @@
   });
 
   var drag = null;
+  /* A wire's click handler fires after the pan's mouseup, so a drag that happened to
+     start on a wire would select a net on release. Movement past a few pixels is what
+     tells the two gestures apart, and the flag has to outlive the drag to be readable
+     from the click. */
+  var DRAG_SLOP = 3;
+  var suppressClick = false;
   flowRoot.addEventListener('mousedown', function (e) {
-    drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
+    drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false };
     flowRoot.style.cursor = 'grabbing';
   });
   document.addEventListener('mousemove', function (e) {
     if (!drag) return;
+    if (Math.abs(e.clientX - drag.x) > DRAG_SLOP || Math.abs(e.clientY - drag.y) > DRAG_SLOP) {
+      drag.moved = true;
+    }
     view.x = drag.vx + (e.clientX - drag.x);
     view.y = drag.vy + (e.clientY - drag.y);
     applyTransform();
   });
   document.addEventListener('mouseup', function () {
+    suppressClick = !!(drag && drag.moved);
     drag = null;
     flowRoot.style.cursor = '';
+  });
+  // A click on the background clears the selection, the way every editor does it.
+  flowRoot.addEventListener('click', function () {
+    if (suppressClick) { suppressClick = false; return; }
+    clearNetSelection();
+  });
+  /* Escape clears it too. This shares the key with the exercise sheet, and the two cannot
+     fight: practice.js's handler is registered first and only acts while the sheet is
+     open, and a net can only be selected once the sheet has been dismissed. */
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && selectedNet) clearNetSelection();
   });
 
   var touch = null;
@@ -1156,7 +1384,7 @@
     }
   });
   flowRoot.addEventListener('touchend', function () { touch = null; });
-  window.addEventListener('resize', function () { fitView(); });
+  window.addEventListener('resize', function () { invalidateFit(); fitView(); });
 
   /* =====================================================================
      7. when it runs
@@ -1176,7 +1404,15 @@
      with a band saying it no longer describes the editor. That is the shape
      Baerilog/compiler.html already uses for an invalidated compile, and the reason to
      keep the text on screen is that it is the thing being read. */
-  synthBtn.addEventListener('click', runSynthesis);
+  /* Wrapped in app.js's own busy helper, the same one Run uses - so the two peers
+     acknowledge a click identically, and there is one copy of the "no paint happens
+     during blocking work, so hold the state long enough to see" reasoning rather than
+     two. `syncSynthLabel` is handed in as the relabel, exactly as `syncRunLabel` is,
+     because which words belong on this button is this file's business: it is the one
+     that knows whether a netlist is on the page. */
+  synthBtn.addEventListener('click', function () {
+    withBusyButton(synthBtn, runSynthesis, syncSynthLabel);
+  });
   ['runBtn', 'resetBtn'].forEach(function (id) {
     var b = document.getElementById(id);
     if (b) b.addEventListener('click', renderSynthSection);
@@ -1191,11 +1427,43 @@
   // Named for the harness, which drives all of this without a browser.
   window.PRACTICE_SYNTH_API = {
     runSynthesis: runSynthesis,
+    /* Back to never-synthesized, for practice.js's Reset. Built out of the functions
+       that already own each piece rather than by re-clearing their variables: an eighth
+       thing to forget is exactly how the "list of things true before a core is live"
+       bug in the emulator happened. Note this is the one place a Reset DISCARDS the
+       synthesis section rather than re-printing it - Run and Reset both re-print,
+       because they clear a console whose synthesis half they do not own, whereas this
+       is a return to a page where no synthesis ever happened. */
+    reset: function () {
+      synthLines = [];
+      dropPrintedSynthLines();
+      clearNetlist('Nothing synthesized yet - press Synthesize.');
+      markStale(false);
+      clearNetSelection();
+      showCards(false);      // takes the two tabs with it, and puts the verb back
+    },
     designOnly: designOnly,
     netlistText: function () { return netlistFullText; },
     segments: function () { return netlistSegments.slice(); },
     graph: function () { return lastGraph; },
     isStale: function () { return stale; },
+    selectedNet: function () { return selectedNet; },
+    netSegments: function (net) { return (byNet[net] || []).length; },
+    selectNet: selectNet,
+    clearNetSelection: clearNetSelection,
+    highlighted: function () {
+      return drawn.filter(function (r) { return r.wire.classList.contains('sel'); })
+                  .map(function (r) { return r.net; });
+    },
+    labelCount: function () {
+      var n = 0;
+      edgeLayer.children.forEach ? edgeLayer.children.forEach(function (c) {
+        if (c.tagName === 'TEXT') n++;
+      }) : Array.prototype.forEach.call(edgeLayer.children, function (c) {
+        if (c.tagName === 'TEXT') n++;
+      });
+      return n;
+    },
     syntheses: function () { return syntheses; },
     cardsShown: function () { return cardsShown; },
     subsetHints: subsetHints,
@@ -1205,6 +1473,8 @@
     edgePoints: edgePoints,
     view: function () { return { k: view.k, x: view.x, y: view.y }; },
     fitView: fitView,
+    fitScale: fitScale,
+    zoomStep: ZOOM_STEP,
     zoomAbout: zoomAbout,
     breadcrumb: function () { return viewStack.slice(); },
     drillInto: drillInto,

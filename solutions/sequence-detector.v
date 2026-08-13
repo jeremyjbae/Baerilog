@@ -26,6 +26,8 @@ module seqdet(
   assign found = (hist == 4'b1011);
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg clk, rst_n, in;
   wire found;

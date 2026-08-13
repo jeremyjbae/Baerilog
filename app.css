@@ -45,6 +45,7 @@
       --attention-fg: #9a6700;
       --btn-primary-bg: #1f883d;
       --btn-primary-hover: #1a7f37;
+      --btn-busy-bg: #9a6700;
       --header-bg: #24292f;
       --header-fg: #ffffff;
       --header-muted: rgba(255, 255, 255, 0.7);
@@ -93,6 +94,7 @@
         --attention-fg: #d29922;
         --btn-primary-bg: #238636;
         --btn-primary-hover: #2ea043;
+        --btn-busy-bg: #9e6a03;
         --header-bg: #010409;
         --header-fg: #e6edf3;
         --header-muted: #9198a1;
@@ -458,7 +460,7 @@
     }
     .hierarchy-children { margin-left: 12px; border-left: 1px solid var(--border-default); padding-left: 6px; }
 
-              /* --- additions for editor / console / waveform, same visual language --- */
+                /* --- additions for editor / console / waveform, same visual language --- */
     /* Expand: the waveform row breaks out of .grid's max-width to the full body
        content width, leaving every other card centred at 1100px. This is an
        app-specific rule and stays out of style.css even though .split-row itself
@@ -472,8 +474,8 @@
       margin-left: calc(-1 * var(--wave-bleed, 0px));
       margin-right: calc(-1 * var(--wave-bleed, 0px));
     }
-    .hierarchy-node-row.off { color: var(--border-muted); }
-    .hierarchy-node-row.off .hierarchy-node-icon { color: var(--border-muted); }
+    .hierarchy-node-row.off { color: var(--fg-muted); }
+    .hierarchy-node-row.off .hierarchy-node-icon { color: var(--fg-muted); }
     .hierarchy-signal-list { margin-left: 15px; padding: 2px 0 4px; }
     .hierarchy-signal-item {
       display: flex;
@@ -487,9 +489,9 @@
       user-select: none;
     }
     .hierarchy-signal-item:hover { background: var(--canvas-subtle); }
-    .hierarchy-signal-item.off { color: var(--border-muted); }
+    .hierarchy-signal-item.off { color: var(--fg-muted); }
     .hierarchy-signal-icon { width: 16px; height: 10px; flex-shrink: 0; color: var(--fg-default); }
-    .hierarchy-signal-item.off .hierarchy-signal-icon { color: var(--border-muted); opacity: 0.4; }
+    .hierarchy-signal-item.off .hierarchy-signal-icon { color: var(--fg-muted); opacity: 0.4; }
     .toolbar {
       display: flex;
       gap: 8px;
@@ -513,6 +515,13 @@
       background: var(--btn-primary-bg);
       color: var(--fg-on-emphasis);
       font-weight: 600;
+      /* Pinned, not inherited. Without it the line box is sized from whatever font
+         supplies the glyph, and the ⏲ the busy state swaps in falls back to a colour
+         emoji font whose ascent+descent are taller than the text font's - so the button
+         GREW several pixels the moment it was pressed. 18px is exactly what the
+         inherited `1.5` computed to at this 12px font-size, so the resting button is
+         unchanged; what it removes is the dependency on which font the glyph came from. */
+      line-height: 18px;
       transition: background 0.15s ease;
     }
     .btn:hover { background: var(--btn-primary-hover); }
@@ -521,6 +530,23 @@
     .btn.outline { background: var(--canvas-default); color: var(--accent-fg); border: 1.5px solid var(--accent-fg); }
     .btn.outline:hover { background: var(--accent-subtle); }
     .btn:disabled { background: var(--border-muted); cursor: default; }
+    /* Two kinds of "yes, that click landed", and they are deliberately different
+       mechanisms because they answer at different moments.
+
+       :active is painted by the BROWSER on mousedown - before any JS runs and before
+       the run blocks the main thread - so it is the only acknowledgement that can be
+       instant. No script can beat it, which is why the press feedback is CSS.
+
+       [data-busy] is the ⏲ state around a blocking job. It has to be its own colour
+       rather than the darker green: the pointer is still on the button, so :hover is
+       ALREADY showing --btn-primary-hover and reusing it would change nothing for a
+       mouse user - the one thing this exists to do. Amber is Primer's own attention
+       fill, and it keeps the white label legible in both modes (~4.6:1 and ~4.9:1),
+       which --attention-fg used as a background would not.
+       The :hover twin is not redundant: `.btn:hover` and `.btn[data-busy]` have equal
+       specificity, so without it the rule would depend on source order alone. */
+    .btn:active:not(:disabled) { background: var(--btn-busy-bg); }
+    .btn[data-busy], .btn[data-busy]:hover { background: var(--btn-busy-bg); }
     .time-label { font-size: 12px; color: var(--fg-muted); margin-right: -2px; }
 
     .editor-wrap {
@@ -542,13 +568,27 @@
       user-select: none;
       white-space: pre;
     }
-    textarea#codeInput {
+    /* Both editors, by STRUCTURE rather than by id. This was `textarea#codeInput`,
+       which is how the Testbench Editor shipped unstyled: an id selector matches one
+       element, so the second textarea inherited no font, no padding and no
+       white-space: pre, and rendered as proportional wrapped text in a box that
+       never grew to fill its dark panel. The workbench's C editor had already hit
+       exactly this (CLAUDE.md records it), which is the argument for the class:
+       a third editor now costs nothing.
+
+       Note the compiler's copy of this rule deliberately does NOT match - it uses
+       position/width/height rather than flex, because it stacks the debugger's
+       line-highlight band behind the textarea. So this is two apps' rule, not six. */
+    .editor-wrap textarea {
       flex: 1 1 auto;
       resize: none;
       border: none;
       outline: none;
       background: transparent;
-      color: var(--border-default);
+      /* PANEL text, not a page token: .editor-wrap is dark in both modes, so this
+         must not follow the reader's OS. --border-default is #3d444d in dark mode,
+         which put near-black code on a #0d1117 panel at 1.9:1. */
+      color: var(--panel-fg);
       font: 12px/1.55 "SF Mono", Menlo, Consolas, monospace;
       padding: 12px 12px 12px 8px;
       tab-size: 2;
@@ -703,7 +743,7 @@
     /* a flag letter: uppercase and bright when set, lowercase and dim when clear -
        two encodings of one bit, so the row survives greyscale and colour blindness */
     .flag { color: var(--fg-default); }
-    .flag.on { color: var(--border-default); }
+    .flag.on { color: var(--panel-fg); }
     .cmp-foot.diff .flag { color: var(--panel-red); }
     .cmp-foot.diff .flag.on { color: var(--panel-red); font-weight: 700; }
 
@@ -751,7 +791,7 @@
       width: 100%;
       border-collapse: collapse;
       font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
-      color: var(--border-default);
+      color: var(--panel-fg);
     }
     table.memory-table th {
       position: sticky;

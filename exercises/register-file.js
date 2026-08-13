@@ -93,6 +93,8 @@ module rf_rdec(
     opr = r0;
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg clk, rst_n, we;
   reg [1:0] idx_d, idx_r;

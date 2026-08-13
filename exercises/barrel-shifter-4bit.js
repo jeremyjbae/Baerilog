@@ -47,6 +47,8 @@ module barrel4(
   assign y = data << amt;
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg [3:0] data;
   reg [1:0] amt;

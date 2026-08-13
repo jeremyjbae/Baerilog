@@ -7,7 +7,7 @@
    selectors and all 29 are byte-identical, so there is no conflict of the kind the
    workbench had to resolve by id (its .gutter). The duplicates land after
    app.css's copy and paint the same thing. */
-              /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
+                /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
     /* Expand: the netlist row breaks out of .grid's max-width to the full body content
        width, leaving every other card centred at 1100px. Same control, same geometry and
        the same reasoning as `simulator/index.html`'s waveform expand (`.wave-expanded`),
@@ -91,13 +91,27 @@
       user-select: none;
       white-space: pre;
     }
-    textarea#codeInput {
+    /* Both editors, by STRUCTURE rather than by id. This was `textarea#codeInput`,
+       which is how the Testbench Editor shipped unstyled: an id selector matches one
+       element, so the second textarea inherited no font, no padding and no
+       white-space: pre, and rendered as proportional wrapped text in a box that
+       never grew to fill its dark panel. The workbench's C editor had already hit
+       exactly this (CLAUDE.md records it), which is the argument for the class:
+       a third editor now costs nothing.
+
+       Note the compiler's copy of this rule deliberately does NOT match - it uses
+       position/width/height rather than flex, because it stacks the debugger's
+       line-highlight band behind the textarea. So this is two apps' rule, not six. */
+    .editor-wrap textarea {
       flex: 1 1 auto;
       resize: none;
       border: none;
       outline: none;
       background: transparent;
-      color: var(--border-default);
+      /* PANEL text, not a page token: .editor-wrap is dark in both modes, so this
+         must not follow the reader's OS. --border-default is #3d444d in dark mode,
+         which put near-black code on a #0d1117 panel at 1.9:1. */
+      color: var(--panel-fg);
       font: 12px/1.55 "SF Mono", Menlo, Consolas, monospace;
       padding: 12px 12px 12px 8px;
       tab-size: 2;
@@ -184,7 +198,7 @@
     .breadcrumb-row .crumb:hover { text-decoration: underline; }
     .breadcrumb-row .crumb:last-child { color: var(--fg-default); font-weight: 600; cursor: default; }
     .breadcrumb-row .crumb:last-child:hover { text-decoration: none; }
-    .breadcrumb-row .sep { color: var(--border-muted); }
+    .breadcrumb-row .sep { color: var(--fg-muted); }
     #flowRoot {
       height: 520px;
       border-radius: var(--radius);

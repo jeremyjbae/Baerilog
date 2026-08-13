@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 26'%3E%3Cstyle%3Epath,rect%7Bfill:none;stroke:%231f2328;stroke-width:3;stroke-linecap:round;stroke-linejoin:round%7D%40media(prefers-color-scheme:dark)%7Bpath,rect%7Bstroke:%23e6edf3%7D%7D%3C/style%3E%3Cpath d='M 37.7373 21.25 C 37.752447 18.600017 37.722157 13.899983 37.7373 11.25 C 37.722157 8.899983 35.2373 6.25 32.7373 6.25 C 30.143462 6.25 32.549622 6.25 29.955782 6.25 C 23.70574 6.25 22.45574 11.25 22.501176 13.75 C 22.45574 16.25 23.70574 21.25 29.955782 21.25 C 30.8163 21.25 31.67682 21.25 32.53734 21.25'/%3E%3Cpath d='M 2.2184386 2.5 C 2.2184386 7.5 2.2184386 16.25 2.2184386 21.25 C 4.7184386 21.25 7.139786 21.23971 9.999958 21.25 C 16.249958 21.25 17.508377 16.090111 17.499958 13.75 C 17.508377 11.090111 16.249958 6.25 9.999958 6.25 C 8.027672 6.25 9.095067 6.25 7.4284 6.25'/%3E%3Cpath d='M 58.03152 6.25 C 55.53152 6.25 53.11017 6.26029 50.25 6.25 C 44 6.25 42.74158 11.409889 42.75 13.75 C 42.74158 16.409889 44 21.25 50.25 21.25 C 52.222286 21.25 56.5836 21.25 58.25027 21.25'/%3E%3Crect x='47.95' y='13.625' width='9.8' height='.125'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 70 70'%3E%3Crect x='0' y='0' width='70' height='70' fill='black'/%3E%3Cpath d='M 43.018863 43.75 C 43.03401 41.100017 43.00372 36.399983 43.018863 33.75 C 43.00372 31.399983 40.518863 28.75 38.018863 28.75 C 35.425023 28.75 37.831183 28.75 35.237344 28.75 C 28.987302 28.75 27.737302 33.75 27.782737 36.25 C 27.737302 38.75 28.987302 43.75 35.237344 43.75 C 36.097863 43.75 36.958383 43.75 37.8189 43.75' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M 7.5 25 C 7.5 30 7.5 38.75 7.5 43.75 C 10 43.75 12.421347 43.73971 15.28152 43.75 C 21.53152 43.75 22.789938 38.59011 22.78152 36.25 C 22.789938 33.59011 21.53152 28.75 15.28152 28.75 C 13.309234 28.75 14.376628 28.75 12.709961 28.75' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M 63.31308 28.75 C 60.81308 28.75 58.391734 28.76029 55.53156 28.75 C 49.28156 28.75 48.02314 33.90989 48.03156 36.25 C 48.02314 38.90989 49.28156 43.75 55.53156 43.75 C 57.50385 43.75 61.865164 43.75 63.53183 43.75' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='53.23156' y='36.125' width='9.8' height='.125' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <title>8-bit Parity · Baerilog Practice</title>
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="practice.css">
@@ -21,5 +21,15 @@
 <script src="practice.js"></script>
 <script src="synth.js"></script>
 <script src="practice-synth.js"></script>
+<!-- Optional cloud progress, last so cloud-sync.js sees the skeleton practice.js
+     seeded and restores saved work OVER it rather than under it. Every one of the
+     four is inert until cloud-config.js names a Supabase project, so a checkout
+     with none behaves exactly as it did before they existed. No CLOUD_APP
+     declaration here: PRACTICE_SLUG above already says which app and which of the
+     twenty documents this page is. -->
+<script src="cloud-config.js"></script>
+<script src="cloud.js"></script>
+<script src="cloud-ui.js"></script>
+<script src="cloud-sync.js"></script>
 </body>
 </html>

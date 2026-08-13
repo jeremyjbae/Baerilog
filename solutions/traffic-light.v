@@ -48,6 +48,8 @@ module traffic(
   assign walk = (light == RED);
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg clk, rst_n;
   wire [1:0] light;

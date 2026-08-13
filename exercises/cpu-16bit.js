@@ -440,7 +440,8 @@ module pc (
 
 endmodule
 
-/* ---- Testbench (Skip Synthesis)  ---- */
+// ======== TESTBENCH ========
+
 module rom_256x16 (
   input [15:0] addr, 
   output [15:0] data

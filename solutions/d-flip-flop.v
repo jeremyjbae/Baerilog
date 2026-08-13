@@ -17,6 +17,8 @@ module dff(
   end
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg clk, rst_n, d;
   wire q;

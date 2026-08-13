@@ -24,6 +24,8 @@ module gray4(
   assign gray = bin ^ (bin >> 1);
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg clk, rst_n;
   wire [3:0] gray;

@@ -49,6 +49,8 @@ module parity8(
   assign even = ~data[0];
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg [7:0] data;
   wire odd, even;

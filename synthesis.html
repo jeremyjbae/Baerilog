@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 26'%3E%3Cstyle%3Epath,rect%7Bfill:none;stroke:%231f2328;stroke-width:3;stroke-linecap:round;stroke-linejoin:round%7D%40media(prefers-color-scheme:dark)%7Bpath,rect%7Bstroke:%23e6edf3%7D%7D%3C/style%3E%3Cpath d='M 37.7373 21.25 C 37.752447 18.600017 37.722157 13.899983 37.7373 11.25 C 37.722157 8.899983 35.2373 6.25 32.7373 6.25 C 30.143462 6.25 32.549622 6.25 29.955782 6.25 C 23.70574 6.25 22.45574 11.25 22.501176 13.75 C 22.45574 16.25 23.70574 21.25 29.955782 21.25 C 30.8163 21.25 31.67682 21.25 32.53734 21.25'/%3E%3Cpath d='M 2.2184386 2.5 C 2.2184386 7.5 2.2184386 16.25 2.2184386 21.25 C 4.7184386 21.25 7.139786 21.23971 9.999958 21.25 C 16.249958 21.25 17.508377 16.090111 17.499958 13.75 C 17.508377 11.090111 16.249958 6.25 9.999958 6.25 C 8.027672 6.25 9.095067 6.25 7.4284 6.25'/%3E%3Cpath d='M 58.03152 6.25 C 55.53152 6.25 53.11017 6.26029 50.25 6.25 C 44 6.25 42.74158 11.409889 42.75 13.75 C 42.74158 16.409889 44 21.25 50.25 21.25 C 52.222286 21.25 56.5836 21.25 58.25027 21.25'/%3E%3Crect x='47.95' y='13.625' width='9.8' height='.125'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 70 70'%3E%3Crect x='0' y='0' width='70' height='70' fill='black'/%3E%3Cpath d='M 43.018863 43.75 C 43.03401 41.100017 43.00372 36.399983 43.018863 33.75 C 43.00372 31.399983 40.518863 28.75 38.018863 28.75 C 35.425023 28.75 37.831183 28.75 35.237344 28.75 C 28.987302 28.75 27.737302 33.75 27.782737 36.25 C 27.737302 38.75 28.987302 43.75 35.237344 43.75 C 36.097863 43.75 36.958383 43.75 37.8189 43.75' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M 7.5 25 C 7.5 30 7.5 38.75 7.5 43.75 C 10 43.75 12.421347 43.73971 15.28152 43.75 C 21.53152 43.75 22.789938 38.59011 22.78152 36.25 C 22.789938 33.59011 21.53152 28.75 15.28152 28.75 C 13.309234 28.75 14.376628 28.75 12.709961 28.75' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M 63.31308 28.75 C 60.81308 28.75 58.391734 28.76029 55.53156 28.75 C 49.28156 28.75 48.02314 33.90989 48.03156 36.25 C 48.02314 38.90989 49.28156 43.75 55.53156 43.75 C 57.50385 43.75 61.865164 43.75 63.53183 43.75' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='53.23156' y='36.125' width='9.8' height='.125' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Verilog Synthesizer</title>
 <link rel="stylesheet" href="https://unpkg.com/@xyflow/react@12/dist/style.css">
@@ -51,6 +51,7 @@
       --attention-fg: #9a6700;
       --btn-primary-bg: #1f883d;
       --btn-primary-hover: #1a7f37;
+      --btn-busy-bg: #9a6700;
       --header-bg: #24292f;
       --header-fg: #ffffff;
       --header-muted: rgba(255, 255, 255, 0.7);
@@ -99,6 +100,7 @@
         --attention-fg: #d29922;
         --btn-primary-bg: #238636;
         --btn-primary-hover: #2ea043;
+        --btn-busy-bg: #9e6a03;
         --header-bg: #010409;
         --header-fg: #e6edf3;
         --header-muted: #9198a1;
@@ -463,7 +465,7 @@
       flex-shrink: 0;
     }
     .hierarchy-children { margin-left: 12px; border-left: 1px solid var(--border-default); padding-left: 6px; }
-              /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
+                /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
     /* Expand: the netlist row breaks out of .grid's max-width to the full body content
        width, leaving every other card centred at 1100px. Same control, same geometry and
        the same reasoning as `simulator/index.html`'s waveform expand (`.wave-expanded`),
@@ -547,13 +549,27 @@
       user-select: none;
       white-space: pre;
     }
-    textarea#codeInput {
+    /* Both editors, by STRUCTURE rather than by id. This was `textarea#codeInput`,
+       which is how the Testbench Editor shipped unstyled: an id selector matches one
+       element, so the second textarea inherited no font, no padding and no
+       white-space: pre, and rendered as proportional wrapped text in a box that
+       never grew to fill its dark panel. The workbench's C editor had already hit
+       exactly this (CLAUDE.md records it), which is the argument for the class:
+       a third editor now costs nothing.
+
+       Note the compiler's copy of this rule deliberately does NOT match - it uses
+       position/width/height rather than flex, because it stacks the debugger's
+       line-highlight band behind the textarea. So this is two apps' rule, not six. */
+    .editor-wrap textarea {
       flex: 1 1 auto;
       resize: none;
       border: none;
       outline: none;
       background: transparent;
-      color: var(--border-default);
+      /* PANEL text, not a page token: .editor-wrap is dark in both modes, so this
+         must not follow the reader's OS. --border-default is #3d444d in dark mode,
+         which put near-black code on a #0d1117 panel at 1.9:1. */
+      color: var(--panel-fg);
       font: 12px/1.55 "SF Mono", Menlo, Consolas, monospace;
       padding: 12px 12px 12px 8px;
       tab-size: 2;
@@ -640,7 +656,7 @@
     .breadcrumb-row .crumb:hover { text-decoration: underline; }
     .breadcrumb-row .crumb:last-child { color: var(--fg-default); font-weight: 600; cursor: default; }
     .breadcrumb-row .crumb:last-child:hover { text-decoration: none; }
-    .breadcrumb-row .sep { color: var(--border-muted); }
+    .breadcrumb-row .sep { color: var(--fg-muted); }
     #flowRoot {
       height: 520px;
       border-radius: var(--radius);
@@ -3706,25 +3722,117 @@ function mergeInstancePins(graph) {
       (mergedPinsByNode[node.id] ||= new Set()).add(base);
     }
   }
-  if (!dropEdgeIds.size) return graph;
-  const finalEdges = graph.edges.filter(e => !dropEdgeIds.has(e.id)).concat(newEdges);
-  let finalNodes = graph.nodes.map(n => (mergedPinsByNode[n.id] ? { ...n, mergedPins: mergedPinsByNode[n.id] } : n)).concat(newNodes);
-  // drop original per-bit const nodes left with no remaining outgoing edge (now orphaned)
-  const stillUsed = new Set(finalEdges.map(e => e.from));
-  finalNodes = finalNodes.filter(n => n.kind !== 'const' || stillUsed.has(n.id));
-  return { nodes: finalNodes, edges: finalEdges };
+
+  /* SECOND PASS: every multi-bit instance port that is still per-bit becomes ONE bus
+     pin, with one edge per distinct counterpart pin - which is exactly what the isAdder
+     branch above does, generalised to any instance.
+
+     Without it, a port whose bits go to (or come from) several places keeps a handle PER
+     BIT, and a 16-bit one turns its block into a wall of pins: measured on the 16-bit CPU
+     exercise, `pc` exposed 16 `pc[i]` outputs and 16 `pc_nxt[i]` inputs, because its bits
+     reach 17 distinct destination pins (the iaddr port's bits AND the adder's a[i]) and
+     are driven by 16 distinct sources. That is 19 slots, and since a block's height is
+     `slots * 20 + 40`, a 420px-tall box on a layout grid whose rows are 84px apart - it
+     lapped the four blocks below it. With this pass the same instance reads
+     `clk, rst_n, inst, pc_nxt` / `pc`: six slots, 160px.
+
+     Three things about its shape are load-bearing, and the last two were each a bug
+     first.
+
+     It is a SECOND PASS rather than a fourth branch in the loop above, because as a
+     branch it fires before the instance-to-instance case can be reached for the
+     reciprocal group, so a bus both ends could have merged into ONE thick edge became one
+     edge per bit anchored at a merged pin. Measured on the register-file exercise, that
+     took its edge count from 30 to 150. Deferring lets every existing rule keep first
+     refusal.
+
+     It works from a LIVE edge list rather than from groups collected earlier, because the
+     first pass rewrites edges: the adder's own merge replaces `pc.pc[i] -> a[i]` with
+     `pc.pc[i] -> a`, so anything collected before it names ports that no longer exist.
+     Merging from stale items produced edges anchored at `a[3]`, a handle the adder node
+     does not have, and the renderer dropped 64 of that page's wires.
+
+     And it merges ONE port per iteration, re-deriving the groups each time, because a
+     merge changes the far end for every other group: pc's sixteen bits all face the
+     adder's single `a` pin only once that pin exists. A single sweep left 32 wires
+     anchored at pins its own earlier merges had removed. Iterating costs nothing here -
+     one round per multi-bit port, ~24 on the largest design. */
+  {
+    let live = graph.edges.filter(e => !dropEdgeIds.has(e.id)).concat(newEdges);
+    for (;;) {
+      const groups2 = {};
+      for (const e of live) {
+        for (const [nodeId, port, side] of [[e.from, e.fromPort, 'out'], [e.to, e.toPort, 'in']]) {
+          const node = nodeIndex.get(nodeId);
+          if (!node || node.kind !== 'instance') continue;
+          const m = /^(.+)\[(\d+)\]$/.exec(port);
+          if (!m) continue;
+          if (mergedPinsByNode[nodeId] && mergedPinsByNode[nodeId].has(m[1])) continue;
+          const width = node.cell.portWidths[m[1]];
+          if (!width || width <= 1) continue;
+          const key = `${nodeId}|${side}|${m[1]}`;
+          (groups2[key] ||= { node, side, base: m[1], items: [] })
+            .items.push({ edge: e, idx: parseInt(m[2], 10) });
+        }
+      }
+      const group = Object.values(groups2)[0];
+      if (!group) break;
+      const { node, side, base, items } = group;
+      const byFar = new Map();   // one entry per distinct (node, pin) at the other end
+      for (const it of items) {
+        const farId = side === 'out' ? it.edge.to : it.edge.from;
+        const farPort = side === 'out' ? it.edge.toPort : it.edge.fromPort;
+        const key = `${farId} ${farPort}`;
+        if (!byFar.has(key)) byFar.set(key, { farId, farPort, items: [] });
+        byFar.get(key).items.push(it);
+      }
+      const gone = new Set(items.map(it => it.edge.id));
+      live = live.filter(e => !gone.has(e.id));
+      let farCounter = 0;
+      for (const { farId, farPort, items: bits } of byFar.values()) {
+        // The net name says which bits this edge carries, since the pin no longer does:
+        // a contiguous run reads as [hi:lo], a lone bit as [i].
+        const sorted = bits.slice().sort((a, b) => a.idx - b.idx);
+        const contiguous = sorted.every((it, i) => i === 0 || it.idx === sorted[i - 1].idx + 1);
+        const net = contiguous && sorted.length > 1
+          ? `${base}[${sorted[sorted.length - 1].idx}:${sorted[0].idx}]`
+          : (sorted.length === 1 ? `${base}[${sorted[0].idx}]` : sorted.map(it => it.edge.net).join(','));
+        const id = `inst_bus_${node.id}_${base}_${farCounter++}`;
+        live.push(side === 'out'
+          ? { id, from: node.id, fromPort: base, to: farId, toPort: farPort, net }
+          : { id, from: farId, fromPort: farPort, to: node.id, toPort: base, net });
+      }
+      (mergedPinsByNode[node.id] ||= new Set()).add(base);
+    }
+    // `live` IS the edge list now - reconciling it back into drop/new sets would be a
+    // second bookkeeping of the same fact.
+    if (!Object.keys(mergedPinsByNode).length && !newNodes.length) return graph;
+    let finalNodes = graph.nodes
+      .map(n => (mergedPinsByNode[n.id] ? { ...n, mergedPins: mergedPinsByNode[n.id] } : n))
+      .concat(newNodes);
+    // drop original per-bit const nodes left with no remaining outgoing edge (now orphaned)
+    const stillUsed = new Set(live.map(e => e.from));
+    finalNodes = finalNodes.filter(n => n.kind !== 'const' || stillUsed.has(n.id));
+    return { nodes: finalNodes, edges: live };
+  }
 }
 
 /* ---------------- Structural Verilog codegen ---------------- */
-/* Every cell's module name carries a suffix, and the three that did not are why: `dff`,
-   `fa` and `mux2` were bare, so a design with a module of that name - `module dff(...)`,
-   which is what half the textbook exercises are called - emitted TWO `module dff` and the
-   generated text was rejected by any Verilog front end (`module 'dff' declared more than
-   once`), including this repo's own simulator. The netlist card then showed a listing that
-   could not be pasted back into the tool it came from. */
-const CELL_MODNAME = { and: 'and_gate', or: 'or_gate', nor: 'nor_gate', nand: 'nand_gate', xor: 'xor_gate', xnor: 'xnor_gate', not: 'not_gate', fa: 'fa_cell', dff: 'dff_cell', mux2: 'mux2_cell', buf: 'buf_gate' };
+/* Every cell's module name carries the SAME `_gate` suffix, and the three that once did
+   not are why any suffix is needed: `dff`, `fa` and `mux2` were bare, so a design with a
+   module of that name - `module dff(...)`, which is what half the textbook exercises are
+   called - emitted TWO `module dff` and the generated text was rejected by any Verilog
+   front end (`module 'dff' declared more than once`), including this repo's own
+   simulator. The netlist card then showed a listing that could not be pasted back into
+   the tool it came from.
+
+   Those three were `_cell` for a while, which read as "composite, not a single gate" and
+   was a distinction nothing downstream made: the suffix's only job is to not collide with
+   a user's module. One suffix for the whole library means there is no rule to remember
+   and no second convention for a reader to infer. */
+const CELL_MODNAME = { and: 'and_gate', or: 'or_gate', nor: 'nor_gate', nand: 'nand_gate', xor: 'xor_gate', xnor: 'xnor_gate', not: 'not_gate', fa: 'fa_gate', dff: 'dff_gate', mux2: 'mux2_gate', buf: 'buf_gate' };
 const PRIMITIVE_SRC = {
-  dff: `module dff_cell (input clk, input rstn, input d, output reg q);\n  always @(posedge clk or negedge rstn)\n    if (!rstn) q <= 1'b0;\n    else q <= d;\nendmodule`,
+  dff: `module dff_gate (input clk, input rstn, input d, output reg q);\n  always @(posedge clk or negedge rstn)\n    if (!rstn) q <= 1'b0;\n    else q <= d;\nendmodule`,
   and: `module and_gate (input a, input b, output y);\n  assign y = a & b;\nendmodule`,
   or: `module or_gate (input a, input b, output y);\n  assign y = a | b;\nendmodule`,
   nor: `module nor_gate (input a, input b, output y);\n  assign y = ~(a | b);\nendmodule`,
@@ -3732,8 +3840,8 @@ const PRIMITIVE_SRC = {
   xor: `module xor_gate (input a, input b, output y);\n  assign y = a ^ b;\nendmodule`,
   xnor: `module xnor_gate (input a, input b, output y);\n  assign y = ~(a ^ b);\nendmodule`,
   not: `module not_gate (input a, output y);\n  assign y = ~a;\nendmodule`,
-  fa: `module fa_cell (input a, input b, input cin, output sum, output cout);\n  wire a_xor_b;\n  assign a_xor_b = a ^ b;\n  assign sum = a_xor_b ^ cin;\n  assign cout = ((a_xor_b) & cin) | (a & b);\nendmodule`,
-  mux2: `module mux2_cell (input sel, input a, input b, output y);\n  assign y = sel ? b : a;\nendmodule`,
+  fa: `module fa_gate (input a, input b, input cin, output sum, output cout);\n  wire a_xor_b;\n  assign a_xor_b = a ^ b;\n  assign sum = a_xor_b ^ cin;\n  assign cout = ((a_xor_b) & cin) | (a & b);\nendmodule`,
+  mux2: `module mux2_gate (input sel, input a, input b, output y);\n  assign y = sel ? b : a;\nendmodule`,
   buf: `module buf_gate (input a, output y);\n  assign y = a;\nendmodule`,
 };
 const CONST_LIT = { const_0: "1'b0", const_1: "1'b1" };
@@ -4965,5 +5073,17 @@ root.render(html`<${FlowApp} />`);
 } // end if (reactMod)
 </script>
 
+<!-- Optional cloud progress. These four siblings are the ONLY external files this
+     app references, and every one of them is optional: cloud-config.js ships with
+     no project in it, and cloud.js / cloud-ui.js / cloud-sync.js each return early
+     unless one is configured. So a copy of this file on its own still opens over
+     file:// and behaves exactly as it did before they existed - the tags 404
+     silently and nothing downstream of them runs. cloud-sync.js is last because it
+     seeds the editor and must see the app's own startup document already in place. -->
+<script>var CLOUD_APP = 'synthesis';</script>
+<script src="cloud-config.js"></script>
+<script src="cloud.js"></script>
+<script src="cloud-ui.js"></script>
+<script src="cloud-sync.js"></script>
 </body>
 </html>

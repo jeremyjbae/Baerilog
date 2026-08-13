@@ -15,6 +15,8 @@ module adder4(
   assign {cout, sum} = a + b + cin;
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg [3:0] a, b;
   reg cin;

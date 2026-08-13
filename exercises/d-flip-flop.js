@@ -23,7 +23,7 @@ window.PRACTICE_EXERCISES['d-flip-flop'] = {
 whole difference between a register and a wire: an <code>assign</code> would make <code>q</code> follow
 <code>d</code> continuously, which passes three of the five checks and fails the two that matter.</p>
 <p class="ex-note">The testbench under the design is already written and is not part of the exercise. Press <b>Run</b> and read the Console: every check prints PASS or FAIL, and the pill in the Console header counts them. Nothing runs until you press it. The waveform below shows every signal, and the Module Hierarchy panel beside the editor lets you edit one module at a time.</p>
-<p class="ex-note"><b>Synthesize</b>, next to the run length, turns your design into gates: the two cards under the waveform show it as a gate-level netlist and as a diagram of the cells it became. A working answer here comes out as one <code>dff_cell</code> with a <code>mux2_cell</code> in front of its D input, selected by an inverted <code>rst_n</code> - that mux <i>is</i> the synchronous reset. The testbench is not synthesized; everything from <code>module tb</code> down is dropped first, since a testbench is not hardware.</p>
+<p class="ex-note"><b>Synthesize</b>, next to the run length, turns your design into gates: the two cards under the waveform show it as a gate-level netlist and as a diagram of the cells it became. A working answer here comes out as one <code>dff_gate</code> with a <code>mux2_gate</code> in front of its D input, selected by an inverted <code>rst_n</code> - that mux <i>is</i> the synchronous reset. The testbench is not synthesized; everything from <code>module tb</code> down is dropped first, since a testbench is not hardware.</p>
 `,
   starter: String.raw`
 /* D Flip-Flop - practice exercise.
@@ -46,6 +46,8 @@ module dff(
     q <= q;
   end
 endmodule
+
+// ======== TESTBENCH ========
 
 module tb;
   reg clk, rst_n, d;

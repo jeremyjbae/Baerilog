@@ -44,6 +44,8 @@ module mux2(
   assign y = a;
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg [3:0] a, b;
   reg sel;

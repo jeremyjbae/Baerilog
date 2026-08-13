@@ -59,6 +59,8 @@ module shiftreg(
   dff bit3 (clk, serial_in, q[3]);
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg clk, serial_in;
   wire [3:0] q;

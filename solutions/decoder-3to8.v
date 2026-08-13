@@ -14,6 +14,8 @@ module decoder38(
   assign y = en ? (8'b1 << sel) : 8'b0;
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg [2:0] sel;
   reg en;

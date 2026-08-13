@@ -2770,25 +2770,117 @@ function mergeInstancePins(graph) {
       (mergedPinsByNode[node.id] ||= new Set()).add(base);
     }
   }
-  if (!dropEdgeIds.size) return graph;
-  const finalEdges = graph.edges.filter(e => !dropEdgeIds.has(e.id)).concat(newEdges);
-  let finalNodes = graph.nodes.map(n => (mergedPinsByNode[n.id] ? { ...n, mergedPins: mergedPinsByNode[n.id] } : n)).concat(newNodes);
-  // drop original per-bit const nodes left with no remaining outgoing edge (now orphaned)
-  const stillUsed = new Set(finalEdges.map(e => e.from));
-  finalNodes = finalNodes.filter(n => n.kind !== 'const' || stillUsed.has(n.id));
-  return { nodes: finalNodes, edges: finalEdges };
+
+  /* SECOND PASS: every multi-bit instance port that is still per-bit becomes ONE bus
+     pin, with one edge per distinct counterpart pin - which is exactly what the isAdder
+     branch above does, generalised to any instance.
+
+     Without it, a port whose bits go to (or come from) several places keeps a handle PER
+     BIT, and a 16-bit one turns its block into a wall of pins: measured on the 16-bit CPU
+     exercise, `pc` exposed 16 `pc[i]` outputs and 16 `pc_nxt[i]` inputs, because its bits
+     reach 17 distinct destination pins (the iaddr port's bits AND the adder's a[i]) and
+     are driven by 16 distinct sources. That is 19 slots, and since a block's height is
+     `slots * 20 + 40`, a 420px-tall box on a layout grid whose rows are 84px apart - it
+     lapped the four blocks below it. With this pass the same instance reads
+     `clk, rst_n, inst, pc_nxt` / `pc`: six slots, 160px.
+
+     Three things about its shape are load-bearing, and the last two were each a bug
+     first.
+
+     It is a SECOND PASS rather than a fourth branch in the loop above, because as a
+     branch it fires before the instance-to-instance case can be reached for the
+     reciprocal group, so a bus both ends could have merged into ONE thick edge became one
+     edge per bit anchored at a merged pin. Measured on the register-file exercise, that
+     took its edge count from 30 to 150. Deferring lets every existing rule keep first
+     refusal.
+
+     It works from a LIVE edge list rather than from groups collected earlier, because the
+     first pass rewrites edges: the adder's own merge replaces `pc.pc[i] -> a[i]` with
+     `pc.pc[i] -> a`, so anything collected before it names ports that no longer exist.
+     Merging from stale items produced edges anchored at `a[3]`, a handle the adder node
+     does not have, and the renderer dropped 64 of that page's wires.
+
+     And it merges ONE port per iteration, re-deriving the groups each time, because a
+     merge changes the far end for every other group: pc's sixteen bits all face the
+     adder's single `a` pin only once that pin exists. A single sweep left 32 wires
+     anchored at pins its own earlier merges had removed. Iterating costs nothing here -
+     one round per multi-bit port, ~24 on the largest design. */
+  {
+    let live = graph.edges.filter(e => !dropEdgeIds.has(e.id)).concat(newEdges);
+    for (;;) {
+      const groups2 = {};
+      for (const e of live) {
+        for (const [nodeId, port, side] of [[e.from, e.fromPort, 'out'], [e.to, e.toPort, 'in']]) {
+          const node = nodeIndex.get(nodeId);
+          if (!node || node.kind !== 'instance') continue;
+          const m = /^(.+)\[(\d+)\]$/.exec(port);
+          if (!m) continue;
+          if (mergedPinsByNode[nodeId] && mergedPinsByNode[nodeId].has(m[1])) continue;
+          const width = node.cell.portWidths[m[1]];
+          if (!width || width <= 1) continue;
+          const key = `${nodeId}|${side}|${m[1]}`;
+          (groups2[key] ||= { node, side, base: m[1], items: [] })
+            .items.push({ edge: e, idx: parseInt(m[2], 10) });
+        }
+      }
+      const group = Object.values(groups2)[0];
+      if (!group) break;
+      const { node, side, base, items } = group;
+      const byFar = new Map();   // one entry per distinct (node, pin) at the other end
+      for (const it of items) {
+        const farId = side === 'out' ? it.edge.to : it.edge.from;
+        const farPort = side === 'out' ? it.edge.toPort : it.edge.fromPort;
+        const key = `${farId} ${farPort}`;
+        if (!byFar.has(key)) byFar.set(key, { farId, farPort, items: [] });
+        byFar.get(key).items.push(it);
+      }
+      const gone = new Set(items.map(it => it.edge.id));
+      live = live.filter(e => !gone.has(e.id));
+      let farCounter = 0;
+      for (const { farId, farPort, items: bits } of byFar.values()) {
+        // The net name says which bits this edge carries, since the pin no longer does:
+        // a contiguous run reads as [hi:lo], a lone bit as [i].
+        const sorted = bits.slice().sort((a, b) => a.idx - b.idx);
+        const contiguous = sorted.every((it, i) => i === 0 || it.idx === sorted[i - 1].idx + 1);
+        const net = contiguous && sorted.length > 1
+          ? `${base}[${sorted[sorted.length - 1].idx}:${sorted[0].idx}]`
+          : (sorted.length === 1 ? `${base}[${sorted[0].idx}]` : sorted.map(it => it.edge.net).join(','));
+        const id = `inst_bus_${node.id}_${base}_${farCounter++}`;
+        live.push(side === 'out'
+          ? { id, from: node.id, fromPort: base, to: farId, toPort: farPort, net }
+          : { id, from: farId, fromPort: farPort, to: node.id, toPort: base, net });
+      }
+      (mergedPinsByNode[node.id] ||= new Set()).add(base);
+    }
+    // `live` IS the edge list now - reconciling it back into drop/new sets would be a
+    // second bookkeeping of the same fact.
+    if (!Object.keys(mergedPinsByNode).length && !newNodes.length) return graph;
+    let finalNodes = graph.nodes
+      .map(n => (mergedPinsByNode[n.id] ? { ...n, mergedPins: mergedPinsByNode[n.id] } : n))
+      .concat(newNodes);
+    // drop original per-bit const nodes left with no remaining outgoing edge (now orphaned)
+    const stillUsed = new Set(live.map(e => e.from));
+    finalNodes = finalNodes.filter(n => n.kind !== 'const' || stillUsed.has(n.id));
+    return { nodes: finalNodes, edges: live };
+  }
 }
 
 /* ---------------- Structural Verilog codegen ---------------- */
-/* Every cell's module name carries a suffix, and the three that did not are why: `dff`,
-   `fa` and `mux2` were bare, so a design with a module of that name - `module dff(...)`,
-   which is what half the textbook exercises are called - emitted TWO `module dff` and the
-   generated text was rejected by any Verilog front end (`module 'dff' declared more than
-   once`), including this repo's own simulator. The netlist card then showed a listing that
-   could not be pasted back into the tool it came from. */
-const CELL_MODNAME = { and: 'and_gate', or: 'or_gate', nor: 'nor_gate', nand: 'nand_gate', xor: 'xor_gate', xnor: 'xnor_gate', not: 'not_gate', fa: 'fa_cell', dff: 'dff_cell', mux2: 'mux2_cell', buf: 'buf_gate' };
+/* Every cell's module name carries the SAME `_gate` suffix, and the three that once did
+   not are why any suffix is needed: `dff`, `fa` and `mux2` were bare, so a design with a
+   module of that name - `module dff(...)`, which is what half the textbook exercises are
+   called - emitted TWO `module dff` and the generated text was rejected by any Verilog
+   front end (`module 'dff' declared more than once`), including this repo's own
+   simulator. The netlist card then showed a listing that could not be pasted back into
+   the tool it came from.
+
+   Those three were `_cell` for a while, which read as "composite, not a single gate" and
+   was a distinction nothing downstream made: the suffix's only job is to not collide with
+   a user's module. One suffix for the whole library means there is no rule to remember
+   and no second convention for a reader to infer. */
+const CELL_MODNAME = { and: 'and_gate', or: 'or_gate', nor: 'nor_gate', nand: 'nand_gate', xor: 'xor_gate', xnor: 'xnor_gate', not: 'not_gate', fa: 'fa_gate', dff: 'dff_gate', mux2: 'mux2_gate', buf: 'buf_gate' };
 const PRIMITIVE_SRC = {
-  dff: `module dff_cell (input clk, input rstn, input d, output reg q);\n  always @(posedge clk or negedge rstn)\n    if (!rstn) q <= 1'b0;\n    else q <= d;\nendmodule`,
+  dff: `module dff_gate (input clk, input rstn, input d, output reg q);\n  always @(posedge clk or negedge rstn)\n    if (!rstn) q <= 1'b0;\n    else q <= d;\nendmodule`,
   and: `module and_gate (input a, input b, output y);\n  assign y = a & b;\nendmodule`,
   or: `module or_gate (input a, input b, output y);\n  assign y = a | b;\nendmodule`,
   nor: `module nor_gate (input a, input b, output y);\n  assign y = ~(a | b);\nendmodule`,
@@ -2796,8 +2888,8 @@ const PRIMITIVE_SRC = {
   xor: `module xor_gate (input a, input b, output y);\n  assign y = a ^ b;\nendmodule`,
   xnor: `module xnor_gate (input a, input b, output y);\n  assign y = ~(a ^ b);\nendmodule`,
   not: `module not_gate (input a, output y);\n  assign y = ~a;\nendmodule`,
-  fa: `module fa_cell (input a, input b, input cin, output sum, output cout);\n  wire a_xor_b;\n  assign a_xor_b = a ^ b;\n  assign sum = a_xor_b ^ cin;\n  assign cout = ((a_xor_b) & cin) | (a & b);\nendmodule`,
-  mux2: `module mux2_cell (input sel, input a, input b, output y);\n  assign y = sel ? b : a;\nendmodule`,
+  fa: `module fa_gate (input a, input b, input cin, output sum, output cout);\n  wire a_xor_b;\n  assign a_xor_b = a ^ b;\n  assign sum = a_xor_b ^ cin;\n  assign cout = ((a_xor_b) & cin) | (a & b);\nendmodule`,
+  mux2: `module mux2_gate (input sel, input a, input b, output y);\n  assign y = sel ? b : a;\nendmodule`,
   buf: `module buf_gate (input a, output y);\n  assign y = a;\nendmodule`,
 };
 const CONST_LIT = { const_0: "1'b0", const_1: "1'b1" };

@@ -78,6 +78,39 @@
 @media (prefers-color-scheme: dark) { .gh-tab.selected { border-bottom-color: #f78166; } }
 .gh-tab svg { width: 16px; height: 16px; fill: var(--fg-muted); }
 
+/* Reset, in the tab strip but deliberately NOT a tab - it navigates nowhere, so it is
+   a .btn and is therefore outside `.gh-tab` in every mechanism that collects them.
+   Three properties, each fixing something the strip would otherwise do to it:
+     margin-left: auto  pushes it to the right of the last tab. Note this is not what
+       keeps it LAST - an auto margin absorbs the space before its own item and holds
+       nothing back after it, so practice-synth.js inserts its tabs before this button
+       rather than appending them.
+     align-self: center - `.gh-tabs` is a flex row with no align-items, so the default
+       `stretch` would pull a 32px button to the ~38px height of the tabs beside it.
+     no negative margin - `.gh-tab` carries margin-bottom: -1px to sit ON the strip's
+       bottom rule; a button doing that straddles the line instead of resting above it.
+   Danger-coloured because it discards work, outline because the two green primaries on
+   this page are the actions a learner is meant to reach for. */
+.ex-reset {
+  margin-left: auto;
+  align-self: center;
+  color: var(--danger-fg);
+  border-color: var(--danger-fg);
+}
+.ex-reset:hover { background: var(--danger-subtle); }
+
+/* The confirm dialog reuses the exercise sheet's backdrop and panel, so the page has
+   one dialog idiom rather than two; only the width and the button row are its own. A
+   prompt sized like the sheet would be a 900px box holding two lines. */
+.ex-confirm { max-width: 460px; }
+.ex-confirm .ex-sheet-body { padding: 16px; }
+.ex-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
 /* ------------------------------------------ the exercise sheet, a Primer dialog */
 .ex-backdrop {
   position: fixed;
@@ -328,6 +361,29 @@ body.ex-sheet-open { overflow: hidden; }
   white-space: nowrap;
 }
 .gh-label.level { color: var(--accent-fg); border-color: var(--accent-fg); }
+/* The cloud-progress badge. Borrows the Label's pill geometry so the row reads as
+   one set of pills rather than two idioms, but it is NOT a .gh-label: the two
+   Labels are the facets the Category and Level chips filter on, and this is a
+   statement about the reader's own work. Keeping the class distinct is also what
+   lets Baerilog/test.py go on counting `class="gh-label"` exactly to assert two
+   per row.
+
+   Filled rather than outlined, because unlike the Labels it is a RESULT and has to
+   be findable while scanning twenty rows. --success-subtle / --danger-subtle are
+   the only pair here that stay legible against the row's hover background in both
+   modes; a solid --btn-primary-bg fill would need --fg-on-emphasis text and would
+   out-shout the problem title beside it. */
+.gh-prog {
+  border: 1px solid var(--border-default);
+  border-radius: 2em;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+.gh-prog.pass { color: var(--success-fg); border-color: var(--success-fg); background: var(--success-subtle); }
+.gh-prog.fail { color: var(--danger-fg); border-color: var(--danger-fg); background: var(--danger-subtle); }
 .gh-readme {
   margin: 16px 0 0;
   font-size: 14px;
@@ -371,14 +427,39 @@ body.ex-sheet-open { overflow: hidden; }
   stroke-width: 1.5;
 }
 .pn-edge.bus { stroke-width: 3; }
+/* The selected net, in two encodings of the one bit - accent colour AND a heavier line -
+   so it survives a greyscale screenshot and a reader who cannot separate the two colours,
+   the same rule the Scoreboard's flag casing is held to. */
+.pn-edge.sel { stroke: var(--accent-fg); stroke-width: 2.5; }
+.pn-edge.bus.sel { stroke-width: 4.5; }
+/* Every wire's clickable companion: transparent, 12px wide, and the only thing inside the
+   edge layer that takes pointer events - which is what leaves a drag on the background to
+   the pan handler. */
+.pn-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: pointer;
+}
 /* paint-order draws the halo behind the glyphs, which is how a net name stays
    readable over a wire without a background rectangle to keep in step with it. */
+/* Drawn only for the selected net now, so it is sized to be read rather than to stay out
+   of the way, and it takes no pointer events - clicking the name must not count as
+   clicking the background and clear the very thing it names. */
 .pn-edge-label {
-  font: 9px "SF Mono", Menlo, Consolas, monospace;
+  font: 10px "SF Mono", Menlo, Consolas, monospace;
+  pointer-events: none;
   fill: var(--fg-muted);
   text-anchor: middle;
   paint-order: stroke;
   stroke: var(--canvas-subtle);
   stroke-width: 3px;
   stroke-linejoin: round;
+}
+.pn-edge-label.sel { fill: var(--accent-fg); font-weight: 600; }
+.pn-net-readout {
+  font: 11px "SF Mono", Menlo, Consolas, monospace;
+  color: var(--accent-fg);
+  flex-shrink: 0;
 }

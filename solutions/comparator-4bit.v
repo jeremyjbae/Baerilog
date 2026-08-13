@@ -20,6 +20,8 @@ module comp4(
   assign gt = (a > b);
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg [3:0] a, b;
   wire lt, eq, gt;

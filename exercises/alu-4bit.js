@@ -67,6 +67,8 @@ module alu4(
   assign zero = 1'b0;
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg [3:0] a, b;
   reg [2:0] op;

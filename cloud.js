@@ -1,0 +1,526 @@
+/* cloud.js - the whole client side of cloud progress, with no dependencies.
+ *
+ * There is no Supabase SDK here and there cannot be: @supabase/supabase-js is an
+ * ES-module bundle fetched from a CDN, so using it would need a module script
+ * type and a network import, and a page opened over file:// can load neither.
+ * What it actually offers over these ~200 lines is realtime subscriptions,
+ * storage and a query builder, none of which this feature uses. So the two REST
+ * surfaces are called directly: GoTrue under /auth/v1 for identity, PostgREST
+ * under /rest/v1 for the one table in tools/schema.sql.
+ *
+ * NOTE the two banned spellings are not written out anywhere in this file, not
+ * even in this comment. build.py greps these four files for them as plain
+ * substrings, so quoting one in prose fails the build for a comment - which is
+ * the same trap CLAUDE.md already records for a literal script tag in
+ * workbench/index.html's markup. Describe them; do not spell them.
+ *
+ * EMAIL CODES, NOT MAGIC LINKS, and this is a correction rather than a
+ * preference. A magic link works by emailing a URL that redirects back to the
+ * page with tokens in the fragment, which requires a redirect target registered
+ * in the project's allow-list. Over file:// the target is a per-machine absolute
+ * path (file:///Users/<someone>/.../index.html) that differs for every learner
+ * and cannot be registered, so the link would have to point at a hosted copy -
+ * landing the learner somewhere other than the page holding their work. The
+ * six-digit code has no redirect in it at all: the page asks /auth/v1/otp to
+ * send one and hands what the learner types to /auth/v1/verify, which is a plain
+ * API call and so works identically from a file:// page and a served one. Same
+ * email identity, same rows, no URL.
+ *
+ * LOCAL FIRST, ALWAYS. localStorage is the source of truth and the cloud is a
+ * mirror: every save writes locally and synchronously before any network call is
+ * considered, and every public method here resolves rather than rejects. So an
+ * unconfigured project, a signed-out learner, a dropped connection and a CORS
+ * refusal are all the same non-event - the page behaves exactly as it did before
+ * this file existed. That is the property the whole design is arranged around,
+ * because the alternative is an editor that loses work when the wifi does.
+ *
+ * NOTHING HERE TOUCHES THE DOM. cloud-ui.js owns every pixel; this file owns
+ * state and the network, and reports through subscribe(). That split is what
+ * lets the harnesses drive it headlessly with no stub DOM at all.
+ */
+'use strict';
+
+window.CLOUD = (function () {
+
+  /* ---- configuration -------------------------------------------------- */
+
+  var cfg = window.BAERILOG_CLOUD_CONFIG || {};
+  var URL_BASE = (cfg.url || '').replace(/\/+$/, '');     // tolerate a trailing slash
+  var ANON_KEY = cfg.anonKey || '';
+
+  /* The one predicate the rest of the file (and all of cloud-ui.js) branches on.
+     Both halves must be present: a URL with no key produces a 401 on every call,
+     which would surface as a broken feature rather than an absent one. */
+  function configured() { return !!(URL_BASE && ANON_KEY); }
+
+  var SOURCE_LIMIT = 262144;   // must match schema.sql's check constraint
+  var NET_TIMEOUT_MS = 12000;
+  var APPS = ['practice', 'simulator', 'synthesis', 'compiler'];
+
+  /* ---- storage -------------------------------------------------------- */
+
+  /* localStorage is wrapped because this file runs on pages opened over file://,
+     where a browser may present it as an opaque origin and THROW on access
+     rather than returning null. app.js reads it unguarded and has got away with
+     it for years, but a throw from here would happen at load and take the page
+     with it - so the failure mode is "cloud sync is unavailable", not a blank
+     screen. */
+  function lsGet(key) {
+    try { return window.localStorage.getItem(key); } catch (e) { return null; }
+  }
+  function lsSet(key, value) {
+    try { window.localStorage.setItem(key, value); return true; } catch (e) { return false; }
+  }
+  function lsDel(key) {
+    try { window.localStorage.removeItem(key); } catch (e) { /* nothing to undo */ }
+  }
+
+  var SESSION_KEY = 'baerilogCloudSession';
+  function docKey(app, item) { return 'baerilog:doc:' + app + ':' + item; }
+
+  function readJson(key) {
+    var raw = lsGet(key);
+    if (!raw) return null;
+    /* A corrupt record is DROPPED rather than propagated. It can only come from a
+       half-written value or a hand-edited key, and returning null puts the page
+       on the "nothing saved yet" path, which is a state it already handles. */
+    try { return JSON.parse(raw); } catch (e) { return null; }
+  }
+
+  /* ---- the network primitive ------------------------------------------ */
+
+  /* Every request in this file goes through here, so timeout, JSON handling and
+     error shape exist once. It RESOLVES on failure - {ok:false, ...} - because
+     an unhandled rejection from a background sync is a console error the learner
+     can do nothing about, and because every caller has to handle failure anyway.
+     `offline` is distinguished from `error` deliberately: one is a state to sit
+     in quietly and retry, the other is worth showing. */
+  function req(path, opts) {
+    opts = opts || {};
+    var url = URL_BASE + path;
+    var headers = { 'apikey': ANON_KEY };
+    if (opts.token) headers['Authorization'] = 'Bearer ' + opts.token;
+    if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+    if (opts.prefer) headers['Prefer'] = opts.prefer;
+
+    /* AbortController rather than a bare Promise.race, so a hung connection is
+       actually torn down instead of left running behind a resolved promise. */
+    var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+    var timer = window.setTimeout(function () { if (ctl) ctl.abort(); }, NET_TIMEOUT_MS);
+
+    return window.fetch(url, {
+      method: opts.method || 'GET',
+      headers: headers,
+      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+      signal: ctl ? ctl.signal : undefined
+    }).then(function (res) {
+      return res.text().then(function (text) {
+        var data = null;
+        if (text) { try { data = JSON.parse(text); } catch (e) { data = { raw: text }; } }
+        if (res.ok) return { ok: true, status: res.status, data: data };
+        /* Supabase reports errors under several key names depending on which of
+           the two services answered, so all of them are folded into one string
+           rather than the UI having to know which service it was talking to. */
+        var msg = (data && (data.msg || data.message || data.error_description ||
+                            data.error || data.hint)) || ('HTTP ' + res.status);
+        return { ok: false, status: res.status, error: String(msg), data: data };
+      });
+    }).catch(function (err) {
+      /* A CORS refusal, a DNS failure, a dropped connection and our own abort
+         are indistinguishable here by design - the browser deliberately withholds
+         the detail. All of them mean "the server was not reached". */
+      var aborted = err && err.name === 'AbortError';
+      return { ok: false, offline: true, error: aborted ? 'timed out' : 'no connection' };
+    }).then(function (out) {
+      window.clearTimeout(timer);
+      return out;
+    });
+  }
+
+  /* ---- session -------------------------------------------------------- */
+
+  /* {access_token, refresh_token, expires_at (ms epoch), email, user_id} */
+  var session = readJson(SESSION_KEY);
+
+  function saveSession(s) {
+    session = s;
+    if (s) lsSet(SESSION_KEY, JSON.stringify(s));
+    else lsDel(SESSION_KEY);
+    emit();
+  }
+
+  /* GoTrue answers /verify and /token with the same envelope, so one reader
+     serves both and a refresh cannot end up shaped differently from a sign-in. */
+  function adoptTokens(data) {
+    if (!data || !data.access_token) return false;
+    saveSession({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      /* expires_in is seconds from now. Sixty seconds are shaved off so a request
+         is never sent with a token that expires while it is in flight. */
+      expires_at: Date.now() + ((Number(data.expires_in) || 3600) - 60) * 1000,
+      email: (data.user && data.user.email) || (session && session.email) || '',
+      user_id: (data.user && data.user.id) || (session && session.user_id) || ''
+    });
+    return true;
+  }
+
+  function signedIn() { return !!(session && session.access_token && session.user_id); }
+
+  /* Returns a usable access token, refreshing first if it is due. Every REST
+     call goes through this rather than reading session.access_token directly,
+     which is what stops a long editing session from failing its first save after
+     an hour with an error the learner cannot interpret. */
+  var refreshing = null;
+  function token() {
+    if (!signedIn()) return Promise.resolve(null);
+    if (Date.now() < (session.expires_at || 0)) return Promise.resolve(session.access_token);
+    /* Concurrent callers share one refresh: a page that saves a document and
+        pulls a list at the same moment would otherwise spend its single-use
+        refresh token twice, and the loser of that race is signed out. */
+    if (!refreshing) {
+      refreshing = req('/auth/v1/token?grant_type=refresh_token', {
+        method: 'POST', body: { refresh_token: session.refresh_token }
+      }).then(function (r) {
+        refreshing = null;
+        if (r.ok && adoptTokens(r.data)) return session.access_token;
+        /* A REFUSED refresh means the session is genuinely finished (revoked, or
+           the token already spent), so it is cleared - leaving it in place would
+           show a signed-in account whose every save fails. An OFFLINE refresh is
+           not that: the session may well be fine, so it is kept and the caller
+           simply gets nothing this time. Conflating the two signs people out
+           every time their wifi drops. */
+        if (!r.offline) { saveSession(null); status('signed-out'); }
+        return null;
+      });
+    }
+    return refreshing;
+  }
+
+  /* ---- identity ------------------------------------------------------- */
+
+  /* Ask for a code. `create_user: true` makes this one call serve both sign-up
+     and sign-in, which is the whole appeal of a code: there is no separate
+     registration step and no password to recover. */
+  function requestCode(email) {
+    if (!configured()) return Promise.resolve({ ok: false, error: 'no Supabase project configured' });
+    email = String(email || '').trim();
+    if (!email || email.indexOf('@') < 1) return Promise.resolve({ ok: false, error: 'that does not look like an email address' });
+    status('sending');
+    return req('/auth/v1/otp', { method: 'POST', body: { email: email, create_user: true } })
+      .then(function (r) {
+        status(r.ok ? 'code-sent' : (r.offline ? 'offline' : 'error'));
+        return r.ok ? { ok: true, email: email } : { ok: false, error: r.error, offline: r.offline };
+      });
+  }
+
+  /* Exchange the typed code for a session. type:'email' is the OTP flow; note
+     the same endpoint serves magic links with type:'magiclink', which is why the
+     type has to be stated rather than defaulted. */
+  function verifyCode(email, code) {
+    if (!configured()) return Promise.resolve({ ok: false, error: 'no Supabase project configured' });
+    code = String(code || '').replace(/\s+/g, '');
+    if (!code) return Promise.resolve({ ok: false, error: 'enter the code from the email' });
+    status('verifying');
+    return req('/auth/v1/verify', {
+      method: 'POST', body: { email: String(email || '').trim(), token: code, type: 'email' }
+    }).then(function (r) {
+      if (r.ok && adoptTokens(r.data)) { status('signed-in'); return { ok: true }; }
+      status(r.offline ? 'offline' : 'error');
+      return { ok: false, error: r.error || 'that code was not accepted', offline: r.offline };
+    });
+  }
+
+  function signOut() {
+    var had = session;
+    /* Local state is cleared FIRST and unconditionally. Telling the server is a
+       courtesy that may fail offline, and a sign-out that appears not to work
+       because the network is down is worse than a revoked-token call nobody
+       made - especially on a shared machine. */
+    saveSession(null);
+    status('signed-out');
+    if (had && had.access_token && configured()) {
+      req('/auth/v1/logout', { method: 'POST', token: had.access_token, body: {} });
+    }
+    return Promise.resolve({ ok: true });
+  }
+
+  /* ---- local records -------------------------------------------------- */
+
+  /* A record is {source, verdict, updated_at, synced}:
+       updated_at - when the EDIT happened, by the client's clock
+       synced     - the source text last confirmed accepted by the server, which
+                    is what makes "there are unpushed edits" answerable without a
+                    round trip, and is what the conflict rule below reads. */
+  function localGet(app, item) { return readJson(docKey(app, item)); }
+
+  function localPut(app, item, rec) {
+    lsSet(docKey(app, item), JSON.stringify(rec));
+    return rec;
+  }
+
+  /* ---- pushing -------------------------------------------------------- */
+
+  /* Pushes are COALESCED PER DOCUMENT, not globally: one timer per (app, item),
+     so typing in the editor produces one request a second or so instead of one
+     per keystroke, while a save to a different document is never delayed behind
+     an unrelated one.
+
+     Keyed as app -> item -> timer id, NOT by a joined string. Joining the pair
+     into one key and splitting it back out worked and was still wrong: an `item`
+     containing the separator would flush the wrong document, and since `item` is a
+     manifest slug today that bug would have waited for the first exercise named
+     with whatever the separator happened to be. A nested map has no encoding to
+     get wrong, so the question does not arise. */
+  var pushTimers = {};
+  var PUSH_DEBOUNCE_MS = 1200;
+  var inFlight = 0;
+
+
+  function pushNow(app, item) {
+    var rec = localGet(app, item);
+    if (!rec || !configured() || !signedIn()) return Promise.resolve({ ok: false });
+    if (rec.source != null && rec.source.length > SOURCE_LIMIT) {
+      status('too-big');
+      return Promise.resolve({ ok: false, error: 'this document is too large to sync (over 256 KB)' });
+    }
+    inFlight++;
+    status('syncing');
+    return token().then(function (tok) {
+      if (!tok) { inFlight--; settle(); return { ok: false }; }
+      var row = {
+        user_id: session.user_id,
+        app: app,
+        item: item,
+        source: rec.source == null ? null : rec.source,
+        verdict: rec.verdict || null,
+        /* Sent as ISO because the column is timestamptz. The value is the edit
+           time, so an offline edit keeps its own moment and cannot be beaten by
+           a stale copy that merely happened to reach the server later. */
+        updated_at: new Date(rec.updated_at || Date.now()).toISOString()
+      };
+      return req('/rest/v1/progress', {
+        method: 'POST', token: tok, body: row,
+        /* merge-duplicates is what turns this POST into an upsert against the
+           (user_id, app, item) primary key; without it a second save to the same
+           document is a 409 for the rest of time. return=minimal keeps the
+           response empty, since nothing here reads the row back. */
+        prefer: 'resolution=merge-duplicates,return=minimal'
+      }).then(function (r) {
+        inFlight--;
+        if (r.ok) {
+          /* Record what the server now holds, so a later pull can tell a local
+             edit from a local copy. Re-read rather than reusing `rec`: the
+             learner may well have typed more while this was in flight, and
+             marking THAT text as synced would strand it. */
+          var cur = localGet(app, item) || rec;
+          cur.synced = rec.source;
+          localPut(app, item, cur);
+          lastError = null;
+        } else if (!r.offline) {
+          lastError = r.error;
+        }
+        settle(r);
+        return r;
+      });
+    });
+  }
+
+  function settle(r) {
+    if (inFlight > 0) return;
+    if (r && r.offline) status('offline');
+    else if (lastError) status('error');
+    else status(signedIn() ? 'synced' : 'signed-out');
+  }
+
+  /* ---- the public save/load pair -------------------------------------- */
+
+  /* Writes locally and SYNCHRONOUSLY, then pushes in the background. The order is
+     the whole contract: by the time this returns, the work is durable to the
+     extent the page can make it durable, whatever the network then does. */
+  function save(app, item, fields) {
+    if (APPS.indexOf(app) < 0) return null;               // guards a typo'd caller
+    var prev = localGet(app, item) || {};
+    var rec = {
+      source: fields && 'source' in fields ? fields.source : prev.source,
+      verdict: fields && 'verdict' in fields ? fields.verdict : prev.verdict,
+      updated_at: Date.now(),
+      synced: prev.synced
+    };
+    localPut(app, item, rec);
+
+    if (configured() && signedIn()) {
+      if (!pushTimers[app]) pushTimers[app] = {};
+      if (pushTimers[app][item]) window.clearTimeout(pushTimers[app][item]);
+      pushTimers[app][item] = window.setTimeout(function () {
+        delete pushTimers[app][item];
+        pushNow(app, item);
+      }, PUSH_DEBOUNCE_MS);
+      status('pending');
+    }
+    return rec;
+  }
+
+  /* Synchronous by design: a page seeds its editor from this during load, and an
+     async read would mean either a flash of the wrong document or a spinner over
+     a feature that is meant to be invisible. */
+  function load(app, item) { return localGet(app, item); }
+
+  /* Flush every pending push immediately. Called on pagehide, where a debounce
+     timer that has not fired yet would otherwise lose the last edit. */
+  function flush() {
+    var sent = 0;
+    Object.keys(pushTimers).forEach(function (app) {
+      Object.keys(pushTimers[app]).forEach(function (item) {
+        window.clearTimeout(pushTimers[app][item]);
+        delete pushTimers[app][item];
+        pushNow(app, item);
+        sent++;
+      });
+    });
+    return sent;
+  }
+
+  /* ---- pulling, and the conflict rule -------------------------------- */
+
+  /* The one rule worth stating plainly: A NEWER CLOUD COPY NEVER SILENTLY
+     REPLACES UNPUSHED LOCAL WORK. Last-write-wins is fine when one side has
+     nothing at stake, and unacceptable otherwise - the loser is somebody's
+     unsaved editor. So the three cases are separated:
+       - no local copy, or local is already identical to what we pushed  -> adopt
+       - local is newer                                                 -> keep, and push
+       - both changed since the last sync                               -> CONFLICT,
+         reported to the caller and left entirely alone for the learner to resolve.
+     Client clocks make the comparison approximate (a machine set an hour behind
+     will think its edits are older), which is exactly why the conflict branch
+     does not depend on the clock being right: it triggers on both sides having
+     diverged from the last synced text, not on which timestamp is larger. */
+  function pull(app) {
+    if (!configured() || !signedIn()) return Promise.resolve({ ok: false, adopted: [], conflicts: [] });
+    status('syncing');
+    return token().then(function (tok) {
+      if (!tok) return { ok: false, adopted: [], conflicts: [] };
+      return req('/rest/v1/progress?select=item,source,verdict,updated_at&app=eq.' +
+                 encodeURIComponent(app), { token: tok }).then(function (r) {
+        if (!r.ok) {
+          if (!r.offline) lastError = r.error;
+          status(r.offline ? 'offline' : 'error');
+          return { ok: false, offline: r.offline, error: r.error, adopted: [], conflicts: [] };
+        }
+        var adopted = [], conflicts = [], pushBack = [];
+        (r.data || []).forEach(function (row) {
+          var remoteAt = Date.parse(row.updated_at) || 0;
+          var rec = localGet(app, row.item);
+
+          if (!rec) {                                     // nothing here: take it
+            localPut(app, row.item, {
+              source: row.source, verdict: row.verdict,
+              updated_at: remoteAt, synced: row.source
+            });
+            adopted.push(row.item);
+            return;
+          }
+
+          var localDirty = rec.source !== rec.synced;     // edits we never pushed
+          var remoteMoved = row.source !== rec.synced;    // the server has moved on
+
+          if (!remoteMoved) {                             // server holds what we sent
+            if (localDirty) pushBack.push(row.item);      // ours is strictly ahead
+            return;
+          }
+          if (!localDirty) {                              // only the server moved
+            localPut(app, row.item, {
+              source: row.source, verdict: row.verdict,
+              updated_at: remoteAt, synced: row.source
+            });
+            adopted.push(row.item);
+            return;
+          }
+          /* Both moved. Nothing is overwritten; the remote text is handed to the
+             caller so the UI can offer it, and the local record is untouched so
+             doing nothing is a safe outcome. */
+          conflicts.push({
+            item: row.item, remote: row.source, remoteAt: remoteAt,
+            local: rec.source, localAt: rec.updated_at || 0
+          });
+        });
+        pushBack.forEach(function (item) { pushNow(app, item); });
+        lastError = null;
+        status(conflicts.length ? 'conflict' : 'synced');
+        return { ok: true, adopted: adopted, conflicts: conflicts };
+      });
+    });
+  }
+
+  /* Resolving a conflict is the caller's decision, taken explicitly. Adopting
+     the remote text is the only branch that needs help, because it has to mark
+     the adopted text as synced or the very next pull reports the same conflict
+     again; keeping the local copy is just a push. */
+  function resolve(app, item, choice, remoteText) {
+    var rec = localGet(app, item) || {};
+    if (choice === 'remote') {
+      localPut(app, item, {
+        source: remoteText, verdict: rec.verdict,
+        updated_at: Date.now(), synced: remoteText
+      });
+      emit();
+      return localGet(app, item);
+    }
+    rec.updated_at = Date.now();
+    localPut(app, item, rec);
+    pushNow(app, item);
+    return rec;
+  }
+
+  /* ---- status and subscribers ---------------------------------------- */
+
+  /* One string, and cloud-ui.js renders it. 'off' is not an error and never
+     shows: it is what an unconfigured project reports, which is the state this
+     repo ships in. */
+  var state = configured() ? (signedIn() ? 'synced' : 'signed-out') : 'off';
+  var lastError = null;
+  var subs = [];
+
+  function status(s) { if (s) state = s; emit(); }
+  function emit() {
+    var snap = info();
+    subs.forEach(function (fn) {
+      /* A throwing subscriber must not take the others down with it, nor break
+         the network call that emitted. */
+      try { fn(snap); } catch (e) { /* a UI bug is not a sync failure */ }
+    });
+  }
+
+  function info() {
+    return {
+      configured: configured(),
+      signedIn: signedIn(),
+      email: (session && session.email) || '',
+      state: state,
+      error: lastError,
+      pending: Object.keys(pushTimers).reduce(function (n, app) {
+        return n + Object.keys(pushTimers[app]).length;
+      }, 0) + inFlight
+    };
+  }
+
+  function subscribe(fn) {
+    subs.push(fn);
+    try { fn(info()); } catch (e) { /* as above */ }
+    return function () { subs = subs.filter(function (f) { return f !== fn; }); };
+  }
+
+  /* A pending debounce is not durable, so it is flushed when the page goes away.
+     pagehide rather than beforeunload: it fires on mobile backgrounding too, and
+     unlike unload it does not disable the request. */
+  window.addEventListener('pagehide', function () { flush(); });
+
+  return {
+    configured: configured, signedIn: signedIn, info: info, subscribe: subscribe,
+    requestCode: requestCode, verifyCode: verifyCode, signOut: signOut,
+    save: save, load: load, pull: pull, flush: flush, resolve: resolve,
+    /* Exposed for the harnesses only - they assert the limit and the app list
+       agree with schema.sql rather than restating either. */
+    _limits: { source: SOURCE_LIMIT, apps: APPS }
+  };
+})();

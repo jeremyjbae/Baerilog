@@ -81,6 +81,8 @@ module pc (
 endmodule
 
 /* ---- the machine around it: ROM, and the system that wires the two together ---- */
+// ======== TESTBENCH ========
+
 module rom (
   input [7:0] addr,
   output [7:0] data

@@ -86,13 +86,13 @@ var PRACTICE_MARKUP = String.raw`
       </div>
     </div>
 
-    <div class="card layout-pair" id="card-console">
-      <h2><span class="card-collapse-btn" data-collapse>▾</span>Console
-        <span class="help-wrap"><span class="help-icon">?</span><div class="help-popup"><div>&middot; $display output and simulator status</div></div></span>
+    <div class="card layout-pair" id="card-testbench">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Testbench Editor
+        <span class="help-wrap"><span class="help-icon">?</span><div class="help-popup"><div>&middot; The stimulus and the checks: everything after the <code>// ======== TESTBENCH ========</code> line, which is what splits one file across these two cards</div><div>&middot; The memory models a design fetches from — a ROM, a RAM, the <code>system</code> wrapper that wires them to the DUT — belong here, not in the design</div><div>&middot; Run compiles both halves together, so this is the same one file it always was; Save writes it back out with the marker in place</div></div></span>
         <span class="header-controls">
           <span class="layout-toggle">
-            <span class="layout-btn" id="consoleHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
-            <span class="layout-btn" id="consoleHeightInc" title="Increase height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
+            <span class="layout-btn" id="tbHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
+            <span class="layout-btn" id="tbHeightInc" title="Increase height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
           </span>
           <span class="layout-toggle">
             <span class="layout-btn" data-layout-btn="side" title="Side by side">
@@ -101,6 +101,23 @@ var PRACTICE_MARKUP = String.raw`
             <span class="layout-btn" data-layout-btn="stack" title="Stacked">
               <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="14.6" height="4.6" rx="1.3"/><rect x="0.7" y="6.7" width="14.6" height="4.6" rx="1.3"/></svg>
             </span>
+          </span>
+        </span>
+      </h2>
+      <div class="editor-wrap" id="tbWrap">
+        <div class="gutter" id="tbGutter">1</div>
+        <textarea id="tbInput" spellcheck="false"></textarea>
+      </div>
+      <div class="wave-empty" id="tbEmpty" style="display:none">No testbench section in this file — add a <code>// ======== TESTBENCH ========</code> line to split it.</div>
+    </div>
+
+    <div class="card full" id="card-console">
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Console
+        <span class="help-wrap"><span class="help-icon">?</span><div class="help-popup"><div>&middot; $display output and simulator status</div></div></span>
+        <span class="header-controls">
+          <span class="layout-toggle">
+            <span class="layout-btn" id="consoleHeightDec" title="Decrease height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="2.5" width="20" height="10"/><rect x="12.5" y="25" width="20" height="10"/><path d="M 2.5 7.5 L 22.5 17.5 L 42.5 7.5 Z"/><path d="M 2.5 30 L 22.5 20 L 42.5 30 Z"/></svg></span>
+            <span class="layout-btn" id="consoleHeightInc" title="Increase height"><svg viewBox="0 0 45 37.5" fill="currentColor" stroke="none"><rect x="12.5" y="10" width="20" height="7.5"/><rect x="12.5" y="20" width="20" height="7.5"/><path d="M 2.5 25 L 22.5 35 L 42.5 25 Z"/><path d="M 2.5 12.5 L 22.5 2.5 L 42.5 12.5 Z"/></svg></span>
           </span>
         </span>
       </h2>

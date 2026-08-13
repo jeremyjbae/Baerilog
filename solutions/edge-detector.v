@@ -22,6 +22,8 @@ module edge_det(
   assign pulse = in & ~prev;
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg clk, rst_n, in;
   wire pulse;

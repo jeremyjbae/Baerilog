@@ -85,6 +85,8 @@ module traffic(
   assign walk = 1'b0;
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg clk, rst_n;
   wire [1:0] light;

@@ -57,6 +57,8 @@ module ram256(
   assign dout = mem[0];
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg clk, we;
   reg [7:0] addr, din;

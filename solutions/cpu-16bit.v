@@ -64,7 +64,17 @@ module cpu (
   assign retire = 1'b1;   // Not Implemented
 
   always@(*) begin
+    /* Defaults, so every signal this block drives is assigned on every path through
+       the casex below. Without them the synthesizer refuses the block rather than
+       infer a latch, and this design produces no netlist at all. The cost is paid in
+       the waveform: a signal written twice per settling pass records both values, so
+       opcode's row goes from 12 history entries to 1171. */
     sreg_we <= 1'b0;
+    opcode <= 4'b0;
+    rf_we <= 1'b0;
+    rf_idx_d <= 5'b0;
+    rf_idx_r <= 5'b0;
+    rf_wdata <= 8'b0;
     casex(inst[15:10])
 
       6'b00xxxx: begin // alu
@@ -412,6 +422,8 @@ module pc (
 endmodule
 
 /* ---- Testbench (Skip Synthesis)  ---- */
+// ======== TESTBENCH ========
+
 module rom_256x16 (
   input [15:0] addr, 
   output [15:0] data

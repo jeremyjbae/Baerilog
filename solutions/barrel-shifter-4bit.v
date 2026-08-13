@@ -20,6 +20,8 @@ module barrel4(
                            : {data[0],   data[3:1]};
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg [3:0] data;
   reg [1:0] amt;

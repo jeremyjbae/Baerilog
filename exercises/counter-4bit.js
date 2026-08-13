@@ -47,6 +47,8 @@ module counter4(
   end
 endmodule
 
+// ======== TESTBENCH ========
+
 module tb;
   reg clk, rst, en;
   wire [3:0] count;
