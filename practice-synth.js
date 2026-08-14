@@ -181,6 +181,12 @@
   var viewStack = [];             // breadcrumb: module names, top down to the viewed one
   var lastGraph = { nodes: [], edges: [] };
   var netlistFullText = '';
+  /* Derived from Run's own wording rather than written out, the rule app.js's
+     RUN_LABEL_AGAIN follows: `simulator.html`'s markup stays the one source of the verb,
+     so if that button ever reads something else this one still agrees with it. */
+  var GATE_LABEL_FRESH = (RUN_LABEL_FRESH || '\u25b6 Run Simulation').replace(/Simulation\s*$/, '') + 'Gate-level Simulation';
+  var GATE_LABEL_AGAIN = GATE_LABEL_FRESH.replace('Run', 'Re-run');
+  var gateHasRun = false;
   var netlistSegments = [];
   var netlistSelectedModule = '(all)';
   var view = { k: 1, x: 0, y: 0 };  // the viewer's pan/zoom, the whole of it
@@ -189,6 +195,11 @@
      the same diagram, so "Run did not synthesize" is not observable from the panels. */
   var syntheses = 0;
   var cardsShown = false;          // ... and so: is a successful synthesis on screen?
+  /* And did the LAST attempt fail? Distinct from !cardsShown, which is also true before
+     anything has been pressed - this is specifically "a synthesis was attempted and did
+     not work", which is what puts the button in its error state. Cleared at the top of
+     runSynthesis, so reaching the end of it IS success. */
+  var synthFailed = false;
 
   /* Both cards carry the same band, because both are showing the same stale thing -
      and the log carries it too, since a reader who scrolls the Console rather than the
@@ -316,6 +327,20 @@
     var empty = mk('div', 'wave-empty', 'netlistEmpty');
     empty.textContent = 'Nothing synthesized yet - press Synthesize.';
     card.appendChild(empty);
+    /* Run the netlist. Green, because it is this card's ONE primary action - the rule
+       Primer states and this repo follows, and the reason the editor card's two greens
+       needed an argument while this needs none.
+
+       At the BOTTOM, after the text, because it acts on what is above it: read the
+       netlist, then run it. */
+    var runGate = mk('div', 'toolbar');
+    runGate.style.marginTop = '12px';
+    runGate.style.marginBottom = '0';
+    var b = mk('button', 'btn', 'gateRunBtn');
+    b.setAttribute('type', 'button');
+    b.textContent = GATE_LABEL_FRESH;
+    runGate.appendChild(b);
+    card.appendChild(runGate);
     return card;
   }
 
@@ -456,6 +481,8 @@
   var codeOutPanel = document.getElementById('codeOutHierarchyPanel');
   var codeOutRow = document.getElementById('codeOutHierarchyRow');
   var netlistEmpty = document.getElementById('netlistEmpty');
+  // built inside buildNetlistCard, so resolved here like every other element of it
+  var gateBtn = document.getElementById('gateRunBtn');
   var netlistStale = document.getElementById('netlistStale');
   var viewerStale = document.getElementById('viewerStale');
   var flowRoot = document.getElementById('flowRoot');
@@ -503,10 +530,23 @@
   /* One writer, the same arrangement app.js's syncRunLabel has and for the same reason:
      the ⏲ form is derived HERE rather than written by the busy helper, so a synthesis
      that changes the verb while it runs (the first one, Synthesize -> Re-synthesize)
-     cannot silently overwrite the busy glyph or be overwritten by it. */
+     cannot silently overwrite the busy glyph or be overwritten by it.
+
+     The error form is app.js's RUN_LABEL_ERROR, read rather than restated: this button
+     and Run are peers in one toolbar, so one source for the string is what stops them
+     from ever disagreeing about how a failure reads. That works because a classic script
+     shares the global lexical environment with the ones before it - the same reason this
+     file can call logLine and read editorFullSource. Only the button that actually
+     failed goes red, so two identical labels are never ambiguous; both saying it means
+     both failed, which is true and is what the Console will confirm. */
   function syncSynthLabel() {
-    var base = cardsShown ? SYNTH_LABEL_AGAIN : SYNTH_LABEL_FRESH;
+    var base = synthFailed ? RUN_LABEL_ERROR
+             : (cardsShown ? SYNTH_LABEL_AGAIN : SYNTH_LABEL_FRESH);
     synthBtn.textContent = synthBtn.hasAttribute('data-busy') ? busyLabel(base) : base;
+    // set/removeAttribute rather than toggleAttribute, matching withBusyButton's
+    // handling of data-busy - one idiom for the two decorated states of one button.
+    if (synthFailed) synthBtn.setAttribute('data-error', '');
+    else synthBtn.removeAttribute('data-error');
   }
   (function () {
     var maxInput = document.getElementById('maxTimeInput');
@@ -734,14 +774,34 @@
     synthLines.push({ level: level, msg: msg });
     printSynthLine(level, msg);
   }
-  function printSynthLine(level, msg) {
+  /* `before` is the row to insert ahead of, or null to append. That is what puts this
+     section in RECENCY order: the Console reads oldest at the top, and a synthesis that
+     happened BEFORE the run now on screen has to sit above it. It could only ever append
+     before, which is why Synthesize-then-Run printed the older log under the newer
+     output - every time, since Run clears the box and this re-prints afterwards. */
+  /* A section rule is spaced from the block above it, so the Console reads as sections
+     rather than as one stream - and both writers mark it the same way, since `— synthesis —`
+     is an ordinary entry of synthLines and would otherwise be the one rule without it. */
+  function isRule(msg) { return msg.charAt(0) === '\u2014'; }
+  function printSynthLine(level, msg, before) {
+    if (before) {
+      var div = document.createElement('div');
+      if (isRule(msg)) div.className = 'console-rule';
+      div.innerHTML = '<span class="' + level + '">' + escapeHtml(msg) + '</span>';
+      consoleBox.insertBefore(div, before);
+      printedEls.push(div);
+      return;
+    }
     logLine('<span class="' + level + '">' + escapeHtml(msg) + '</span>');
     // logLine appends one div and hands nothing back, so the row it just made is the
     // console's last child. Keeping the element is what lets this section be removed
     // again without touching a line the simulation printed.
     var kids = consoleBox.children;
     var el = kids[kids.length - 1];
-    if (el) printedEls.push(el);
+    if (el) {
+      if (isRule(msg)) el.className = 'console-rule';
+      printedEls.push(el);
+    }
   }
   function dropPrintedSynthLines() {
     printedEls.forEach(function (el) {
@@ -751,10 +811,16 @@
   }
   // After something else has cleared the console, or after the stale flag moved: the
   // rows are gone (or wrong), the lines are not.
-  function renderSynthSection() {
+  function renderSynthSection(atTop) {
     dropPrintedSynthLines();
     if (!synthLines.length) return;
-    synthLines.forEach(function (l) { printSynthLine(l.level, l.msg); });
+    /* atTop means "this synthesis is older than what is already in the box" - which is
+       true of every re-print after a Run, and false when Synthesize is what just
+       happened. The `— synthesis —` rule needs no special handling: it is the FIRST entry
+       of synthLines, pushed once when a synthesis starts, so it travels with the rows and
+       there is still exactly one writer of it. */
+    var before = atTop ? consoleBox.firstChild : null;
+    synthLines.forEach(function (l) { printSynthLine(l.level, l.msg, before); });
     /* The band on the two cards is not visible to a reader who is scrolling the
        Console, so the section says it too - otherwise the log reads as a report of the
        design in the editor when it is a report of an older one. Not pushed into
@@ -795,11 +861,21 @@
      construction rather than by a second rule that could disagree with it. This
      replaced a search for the last `module tb`, which was a guess dressed up as a
      convention: it could not see that a rom, a ram model and the system wrapper are
-     testbench too, so on the three CPU designs it fed all of them to the synthesizer. */
+     testbench too, so on the three CPU designs it fed all of them to the synthesizer.
+
+     "By construction" is now literal: this reads app.js's own `tbMarkerIn` rather
+     than restating its pattern, the way this file already uses `logLine` and
+     `editorFullSource` - a classic script sees the bindings of the ones before it.
+     The copy it replaced was line-anchored, so once the marker could sit mid-line
+     the two would have split the same document in two different places.
+
+     `tbMarkerIn`, not `designSpan`: that one answers this app's question, where a
+     document only has a testbench region if there is a second editor on the page to
+     show it in. The design has to be cut out for the synthesizer either way. */
   function designOnly(src) {
-    var m = /^[ \t]*\/\/[ \t]*=+[ \t]*TESTBENCH[ \t]*=+[ \t]*$/m.exec(src);
-    if (!m) return { src: src, dropped: 0 };
-    return { src: src.slice(0, m.index), dropped: src.slice(m.index).split('\n').length };
+    var at = tbMarkerIn(src);
+    if (at < 0) return { src: src, dropped: 0 };
+    return { src: src.slice(0, at), dropped: src.slice(at).split('\n').length };
   }
 
   function renderNetlistView() {
@@ -904,6 +980,7 @@
 
   function runSynthesis() {
     syntheses++;
+    synthFailed = false;   // cleared here, so reaching the end of this function IS success
     // The editor is the simulator's: merging the visible module back is what makes
     // this synthesize what is on screen rather than a stale copy of the file.
     spliceEditorChangesBack();
@@ -932,6 +1009,9 @@
       });
       // Nothing was synthesized, so there is nothing to show: the cards go away (or stay
       // away), and the Console carries the whole of the answer.
+      // Set BEFORE showCards, which is what calls syncSynthLabel - the ordering is the
+      // whole correctness of this: after it, the label would be written from the old flag.
+      synthFailed = true;
       showCards(false);
       markStale(false);
       return;
@@ -944,13 +1024,24 @@
     showCards(true);
     if (!showCurrentView()) {
       clearNetlist('the netlist could not be built');
+      synthFailed = true;   // before showCards, as above
       showCards(false);
       markStale(false);
       return;
     }
     markStale(false);
-    synthLog('ok', 'synthesized top module ' + currentAll.top.name + ' into '
-                 + lastGraph.nodes.length + ' nodes and ' + lastGraph.edges.length + ' nets');
+    /* No node/net count here any more. It described the DIAGRAM of the module on screen,
+       while the report below counts the whole design per instantiation site - two numbers
+       for nearly the same thing, disagreeing for reasons nothing on the page explained
+       (`5 nodes` three lines above `Number of cells: 4`). The Console states one of them
+       and the viewer shows the other. */
+    synthLog('ok', 'synthesized top module ' + currentAll.top.name);
+    /* The SAME function synthesis.html logs, reached through the slice rather than
+       reimplemented - so the two apps cannot report a different area for one design. It
+       returns one multi-line string and is logged as one row: the console box is monospace
+       and pre-wrap, so its padded columns line up, and one row is what keeps the section's
+       own bookkeeping (printedEls, the re-print ordering, Clear) working unchanged. */
+    synthLog('info', S.buildAreaReport(currentAll));
   }
 
   /* =====================================================================
@@ -970,9 +1061,9 @@
       s += '<line x1="' + st[0] + '" y1="' + st[1] + '" x2="' + st[2] + '" y2="' + st[3]
          + '" class="gate-stroke" stroke-width="3" stroke-linecap="butt"/>';
     });
-    s += '<path d="' + def.body + '" fill="white" class="gate-stroke" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>';
-    if (def.notch) s += '<path d="' + def.notch + '" fill="white" class="gate-stroke" stroke-width="3" stroke-linejoin="round"/>';
-    if (def.bubble) s += '<circle cx="' + def.bubble.cx + '" cy="' + def.bubble.cy + '" r="' + (def.bubble.r || 6) + '" fill="white" class="gate-stroke" stroke-width="3"/>';
+    s += '<path d="' + def.body + '" class="gate-stroke node-fill" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>';
+    if (def.notch) s += '<path d="' + def.notch + '" class="gate-stroke node-fill" stroke-width="3" stroke-linejoin="round"/>';
+    if (def.bubble) s += '<circle cx="' + def.bubble.cx + '" cy="' + def.bubble.cy + '" r="' + (def.bubble.r || 6) + '" class="gate-stroke node-fill" stroke-width="3"/>';
     if (def.extra) s += '<path d="' + def.extra + '" fill="none" class="gate-stroke" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>';
     if (def.label) s += '<text x="' + def.label.x + '" y="' + def.label.y + '" font-family="Helvetica" font-size="15" font-weight="bold" class="gate-fill-stroke" text-anchor="middle">' + def.label.text + '</text>';
     return s + '</svg>';
@@ -1000,7 +1091,7 @@
         e.classList.add(d.dir === 'in' ? 'port-in' : 'port-out');
         if (d.isBus) e.classList.add('is-bus');
         e.innerHTML = '<svg viewBox="0 0 100 40" preserveAspectRatio="none"><path d="' + PORT_D
-          + '" fill="white" class="port-stroke" stroke-width="3" stroke-linejoin="round"/></svg>'
+          + '" class="port-stroke node-fill" stroke-width="3" stroke-linejoin="round"/></svg>'
           + '<div class="rf-node-label">' + escapeHtml(d.label) + '</div>'
           + (d.isBus && d.range ? '<div class="rf-node-range">' + escapeHtml(d.range) + '</div>' : '');
         break;
@@ -1413,11 +1504,105 @@
   synthBtn.addEventListener('click', function () {
     withBusyButton(synthBtn, runSynthesis, syncSynthLabel);
   });
+
+  /* ---- run the netlist ----------------------------------------------------------
+     The netlist is SUBSTITUTED into the document, not pasted in front of the testbench.
+     The generated text redefines the DUT and every sub-module it synthesized, so what is
+     kept from the original is everything the netlist does NOT define - a rom, a ram
+     model, the `system` wrapper, the testbench itself. That is what makes this work on a
+     hierarchical design: cpu-16bit's testbench drives a `system` holding a ROM, a RAM and
+     the CPU, only the CPU is synthesizable, and pasting a gate-level `cpu` in front of
+     that leaves two top-level modules and will not elaborate. Substituting runs the
+     gate-level core inside its own real environment.
+
+     The rule is `test.py`'s, which has run netlists against these testbenches since the
+     cards landed - so this button is a new entry point to a proven path rather than a new
+     path. Memory images need no handling at all: $readmemh resolves against
+     attachedMemFiles, which the page filled in at load. */
+  function moduleSpans(src) {
+    var out = [], re = /^module\s+(\w+)/gm, m;
+    while ((m = re.exec(src)) !== null) {
+      var e = src.indexOf('endmodule', m.index);
+      if (e < 0) break;
+      out.push({ name: m[1], start: m.index, end: e + 'endmodule'.length });
+    }
+    return out;
+  }
+  function gateLevelDocument() {
+    var doc = currentFullSource();
+    var defined = {};
+    moduleSpans(netlistFullText).forEach(function (m) { defined[m.name] = true; });
+    var kept = moduleSpans(doc).filter(function (m) { return !defined[m.name]; })
+                               .map(function (m) { return doc.slice(m.start, m.end); });
+    return { text: netlistFullText + '\n\n' + kept.join('\n\n') + '\n',
+             swapped: Object.keys(defined).length, kept: kept.length };
+  }
+  function syncGateLabel() {
+    var base = gateHasRun ? GATE_LABEL_AGAIN : GATE_LABEL_FRESH;
+    gateBtn.textContent = gateBtn.hasAttribute('data-busy') ? busyLabel(base) : base;
+  }
+  function runGateLevel() {
+    /* Refuses while stale rather than running the old netlist or silently
+       re-synthesizing: the button says it runs what this card shows, and what the card
+       shows is marked as no longer describing the design. Said in the Console, because
+       that is where every other refusal on this page is said. */
+    if (stale) {
+      synthLog('err', 'the netlist is behind the design - press Synthesize before running it');
+      renderSynthSection();
+      return;
+    }
+    if (!netlistFullText) {
+      synthLog('err', 'nothing synthesized yet - press Synthesize first');
+      renderSynthSection();
+      return;
+    }
+    var gate = gateLevelDocument();
+    /* One set of panels, so a gate-level run REPLACES the behavioural one. What says so is
+       the section rule `— gate-level simulation —`, which noteRun prepends below - it used
+       to be a sentence logged here, and the rule says it better and in the same idiom as
+       the synthesis section's. */
+    runSimulation(gate.text);
+    /* ORDER MATTERS HERE, and getting it wrong is what put the rule at the very top of the
+       box with the synthesis log between it and its own output. Both noteRun and
+       renderSynthSection insert at the TOP, so the later call ends up higher - which means
+       this has to run in the same sequence the plain Run path gets for free from script
+       load order: the run's own rule first, then the older synthesis section above it.
+
+       The page's own post-run work comes with it - the verdict pill, the tab strip, the
+       first-run unfold - called rather than duplicated, which is why practice.js exposes
+       it: a gate-level run counts on this page exactly as a behavioural one does. */
+    if (window.PRACTICE_API && window.PRACTICE_API.noteRun) {
+      window.PRACTICE_API.noteRun('gate-level simulation',
+        gate.swapped + ' module' + (gate.swapped === 1 ? '' : 's') + ' replaced by gates, '
+        + gate.kept + ' kept from the document (testbench, memories)');
+    }
+    renderSynthSection(true);   // older than the run that just printed, so above it
+    gateHasRun = true;
+    syncGateLabel();
+  }
+  gateBtn.addEventListener('click', function () {
+    withBusyButton(gateBtn, runGateLevel, syncGateLabel);
+  });
+  /* Above whatever the run just printed, because it is older than it. Reset takes the
+     same path: it leaves the console holding its placeholder, and a synthesis that
+     survives a Reset is still the older thing on the page. */
   ['runBtn', 'resetBtn'].forEach(function (id) {
     var b = document.getElementById(id);
-    if (b) b.addEventListener('click', renderSynthSection);
+    if (b) b.addEventListener('click', function () { renderSynthSection(true); });
   });
-  codeInput.addEventListener('input', function () { if (currentAll) markStale(true); });
+  /* An edit does two independent things, and they need different tests. A successful
+     synthesis becomes STALE (guarded on currentAll, since there has to be something to
+     be stale). A FAILED one is retired outright - the label described text the reader
+     has since changed, and `⚠︎ Error (Retry)` over a fixed design is the panel
+     disagreeing with itself.
+
+     Only codeInput, deliberately, where app.js's Run watches both editors: designOnly()
+     cuts the document at the TESTBENCH marker before the synthesizer ever sees it, so
+     editing the testbench cannot fix a synthesis error and must not claim to. */
+  codeInput.addEventListener('input', function () {
+    if (currentAll) markStale(true);
+    if (synthFailed) { synthFailed = false; syncSynthLabel(); }
+  });
 
   // Nothing is synthesized on load, for the reason nothing is simulated on load - and
   // here that means the two cards are not on the page at all yet. Pressing Synthesize
@@ -1427,6 +1612,11 @@
   // Named for the harness, which drives all of this without a browser.
   window.PRACTICE_SYNTH_API = {
     runSynthesis: runSynthesis,
+    /* For the Console's Clear button, and deliberately narrower than reset(): it drops the
+       remembered log and the rows showing it, so a later Run cannot re-print what was just
+       cleared - and leaves the netlist, the diagram and the cards alone, because Clear is
+       the Console's control and not a Reset. */
+    forgetLog: function () { dropPrintedSynthLines(); synthLines = []; },
     /* Back to never-synthesized, for practice.js's Reset. Built out of the functions
        that already own each piece rather than by re-clearing their variables: an eighth
        thing to forget is exactly how the "list of things true before a core is live"
@@ -1436,6 +1626,7 @@
        is a return to a page where no synthesis ever happened. */
     reset: function () {
       synthLines = [];
+      synthFailed = false;   // before showCards below, which is what rewrites the label
       dropPrintedSynthLines();
       clearNetlist('Nothing synthesized yet - press Synthesize.');
       markStale(false);

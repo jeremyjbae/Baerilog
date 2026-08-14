@@ -85,7 +85,14 @@ const MODEL_CHECKED = ['cpu-16bit'];
    This replaced a search for the last `module tb`, which could not see that a rom,
    a ram model and the system wrapper are testbench too: on the three CPU exercises
    it called them design and compared none of them. */
-const TB_MARKER_RE = /^[ \t]*\/\/[ \t]*=+[ \t]*TESTBENCH[ \t]*=+[ \t]*$/m;
+/* Spelled exactly as `Baerilog/simulator.html`'s TB_MARKER_RE and `Baerilog/synthesis.html`'s
+   TESTBENCH_MARKER are, and a check below asserts all three agree. Loosened from a line-anchored
+   form so a marker embedded in a line (`endmodule// ==== TESTBENCH ====module tb;`) is found; the
+   `=` decoration is what keeps prose such as `// checked by the testbench below` from matching. */
+const TB_MARKER_RE = /\/\/[^\n]*?=+[ \t]*TESTBENCH[ \t]*=+/i;
+// Global twin, for the "exactly one marker in the document" assertions. Built from the one
+// pattern rather than written out again, so the two cannot drift.
+const TB_MARKER_G = new RegExp(TB_MARKER_RE.source, 'gi');
 function tbOf(text, what) {
   const m = TB_MARKER_RE.exec(text);
   if (!m) throw new Error(what + ' has no TESTBENCH marker - the two halves are split on it');
@@ -265,6 +272,12 @@ const SLUG = SLUG_JSON;
 const SYNTH_SLUGS = SYNTH_SLUGS_JSON;
 // kept in step with the engine driver's list by the check right below the loop
 const MODEL_CHECKED = ['cpu-16bit'];
+/* Spelled identically in the engine driver, in simulator.html and in synthesis.html; a check
+   below compares all four rather than trusting them, the same way MODEL_CHECKED is compared.
+   The two drivers are separate `new Function` scopes, so this is a second definition and not a
+   reference - which is exactly why it needs the check. */
+const TB_MARKER_RE = /\/\/[^\n]*?=+[ \t]*TESTBENCH[ \t]*=+/i;
+const TB_MARKER_G = new RegExp(TB_MARKER_RE.source, 'gi');
 
 const results = [];
 function check(name, f) {
@@ -276,8 +289,11 @@ function ok(c, m) { if (!c) throw new Error(m || 'failed'); }
 /* The stub DOM materialises elements on demand, so the ids in the injected markup
    have to be discovered from it rather than hardcoded: shell.js inserts the
    simulator's whole body, and app.js then getElementById's every one of them. */
-function boot(slug) {
-  const dom = makeDom();
+function boot(slug, sharedDom) {
+  /* `sharedDom` is how a check seeds localStorage before the page reads it at load - the
+     same escape hatch bootHub already takes, and the only way to test a persisted choice,
+     since a fresh makeDom() starts with empty storage. */
+  const dom = sharedDom || makeDom();
   const ids = {}, parents = {};
   const markupSrc = fs.readFileSync(path.join(HERE, 'shell.js'), 'utf8');
   const m = markupSrc.match(/String\.raw`([\s\S]*?)`;/);
@@ -343,14 +359,25 @@ function boot(slug) {
      and subtitle shell.js retitles, and the Console card's h2 (with its layout
      buttons) that the verdict pill is inserted before. */
   dom.mk('__h1', 'h1', grid);
-  dom.mk('__subtitle', 'div', grid).classList.add('subtitle');
+  dom.mk('__subtitle', 'div', grid).classList.add('gh-sub');
   /* The header bar comes from the injected markup now (it is the simulator's own),
      and the stub does not parse markup - so it is stood up here, nav and all, the
      same way the h1 and subtitle are. shell.js moves the `here` marker onto the
      Practice link, which needs a link to move it to. */
   const hdr = dom.mk('__header', 'header', grid);
   hdr.classList.add('gh-header');
-  const nav = dom.mk('__nav', 'nav', hdr);
+  /* The bar's inner row and the wordmark, because shell.js reaches for both by
+     SELECTOR: the menu button is inserted as `.gh-header-inner`'s first child, and
+     the drawer's mark is a cloneNode of `.gh-mark svg` rather than a ninth copy of
+     those paths. Without them here the code takes its own fallbacks (the body, and no
+     mark) and both claims would be tested against something that never happened. */
+  const inner = dom.mk('__headerInner', 'div', hdr);
+  inner.classList.add('gh-header-inner');
+  const mark = dom.mk('__mark', 'a', inner);
+  mark.classList.add('gh-mark');
+  mark.setAttribute('href', 'index.html');
+  dom.mk('__markSvg', 'svg', mark);
+  const nav = dom.mk('__nav', 'nav', inner);
   nav.classList.add('gh-nav');
   // The nav is four siblings inside Baerilog/ now, with no ../ - shell.js marks the
   // one whose href is index.html (the hub), so both of these have to be realistic
@@ -430,6 +457,7 @@ function boot(slug) {
                                 + ' selectEditorModule, moduleNames: () => lastGoodModuleNames,'
                                 + ' currentFullSource, loadFullSource,'
                                 + ' view: () => [viewStart, viewEnd], cursor: () => cursorTime,'
+                                + ' layout: () => waveLayout, waveOff: () => waveOff,'
                                 + ' setView: (a, b) => { viewStart = a; viewEnd = b; },'
                                 + ' runLabels: () => [RUN_LABEL_FRESH, RUN_LABEL_AGAIN] };')
     (dom.document, dom.window, dom.localStorage, dom.window.requestAnimationFrame,
@@ -512,10 +540,19 @@ check('both editors are styled by one structural rule, not by id', () => {
   ok(!/textarea#tbInput\s*\{/.test(css),
      'the testbench editor got its own id rule - two rules to keep in step is the bug');
 
-  // the properties whose absence is what the screenshot showed
-  const rule = /\.editor-wrap textarea\s*\{([^}]*)\}/.exec(css)[1];
-  for (const prop of ['font:', 'white-space: pre', 'padding:', 'flex:', 'tab-size:'])
-    ok(rule.indexOf(prop) >= 0, 'the shared editor rule is missing ' + prop);
+  /* The properties whose absence is what the screenshot showed - taken from the rule
+     that CARRIES them rather than from the first textual match. The shared block's
+     narrow-screen layer now also names `.editor-wrap textarea` (to raise it to 16px,
+     which is what stops iOS zooming the page), and that rule matched first: the check
+     then reported the shared editor rule as missing `font:` while it was intact three
+     hundred lines below. So scan every match and require one complete rule. */
+  const rules = [...css.matchAll(/\.editor-wrap textarea\s*\{([^}]*)\}/g)].map(m => m[1]);
+  ok(rules.length, 'no .editor-wrap textarea rule at all');
+  const PROPS = ['font:', 'white-space: pre', 'padding:', 'flex:', 'tab-size:'];
+  const full = rules.find(r => PROPS.every(p => r.indexOf(p) >= 0));
+  ok(full, 'no single .editor-wrap textarea rule carries all of ' + PROPS.join(' ')
+       + ' - found ' + rules.length + ' rule(s), the fullest missing '
+       + PROPS.filter(p => !rules.some(r => r.indexOf(p) >= 0)).join(' '));
 
   // and the markup must actually put both textareas inside an .editor-wrap
   const shellSrc = fs.readFileSync(path.join(HERE, 'shell.js'), 'utf8');
@@ -601,6 +638,37 @@ check('every page boots with nothing run, then runs to $finish on Run', () => {
 
     assertPreRunState(p, e, 'load');
     ok(p.dom.window.PRACTICE_API.isSheetOpen(), e + ': the exercise sheet is not open on load');
+
+    /* Save writes this page's own name. In the all-pages loop deliberately: app.js loads
+       an example on the way past and loadExample sets currentFileName from its NAME, the
+       first entry of EXAMPLES being the D flip-flop, so all twenty pages wrote
+       `D_Flip-Flop.v`. `d-flip-flop` was wrong too - its name is `d-flip-flop.v` - but it
+       is the trap rather than the exception, since `D_Flip-Flop.v` reads as deliberate on
+       that page and it is the one anybody would spot-check. The name is read off the
+       anchor Save builds, not from the binding, so it is what a browser would download. */
+    (() => {
+      let name = null;
+      const create = p.dom.document.createElement.bind(p.dom.document);
+      p.dom.document.createElement = function (tag) {
+        const el = create(tag);
+        if (tag === 'a') {
+          Object.defineProperty(el, 'download',
+            { set(v) { name = v; }, get() { return name; }, configurable: true });
+          el.click = () => {};
+        }
+        return el;
+      };
+      p.dom.promptLog.length = 0;
+      try { p.dom.document.getElementById('editorSaveBtn').click(); }
+      finally { p.dom.document.createElement = create; }
+      ok(name === e + '.v',
+         e + ': Save would write ' + JSON.stringify(name) + ', not ' + JSON.stringify(e + '.v')
+           + " - the example app.js loaded on the way past is still naming the learner's file");
+      /* And that name is what the prompt OFFERED, which is the other half of the feature:
+         the current name is the baseline, not an empty box. */
+      ok(p.dom.promptLog.length === 1 && p.dom.promptLog[0] === e + '.v',
+         e + ': Save offered ' + JSON.stringify(p.dom.promptLog) + ' as the default');
+    })();
     ok(p.dom.document.getElementById('codeInput').value.indexOf('TODO') >= 0,
        e + ': the editor holds no TODO, so it is not showing the starter');
 
@@ -851,6 +919,60 @@ if (page) {
     return 'button hidden, toolbar hidden, Save kept';
   });
 
+  /* Save asks, and what comes back decides what happens. Three answers, three outcomes,
+     and the middle one is the one worth having a test for: a Cancel must write NOTHING
+     rather than falling back to the default, because a reader who cancels has said they
+     do not want this file - and the same `null` is what a browser returns once someone
+     ticks "prevent additional dialogs", so the safe direction is the one that writes
+     nothing. An empty answer is different: that is a reader who pressed OK on a box they
+     had cleared, and writing `.v` with no stem would be absurd, so the default stands. */
+  check('Save asks for the name: a rename sticks, Cancel writes nothing', () => {
+    const dom = page.dom;
+    let wrote = null;
+    const create = dom.document.createElement.bind(dom.document);
+    dom.document.createElement = function (tag) {
+      const el = create(tag);
+      if (tag === 'a') {
+        Object.defineProperty(el, 'download',
+          { set(v) { wrote = v; }, get() { return wrote; }, configurable: true });
+        el.click = () => {};
+      }
+      return el;
+    };
+    const save = () => { wrote = null; dom.promptLog.length = 0; $('editorSaveBtn').click(); };
+    try {
+      // a rename is honoured...
+      dom.promptAnswers.push('my_core.v');
+      save();
+      ok(wrote === 'my_core.v', 'a renamed save wrote ' + JSON.stringify(wrote));
+
+      // ...and STICKS: the next Save offers it, with no answer queued
+      save();
+      ok(dom.promptLog[0] === 'my_core.v',
+         'the rename did not stick - the next Save offered ' + JSON.stringify(dom.promptLog[0]));
+      ok(wrote === 'my_core.v', 'the second save wrote ' + JSON.stringify(wrote));
+
+      // Cancel writes nothing at all, and leaves the name alone
+      dom.promptAnswers.push(null);
+      save();
+      ok(wrote === null, 'Cancel still wrote ' + JSON.stringify(wrote));
+      save();
+      ok(dom.promptLog[0] === 'my_core.v',
+         'Cancel changed the remembered name to ' + JSON.stringify(dom.promptLog[0]));
+
+      // an empty or blank answer keeps the default rather than writing a nameless file
+      dom.promptAnswers.push('   ');
+      save();
+      ok(wrote === 'my_core.v', 'a blank answer wrote ' + JSON.stringify(wrote));
+      return 'rename honoured and remembered, Cancel wrote nothing, blank kept the default';
+    } finally {
+      dom.promptAnswers.length = 0;
+      dom.promptAnswers.push(SLUG + '.v');   // put the page's own name back
+      $('editorSaveBtn').click();
+      dom.document.createElement = create;
+    }
+  });
+
   check('the two editors hold the exercise skeleton, not the first EXAMPLE', () => {
     /* The reset above left the page unrun, and every check below this point expects a
        page that HAS run - so it is put back here rather than each of them coping. */
@@ -872,7 +994,7 @@ if (page) {
     /* The marker belongs to NEITHER view - it is the boundary. Asserting that is what
        stops it from being swallowed into a half, which would put a stray comment at the
        top of the testbench editor and, worse, duplicate it on every save/reload cycle. */
-    const MARK_G = /^[ \t]*\/\/[ \t]*=+[ \t]*TESTBENCH[ \t]*=+[ \t]*$/m;
+    const MARK_G = TB_MARKER_RE;
     ok(!MARK_G.test(design), 'the marker line is inside the design editor');
     ok(!MARK_G.test(tb), 'the marker line is inside the testbench editor');
     ok(MARK_G.test(app.fullSource()), 'the marker is not in the document at all');
@@ -900,7 +1022,7 @@ if (page) {
     $('tbInput').dispatch('blur');
     let doc = app.fullSource();
     ok(doc.indexOf('// tb-edit') >= 0, 'the testbench edit did not reach the document');
-    const MARK = /^[ \t]*\/\/[ \t]*=+[ \t]*TESTBENCH[ \t]*=+[ \t]*$/m;
+    const MARK = TB_MARKER_RE;
     ok(doc.indexOf('// tb-edit') > MARK.exec(doc).index,
        'the testbench edit landed ABOVE the marker');
     ok(doc.slice(0, MARK.exec(doc).index) === design0,
@@ -913,7 +1035,7 @@ if (page) {
     ok(doc.indexOf('// design-edit') === 0, 'the design edit is not at the top');
     ok(doc.indexOf('// tb-edit') >= 0, 'the design edit dropped the testbench half');
     ok((doc.match(/\/\/ tb-edit/g) || []).length === 1, 'the testbench half was duplicated');
-    ok((doc.match(/^[ \t]*\/\/[ \t]*=+[ \t]*TESTBENCH[ \t]*=+[ \t]*$/gm) || []).length === 1,
+    ok((doc.match(TB_MARKER_G) || []).length === 1,
        'the marker was duplicated or lost');
 
     // 3. and what Run compiles is that document, not a stale copy
@@ -1056,6 +1178,204 @@ if (page) {
     return 't=' + r.time + ', ' + Object.keys(shell.PRACTICE_EX.memFiles || {}).length + ' image(s)';
   });
 
+  /* ---- the canvas is drawn at its container's width, at every width ----
+     `canvas { width: 100% !important }` in the shared block beats the inline style the
+     renderer sets, so a backing store wider than the container is not scrolled - it is
+     STRETCHED over it. Every glyph is then horizontally compressed (which reads as a
+     condensed font rather than as a bug) and `waveLayout` describes a coordinate space
+     the click handlers do not measure, so a tap lands at the wrong time by exactly that
+     ratio. drawWaveform used to floor cssWidth at 600px, which made this permanent on
+     any container narrower than that - i.e. every phone. Asserted at a narrow container
+     AND a wide one, because the old code was correct at 900 and that is the only width
+     any other check here uses. */
+  check('the waveform canvas is never wider than its container', () => {
+    const scroll = $('waveScroll'), canvas = $('waveCanvas');
+    const was = scroll.clientWidth;
+    try {
+      for (const w of [288, 900]) {
+        scroll.clientWidth = w;
+        $('runBtn').click();
+        const drawn = parseInt(canvas.style.width, 10);
+        ok(drawn === w,
+           'at a ' + w + 'px container the canvas was drawn ' + drawn + 'px wide, so the '
+           + 'drawing is stretched by ' + (drawn / w).toFixed(2) + 'x');
+        /* And the layout the handlers read describes that same box: plotX0 + plotW is
+           the plot's right edge, 10px short of the canvas (see drawWaveform). */
+        const L = app.layout();
+        ok(L && Math.abs(L.plotX0 + L.plotW + 10 - w) < 0.5,
+           'waveLayout spans ' + (L ? L.plotX0 + L.plotW + 10 : '?') + 'px of a ' + w
+           + 'px canvas, so every cursor click maps to the wrong time');
+      }
+      return 'drawn 1:1 at 288px and 900px, layout agrees with the box';
+    } finally {
+      scroll.clientWidth = was;
+      $('runBtn').click();
+    }
+  });
+
+  /* Turning the plot off is a MEMORY control, so what it has to be checked on is the
+     allocation, not the appearance. `display: none` leaves a canvas's bitmap alive - the
+     element keeps its width/height attributes - so an implementation that only hid it
+     would look identical on screen and free nothing, which is the whole feature failing
+     silently. Hence the assertion is on the attributes.
+
+     And it must not cost the run: history is the engine's, pushed by writeLValue, and the
+     Scoreboard's sampler reads it - so the console output and the result have to survive
+     with the plot off, or "save memory" quietly means "lose your verdict". */
+  check('the plot can be turned off, which frees the canvas and keeps the run', () => {
+    const canvas = $('waveCanvas'), box = $('waveOffCheckbox');
+    ok(box, 'no waveOffCheckbox in the markup');
+    $('runBtn').click();
+    ok(!app.waveOff(), 'the plot is off by default - it must default to ON');
+    const wasW = canvas.width, wasH = canvas.height;
+    ok(wasW > 0 && wasH > 0, 'the canvas has no backing store with the plot on: '
+       + wasW + 'x' + wasH);
+    const logWas = app.consoleBox.textContent || '';
+    const hadResult = !!app.result();
+
+    box.checked = true;
+    box.dispatch('change');
+    ok(app.waveOff(), 'ticking the box did not set waveOff');
+    ok(canvas.width === 0 && canvas.height === 0,
+       'the canvas backing store survived at ' + canvas.width + 'x' + canvas.height
+       + ' - display:none does not free a canvas, the attributes have to be zeroed');
+    ok(app.layout() === null, 'waveLayout survived, so the pointer handlers still map clicks');
+    ok($('waveControls').style.display === 'none', 'the zoom/range controls are still shown');
+    /* the run is untouched: same result object, same console */
+    ok(!!app.result() === hadResult, 'the result was dropped with the plot');
+    ok((app.consoleBox.textContent || '') === logWas, 'the console output changed');
+
+    box.checked = false;
+    box.dispatch('change');
+    ok(!app.waveOff(), 'unticking did not clear waveOff');
+    ok(canvas.width > 0 && canvas.height > 0,
+       'the canvas was not re-sized after unticking: ' + canvas.width + 'x' + canvas.height);
+    ok(app.layout() !== null, 'waveLayout was not rebuilt, so the plot is dead to clicks');
+    ok($('waveControls').style.display !== 'none', 'the controls did not come back');
+    return 'freed ' + wasW + 'x' + wasH + ', run kept, restored on untick';
+  });
+
+  /* The note must cost the DEFAULT state nothing, and that is a claim about DOM
+     OPERATIONS rather than about milliseconds - which is the only form a stub DOM can
+     check, and the form that matters: `clientWidth` is a forced synchronous layout in a
+     browser if the DOM was written since the last one, and free if it was not. So the
+     assertion is one read per draw, with the note's write AFTER it.
+
+     This exists because the first version of the feature failed exactly here and nothing
+     noticed: it read clientWidth itself and ran at the top of drawWaveform, giving
+     WRITE,READ,...,READ - two reflows per draw instead of one, in the state everybody is
+     in whether or not they ever tick the box. Twenty checks and three mutants passed over
+     it, because a stub has no layout engine and the reads are plain property gets. Counting
+     them is what turns that into something falsifiable. */
+  check('the memory note costs the default state no extra layout read', () => {
+    const scroll = $('waveScroll'), note = $('waveMemNote');
+    ok(note, 'no waveMemNote in the markup');
+    const log = [];
+    const wasW = Object.getOwnPropertyDescriptor(scroll, 'clientWidth');
+    let v = note.textContent;
+    Object.defineProperty(scroll, 'clientWidth',
+      { get() { log.push('READ'); return 900; }, configurable: true });
+    Object.defineProperty(note, 'textContent',
+      { get() { return v; }, set(x) { log.push('WRITE'); v = x; }, configurable: true });
+    try {
+      $('runBtn').click();           // warm, so the count is of a settled draw
+      log.length = 0;
+      $('runBtn').click();
+      const reads = log.filter(x => x === 'READ').length;
+      ok(reads === 1, 'a draw took ' + reads + ' clientWidth reads, not 1 - the note is '
+         + 'measuring geometry of its own again (order: ' + log.join(',') + ')');
+      /* NO write may precede the read. lastIndexOf was the first form of this and it was
+         wrong in the way that matters: with WRITE,READ,WRITE a later write satisfied it
+         while an earlier one had already dirtied the layout the read then had to compute.
+         The mutant that writes the note just above the width read survived it. */
+      const firstRead = log.indexOf('READ'), firstWrite = log.indexOf('WRITE');
+      ok(firstRead >= 0 && (firstWrite === -1 || firstWrite > firstRead),
+         'the note is written BEFORE the width is read (' + log.join(',') + '), so that read '
+         + 'forces a synchronous layout');
+      ok(/MB of canvas/.test(v), 'the note says nothing useful: ' + JSON.stringify(v));
+      return log.join(',') + ', note ' + JSON.stringify(v);
+    } finally {
+      delete note.textContent;
+      if (wasW) Object.defineProperty(scroll, 'clientWidth', wasW);
+      else { delete scroll.clientWidth; scroll.clientWidth = 900; }
+      $('runBtn').click();
+    }
+  });
+
+  /* Persisted in BOTH directions. The default is off, so `=== '1'` is the correct read -
+     but a stored '1' has to survive a reload, which is the half the Scoreboard's checkbox
+     got wrong in the other direction. Asserted against a fresh boot rather than the live
+     page, since that is where a load-time misread shows. */
+  check('the plot-off choice survives a reload, and is not forced either way', () => {
+    const on = makeDom();
+    on.localStorage.setItem('waveOff', '1');
+    const p1 = boot(SLUG, on);
+    ok(p1.app.waveOff(), 'a stored waveOff=1 was not honoured on load');
+    ok(p1.dom.document.getElementById('waveCanvas').width === 0,
+       'the canvas was allocated at load despite the stored choice');
+    ok(p1.dom.document.getElementById('waveControls').style.display === 'none',
+       'the controls were shown at load despite the stored choice');
+    const off = makeDom();
+    off.localStorage.setItem('waveOff', '0');
+    const p0 = boot(SLUG, off);
+    ok(!p0.app.waveOff(), 'a stored waveOff=0 came back on, so the read is one-way');
+    return 'honoured in both directions'
+  });
+
+  /* The marker is matched ANYWHERE on a line, not only alone on one, and the same one
+     definition governs the two editors here and the truncation in synthesis.html. Both
+     halves are asserted, because the interesting failure is not "neither works" but "one
+     works" - a document that cuts in the synthesizer and does not split here would put
+     the whole file in the design editor while the netlist described only part of it. */
+  check('a marker embedded in a line splits the document, and round-trips exactly', () => {
+    const design = 'module d(input a, output y);\nassign y = a;\nendmodule';
+    const tb = 'module tb;\ninitial begin #5 $finish; end\nendmodule\n';
+    const doc = design + '// ======== TESTBENCH ========' + tb;
+    const before = doc;
+    app.loadFullSource(doc);
+    /* The design keeps what precedes the marker on that line - `endmodule` cannot be
+       dragged out of it - and the rest of that line is inside the comment, so it stays in
+       the BOUNDARY rather than being un-commented into the testbench view. */
+    ok(app.codeInput.value === design,
+       'the design half is not the text before the marker: ' + JSON.stringify(app.codeInput.value));
+    ok(!/TESTBENCH/.test(app.codeInput.value), 'the marker leaked into the design editor');
+    ok(!/TESTBENCH/.test($('tbInput').value), 'the marker leaked into the testbench editor');
+    ok(app.currentFullSource() === before,
+       'the round trip is not byte-exact: ' + JSON.stringify(app.currentFullSource()));
+    /* And an INDENTED own-line marker puts its indentation in the boundary too, which is
+       byte-for-byte where the line-anchored rule this replaced split. That is the walk-back's
+       whole job, and no file in the repo has an indented marker - so without this assertion
+       deleting it is invisible, and the "identical for every document that exists today"
+       claim would rest on nothing. */
+    const indented = design + '\n    // ==== TESTBENCH ====\n' + tb;
+    app.loadFullSource(indented);
+    ok(app.codeInput.value === design + '\n',
+       'an indented marker left its indent in the design half: '
+       + JSON.stringify(app.codeInput.value.slice(-12)));
+    ok(app.currentFullSource() === indented, 'the indented round trip is not byte-exact');
+    return 'design kept `endmodule`, marker (and its indent) stayed in the boundary, round trip exact';
+  });
+
+  check('an embedded marker truncates in the synthesizer too, and prose does not', () => {
+    const design = 'module d(input a, output y);\nassign y = a;\nendmodule';
+    const tb = 'module tb;\ninitial begin #5 $finish; end\nendmodule\n';
+    const SYNTH = dom.window.SYNTH;
+    if (!SYNTH) throw new Error('this page carries no synthesizer to ask');
+    // embedded: cuts, and says which marker did it
+    const all = SYNTH.synthesizeAll(design + '// ======== TESTBENCH ========' + tb);
+    ok(all.top.name === 'd', 'the top module is not the design: ' + all.top.name);
+    const said = all.log.map(l => l.msg).join(' | ');
+    ok(/TESTBENCH marker/.test(said), 'the log does not name the TESTBENCH marker: ' + said);
+    ok(!/Skip Synthesis/.test(said), 'a TESTBENCH cut reported itself as a Skip Synthesis comment');
+    // prose naming the word must NOT truncate - that is what the `=` decoration buys
+    let prose = null;
+    try { SYNTH.synthesizeAll(design + '\n// checked by the testbench below\n' + tb); }
+    catch (e) { prose = e.message; }
+    ok(prose && /unexpected character '#'/.test(prose),
+       'a comment merely mentioning the testbench truncated the file: ' + prose);
+    return 'cut named the marker; prose left the file alone';
+  });
+
   check('the verdict pill counts the FAILs the starter printed', () => {
     const pill = $('exVerdict');
     ok(pill, 'no verdict pill');
@@ -1134,6 +1454,85 @@ if (page) {
        'the sub-line does not carry the exercise title');
     ok($('exampleSelect').style.display === 'none', 'the example picker is still visible');
     return h1.textContent.replace(/\s+/g, ' ').trim();
+  });
+
+  /* ---- the navigation drawer, which replaced the bar's four links ----
+     Every dismissal is exercised on its own, because one working path standing in for
+     another is exactly how the exercise sheet's Escape handler could have gone missing
+     unnoticed; and the backdrop's NEGATIVE case is asserted first, since a handler
+     that ignores ev.target passes the positive one just as well. */
+  check('the menu button opens a drawer, and three things close it', () => {
+    const btn = $('navMenuBtn'), drawer = $('navDrawer'), back = $('navBackdrop');
+    ok(btn && drawer && back, 'the drawer was never built');
+    /* Placement, which the stub can only check because the harness stands up a real
+       .gh-header-inner: the button is the bar's first child, before the logo. */
+    const inner = dom.document.querySelector('.gh-header-inner');
+    ok(inner && inner.children[0] === btn,
+       'the menu button is not the first thing in the header bar');
+    ok(btn.getAttribute('aria-controls') === 'navDrawer', 'the button controls nothing');
+
+    const isOpen = () => drawer.classList.contains('open')
+                      && back.classList.contains('open')
+                      && dom.document.body.classList.contains('nav-open')
+                      && btn.getAttribute('aria-expanded') === 'true';
+    const isShut = () => !drawer.classList.contains('open')
+                      && !back.classList.contains('open')
+                      && !dom.document.body.classList.contains('nav-open')
+                      && btn.getAttribute('aria-expanded') === 'false';
+    ok(isShut(), 'the drawer is open at load');
+
+    btn.click();
+    ok(isOpen(), 'the button did not open the drawer');
+    btn.click();
+    ok(isShut(), 'the button does not close it again');
+
+    btn.click();
+    $('navCloseBtn').click();
+    ok(isShut(), 'the close button does not dismiss it');
+
+    btn.click();
+    /* A bubbled click, the way the exercise sheet's own check does it: the stub does
+       not bubble, so the event is dispatched ON the backdrop carrying the panel as its
+       target - which is exactly what a real click inside the drawer delivers, since the
+       panel is a child of the backdrop. Asserted BEFORE the positive case, or a handler
+       that ignores ev.target passes just as well. */
+    back.dispatch('click', { target: drawer });
+    ok(isOpen(), 'a click inside the drawer closed it');
+    back.dispatch('click', { target: back });
+    ok(isShut(), 'a click on the backdrop does not dismiss it');
+
+    btn.click();
+    dom.document.dispatch('keydown', { key: 'Escape' });
+    ok(isShut(), 'Escape does not dismiss it');
+    return 'button, ✕, backdrop and Escape, with the panel click ignored';
+  });
+
+  check('the drawer lists real destinations, one of them marked current', () => {
+    const rows = [...$('navDrawerList').children];
+    ok(rows.length >= 4, 'only ' + rows.length + ' rows in the drawer');
+    /* Every row resolves to something. A row pointing at a file that is not there is
+       the class of bug this repo has shipped before (an example with no <option>), and
+       it is invisible until someone taps it. The one off-site row is asserted to BE
+       off-site rather than skipped silently. */
+    let external = 0;
+    for (const r of rows) {
+      const href = r.getAttribute('href') || '';
+      ok(href, 'a drawer row has no href at all');
+      if (/^https?:\/\//.test(href)) { external++; continue; }
+      ok(fs.existsSync(path.join(HERE, href)), 'the drawer links to ' + href + ', which does not exist');
+      ok(!href.includes('../'),
+         href + ' walks out of Baerilog/, which is the deployed root - it would 404');
+    }
+    ok(external === 1, external + ' off-site rows, expected exactly 1 (Home)');
+    const cur = rows.filter(r => r.classList.contains('current'));
+    ok(cur.length === 1, cur.length + ' rows marked current');
+    ok(cur[0].getAttribute('href') === 'index.html',
+       'the current row is ' + cur[0].getAttribute('href') + ', not the hub');
+    // Every row carries a glyph, and the head carries the wordmark cloned from the bar.
+    for (const r of rows) ok(r.children[0].innerHTML.indexOf('<svg') === 0, 'a row has no icon');
+    ok(dom.document.querySelector('.nav-drawer-mark').children.length === 1,
+       'the drawer head has no wordmark - the cloneNode of .gh-mark svg failed');
+    return rows.length + ' rows, ' + external + ' off-site, current = index.html';
   });
 
   check('the chrome is there: header bar and a tab strip whose targets all exist', () => {
@@ -1413,11 +1812,32 @@ for (const slug of SYNTH_SLUGS) {
        leading glyph now (`⚙︎ Synthesize` beside `▶ Run Simulation`), and the swap has to
        take the variation selector with it - a `⏲︎` left carrying the gear's U+FE0E
        would render differently from Run's `⏲` for no reason anyone could see in the
-       source. */
+       source.
+
+       The press runs the synthesis synchronously, so by the time the label is read it
+       already reflects the OUTCOME - which is why the expectation is keyed on starterOk
+       rather than accepting any of the three forms. On a page whose design is outside the
+       synthesizer's subset the only correct answer is the busy form of the error label,
+       and a blanket OR of all three would pass whatever happened. The error wording is
+       read out of app.js rather than restated, since practice-synth.js reads it from
+       there too and a copy here could drift from both. */
+    const appSrcForLabel = fs.readFileSync(path.join(HERE, 'app.js'), 'utf8');
+    const errM = /RUN_LABEL_ERROR = '([^']*)'/.exec(appSrcForLabel);
+    ok(errM, 'app.js no longer defines RUN_LABEL_ERROR for the error state to use');
+    const errLabel = errM ? errM[1] : '';
     btn.dispatch('click');
     ok(btn.hasAttribute('data-busy'), 'a press did not mark Synthesize busy');
-    ok(btn.textContent === busyOf(freshLabel) || btn.textContent === busyOf(reLabel(freshLabel)),
-       'the busy label is wrong: ' + JSON.stringify(btn.textContent));
+    const wantBusy = starterOk
+      ? [busyOf(freshLabel), busyOf(reLabel(freshLabel))]
+      : [busyOf(errLabel)];
+    ok(wantBusy.indexOf(btn.textContent) >= 0,
+       'the busy label is wrong: ' + JSON.stringify(btn.textContent)
+       + ' (wanted one of ' + JSON.stringify(wantBusy) + ')');
+    /* And the error state is on exactly the pages whose design cannot synthesize - the
+       label and the attribute are two encodings of one bit, so neither can move alone. */
+    ok(btn.hasAttribute('data-error') === !starterOk,
+       'data-error ' + (starterOk ? 'is set on a page that synthesizes'
+                                  : 'is missing after a failed synthesis'));
     p.dom.window.flushTimers();
     ok(!btn.hasAttribute('data-busy'), 'the hold expired without clearing Synthesize');
 
@@ -1450,8 +1870,15 @@ for (const slug of SYNTH_SLUGS) {
        Console. Asserted here rather than assumed - a card revealed empty, or revealed
        with the previous design's netlist, is the failure this rule exists to prevent. */
     ok(!api.cardsShown(), 'a failed synthesis revealed the cards anyway');
-    ok(btn.textContent === freshLabel,
-       'a failed synthesis relabelled the button to ' + JSON.stringify(btn.textContent));
+    /* The button reports the failure rather than resetting to the fresh verb. It used to
+       say `freshLabel` here - "a failed synthesis puts the verb back with the cards" -
+       which was true of the two-state label and is superseded by the third state: the
+       cards still go away, but a button that offers `Synthesize` after a synthesis that
+       just failed says nothing about what happened, which is the whole reason Run gained
+       this state first. The wording is app.js's, read above rather than restated. */
+    ok(btn.textContent === errLabel,
+       'a failed synthesis did not report it: ' + JSON.stringify(btn.textContent));
+    ok(btn.hasAttribute('data-error'), 'a failed synthesis left the button unmarked');
     ok($('card-netlist').style.display === 'none', 'the netlist card was revealed by an error');
     ok($('netlistSplitRow').style.display === 'none', 'the viewer was revealed by an error');
     ok(!tabs().includes('tabNetlist') && !tabs().includes('tabNetlistView'),
@@ -1492,41 +1919,140 @@ for (const slug of SYNTH_SLUGS) {
     return 'each button keeps to its own half';
   });
 
-  check(name('both Console sections survive the other button, in order'), () => {
+  check(name('the Console reads oldest at the top, whichever button ran last'), () => {
     /* One box, two owners, and only Run clears it - so the synthesis section has to be
        re-printed after a Run or it would silently vanish while its netlist stayed on
-       screen. Asserted by ORDER too: simulation output first, synthesis below its rule,
-       which is what makes the box readable as two sections rather than a mixture. */
+       screen. What is asserted beyond that is the ORDER, and the rule is RECENCY: the
+       newest thing is at the bottom, each section under its own rule.
+
+       This check used to pin the opposite - simulation always above, synthesis always
+       below - which was not a decision so much as a consequence of how the two were
+       printed: Synthesize appends, while Run clears the box and this section is
+       re-printed afterwards, so an older synthesis always landed under a newer run. That
+       is the confusion the ordering fixes, and this check moves with it. */
+    const at = (s, r) => s.indexOf(r);
     $('synthBtn').click();
     $('runBtn').click();
-    const text = p.app.consoleBox.textContent || '';
-    const rule = text.indexOf('— synthesis —');
-    ok(rule >= 0, 'the synthesis section did not survive a Run');
-    ok(/synthesized top module|error: /.test(text.slice(rule)),
+    let text = p.app.consoleBox.textContent || '';
+    const synthRule = at(text, '— synthesis —'), simRule = at(text, '— simulation —');
+    ok(synthRule >= 0, 'the synthesis section did not survive a Run');
+    ok(simRule >= 0, 'the run printed no section rule of its own');
+    ok(synthRule < simRule,
+       'Synthesize ran first, so its section belongs ABOVE the run - the older log is '
+       + 'still under the newer output');
+    ok(/synthesized top module|error: /.test(text.slice(synthRule)),
        'the section survived without its log');
-    /* Something of Run's is above the rule, and where the testbench prints checks they
-       are what is above it. The distinction matters: cpu-16bit's testbench prints nothing
-       deliberately (the Scoreboard is its checker), so requiring a PASS/FAIL line there
-       would fail on a page that is behaving exactly as documented. */
-    ok(rule > 0, 'the synthesis section is at the very top, with no simulation output above it');
+    /* Where the testbench prints checks, they are the run's own output and so must sit
+       under the run's rule. cpu-16bit prints nothing deliberately (the Scoreboard is its
+       checker), so this only applies where there is something to place. */
     const firstCheck = text.search(/\bPASS\b|\bFAIL\b/);
-    if (firstCheck >= 0) {
-      ok(firstCheck < rule, 'the simulation output is not above the synthesis rule');
-    }
-    ok((text.match(/— synthesis —/g) || []).length === 1,
-       'the synthesis section was printed twice');
-    // and re-synthesizing replaces its own section rather than appending a second one,
-    // leaving everything above the rule byte-identical - which is a stronger and
-    // slug-independent way of saying "it did not wipe the simulation output" than looking
-    // for a PASS line that cpu-16bit's testbench deliberately never prints.
-    const above = text.slice(0, rule);
+    if (firstCheck >= 0) ok(firstCheck > simRule, 'check output is not under the run\'s rule');
+    ok((text.match(/— synthesis —/g) || []).length === 1, 'the synthesis section printed twice');
+
+    /* Now the other order, from the same page: Synthesize again and it becomes the newest
+       thing, so it moves to the BOTTOM - and the run's output above it is untouched,
+       which is a stronger and slug-independent way of saying "it did not wipe the
+       simulation" than looking for a PASS line cpu-16bit never prints. */
+    const runBlock = text.slice(simRule);
     $('synthBtn').click();
-    const again = p.app.consoleBox.textContent || '';
-    ok((again.match(/— synthesis —/g) || []).length === 1,
+    text = p.app.consoleBox.textContent || '';
+    const synth2 = at(text, '— synthesis —'), sim2 = at(text, '— simulation —');
+    ok((text.match(/— synthesis —/g) || []).length === 1,
        'a second Synthesize left two sections in the console');
-    ok(again.slice(0, again.indexOf('— synthesis —')) === above,
-       'Synthesize changed the simulation output above its own section');
-    return 'simulation above, synthesis below, one of each';
+    ok(sim2 >= 0 && sim2 < synth2,
+       'Synthesize ran last, so its section belongs BELOW the run it followed');
+    ok(text.slice(sim2, synth2) === runBlock.slice(0, synth2 - sim2),
+       'Synthesize changed the run output above its own section');
+    return 'oldest at the top: synth-then-run puts synthesis first, run-then-synth last';
+  });
+
+  /* Clear discards what the Console shows and everything that speaks for it. The half worth
+     a test is what must NOT come back: the synthesis section is remembered in memory and
+     re-printed after every Run, so a Clear that only emptied the box would be undone by the
+     next Run - which is the kind of half-working that reads as a bug in Run. */
+  check(name('Clear empties the Console, silences the pill, and does not come back'), () => {
+    const c = boot(slug);
+    const cc = id => c.dom.document.getElementById(id);
+    cc('synthBtn').click();
+    cc('runBtn').click();
+    const pill = cc('exVerdict');
+    ok((c.app.consoleBox.textContent || '').length > 0, 'nothing in the console to clear');
+    const btn = cc('consoleClearBtn');
+    ok(btn, 'the Console header carries no Clear button');
+    btn.click();
+    const after = c.app.consoleBox.textContent || '';
+    ok(!/— synthesis —|— simulation —/.test(after),
+       'Clear left a section behind: ' + JSON.stringify(after.slice(0, 80)));
+    ok(/Click Run to simulate/.test(after),
+       'Clear left the box empty rather than putting its placeholder back');
+    /* Silent, not "no checks reported" - that is a real verdict about a run that printed
+       nothing, and claiming it for a console nobody has run into is the distinction
+       refreshVerdict already draws for a page before its first Run. */
+    ok(!pill.textContent, 'the pill still speaks after Clear: ' + JSON.stringify(pill.textContent));
+    // and a Run afterwards does not resurrect the synthesis section
+    cc('runBtn').click();
+    const rerun = c.app.consoleBox.textContent || '';
+    ok(!/— synthesis —/.test(rerun), 'a Run after Clear brought the synthesis log back');
+    ok(/— simulation —/.test(rerun), 'the Run printed no section of its own');
+    return 'console, pill and remembered log all gone; a later Run brings none of it back';
+  });
+
+  /* The cell/area report, and what is asserted is that it is the SAME report synthesis.html
+     logs rather than a lookalike. Recomputed here from the source through the slice's own
+     buildAreaReport and required to appear verbatim: that catches the app reformatting it,
+     rounding it, or growing a second implementation - which is the real risk, since two
+     apps computing an area independently is two answers for one design. */
+  check(name('the Console reports cell counts and area, from the shared function'), () => {
+    if (!solutionOk) return "n/a - the reference solution is outside the synthesizer's subset";
+    const q = boot(slug);
+    const qq = id => q.dom.document.getElementById(id);
+    const sol = fs.readFileSync(path.join(HERE, 'solutions', slug + '.v'), 'utf8');
+    q.app.loadFullSource(sol);
+    qq('synthBtn').click();
+    const text = q.app.consoleBox.textContent || '';
+
+    const S = q.dom.window.SYNTH;
+    ok(typeof S.buildAreaReport === 'function',
+       'synth.js does not export buildAreaReport, so the page cannot share synthesis.html\'s');
+    const want = S.buildAreaReport(S.synthesizeAll(api.designOnly(sol).src));
+    ok(text.indexOf(want) >= 0,
+       'the Console does not carry the report verbatim - it was reformatted or recomputed:\n'
+       + JSON.stringify(want.slice(0, 120)));
+
+    /* Internally consistent, so the numbers are readable as a set rather than four
+       independent claims: the cell total is its own two halves, and the area total is the
+       per-gate areas it just listed. */
+    const num = (re) => { const m = want.match(re); return m ? parseFloat(m[1]) : NaN; };
+    const cells = num(/Number of cells:\s+(\d+)/);
+    const comb = num(/Number of combinational cells:\s+(\d+)/);
+    const seq = num(/Number of sequential cells:\s+(\d+)/);
+    const total = num(/Total cell area:\s+([\d.]+)/);
+    ok(cells === comb + seq,
+       cells + ' cells is not ' + comb + ' combinational + ' + seq + ' sequential');
+    const areas = want.slice(want.indexOf('Approx. area'), want.indexOf('Total cell area:'))
+                      .match(/[\d.]+$/gm) || [];
+    const summed = areas.reduce((a, s) => a + parseFloat(s), 0);
+    ok(Math.abs(summed - total) < 0.01,
+       'the per-gate areas sum to ' + summed.toFixed(2) + ', not the stated ' + total.toFixed(2));
+
+    /* It enters the box the verdict pill counts over, so it must not carry those words -
+       the rule every synthesis line is held to. */
+    ok(!/\bPASS\b|\bFAIL\b/.test(want), 'the area report contains PASS or FAIL');
+    /* The one weight in the model that is a DERIVATION rather than an estimate: this app's
+       own `fa` primitive is built from 2 XOR2 + 2 AND2 + 1 OR2, so its area is composed from
+       those same weights instead of being a second unrelated guess. That is a claim the
+       numbers cannot check - changing it moves the per-gate area and the total together, so
+       the consistency assertions above stay happy - and it is exactly what a mutant setting
+       `a.fa = 7` does. Asserted against the source, which is where the invariant lives. */
+    const engine = fs.readFileSync(path.join(HERE, 'synth.js'), 'utf8');
+    ok(/a\.fa\s*=\s*2 \* a\.xor \+ 2 \* a\.and \+ 1 \* a\.or;/.test(engine),
+       "the FA area is no longer composed from this app's own fa primitive (2 XOR + 2 AND + "
+       + '1 OR), so it is a second guess that can disagree with the cell it describes');
+    /* And the old node/net count is gone: it described the diagram of one module while
+       this counts the whole design, and the two disagreed with nothing explaining why. */
+    ok(!/nodes and \d+ nets/.test(text),
+       'the summary still reports nodes/nets beside the report\'s own cell count');
+    return cells + ' cells, area ' + total.toFixed(2) + ', verbatim from the slice';
   });
 
   check(name('an edit marks the netlist stale without clearing it'), () => {
@@ -1578,6 +2104,26 @@ for (const slug of SYNTH_SLUGS) {
        carrying either word would silently move a learner's score. */
     ok(!/\bPASS\b|\bFAIL\b/.test(after), 'the synthesis log says PASS or FAIL: ' + after.slice(0, 80));
     return after.split('\n')[0].slice(0, 40) + '…';
+  });
+
+  /* designOnly and the two editors must cut the SAME document at the same place, whether the
+     marker sits alone on its line or is embedded in one. It reads app.js's tbMarkerIn rather
+     than restating the pattern, and this is what pins that: a line-anchored copy here would
+     return the whole file for the embedded form, so the netlist card would describe a design
+     that included its own testbench while the editors showed them split. */
+  check(name('the design cut agrees with the editor split, marker embedded or not'), () => {
+    const design = 'module d(input a, output y);\nassign y = a;\nendmodule';
+    const tb = 'module tb;\ninitial begin #5 $finish; end\nendmodule\n';
+    const forms = { 'own line': design + '\n// ======== TESTBENCH ========\n' + tb,
+                    'embedded': design + '// ======== TESTBENCH ========' + tb };
+    for (const [what, doc] of Object.entries(forms)) {
+      const cut = api.designOnly(doc);
+      ok(cut.dropped > 0, what + ': designOnly cut nothing');
+      ok(!/TESTBENCH/.test(cut.src), what + ': the marker survived the cut');
+      ok(!/module\s+tb\b/.test(cut.src), what + ': module tb survived the cut');
+      ok(cut.src.indexOf('assign y = a;') >= 0, what + ': the cut ate part of the design');
+    }
+    return 'both forms cut to the design alone';
   });
 
   check(name('the testbench never reaches the synthesizer'), () => {
@@ -2078,6 +2624,136 @@ for (const slug of SYNTH_SLUGS) {
     return pass + ' checks pass as gates; the starter fails ' + count(br, 'FAIL')
          + (claimed.length ? '; sheet names ' + claimed.join('/') : '');
   });
+
+  /* And the same thing from the BUTTON rather than from the harness. The check above
+     proves the netlist is the design by re-running it through the engine directly; this
+     one proves the page can do it - that Run Gate-level Simulation feeds the card's own
+     text to the same panels, and that what lands there is the netlist's result and not
+     the RTL's. The two are worth having separately: the first would pass with no button
+     at all, and the second would pass if the button quietly re-ran the design. */
+  check(name('Run Gate-level Simulation runs the netlist, in the RTL run\'s panels'), () => {
+    if (!solutionOk) return "n/a - the reference solution is outside the synthesizer's subset";
+    const q = boot(slug);
+    const $$ = id => q.dom.document.getElementById(id);
+    const sol = fs.readFileSync(path.join(HERE, 'solutions', slug + '.v'), 'utf8');
+    q.app.loadFullSource(sol);
+    $$('synthBtn').click();
+    ok($$('card-netlist').style.display !== 'none', 'the solution did not synthesize cleanly');
+    const btn = $$('gateRunBtn');
+    ok(btn, 'the netlist card carries no Run Gate-level Simulation button');
+    /* The verb is DERIVED from Run's own label, so the two buttons cannot end up
+       describing different actions - the rule RUN_LABEL_AGAIN follows in app.js. */
+    const runLabel = q.app.runLabels()[0];
+    ok(btn.textContent === runLabel.replace(/Simulation\s*$/, '') + 'Gate-level Simulation',
+       'the button reads ' + JSON.stringify(btn.textContent) + ' against Run\'s '
+       + JSON.stringify(runLabel));
+
+    $$('runBtn').click();
+    const rtl = q.app.consoleBox.textContent || '';
+    const rtlSignals = Object.keys(q.app.result().signals);
+    btn.click();
+    const gate = q.app.consoleBox.textContent || '';
+    const gateSignals = Object.keys(q.app.result().signals);
+    ok(q.app.result() && q.app.result().finished,
+       'the gate-level run did not reach $finish');
+    /* It says which design the panels are showing, under its own section rule - one set of
+       panels means a gate-level run REPLACES the behavioural one, and a waveform of a
+       design the reader cannot see with nothing saying so is the one reading of this page
+       that would mislead.
+
+       PLACEMENT, not just presence: a first version of this asserted the rule existed, and
+       that passed while the rule sat at the very top of the box with the whole synthesis
+       log between it and the output it was labelling - which is what a reader actually
+       reported. Both noteRun and renderSynthSection insert at the TOP, so the order of the
+       two calls decides which ends up higher, and nothing but position can see that. */
+    ok(/— simulation —/.test(rtl) && !/— gate-level simulation —/.test(rtl),
+       'the behavioural run is unlabelled, or claims to be gate-level');
+    const rows = Array.from(q.app.consoleBox.children).map(el => (el.textContent || '').trim());
+    const rowAt = re => rows.findIndex(r => re.test(r));
+    const gateRule = rowAt(/^— gate-level simulation —$/);
+    const synthRule = rowAt(/^— synthesis —$/);
+    const firstOut = rowAt(/\bPASS\b|\bFAIL\b|^Simulation finished/);
+    ok(gateRule >= 0, 'the Console does not mark the gate-level section');
+    ok(synthRule >= 0 && synthRule < gateRule,
+       'the synthesis section ran first, so it belongs ABOVE the gate-level rule (synthesis at '
+       + synthRule + ', gate rule at ' + gateRule + ')');
+    ok(firstOut > gateRule,
+       'the gate-level rule is not above its own output - row ' + gateRule + ' of ' + rows.length
+       + ', output starts at ' + firstOut);
+    /* And the line about how the netlist was assembled belongs to that section, directly
+       under its rule - it used to be logged after the run, which left it stranded at the
+       very bottom, below the simulation output it was introducing. */
+    ok(/replaced by gates/.test(rows[gateRule + 1] || ''),
+       'the "replaced by gates" note is not under the gate-level rule: '
+       + JSON.stringify(rows[gateRule + 1] || ''));
+    /* The tally is the netlist's own. On a page whose testbench prints checks they must
+       pass as gates; where it prints nothing (cpu-16bit) the claim is that it ran at all
+       and is still silent - a gate-level version that started printing would mean the
+       page had quietly acquired a second checker. */
+    const tally = (s, w) => (s.match(new RegExp('\\b' + w + '\\b', 'g')) || []).length;
+    ok(tally(gate, 'FAIL') === 0, 'the solution\'s netlist failed ' + tally(gate, 'FAIL') + ' checks');
+    ok(tally(gate, 'PASS') === tally(rtl, 'PASS'),
+       'gates report ' + tally(gate, 'PASS') + ' passes against the RTL\'s ' + tally(rtl, 'PASS'));
+    /* THE assertion, and the tallies above cannot stand in for it: a correct netlist
+       passes the same checks as the design it came from, so on every clean page the two
+       counts AGREE - which is exactly what a button that quietly re-ran the RTL would
+       also produce. Two mutants proved that, surviving a first version of this check that
+       compared only the tallies.
+
+       What tells the two runs apart is the SIGNAL SET. A netlist instantiates cells, so it
+       carries nets the behavioural design has no equivalent of - the synthesizer's own
+       `w_*` wires and `u_*` cell instances. Re-running the design would leave the two sets
+       identical. */
+    const gateOnly = gateSignals.filter(n => rtlSignals.indexOf(n) < 0);
+    ok(gateOnly.length > 0,
+       'the gate-level run produced the same ' + rtlSignals.length + ' signals as the RTL run, '
+       + 'so what ran was the design and not the netlist');
+    /* It counts as a run on this page - the pill, the tab strip, the first-run unfold.
+       Asserted on a page where the gate-level run is the ONLY run, because after a Run
+       `hasRun` is already true and the claim would hold with nothing calling it: that is
+       precisely how a first version of this passed with PRACTICE_API.noteRun deleted. */
+    const v = boot(slug);
+    const vv = id => v.dom.document.getElementById(id);
+    v.app.loadFullSource(sol);
+    vv('synthBtn').click();
+    ok(!v.dom.window.PRACTICE_API.hasRun(), 'the page counted a run before either button');
+    vv('gateRunBtn').click();
+    ok(v.dom.window.PRACTICE_API.hasRun(),
+       'a gate-level run did not count as a run, so the pill and the strip never heard about it');
+    for (const id of ['card-wave', 'card-hierarchy']) {
+      ok(!vv(id).classList.contains('collapsed'),
+         id + ' is still folded after a gate-level run');
+    }
+    return tally(gate, 'PASS') + ' checks pass from the button; ' + gateOnly.length
+         + ' cell nets the RTL run has not, so it really is the netlist';
+  });
+
+  /* Two refusals, and the reason they are refusals rather than best-effort runs: the
+     button's whole claim is that it runs what THIS CARD shows. Once the design has moved
+     on, the card says so itself (the stale band), and running the old netlist anyway
+     would produce a result about hardware that no longer corresponds to anything on
+     screen - while silently re-synthesizing would make a Run button report synthesis
+     errors. So it declines, in the Console, where every other refusal here is said. */
+  check(name('a stale netlist refuses to run, and runs nothing'), () => {
+    if (!solutionOk) return "n/a - the reference solution is outside the synthesizer's subset";
+    const q = boot(slug);
+    const $$ = id => q.dom.document.getElementById(id);
+    q.app.loadFullSource(fs.readFileSync(path.join(HERE, 'solutions', slug + '.v'), 'utf8'));
+    $$('synthBtn').click();
+    $$('gateRunBtn').click();
+    const before = q.app.result();
+    ok(before && before.finished, 'the first gate-level run did not happen');
+    // an edit to the DESIGN marks the netlist stale
+    $$('codeInput').dispatch('input');
+    ok($$('netlistStale').style.display !== 'none', 'the edit did not mark the netlist stale');
+    q.app.consoleBox.innerHTML = '';
+    $$('gateRunBtn').click();
+    const txt = q.app.consoleBox.textContent || '';
+    ok(/press Synthesize/.test(txt),
+       'a stale netlist did not say why it refused: ' + JSON.stringify(txt.slice(0, 120)));
+    ok(!/GATE-LEVEL run/.test(txt), 'it ran anyway, on a netlist the card marks as stale');
+    return 'refused while stale, and said to press Synthesize';
+  });
 }
 
 /* ---- the stylesheet ----
@@ -2087,6 +2763,20 @@ for (const slug of SYNTH_SLUGS) {
    file consumes the shared tokens rather than starting its own palette, which is how
    a second source of truth would creep back in. Repo-wide colour and token checks
    live in tools/check_theme.py. */
+/* The section rules are spacing, which no headless check can see and which is the whole
+   reason the Console reads as sections rather than one stream - so it is asserted as CSS
+   TEXT, the way the netlist viewer's own invisible rules are. The first-child reset matters
+   as much as the margin: without it the topmost section is pushed off its own box. */
+check('the Console section rules are spaced, and the first one is not', () => {
+  const css = fs.readFileSync(path.join(HERE, 'practice.css'), 'utf8');
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');   // comments name the selectors too
+  ok(/\.console-rule\s*\{[^}]*margin-top:\s*[1-9]/.test(bare),
+     'practice.css gives .console-rule no top margin, so the sections run together');
+  ok(/\.console-rule:first-child\s*\{[^}]*margin-top:\s*0/.test(bare),
+     'the first section is not exempted, so the box opens with a gap above its own text');
+  return 'spaced, with the first section flush';
+});
+
 check('practice.css consumes the shared tokens and defines none of its own', () => {
   const css = fs.readFileSync(path.join(HERE, 'practice.css'), 'utf8');
   const appCss = fs.readFileSync(path.join(HERE, 'app.css'), 'utf8');
@@ -2221,6 +2911,275 @@ check('no iOS palette colour survives in practice.css', () => {
   return LEGACY.length + ' legacy colours, none present';
 });
 
+/* ---- the mobile block, which is four claims a headless run cannot make ----
+   Layout at 390px is exactly what neither the stub DOM nor (this session) headless
+   Chrome can see, so the load-bearing parts of practice.css's 760px block are
+   asserted as CSS TEXT, the way the viewer's four rules and the strip Reset's
+   geometry already are. Each of these is invisible in the markup and wrong on a
+   phone: without the strip's overflow the DOCUMENT is ~900px wide and the sticky
+   header renders narrower than the page under it; without 16px on the focusable
+   controls iOS Safari zooms the whole page on the first tap in the editor; a
+   font-size on the textarea but not the gutter slides the line numbers off their
+   own lines; and a column count that moves without its row count silently starts a
+   third column in a two-column grid. Comments are stripped first - this block
+   explains all four at length and names the properties in prose, which is how a
+   regex over the raw file passes while comparing nothing. */
+/* ---- a card can shrink, so no one panel can widen the page ----
+   Measured on cpu-16bit at a 320px viewport after a synthesis: the document was
+   19,628px wide, and this one property took it to 812px (the rest being the tab
+   strip). It is asserted as text because the stub DOM has no layout and headless
+   Chrome aborts in this environment, and it is worth asserting at all because the
+   rule is invisible in the markup, fixes a symptom that looks like something else
+   entirely ("the header is narrower than the page"), and is the single line whose
+   absence makes every panel's own overflow:auto unreachable.
+
+   Read out of app.css rather than practice.css: the rule lives in the SHARED block
+   now, so all six apps have it, and app.css is the copy these pages actually load.
+   tools/check_theme.py is what holds that block identical to style.css. */
+/* ---- the drawer's own CSS, four claims the stub cannot see ----
+   The stub has no layout and no cascade, and headless Chrome aborts in this
+   environment, so these are asserted as text - the same shape as the netlist viewer's
+   four rules and the strip Reset's geometry. Each is invisible in the markup and
+   wrong on screen: with no transform the drawer sits open across the page from the
+   moment it loads; with no transition it appears instead of sliding, which is the
+   whole request; hiding `.gh-nav` rather than its links takes the cloud account
+   control with it; and keeping the header's unconditional invert on the cloned
+   wordmark paints it white on a white panel. */
+/* ---- the drawer's links from every directory it is pasted into ----
+   tools/navmenu.js is now the canonical builder for all six apps, and three of them -
+   emulator, verify, workbench - live one level ABOVE Baerilog/. A bare filename does not
+   resolve from there, and each of those three carried a single `&larr; Baerilog` link
+   back to the hub which the shared block now hides: get this wrong and they have no way
+   back at all. So the builder is driven here at four pathnames, which is the only place
+   in this repo that can run it (check_theme.py proves the copies are identical; this
+   proves what the copy DOES). */
+check('the drawer resolves from Baerilog/ and from the three directories above it', () => {
+  const src = fs.readFileSync(path.join(HERE, '..', 'tools', 'navmenu.js'), 'utf8');
+  const region = src.slice(src.indexOf('/* >>> NAV MENU'), src.indexOf('/* <<< NAV MENU */'));
+  ok(region.length > 500, 'no NAV MENU region in tools/navmenu.js');
+
+  const at = (pathname) => {
+    const dom = makeDom();
+    const hdr = dom.mk('__h', 'header');
+    hdr.classList.add('gh-header');
+    const inner = dom.mk('__i', 'div', hdr);
+    inner.classList.add('gh-header-inner');
+    const mark = dom.mk('__m', 'a', inner);
+    mark.classList.add('gh-mark');
+    dom.mk('__ms', 'svg', mark);
+    // one simple selector at a time, which is all the builder asks for
+    dom.document.querySelector = (sel) => (sel === '.gh-header-inner' ? inner
+                                        : sel === '.gh-mark' ? mark : null);
+    dom.window.location = { pathname };
+    new Function('window', 'document', region)(dom.window, dom.document);
+    const rows = [...dom.document.getElementById('navDrawerList').children];
+    return {
+      hrefs: rows.map(r => r.getAttribute('href')),
+      current: rows.filter(r => r.classList.contains('current')).map(r => r.textContent),
+    };
+  };
+
+  const inside = at('/Baerilog/cpu-16bit.html');
+  ok(inside.hrefs.includes('index.html') && inside.hrefs.includes('simulator.html'),
+     'inside Baerilog/ the rows are not bare filenames: ' + inside.hrefs.join(' '));
+  ok(inside.current.join() === 'Practice',
+     'an exercise page marks ' + (inside.current.join() || '(nothing)') + ', not Practice');
+  ok(at('/Baerilog/simulator.html').current.join() === 'Simulator',
+     'the simulator does not mark its own row');
+
+  for (const dir of ['emulator', 'verify', 'workbench']) {
+    const out = at('/' + dir + '/index.html');
+    const local = out.hrefs.filter(h => !/^https?:/.test(h));
+    ok(local.every(h => h.indexOf('../Baerilog/') === 0),
+       'from ' + dir + '/ the rows do not reach Baerilog/: ' + local.join(' '));
+    ok(out.current.length === 0,
+       'from ' + dir + '/ the drawer marks ' + out.current.join() + ', but none of its rows is this app');
+    ok(out.hrefs.some(h => /^https?:/.test(h)), 'the off-site Home row was prefixed');
+  }
+  return 'bare inside, ../Baerilog/ from the three outside, current row per page';
+});
+
+check('the drawer slides, and the bar keeps its account control', () => {
+  /* app.css, not practice.css: the drawer is in the SHARED block now, so all six apps
+     have one reading of it and tools/navmenu.py pastes one builder into each. What is
+     still practice-only (the tab strip, the sheet) is checked from practice.css above. */
+  const css = fs.readFileSync(path.join(HERE, 'app.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  /* EVERY rule carrying this selector, concatenated - not the first one. The shared
+     block legitimately declares a selector twice (it lays `.gh-nav a` out from when
+     those links were visible and then hides them; `.gh-header-inner` is capped and then
+     uncapped), and the cascade settles it. A first-match helper made this check report
+     three intact rules as missing, which is the same way the editor-rule check failed
+     when the 16px block was added: a CSS-text check has to ask "does any rule say this"
+     or "does none", never "does the first". */
+  const rule = (sel) => {
+    const re = new RegExp('(?:^|[,}\\s])' + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                          + '\\s*\\{([^}]*)\\}', 'g');
+    let m, out = '';
+    while ((m = re.exec(css))) out += m[1] + ';';
+    return out;
+  };
+  const closed = rule('.nav-drawer');
+  ok(/transform:\s*translateX\(-100%\)/.test(closed),
+     '.nav-drawer is not translated off-screen, so it covers the page at load');
+  ok(/transition:[^;]*transform/.test(closed),
+     '.nav-drawer has no transform transition, so it appears rather than slides');
+  /* visibility in the transition, not just the state: without it a closed drawer is
+     still focusable and clickable off-screen, and with it in the state alone the
+     panel vanishes before it has finished sliding out. */
+  ok(/visibility:\s*hidden/.test(closed) && /transition:[^;]*visibility/.test(closed),
+     '.nav-drawer does not transition visibility, so it is reachable while closed');
+  ok(/transform:\s*translateX\(0\)/.test(rule('.nav-drawer.open')),
+     '.nav-drawer.open does not slide in');
+  ok(/transition:\s*none/.test(rule('.nav-drawer, .nav-backdrop')),
+     'no prefers-reduced-motion rule, so the page moves for someone who asked it not to');
+
+  // the links go, the nav stays - or cloud-ui.js's account control goes with it
+  ok(/display:\s*none/.test(rule('.gh-nav a')), 'the bar still shows the four links');
+  /* And the claim about the nav itself is that NOTHING hides it - not that no rule
+     mentions it, which the shared block must (it lays the nav out). */
+  ok(!/display:\s*none/.test(rule('.gh-nav')),
+     'a rule hides .gh-nav itself, which takes the cloud account control out of the bar');
+  ok(/display:\s*none/.test(rule('.gh-mark span')), 'the Baerilog wordmark text is still shown');
+
+  // the cloned logo on a light surface drops the header's unconditional invert
+  ok(/filter:\s*none/.test(rule('.nav-drawer-mark svg')),
+     "the drawer's wordmark keeps the header's invert, so it is white on white");
+  /* The bar spans the window, so the button and logo sit at its left edge and the
+     account control at its right. Three claims, because each is a different way for
+     that to come apart: without `max-width: none` the whole row is back in the 1280px
+     column (575px in, on a 2430px window); with the button absolutely positioned it
+     leaves the flow and the logo slides under it on a phone; and the account control
+     is carried right by `.gh-nav`'s own auto margin in the SHARED block, so if that
+     goes the pill lands beside the logo instead. */
+  ok(/max-width:\s*none/.test(rule('.gh-header-inner')),
+     'the header row is still capped at the content column, so the button is not at the '
+     + 'window edge');
+  ok(!/position:\s*absolute/.test(rule('.gh-menu-btn')),
+     'the button is positioned out of the flow, so the logo no longer moves with it');
+  const shared = fs.readFileSync(path.join(HERE, 'app.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const navRule = /\.gh-nav\s*\{([^}]*)\}/.exec(shared);
+  ok(navRule && /margin-left:\s*auto/.test(navRule[1]),
+     'app.css no longer pushes .gh-nav right, so the account control sits next to the logo');
+  // and the current row is marked twice over, the rule every state here follows
+  const cur = rule('.nav-row.current');
+  ok(/background:/.test(cur) && /box-shadow:\s*inset/.test(cur),
+     '.nav-row.current has one encoding, not two (a fill and an inset accent rule)');
+  return 'slides, reduced-motion honoured, nav kept, logo un-inverted, bar full width';
+});
+
+check('a card is allowed to shrink, so no panel can force the grid wide', () => {
+  const css = fs.readFileSync(path.join(HERE, 'app.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  /* Every @media block removed, so what is left is what applies at EVERY width - the
+     claim being made. Slicing at the first `@media` is what the first draft did, and
+     since app.css's first one is the prefers-color-scheme query near the top, `base`
+     was the first 80 lines and the check reported the rule missing while all three of
+     its mutants "passed" against nothing. */
+  const base = css.replace(/@media[^{]*\{(?:[^{}]*\{[^}]*\})*[^}]*\}/g, '');
+  ok(!/@media/.test(base), 'the @media strip left one behind, so this proves nothing');
+  /* By exact selector, not by substring: `.card\s*\{` also matches the TAIL of
+     `.split-row > .card {`, so a substring test passed with the `.card` rule deleted -
+     two of the three mutants survived on that alone. */
+  const declares = (sel) => {
+    const re = /([^{}]+)\{([^}]*)\}/g;
+    let m;
+    while ((m = re.exec(base))) {
+      const list = m[1].split(',').map(s => s.trim().replace(/\s+/g, ' '));
+      if (list.includes(sel) && /min-width:\s*0/.test(m[2])) return true;
+    }
+    return false;
+  };
+  ok(declares('.card'),
+     'app.css does not give .card min-width: 0 at every width, so one wide panel '
+     + 'widens every card');
+  ok(declares('.split-row > .card'),
+     '.split-row > .card has no floor of its own, so the flex items keep theirs');
+  return 'both grid and flex items may shrink, at every width';
+});
+
+check('the 760px layer scrolls the strip, defeats iOS zoom and keeps the grid square', () => {
+  /* TWO sources, because the layer is split by ownership and the split is the point:
+     everything about the shared chrome (the grid, a card header, the split row, the
+     header bar, every focusable control and every read-only dark panel) is in the
+     SHARED block so all six apps get one reading of it, while the tab strip, the
+     exercise sheet and the run-length field are the practice site's own. A check
+     reading only one file would pass while half the layer had been deleted. */
+  const read = (f) => fs.readFileSync(path.join(HERE, f), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const inside = (css, what) => {
+    const at = css.indexOf('@media (max-width: 760px)');
+    ok(at >= 0, what + ' has no 760px block, so nothing there is mobile-aware');
+    return css.slice(css.indexOf('{', at) + 1);   // inside the @media, so the first
+                                                  // rule scanned is a real one
+  };
+  const shared = inside(read('app.css'), 'app.css');
+  const own = inside(read('practice.css'), 'practice.css');
+  const mob = shared + own;
+  /* Every declaration block whose selector LIST carries this selector, concatenated.
+     Matching `sel {` directly is what the first draft did, and it reported `body
+     select is still under 16px` against a rule that sets it - because the focusable
+     controls are deliberately one grouped rule. */
+  const rule = (sel) => {
+    let out = '';
+    const re = /([^{}]+)\{([^}]*)\}/g;
+    let m;
+    while ((m = re.exec(mob))) {
+      const list = m[1].split(',').map(s => s.trim().replace(/\s+/g, ' '));
+      if (list.includes(sel)) out += m[2] + ';';
+    }
+    return out;
+  };
+
+  // 1. one swipeable row, with Reset pinned inside it rather than scrolled away.
+  const tabs = rule('.gh-tabs');
+  ok(/overflow-x:\s*auto/.test(tabs) && /flex-wrap:\s*nowrap/.test(tabs),
+     '.gh-tabs does not scroll at 760px, so the tab strip makes the whole page wide');
+  ok(/position:\s*sticky/.test(rule('.ex-reset')),
+     'Reset is not pinned, so the destructive control scrolls out of the strip');
+
+  // 2 & 3. one size across every dark panel, and the editor pair moving together.
+  const ta = /font-size:\s*(\d+)px/.exec(rule('body .editor-wrap textarea'));
+  ok(ta, 'no rule raises the editor textarea, so iOS zooms the page on the first tap');
+  const size = ta;
+  ok(+size[1] >= 16,
+     'the editor is ' + size[1] + 'px at 760px, so iOS zooms the page on the first tap');
+  /* The gutter has to land on the SAME number, whether or not it shares the rule: it
+     is scroll-synced to the textarea, so a size on one and not the other slides the
+     line numbers off their own lines. */
+  const gut = /font-size:\s*(\d+)px/.exec(rule('body .gutter'));
+  ok(gut && gut[1] === size[1],
+     'the gutter is ' + (gut ? gut[1] + 'px' : 'unset') + ' where the textarea is '
+     + size[1] + 'px, so the line numbers slide off their lines');
+  ['body select', 'body .num-input'].forEach((sel) => {
+    ok(/font-size:\s*1[6-9]px|font-size:\s*[2-9]\dpx/.test(rule(sel)),
+       sel + ' is still under 16px, so focusing it zooms the page');
+  });
+  /* The read-only panels are held to the EDITOR's size rather than to 16 - the claim
+     is that the four dark panels read as one thing, so a change to one has to move
+     the others or this fails. Neither can be focused, so no iOS rule would catch it. */
+  ['body .console-box', 'body .code-out', 'body .asm-listing',
+   'body .trace-listing', 'body table.memory-table'].forEach((sel) => {
+    const got = /font-size:\s*(\d+)px/.exec(rule(sel));
+    ok(got && got[1] === size[1],
+       sel + ' is ' + (got ? got[1] + 'px' : 'unset') + ' where the editors are '
+       + size[1] + 'px, so one dark panel reads as the odd one out');
+  });
+
+  // 4. rows x columns still equals the 36 cells renderModelCard emits.
+  const cmp = /\.compare-grid,[\s\S]*?\{([^}]*)\}/.exec(mob);
+  ok(cmp, 'the Scoreboard grid is not re-shaped, so it overflows the card');
+  const rows = /grid-template-rows:\s*repeat\((\d+)/.exec(cmp[1]);
+  const cols = /grid-template-columns:\s*repeat\((\d+)/.exec(cmp[1]);
+  ok(rows && cols, 'the mobile compare-grid sets one axis without the other');
+  ok(+rows[1] * +cols[1] === 36,
+     'the mobile compare-grid is ' + cols[1] + ' x ' + rows[1] + ' = '
+     + (+rows[1] * +cols[1]) + ' cells, not the 36 renderModelCard emits');
+  return 'strip scrolls, Reset pinned, ' + size[1] + 'px controls, '
+       + cols[1] + ' x ' + rows[1] + ' = 36 cells';
+});
+
 /* ---- cloud progress: the hub badge and the page's pill are one fact ----
    Nothing else in this suite loads the cloud files, and this is the seam where that
    showed: the verdict the hub reads had exactly one writer (a runBtn listener in
@@ -2230,7 +3189,8 @@ check('no iOS palette colour survives in practice.css', () => {
 check('Reset clears the stored verdict, so the hub badge goes with the pill', () => {
   const dom = makeDom();
   const SLUG = 'd-flip-flop';
-  ['codeInput', 'consoleBox', 'runBtn', 'resetBtn', 'exampleSelect', 'fileOpenInput']
+  ['codeInput', 'consoleBox', 'runBtn', 'resetBtn', 'exampleSelect', 'fileOpenInput',
+   'consoleClearBtn']
     .forEach(id => dom.mk(id, 'div'));
   dom.document.getElementById('codeInput').value = 'module dff(input clk); endmodule';
   dom.document.getElementById('consoleBox').textContent = 'PASS a\nPASS b\nFAIL c';
@@ -2275,7 +3235,23 @@ check('Reset clears the stored verdict, so the hub badge goes with the pill', ()
      'Reset threw away the saved source: ' + JSON.stringify(cleared.source));
   ok(badgeFor(dom, SLUG) === 'in progress',
      'the hub still reads ' + badgeFor(dom, SLUG) + ' after a Reset');
-  return 'Run -> 1 failing, Reset -> in progress, source kept';
+
+  /* The Console's Clear button carries the same obligation, and for the same reason: it
+     silences the pill, so a badge still reporting that verdict would be the hub speaking
+     for a Console nobody can see any more. Driven here rather than on a booted page
+     because this is where the cloud layer is wired up at all. */
+  dom.document.getElementById('runBtn').dispatch('click');
+  ok(badgeFor(dom, SLUG) === '1 failing', 'the second Run did not restore the badge');
+  dom.document.getElementById('consoleClearBtn').dispatch('click');
+  const wiped = rec();
+  ok(wiped, 'Clear deleted the row, taking the saved source with it');
+  ok(wiped.verdict === null || wiped.verdict === undefined,
+     'Clear left the verdict as ' + JSON.stringify(wiped.verdict));
+  ok(wiped.source === 'module dff(input clk); endmodule',
+     'Clear threw away the saved source: ' + JSON.stringify(wiped.source));
+  ok(badgeFor(dom, SLUG) === 'in progress',
+     'the hub still reads ' + badgeFor(dom, SLUG) + ' after a Clear');
+  return 'Run -> 1 failing; Reset and Clear -> in progress, source kept';
 });
 
 /* The badge the HUB renders, not the record behind it - index.html owns that rule and
@@ -2490,6 +3466,28 @@ def main():
     lists = re.findall(r"const MODEL_CHECKED = (\[[^\]]*\]);", ENGINE_DRIVER + PAGE_DRIVER)
     if len(set(lists)) != 1:
         print('\nMODEL_CHECKED differs between the two drivers: %s' % ' vs '.join(lists))
+        bad += 1
+
+    # The TESTBENCH marker's pattern exists in four places that cannot share a binding - the two
+    # drivers, simulator.html (which splits the two editors on it) and synthesis.html (which
+    # truncates there) - so they are compared rather than trusted. Two apps disagreeing about
+    # where one document splits is the failure this consolidation exists to prevent, and it would
+    # be invisible: each file works perfectly on a marker of the shape its own copy expects.
+    pats = {}
+    for label, path_, name in (('engine driver', None, 'TB_MARKER_RE'),
+                               ('page driver', None, 'TB_MARKER_RE'),
+                               ('simulator.html', 'simulator.html', 'TB_MARKER_RE'),
+                               ('synthesis.html', 'synthesis.html', 'TESTBENCH_MARKER')):
+        text = (ENGINE_DRIVER if label == 'engine driver' else
+                PAGE_DRIVER if label == 'page driver' else
+                open(os.path.join(HERE, path_), encoding='utf-8').read())
+        m = re.search(r"const %s = (/.*?/[a-z]*);" % name, text)
+        pats[label] = m.group(1) if m else 'MISSING'
+    # the drivers' copies are JS source inside a Python raw string, so they read identically
+    if len(set(pats.values())) != 1:
+        print('\nthe TESTBENCH marker pattern differs between its copies:')
+        for k, v in pats.items():
+            print('  %-16s %s' % (k, v))
         bad += 1
 
     print('\n%s' % ('all checks passed' if not bad else '%d CHECK(S) FAILED' % bad))

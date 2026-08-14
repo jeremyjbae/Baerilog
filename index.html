@@ -13,7 +13,7 @@
 <header class="gh-header">
   <div class="gh-header-inner">
     <a class="gh-mark" href="index.html">
-      <svg viewBox="0 0 60 26" fill="none" stroke="black" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M 37.7373 21.25 C 37.752447 18.600017 37.722157 13.899983 37.7373 11.25 C 37.722157 8.899983 35.2373 6.25 32.7373 6.25 C 30.143462 6.25 32.549622 6.25 29.955782 6.25 C 23.70574 6.25 22.45574 11.25 22.501176 13.75 C 22.45574 16.25 23.70574 21.25 29.955782 21.25 C 30.8163 21.25 31.67682 21.25 32.53734 21.25"/><path d="M 2.2184386 2.5 C 2.2184386 7.5 2.2184386 16.25 2.2184386 21.25 C 4.7184386 21.25 7.139786 21.23971 9.999958 21.25 C 16.249958 21.25 17.508377 16.090111 17.499958 13.75 C 17.508377 11.090111 16.249958 6.25 9.999958 6.25 C 8.027672 6.25 9.095067 6.25 7.4284 6.25"/><path d="M 58.03152 6.25 C 55.53152 6.25 53.11017 6.26029 50.25 6.25 C 44 6.25 42.74158 11.409889 42.75 13.75 C 42.74158 16.409889 44 21.25 50.25 21.25 C 52.222286 21.25 56.5836 21.25 58.25027 21.25"/><rect x="47.95" y="13.625" width="9.8" height=".125"/></svg>
+      <svg viewBox="0 0 58 26" fill="none" stroke="black" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M 37.7373 21.25 C 37.752447 18.600017 37.722157 13.899983 37.7373 11.25 C 37.722157 8.899983 35.2373 6.25 32.7373 6.25 C 30.143462 6.25 32.549622 6.25 29.955782 6.25 C 23.70574 6.25 22.45574 11.25 22.501176 13.75 C 22.45574 16.25 23.70574 21.25 29.955782 21.25 C 30.8163 21.25 31.67682 21.25 32.53734 21.25"/><path d="M 2.2184386 2.5 C 2.2184386 7.5 2.2184386 16.25 2.2184386 21.25 C 4.7184386 21.25 7.139786 21.23971 9.999958 21.25 C 16.249958 21.25 17.508377 16.090111 17.499958 13.75 C 17.508377 11.090111 16.249958 6.25 9.999958 6.25 C 8.027672 6.25 9.095067 6.25 7.4284 6.25"/><path d="M 56.0315 6.25 C 53.5315 6.25 53.11017 6.26029 50.25 6.25 C 44 6.25 42.74158 11.409889 42.75 13.75 C 42.74158 16.409889 44 21.25 50.25 21.25 C 52.222286 21.25 54.583635 21.25 56.2503 21.25"/><rect x="47.95" y="13.625" width="8" height=".125"/></svg>
       <span>Baerilog</span>
     </a>
     <nav class="gh-nav"><a href="simulator.html">Simulator</a><a href="synthesis.html">Synthesizer</a><a href="compiler.html">Compiler</a><a href="index.html" class="here">Practice</a></nav>
@@ -22,17 +22,25 @@
 
 <div class="gh-page">
   <h1 class="gh-crumb">
-    <a href="simulator.html">Baerilog</a><span class="sep">/</span><span class="here">practice</span>
+    <a href="index.html">Baerilog</a><span class="sep">/</span><span class="here">practice</span>
   </h1>
   <div class="gh-sub">Verilog practice problems — each one opens the simulator with a skeleton and a self-checking testbench</div>
 
   <div class="gh-box" id="hubBox"></div>
 
-  <div class="gh-readme">
-    Nothing here is graded or uploaded — the testbench on each page prints its own PASS/FAIL lines.
-    <br>© Jeremy Bae 2026 · <a href="https://github.com/jeremyjbae" target="_blank" rel="noopener">github.com/jeremyjbae</a>
-  </div>
 </div>
+
+<!-- The same footer every other page carries, byte-for-byte with the one in shell.js's
+     practice-markup slice, so the hub and the twenty pages it links to end the same way.
+     It used to be a `<br>` and a second line inside .gh-readme above, which put the
+     copyright at that block's left-aligned 14px instead of the centred 12px .footer
+     everywhere else.
+
+     OUTSIDE .gh-page deliberately: `.gh-page a` sets --accent-fg and has the same
+     specificity as `.footer a`, with practice.css loading after app.css - so inside the
+     wrapper the link would come out blue here and muted on every other page, which is
+     the one difference this change exists to remove. -->
+<div class="footer">© Jeremy Bae 2026 · <a href="https://github.com/jeremyjbae" target="_blank" rel="noopener">github.com/jeremyjbae</a></div>
 
 <script src="manifest.js"></script>
 <!-- Optional cloud progress, BEFORE the hub's own script rather than after it:
@@ -250,6 +258,151 @@ function esc(s) {
     if (window.CLOUD.signedIn()) window.CLOUD.pull('practice').then(render);
   }
 })();
+
+/* >>> NAV MENU (canonical copy in tools/navmenu.js - do not edit in place) */
+(function () {
+  var inner = document.querySelector('.gh-header-inner');
+  if (!inner || document.getElementById('navMenuBtn')) return;   // no bar, or already built
+
+  /* The rows, in order. Bare filenames because these pages are siblings; Home is the
+     one link that leaves the site. The three apps outside this directory (emulator,
+     verify, workbench) are deliberately absent: they live one level ABOVE the deployed
+     root, so a `../` row would resolve in the repo and 404 on the site. */
+  var ITEMS = [
+    ['Home', 'https://jeremyjbae.github.io/Baerilog', 'home'],
+    ['Practice', 'index.html', 'book'],
+    ['Simulator', 'simulator.html', 'pulse'],
+    ['Synthesizer', 'synthesis.html', 'chip'],
+    ['Compiler', 'compiler.html', 'code']
+  ];
+  var G = {
+    menu: '<svg viewBox="0 0 16 16"><path d="M1.5 3.25h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Z"/></svg>',
+    home: '<svg viewBox="0 0 16 16"><path d="M8 1.2 15 7l-.94 1.15-1.06-.88V14a1 1 0 0 1-1 1H9.5v-4.5h-3V15H4a1 1 0 0 1-1-1V7.27l-1.06.88L1 7 8 1.2Zm4 4.83L8 2.7 4 6.03V13.5h1V9h6v4.5h1V6.03Z"/></svg>',
+    book: '<svg viewBox="0 0 16 16"><path d="M2 2.5A1.5 1.5 0 0 1 3.5 1H13a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a2 2 0 0 0-2 2V2.5Zm2.5-.5a.5.5 0 0 0-.5.5v10.1c.3-.07.63-.1.5-.1h8V2H4.5Z"/></svg>',
+    pulse: '<svg viewBox="0 0 16 16"><path d="M6 2.5a.75.75 0 0 1 .7.48L9.3 10l1-2.5a.75.75 0 0 1 .7-.5h4v1.5h-3.5l-1.8 4.5a.75.75 0 0 1-1.4 0L5.7 5.5 4.7 8a.75.75 0 0 1-.7.5H0V7h3.5l1.8-4.02A.75.75 0 0 1 6 2.5Z"/></svg>',
+    chip: '<svg viewBox="0 0 16 16"><path d="M5 1.5h1.5v1.5h3V1.5H11v1.5h1.5A1.5 1.5 0 0 1 14 4.5V6h1.5v1.5H14v1H15.5V10H14v1.5a1.5 1.5 0 0 1-1.5 1.5H11v1.5H9.5V13h-3v1.5H5V13H3.5A1.5 1.5 0 0 1 2 11.5V10H.5V8.5H2v-1H.5V6H2V4.5A1.5 1.5 0 0 1 3.5 3H5V1.5Zm-1.5 3v7h9v-7h-9Zm2 2h5v3h-5v-3Z"/></svg>',
+    code: '<svg viewBox="0 0 16 16"><path d="M5.7 4.3a.75.75 0 0 1 0 1.06L3.06 8l2.64 2.64a.75.75 0 1 1-1.06 1.06L1.47 8.53a.75.75 0 0 1 0-1.06L4.64 4.3a.75.75 0 0 1 1.06 0Zm4.6 0a.75.75 0 0 1 1.06 0l3.17 3.17a.75.75 0 0 1 0 1.06L11.36 11.7a.75.75 0 1 1-1.06-1.06L12.94 8l-2.64-2.64a.75.75 0 0 1 0-1.06Z"/></svg>'
+  };
+
+  function mk(tag, cls, id, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (id) e.id = id;
+    if (text !== undefined && text !== null) e.textContent = text;
+    return e;
+  }
+
+  /* THREE OF THE SIX APPS LIVE OUTSIDE Baerilog/ - emulator, verify and workbench - so
+     a bare filename does not resolve from them and this has to prefix. They are also
+     the three that are NOT in the menu, and each carried a single `&larr; Baerilog` link
+     back to the hub; the shared block hides `.gh-nav a`, so that link is gone and the
+     drawer's Practice row is what replaces it. Getting this wrong is not cosmetic: it
+     would leave those three with no way back at all. */
+  var OUTSIDE = ['emulator', 'verify', 'workbench'];
+  function base() {
+    var parts = (window.location && window.location.pathname || '').split('/');
+    var dir = parts[parts.length - 2] || '';
+    return OUTSIDE.indexOf(dir) >= 0 ? '../Baerilog/' : '';
+  }
+
+  /* Which row is current, from the page's own URL rather than a per-app variable: one
+     fewer thing for a copy to set wrong. A practice EXERCISE page is not index.html but
+     is still Practice, which is why the marker falls back to it inside this directory -
+     and why it marks NOTHING from the three outside it, none of which is a row. */
+  function currentHref() {
+    if (base()) return '';
+    var file = (window.location && window.location.pathname || '').split('/').pop() || '';
+    var known = ['simulator.html', 'synthesis.html', 'compiler.html'];
+    return known.indexOf(file) >= 0 ? file : 'index.html';
+  }
+
+  var btn = mk('button', 'gh-menu-btn', 'navMenuBtn');
+  btn.setAttribute('type', 'button');
+  btn.setAttribute('aria-label', 'Open menu');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-controls', 'navDrawer');
+  btn.setAttribute('title', 'Menu');
+  btn.innerHTML = G.menu;
+  inner.insertBefore(btn, inner.firstChild);
+
+  var back = mk('div', 'nav-backdrop', 'navBackdrop');
+  var panel = mk('aside', 'nav-drawer', 'navDrawer');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  panel.setAttribute('aria-label', 'Site menu');
+
+  var head = mk('div', 'nav-drawer-head');
+  /* The wordmark is CLONED out of the header rather than pasted in as another copy of
+     those three paths: tools/logo.py rewrites every copy in the repo after a re-export,
+     and one it does not know about goes stale silently. Two simple selectors, not the
+     compound `.gh-mark svg`, because the stub DOM the harnesses use resolves one at a
+     time and the compound form returns null - the drawer would ship with no logo while
+     every test passed. On this light surface it drops the header's unconditional
+     invert (style.css does that) or it renders white on white. */
+  var wrap = document.querySelector('.gh-mark');
+  var src = wrap && wrap.querySelector('svg');
+  var mark = mk('span', 'nav-drawer-mark');
+  if (src && src.cloneNode) mark.appendChild(src.cloneNode(true));
+  head.appendChild(mark);
+  var close = mk('button', 'ex-close nav-drawer-close', 'navCloseBtn', '✕');
+  close.setAttribute('type', 'button');
+  close.setAttribute('title', 'Close');
+  close.setAttribute('aria-label', 'Close menu');
+  head.appendChild(close);
+  panel.appendChild(head);
+
+  var list = mk('nav', 'nav-drawer-list', 'navDrawerList');
+  var here = currentHref();
+  var pre = base();
+  for (var i = 0; i < ITEMS.length; i++) {
+    var row = mk('a', 'nav-row' + (ITEMS[i][1] === here ? ' current' : ''));
+    // the off-site row is absolute and must not be prefixed
+    row.setAttribute('href', /^https?:/.test(ITEMS[i][1]) ? ITEMS[i][1] : pre + ITEMS[i][1]);
+    var ic = mk('span', null, 'nav-row-icon');
+    ic.className = 'nav-row-icon';
+    ic.innerHTML = G[ITEMS[i][2]] || '';
+    row.appendChild(ic);
+    row.appendChild(mk('span', 'nav-row-label', null, ITEMS[i][0]));
+    list.appendChild(row);
+  }
+  panel.appendChild(list);
+  /* The panel is a CHILD of the backdrop, as every dialog here is: that is what makes
+     the ev.target guard below load-bearing rather than unfalsifiable - as siblings, a
+     click inside the panel could never reach the backdrop's handler. */
+  back.appendChild(panel);
+  document.body.appendChild(back);
+
+  function isOpen() { return panel.classList.contains('open'); }
+  function open() {
+    /* One drawer at a time: cloud-ui.js's account drawer comes in from the right and is
+       looked up at click time, so neither depends on loading before the other. */
+    var ab = document.getElementById('cloudDrawerBack');
+    var ap = document.getElementById('cloudDrawer');
+    if (ab) ab.classList.remove('open');
+    if (ap) ap.classList.remove('open');
+    panel.classList.add('open');
+    back.classList.add('open');
+    document.body.classList.add('nav-open');
+    btn.setAttribute('aria-expanded', 'true');
+    var first = list.children[0];
+    if (first && first.focus) first.focus();
+  }
+  function shut() {
+    panel.classList.remove('open');
+    back.classList.remove('open');
+    document.body.classList.remove('nav-open');
+    btn.setAttribute('aria-expanded', 'false');
+    if (btn.focus) btn.focus();
+  }
+  btn.addEventListener('click', function () { if (isOpen()) shut(); else open(); });
+  close.addEventListener('click', shut);
+  back.addEventListener('click', function (ev) { if (ev.target === back) shut(); });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && isOpen()) shut();
+  });
+})();
+/* <<< NAV MENU */
+
 </script>
 </body>
 </html>

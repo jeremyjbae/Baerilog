@@ -76,7 +76,10 @@ window.CLOUD = (function () {
   }
 
   var SESSION_KEY = 'baerilogCloudSession';
-  function docKey(app, item) { return 'baerilog:doc:' + app + ':' + item; }
+  /* One constant, so the writer and the prefix scan in listLocal() cannot disagree
+     about where records live - two copies of a string key is how an index goes stale. */
+  var DOC_PREFIX = 'baerilog:doc:';
+  function docKey(app, item) { return DOC_PREFIX + app + ':' + item; }
 
   function readJson(key) {
     var raw = lsGet(key);
@@ -160,7 +163,14 @@ window.CLOUD = (function () {
          is never sent with a token that expires while it is in flight. */
       expires_at: Date.now() + ((Number(data.expires_in) || 3600) - 60) * 1000,
       email: (data.user && data.user.email) || (session && session.email) || '',
-      user_id: (data.user && data.user.id) || (session && session.user_id) || ''
+      user_id: (data.user && data.user.id) || (session && session.user_id) || '',
+      /* The display name, out of GoTrue's own user_metadata rather than a table of
+         our own: it needs no migration, no RLS policy and no second request, and it
+         comes back inside the very envelope this function already reads. `||` down to
+         the previous value because a refresh answers without `user`, and dropping the
+         name on every token refresh would make it look like it had not saved. */
+      name: (data.user && data.user.user_metadata && data.user.user_metadata.full_name)
+            || (session && session.name) || ''
     });
     return true;
   }
@@ -214,21 +224,45 @@ window.CLOUD = (function () {
       });
   }
 
-  /* Exchange the typed code for a session. type:'email' is the OTP flow; note
-     the same endpoint serves magic links with type:'magiclink', which is why the
-     type has to be stated rather than defaulted. */
+  /* Exchange the typed code for a session.
+     
+     TWO TYPES ARE TRIED, and that is not belt-and-braces - it is the difference
+     between a learner's first sign-in and every one after it. Supabase decides
+     which email to send by whether the address already exists: a brand-new one
+     gets the "Confirm signup" template and a token that verifies as
+     type 'signup', while a returning one gets "Magic Link" and a token that
+     verifies as 'email'. One request cannot cover both, and the failure is at its
+     worst on a learner's very first attempt - the code in their inbox is correct
+     and the page rejects it, which reads as the whole feature being broken.
+
+     'email' is tried first because it is the steady state (a project accumulates
+     returning users), and 'signup' is the fallback. The retry is deliberately NOT
+     attempted when the first answer was `offline` - there was no verdict to
+     disagree with, and firing a second request into a dead connection just
+     doubles the wait before the honest message appears.
+
+     Note this costs a spent token at most once: a wrong code fails both types and
+     reports the second error, which says the same thing as the first. */
+  var VERIFY_TYPES = ['email', 'signup'];
+
   function verifyCode(email, code) {
     if (!configured()) return Promise.resolve({ ok: false, error: 'no Supabase project configured' });
     code = String(code || '').replace(/\s+/g, '');
     if (!code) return Promise.resolve({ ok: false, error: 'enter the code from the email' });
+    email = String(email || '').trim();
     status('verifying');
-    return req('/auth/v1/verify', {
-      method: 'POST', body: { email: String(email || '').trim(), token: code, type: 'email' }
-    }).then(function (r) {
-      if (r.ok && adoptTokens(r.data)) { status('signed-in'); return { ok: true }; }
-      status(r.offline ? 'offline' : 'error');
-      return { ok: false, error: r.error || 'that code was not accepted', offline: r.offline };
-    });
+
+    function attempt(i) {
+      return req('/auth/v1/verify', {
+        method: 'POST', body: { email: email, token: code, type: VERIFY_TYPES[i] }
+      }).then(function (r) {
+        if (r.ok && adoptTokens(r.data)) { status('signed-in'); return { ok: true }; }
+        if (!r.offline && i + 1 < VERIFY_TYPES.length) return attempt(i + 1);
+        status(r.offline ? 'offline' : 'error');
+        return { ok: false, error: r.error || 'that code was not accepted', offline: r.offline };
+      });
+    }
+    return attempt(0);
   }
 
   function signOut() {
@@ -366,6 +400,127 @@ window.CLOUD = (function () {
      a feature that is meant to be invisible. */
   function load(app, item) { return localGet(app, item); }
 
+  /* ---- the document list, for "My Design" ------------------------------ */
+
+  /* Every document this browser has stored, newest first. Enumerated out of
+     localStorage rather than kept as an index alongside it, because an index is a
+     second source of truth that can disagree with the records - and the prefix scan
+     cannot: whatever `save()` wrote is what this finds.
+
+     `length`/`key(i)` rather than Object.keys, which returns nothing useful for a
+     real Storage object. Wrapped for the same reason every other access here is:
+     a page opened over file:// may have no storage at all. */
+  function listLocal() {
+    var out = [];
+    var n = 0;
+    try { n = window.localStorage.length; } catch (e) { return out; }
+    for (var i = 0; i < n; i++) {
+      var k = null;
+      try { k = window.localStorage.key(i); } catch (e) { break; }
+      if (!k || k.indexOf(DOC_PREFIX) !== 0) continue;
+      /* app is the next segment and item is ALL of the rest: an item may contain a
+         colon, so splitting and taking [3] would silently truncate one. */
+      var rest = k.slice(DOC_PREFIX.length);
+      var cut = rest.indexOf(':');
+      if (cut < 0) continue;
+      var app = rest.slice(0, cut), item = rest.slice(cut + 1);
+      var rec = readJson(k);
+      if (!rec) continue;
+      out.push({
+        app: app, item: item,
+        updatedAt: rec.updated_at || 0,
+        verdict: rec.verdict || null,
+        /* "is the server holding what we hold" - the same comparison the conflict
+           rule turns on, so this column cannot disagree with the sync layer. */
+        synced: rec.source !== undefined ? rec.source === rec.synced : true,
+        bytes: rec.source ? rec.source.length : 0,
+        here: true
+      });
+    }
+    return out.sort(function (a, b) { return b.updatedAt - a.updatedAt; });
+  }
+
+  /* The same list from the server, for the case the local one cannot answer: a
+     learner who signs in on a second machine has rows in the cloud and nothing in
+     this browser, and a "My Design" that showed an empty list there would be
+     lying about their own work.
+
+     It deliberately does NOT write what it finds into localStorage. Adopting rows
+     is `pull()`'s job, under the conflict rule; doing it from a listing would
+     resurrect documents behind the learner's back and give this read the power to
+     destroy an edit. So the rows come back marked `here: false` and are displayed,
+     not merged. Resolves rather than rejects, like every other method here. */
+  function listRemote() {
+    if (!configured() || !signedIn()) return Promise.resolve({ ok: false, rows: [] });
+    return token().then(function (tok) {
+      if (!tok) return { ok: false, rows: [] };
+      return req('/rest/v1/progress?select=app,item,updated_at,verdict', { token: tok })
+        .then(function (r) {
+          if (!r.ok) return { ok: false, offline: r.offline, error: r.error, rows: [] };
+          return {
+            ok: true,
+            rows: (r.data || []).map(function (row) {
+              return {
+                app: row.app, item: row.item,
+                updatedAt: Date.parse(row.updated_at) || 0,
+                verdict: row.verdict || null,
+                synced: true, bytes: 0, here: false
+              };
+            })
+          };
+        });
+    });
+  }
+
+  /* Local first, as everywhere else: a document this browser holds is described by
+     what it holds, and a remote row only appears when there is no local copy of it. */
+  function list() { return listLocal(); }
+  function listAll() {
+    var mine = listLocal();
+    return listRemote().then(function (r) {
+      /* A NESTED map, app -> item -> true, and not a joined string key. That is the
+         same rule pushTimers follows and for the same two reasons: an `item` may
+         contain whatever separator is chosen, and a separator that is not printable
+         makes the file silently un-greppable. This code had a NUL in it for exactly
+         one commit, which is why tools/build.py now scans these four files for
+         control bytes. */
+      var seen = {};
+      mine.forEach(function (d) {
+        if (!seen[d.app]) seen[d.app] = {};
+        seen[d.app][d.item] = true;
+      });
+      var extra = r.rows.filter(function (d) { return !(seen[d.app] && seen[d.app][d.item]); });
+      return { ok: r.ok, offline: r.offline, error: r.error,
+               docs: mine.concat(extra).sort(function (a, b) { return b.updatedAt - a.updatedAt; }) };
+    });
+  }
+
+  /* ---- the display name ------------------------------------------------ */
+
+  /* Written to GoTrue's user_metadata, which is why there is no schema change and
+     no policy to get right. The session's copy is updated from the response rather
+     than from the argument, so what the panel shows is what the server accepted. */
+  function setName(name) {
+    var clean = String(name === undefined || name === null ? '' : name).trim().slice(0, 60);
+    if (!configured() || !signedIn()) return Promise.resolve({ ok: false, error: 'not signed in' });
+    return token().then(function (tok) {
+      if (!tok) return { ok: false, error: 'not signed in' };
+      return req('/auth/v1/user', {
+        method: 'PUT', token: tok, body: { data: { full_name: clean } }
+      }).then(function (r) {
+        if (!r.ok) {
+          lastError = r.offline ? null : r.error;
+          status(r.offline ? 'offline' : 'error');
+          return { ok: false, offline: r.offline, error: r.error };
+        }
+        var got = (r.data && r.data.user_metadata && r.data.user_metadata.full_name);
+        session.name = got === undefined ? clean : (got || '');
+        saveSession(session);                   // persists AND emits, so the UI follows
+        return { ok: true, name: session.name };
+      });
+    });
+  }
+
   /* Flush every pending push immediately. Called on pagehide, where a debounce
      timer that has not fired yet would otherwise lose the last edit. */
   function flush() {
@@ -496,6 +651,7 @@ window.CLOUD = (function () {
       configured: configured(),
       signedIn: signedIn(),
       email: (session && session.email) || '',
+      name: (session && session.name) || '',
       state: state,
       error: lastError,
       pending: Object.keys(pushTimers).reduce(function (n, app) {
@@ -519,8 +675,16 @@ window.CLOUD = (function () {
     configured: configured, signedIn: signedIn, info: info, subscribe: subscribe,
     requestCode: requestCode, verifyCode: verifyCode, signOut: signOut,
     save: save, load: load, pull: pull, flush: flush, resolve: resolve,
+    setName: setName, list: list, listAll: listAll,
     /* Exposed for the harnesses only - they assert the limit and the app list
        agree with schema.sql rather than restating either. */
-    _limits: { source: SOURCE_LIMIT, apps: APPS }
+    _limits: { source: SOURCE_LIMIT, apps: APPS },
+    /* Also harness-only: drive the state machine to one named state and emit, so a
+       renderer can be checked against EVERY entry of its table instead of the four or
+       five a scripted sign-in happens to pass through. It is `status` and nothing more -
+       no session, no request, no storage - so it cannot be a way in to anything a caller
+       could not already reach; the states it sets are the same strings the network paths
+       set. Named with the underscore prefix _limits already uses, for the same reason. */
+    _setState: status
   };
 })();

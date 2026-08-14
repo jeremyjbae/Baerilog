@@ -24,13 +24,13 @@
 var PRACTICE_MARKUP = String.raw`
   <header class="gh-header">
     <div class="gh-header-inner">
-      <a class="gh-mark" href="index.html"><svg viewBox="0 0 60 26" fill="none" stroke="black" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M 37.7373 21.25 C 37.752447 18.600017 37.722157 13.899983 37.7373 11.25 C 37.722157 8.899983 35.2373 6.25 32.7373 6.25 C 30.143462 6.25 32.549622 6.25 29.955782 6.25 C 23.70574 6.25 22.45574 11.25 22.501176 13.75 C 22.45574 16.25 23.70574 21.25 29.955782 21.25 C 30.8163 21.25 31.67682 21.25 32.53734 21.25"/><path d="M 2.2184386 2.5 C 2.2184386 7.5 2.2184386 16.25 2.2184386 21.25 C 4.7184386 21.25 7.139786 21.23971 9.999958 21.25 C 16.249958 21.25 17.508377 16.090111 17.499958 13.75 C 17.508377 11.090111 16.249958 6.25 9.999958 6.25 C 8.027672 6.25 9.095067 6.25 7.4284 6.25"/><path d="M 58.03152 6.25 C 55.53152 6.25 53.11017 6.26029 50.25 6.25 C 44 6.25 42.74158 11.409889 42.75 13.75 C 42.74158 16.409889 44 21.25 50.25 21.25 C 52.222286 21.25 56.5836 21.25 58.25027 21.25"/><rect x="47.95" y="13.625" width="9.8" height=".125"/></svg><span>Baerilog</span></a>
+      <a class="gh-mark" href="index.html"><svg viewBox="0 0 58 26" fill="none" stroke="black" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M 37.7373 21.25 C 37.752447 18.600017 37.722157 13.899983 37.7373 11.25 C 37.722157 8.899983 35.2373 6.25 32.7373 6.25 C 30.143462 6.25 32.549622 6.25 29.955782 6.25 C 23.70574 6.25 22.45574 11.25 22.501176 13.75 C 22.45574 16.25 23.70574 21.25 29.955782 21.25 C 30.8163 21.25 31.67682 21.25 32.53734 21.25"/><path d="M 2.2184386 2.5 C 2.2184386 7.5 2.2184386 16.25 2.2184386 21.25 C 4.7184386 21.25 7.139786 21.23971 9.999958 21.25 C 16.249958 21.25 17.508377 16.090111 17.499958 13.75 C 17.508377 11.090111 16.249958 6.25 9.999958 6.25 C 8.027672 6.25 9.095067 6.25 7.4284 6.25"/><path d="M 56.0315 6.25 C 53.5315 6.25 53.11017 6.26029 50.25 6.25 C 44 6.25 42.74158 11.409889 42.75 13.75 C 42.74158 16.409889 44 21.25 50.25 21.25 C 52.222286 21.25 54.583635 21.25 56.2503 21.25"/><rect x="47.95" y="13.625" width="8" height=".125"/></svg><span>Baerilog</span></a>
       <nav class="gh-nav"><a href="simulator.html" class="here">Simulator</a><a href="synthesis.html">Synthesizer</a><a href="compiler.html">Compiler</a><a href="index.html">Practice</a></nav>
     </div>
   </header>
 
-  <h1><a href="https://jeremyjbae.github.io/Baerilog">Baerilog</a>: Verilog Simulator</h1>
-  <div class="subtitle">Write · Simulate · Watch the waveform — all in the browser</div>
+  <h1 class="gh-crumb"><a href="index.html">Baerilog</a><span class="sep">/</span><span class="here">Verilog Simulator</span></h1>
+  <div class="gh-sub">Write · Simulate · Watch the waveform — all in the browser</div>
 
   <div class="grid">
 
@@ -148,17 +148,22 @@ var PRACTICE_MARKUP = String.raw`
 
     <div class="split-row hierarchy-collapsed" id="waveSplitRow">
       <div class="card" id="card-hierarchy">
-        <h2><span class="card-collapse-btn" data-collapse>▾</span>Module Hierarchy<span class="help-wrap"><span class="help-icon">?</span><div class="help-popup"><div>&middot; click an instance to show or hide its signals &mdash; showing one hides its children, so you descend a level at a time</div><div>&middot; double-click to expand or collapse the branch</div><div>&middot; a memory has no waveform row, so it is shown dimmed and does not respond</div></div></span></h2>
+        <h2><span class="card-collapse-btn" data-collapse>▾</span>Module Hierarchy<span class="help-wrap"><span class="help-icon">?</span><div class="help-popup"><div>&middot; click an instance to show or hide its signals &mdash; showing one hides its children, so you descend a level at a time</div><div>&middot; double-click to expand or collapse the branch</div><div>&middot; a memory has no waveform row, so it is shown dimmed and does not respond</div><div>&middot; each name carries its declared bit range, e.g. <code>d[3:0]</code></div></div></span></h2>
         <div class="hierarchy-tree" id="hierarchyTree"></div>
       </div>
 
       <div class="card" id="card-wave">
         <h2><span class="card-collapse-btn" data-collapse>▾</span>Waveform Viewer
-          <span class="help-wrap"><span class="help-icon">?</span><div class="help-popup"><div>&middot; click the chart to move the cursor</div><div>&middot; drag right to zoom into a range, drag left to zoom out, double-click to zoom in</div><div>&middot; wheel sideways &mdash; or shift+wheel &mdash; to pan; on a touchscreen one finger zooms and two fingers pan</div><div>&middot; drag the divider after the names to widen or narrow that column</div><div>&middot; hover a value for its radix menu</div><div>&middot; show or hide a signal row in the <b>Module Hierarchy</b> panel, not here &mdash; click one, or drag to paint a run of them</div></div></span>
+          <span class="help-wrap"><span class="help-icon">?</span><div class="help-popup"><div>&middot; click the chart to move the cursor</div><div>&middot; drag right to zoom into a range, drag left to zoom out, double-click to zoom in</div><div>&middot; wheel sideways &mdash; or shift+wheel &mdash; to pan; on a touchscreen one finger zooms and two fingers pan</div><div>&middot; drag the divider after the names to widen or narrow that column</div><div>&middot; hover a value for its radix menu</div><div>&middot; the <code>[:]</code> button adds each signal's declared bit range to its name</div><div>&middot; show or hide a signal row in the <b>Module Hierarchy</b> panel, not here &mdash; click one, or drag to paint a run of them</div><div>&middot; <b>Turn the plot off</b> frees the canvas, which is the largest allocation on this page &mdash; it grows with the number of shown rows, so hiding rows reclaims it in proportion too. The run itself is unaffected: the Console, the Scoreboard and the Memory Viewer all still work</div></div></span>
         <span class="header-controls">
             <span class="layout-toggle">
               <span class="layout-btn" id="hierarchyToggleBtn" title="Show/hide module hierarchy">
                 <svg viewBox="0 0 42.5 35" fill="currentColor"><rect x="0" y="0" width="10" height="10"/><rect x="7.5" y="2.5" width="25" height="5"/><rect x="15" y="2.5" width="5" height="30"/><rect x="32.5" y="0" width="10" height="10"/><rect x="17.5" y="15" width="15" height="5"/><rect x="32.5" y="12.5" width="10" height="10"/><rect x="17.5" y="27.5" width="15" height="5"/><rect x="32.5" y="25" width="10" height="10"/></svg>
+              </span>
+            </span>
+            <span class="layout-toggle">
+              <span class="layout-btn" id="waveWidthsBtn" title="Show bit widths on signal names">
+                <svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 1.2 H2.6 V10.8 H5.5"/><path d="M10.5 1.2 H13.4 V10.8 H10.5"/><circle cx="8" cy="4.4" r="0.95" fill="currentColor" stroke="none"/><circle cx="8" cy="7.6" r="0.95" fill="currentColor" stroke="none"/></svg>
               </span>
             </span>
             <span class="layout-toggle">
@@ -168,7 +173,14 @@ var PRACTICE_MARKUP = String.raw`
             </span>
           </span>
         </h2>
-        <div class="toolbar" style="margin-bottom:14px;">
+        <div class="toolbar" style="margin-bottom:10px;">
+          <label class="mem-radix-toggle">
+            <input type="checkbox" id="waveOffCheckbox">
+            Turn the plot off to save memory
+          </label>
+          <span class="time-label" id="waveMemNote"></span>
+        </div>
+        <div class="toolbar" id="waveControls" style="margin-bottom:14px;">
           <div class="toolbar-group">
             <span class="time-label">Zoom</span>
             <button class="btn secondary icon-btn" id="waveZoomIn" title="Zoom in">+</button>
@@ -239,8 +251,28 @@ var ICON = {
   term: '<svg viewBox="0 0 16 16"><path d="M1.5 2h13a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm.5 1.5v9h12v-9H2Zm2 2 2 2-2 2 .8.8L7.6 7.5 4.8 4.7 4 5.5Zm4.5 4h4v1h-4v-1Z"/></svg>',
   pulse: '<svg viewBox="0 0 16 16"><path d="M6 2.5a.75.75 0 0 1 .7.48L9.3 10l1-2.5a.75.75 0 0 1 .7-.5h4v1.5h-3.5l-1.8 4.5a.75.75 0 0 1-1.4 0L5.7 5.5 4.7 8a.75.75 0 0 1-.7.5H0V7h3.5l1.8-4.02A.75.75 0 0 1 6 2.5Z"/></svg>',
   db: '<svg viewBox="0 0 16 16"><path d="M8 1c3.3 0 6 .9 6 2v10c0 1.1-2.7 2-6 2s-6-.9-6-2V3c0-1.1 2.7-2 6-2Zm4.5 4.6C11.4 6.1 9.8 6.4 8 6.4s-3.4-.3-4.5-.8V8c.6.4 2.3.9 4.5.9s3.9-.5 4.5-.9V5.6ZM8 2.5c-2.5 0-4.5.4-4.5 1s2 1 4.5 1 4.5-.4 4.5-1-2-1-4.5-1Zm4.5 7.1c-1.1.5-2.7.8-4.5.8s-3.4-.3-4.5-.8V12c.6.4 2.3.9 4.5.9s3.9-.5 4.5-.9V9.6Z"/></svg>',
-  chip: '<svg viewBox="0 0 16 16"><path d="M5 1.5h1.5v1.5h3V1.5H11v1.5h1.5A1.5 1.5 0 0 1 14 4.5V6h1.5v1.5H14v1H15.5V10H14v1.5a1.5 1.5 0 0 1-1.5 1.5H11v1.5H9.5V13h-3v1.5H5V13H3.5A1.5 1.5 0 0 1 2 11.5V10H.5V8.5H2v-1H.5V6H2V4.5A1.5 1.5 0 0 1 3.5 3H5V1.5Zm-1.5 3v7h9v-7h-9Zm2 2h5v3h-5v-3Z"/></svg>'
+  chip: '<svg viewBox="0 0 16 16"><path d="M5 1.5h1.5v1.5h3V1.5H11v1.5h1.5A1.5 1.5 0 0 1 14 4.5V6h1.5v1.5H14v1H15.5V10H14v1.5a1.5 1.5 0 0 1-1.5 1.5H11v1.5H9.5V13h-3v1.5H5V13H3.5A1.5 1.5 0 0 1 2 11.5V10H.5V8.5H2v-1H.5V6H2V4.5A1.5 1.5 0 0 1 3.5 3H5V1.5Zm-1.5 3v7h9v-7h-9Zm2 2h5v3h-5v-3Z"/></svg>',
+  /* Two more for the navigation drawer below. `home` is new; every other row reuses
+     one of the tab strip's glyphs above rather than starting a second icon language -
+     the simulator IS the waveform app, the synthesizer emits gates, the compiler
+     emits code, and `book` is what the Exercise tab already means. */
+  home: '<svg viewBox="0 0 16 16"><path d="M8 1.2 15 7l-.94 1.15-1.06-.88V14a1 1 0 0 1-1 1H9.5v-4.5h-3V15H4a1 1 0 0 1-1-1V7.27l-1.06.88L1 7 8 1.2Zm4 4.83L8 2.7 4 6.03V13.5h1V9h6v4.5h1V6.03Z"/></svg>',
+  menu: '<svg viewBox="0 0 16 16"><path d="M1.5 3.25h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Z"/></svg>'
 };
+
+/* The drawer's rows, in order. `href` is a bare filename because Baerilog/ is flat
+ * and every page finds its siblings that way; Home is the one link that leaves the
+ * site. The three apps outside this directory (emulator, verify, workbench) are
+ * deliberately absent: they live one level ABOVE the deployed root, so a `../` row
+ * would resolve in the repo and 404 on the site - they join once they are published
+ * as siblings of these pages. */
+var NAV_ITEMS = [
+  { label: 'Home', href: 'https://jeremyjbae.github.io/Baerilog', icon: 'home' },
+  { label: 'Practice', href: 'index.html', icon: 'book' },
+  { label: 'Simulator', href: 'simulator.html', icon: 'pulse' },
+  { label: 'Synthesizer', href: 'synthesis.html', icon: 'chip' },
+  { label: 'Compiler', href: 'compiler.html', icon: 'code' }
+];
 
 (function () {
   var slug = window.PRACTICE_SLUG;
@@ -277,7 +309,10 @@ var ICON = {
   }
 
   var h1 = document.querySelector('h1');
-  var sub = document.querySelector('.subtitle');
+  // `.gh-sub` since simulator.html's own markup carries the breadcrumb shape now -
+  // this used to read `.subtitle`, and a rename there without this returns null and
+  // throws on every one of the twenty pages.
+  var sub = document.querySelector('.gh-sub');
 
   /* The breadcrumb IS the h1, the way a repo page's owner/name is - the slug is the
      last segment, and the human title moves to the line under it. */
@@ -335,6 +370,11 @@ var ICON = {
   // body scroll and place focus, and owns every way out of it.
   document.body.appendChild(backdrop);
 
+  /* ---- 4. the navigation drawer ----
+     Not here: the builder is tools/navmenu.js, pasted into this file and into all six
+     apps by tools/navmenu.py, so a practice page and an app cannot end up with
+     different drawers. The region is at the foot of this file. ---- */
+
   function mk(tag, id, cls, text) {
     var e = document.createElement(tag);
     if (id) e.id = id;
@@ -347,3 +387,5 @@ var ICON = {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 })();
+
+

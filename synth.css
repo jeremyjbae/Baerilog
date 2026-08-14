@@ -7,7 +7,7 @@
    selectors and all 29 are byte-identical, so there is no conflict of the kind the
    workbench had to resolve by id (its .gutter). The duplicates land after
    app.css's copy and paint the same thing. */
-                /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
+                                      /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
     /* Expand: the netlist row breaks out of .grid's max-width to the full body content
        width, leaving every other card centred at 1100px. Same control, same geometry and
        the same reasoning as `simulator/index.html`'s waveform expand (`.wave-expanded`),
@@ -51,6 +51,13 @@
       background: var(--btn-primary-bg);
       color: var(--fg-on-emphasis);
       font-weight: 600;
+      /* Pinned, not inherited - the same reason Baerilog/simulator.html's .btn pins it.
+         Without it the line box is sized from whatever font supplies the glyph, and both
+         the ⏲ the busy state swaps in and the ⚠ the error state swaps in fall back to a
+         colour emoji font whose ascent+descent are taller than the text font's, so the
+         button GREW several pixels the moment it was pressed. 18px is exactly what the
+         inherited `1.5` computes to at this 12px font-size, so no resting button moves. */
+      line-height: 18px;
       transition: background 0.15s ease;
     }
     .btn:hover { background: var(--btn-primary-hover); }
@@ -59,6 +66,24 @@
     .btn.outline { background: var(--canvas-default); color: var(--accent-fg); border: 1.5px solid var(--accent-fg); }
     .btn.outline:hover { background: var(--accent-subtle); }
     .btn:disabled { background: var(--border-muted); cursor: default; }
+    /* Three acknowledgements, the same three Baerilog/simulator.html carries and in the
+       same order, because the order is the mechanism rather than a preference.
+
+       :active is painted by the BROWSER on mousedown - before any JS runs and before a
+       synthesis blocks the main thread - so it is the only feedback that can be instant.
+
+       [data-error] is the ⚠︎ state after a synthesis that failed: the design did not
+       parse, or it parsed and no netlist could be built from it. [data-busy] is the ⏲
+       state around the blocking job. Both sit AFTER .btn:hover and both carry a :hover
+       twin, because `.btn:hover` has equal specificity to a bare attribute selector and
+       the rule would otherwise depend on source order alone; and [data-error] comes
+       BEFORE [data-busy] for that same reason, so the amber press wins over the red
+       resting state while the pointer is held down. The labels stay --fg-on-emphasis
+       from .btn - never --canvas-default, which is white in light mode and #0d1117 in
+       dark, i.e. near-black text on a coloured fill. */
+    .btn:active:not(:disabled) { background: var(--btn-busy-bg); }
+    .btn[data-error], .btn[data-error]:hover { background: var(--btn-danger-bg); }
+    .btn[data-busy], .btn[data-busy]:hover { background: var(--btn-busy-bg); }
     .time-label { font-size: 12px; color: var(--fg-muted); margin-right: -2px; }
     .bundle-toggle {
       display: flex;
@@ -245,6 +270,18 @@
       padding: 0;
       border-radius: 0;
     }
+    /* A node's SURFACE follows the theme, and it has to: every label on one takes
+       --fg-default from .rf-node, which is #1f2328 light and #e6edf3 dark, so a fill that
+       does NOT flip pairs a moving foreground with a fixed background. These shapes were
+       written `fill="white"` and in dark mode that put #e6edf3 on #ffffff - 1.18:1, which
+       is what a port name looked like: absent. --canvas-default IS #ffffff in light mode,
+       so light renders byte-identically and only dark moves, to 16.02:1.
+
+       It needs its own class rather than riding on .gate-stroke, which is the trap here:
+       that class is on the filled body, notch and bubble AND on `extra` (the xor curve,
+       the adder's +/- marks), which is deliberately `fill="none"`. A blanket fill on
+       .gate-stroke would paint those solid. */
+    .rf-node .node-fill { fill: var(--canvas-default); }
     .rf-node-port svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; z-index: 0; }
     .rf-node-port .port-stroke { stroke: var(--success-fg); }
     .rf-node-port.port-out .port-stroke { stroke: var(--attention-fg); }

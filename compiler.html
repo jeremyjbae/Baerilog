@@ -51,9 +51,22 @@
       --btn-primary-bg: #1f883d;
       --btn-primary-hover: #1a7f37;
       --btn-busy-bg: #9a6700;
+      --btn-danger-bg: #cf222e;
       --header-bg: #24292f;
       --header-fg: #ffffff;
       --header-muted: rgba(255, 255, 255, 0.7);
+      /* Status hues FOR THE BAR, and identical in both modes for the same reason
+         --panel-* below are: the bar is dark either way (#24292f light, #010409 dark),
+         so a token that follows the page is the wrong tool. These are Primer's
+         DARK-mode green/amber/red, which is what a dark surface needs — the
+         light-mode ones measure 2.88:1, 3.01:1 and 2.74:1 against #24292f, i.e. below
+         the 3:1 floor for non-text graphics, while these give 5.77, 5.80 and 4.37 on
+         that bar and 8.08, 8.14 and 6.13 on the dark one. Same hues as --success-fg
+         and friends, so a bar indicator and a page one still read as one state; this
+         is the logo's unconditional-invert rule applied to colour. */
+      --header-success: #3fb950;
+      --header-attention: #d29922;
+      --header-danger: #f85149;
       --shadow-overlay: 0 8px 24px rgba(31, 35, 40, 0.2);
       --radius: 6px;
       --radius-lg: 12px;
@@ -100,6 +113,7 @@
         --btn-primary-bg: #238636;
         --btn-primary-hover: #2ea043;
         --btn-busy-bg: #9e6a03;
+        --btn-danger-bg: #da3633;
         --header-bg: #010409;
         --header-fg: #e6edf3;
         --header-muted: #9198a1;
@@ -178,6 +192,49 @@
       color: var(--fg-muted);
       margin-bottom: 24px;
     }
+    /* --- the breadcrumb heading, on the hub and the three apps the menu offers ---
+
+       The breadcrumb IS the h1, the way a repo page's owner/name is, so the centred
+       heading above has to be undone where it is used. Both rules carry the SAME box as
+       .grid - max-width 1280, auto margins, 24px side padding - which is what makes the
+       crumb align with the cards under it on an app page; on the hub the same class sits
+       inside .gh-page and aligns with the Box under it instead. Each page is therefore
+       aligned to its own content rather than all four to one absolute inset.
+
+       These were practice.css's until three apps wanted them, which is exactly the
+       promotion that file's own comments anticipate. h1/.subtitle above stay, because
+       emulator, verify and workbench are not in the menu and keep the centred heading. */
+    .gh-crumb {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 16px 24px 0;
+      text-align: left;
+      font-size: 20px;
+      font-weight: 400;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .gh-crumb a { color: var(--accent-fg); text-decoration: none; font-weight: 600; }
+    .gh-crumb a:hover { text-decoration: underline; }
+    .gh-crumb .sep { color: var(--fg-muted); }
+    .gh-crumb .here { font-weight: 600; color: var(--fg-default); }
+    .gh-crumb .gh-label { font-size: 12px; margin-left: 6px; }
+    .gh-sub {
+      max-width: 1280px;
+      margin: 4px auto 0;
+      padding: 0 24px;
+      text-align: left;
+      font-size: 14px;
+      color: var(--fg-muted);
+    }
+    /* The 24px the centred .subtitle carried as a margin-bottom, scoped to the case that
+       needs it instead of put on .gh-sub. .gh-sub itself is byte-identical to what the hub
+       already had, so promoting it cannot have moved that page - and it must not, since
+       nothing follows the sub-line there but a Box with no margin of its own, and on an
+       exercise page shell.js inserts the tab strip between the two so this never matches. */
+    .gh-sub + .grid { margin-top: 24px; }
     .grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -464,7 +521,269 @@
       flex-shrink: 0;
     }
     .hierarchy-children { margin-left: 12px; border-left: 1px solid var(--border-default); padding-left: 6px; }
-                /* --- additions for editor / console / assembly listing / register & memory panel, same visual language --- */
+
+    /* =====================================================================
+       A card must be allowed to SHRINK, at every width.
+
+       `.grid` is `1fr`-based and `1fr` is `minmax(auto, 1fr)`, so a track's floor
+       is the largest min-content width among its items - and a grid item defaults
+       to `min-width: auto`, which refuses to go below its own content. One
+       unshrinkable descendant therefore sets the width of every card on the page,
+       while `.gh-header` is an ordinary block that stays at the viewport: so the
+       symptom reads as "the header bar is narrower than the page" rather than as
+       "this panel is too wide". Every panel's own `overflow: auto` is unreachable
+       until this rule exists, because the card grows instead of the panel
+       scrolling.
+
+       Measured on a practice page at a 320px viewport, after a synthesis: the
+       document was 19,628px wide, and this one property took it to 812px. It was
+       `Baerilog/compiler.html`'s own rule first (as `.card:not(.full)`, added when a
+       half-width Assembly card ballooned its column at 642px against its
+       neighbour's 440px); it is here now because all six apps have the same grid
+       and the same hazard.
+       ===================================================================== */
+    .card { min-width: 0; }
+    /* .split-row's children are flex items, where the same automatic minimum
+       applies - and style.css's own first-child rule above gives one a fixed width
+       with no floor. */
+    .split-row > .card { min-width: 0; }
+
+    /* =====================================================================
+       ONE narrow-screen layer for all six apps, at app.css's own breakpoint.
+
+       760px is where every app already drops `.grid` to a single column, so this
+       block reuses that number rather than introducing a second one. It is here
+       rather than in six additions sections because every rule in it is about the
+       shared chrome - the header, the grid, a card's header row, the split row -
+       or about a control that exists in all six.
+
+       Two things decide the shape of it:
+
+       - The `body` prefix is not decoration. Each app's additions block is pasted
+         AFTER this one and restates `select`, `.num-input`, `.gutter`,
+         `.console-box` and the editor textarea at 12px, so an equal-specificity
+         rule here is silently dead everywhere. `body` beats them all; the two
+         textarea selectors are listed because `.editor-wrap textarea` (one class)
+         out-specifies a bare `body textarea`, and an app whose editor is styled by
+         ID has to raise it in its own block (compiler's `#codeInput`, verify's
+         `#rtlInput`, workbench's `#cCodeInput`).
+
+       - 16px is a REQUIREMENT, not a preference: iOS Safari zooms the whole page
+         when a focused control computes under 16px, and it does not zoom back. One
+         tap in an editor left the page at ~1.7x with only a pinch to undo it. The
+         other way out is `maximum-scale=1` in the viewport meta, which "fixes" it
+         by disabling pinch-zoom for everyone. The read-only dark panels come along
+         for legibility rather than for zoom - they cannot be focused - because four
+         panels that are obviously one kind of thing in two sizes reads as though a
+         card had been missed. They all handle running out of room already (the
+         consoles wrap; the listings and the netlist scroll), so the cost is content
+         per line and never reachability.
+
+       Deliberately NOT raised: the register and compare GRIDS (`.reg-grid`,
+       `.compare-grid`, `.cmp-grid`). They are dense hex, which is what lets a whole
+       register file be read at a glance, and their containers are `overflow:
+       hidden` with cells sized in `ch` - so raising them would CLIP a column rather
+       than scroll it. Their narrow-screen job is to re-flow into fewer columns,
+       which each app does in its own block, and the row count has to move with the
+       column count or the items keep flowing at the old rate and quietly start an
+       extra column.
+       ===================================================================== */
+    @media (max-width: 760px) {
+      /* One column, and gutters that match the 16px the page's other rows use.
+         The single column is repeated in most apps' own blocks; stating it here is
+         what gives it to `emulator/index.html`, which never had it. */
+      .grid { grid-template-columns: 1fr; padding: 0 16px; }
+      /* A card header is a no-wrap flex row that can hold seven icon buttons, so at
+         this width it kept the buttons and broke the TITLE across three lines. */
+      .card h2 { flex-wrap: wrap; row-gap: 6px; }
+      /* The hierarchy panel is a fixed 220px of a ~290px card, which left the
+         waveform or the netlist about 60px. Stacked, each gets the full width. */
+      .split-row { flex-wrap: wrap; }
+      .split-row > .card:first-child { flex: 1 1 100%; width: auto; }
+      /* The bar wraps to three rows here - wordmark, app links, and whatever a page
+         appends to the nav - which is ~100px of a ~700px viewport held permanently
+         by `position: sticky`. Static gives it back; the nav is one scroll away. */
+      .gh-header { position: static; }
+      .gh-header-inner { padding: 10px 16px; gap: 8px 12px; }
+      .gh-nav { font-size: 12px; gap: 12px; }
+      /* Focusable: 16px or iOS zooms the page. */
+      body select,
+      body .num-input,
+      body input[type="number"],
+      body textarea,
+      body .editor-wrap textarea { font-size: 16px; }
+      /* The gutter is scroll-synced to the textarea, so it moves in the SAME rule or
+         the line numbers slide off their own lines; both carry a unitless
+         line-height, which scales for both. 38px held three digits at 12px and
+         these files run past line 999. */
+      body .gutter { font-size: 16px; width: 52px; }
+      /* Read-only dark panels, held to the same size as the editors. */
+      body .console-box,
+      body .code-out,
+      body .asm-listing,
+      body .trace-listing,
+      body table.memory-table { font-size: 16px; }
+      /* A memory table's comment column is wider than a phone; the wrap scrolls it
+         rather than the card growing (which `min-width: 0` above now forbids). */
+      body .memory-table-wrap { overflow-x: auto; }
+    }
+    /* =====================================================================
+       THE NAVIGATION DRAWER, on every app.
+
+       The bar used to carry four app links. They are gone: a menu button at the top
+       left opens a panel that slides in from the left, which is the app-shell shape a
+       phone wants and which a bar cannot grow into. Written for the practice pages
+       first and moved here once it was verified on a phone - and what was
+       practice-only about it turned out to be nothing at all.
+
+       The MARKUP and the wiring are per app, because these are six standalone
+       single-file pages with no shared script: tools/navmenu.py pastes one canonical
+       builder into each of them and `--check` proves the copies are identical, the
+       same arrangement this block itself lives under.
+       ===================================================================== */
+    /* The four app links used to sit in the bar; the drawer replaces them at every
+       width, so they go - but it is the LINKS that go and NOT `.gh-nav`, because
+       cloud-ui.js appends the account control into that nav and hiding the container
+       would take the sign-in state with it. The wordmark text beside the logo goes too:
+       the logo says it, and the bar has a button to make room for now. Both are hidden
+       rather than deleted because that markup is a slice of Baerilog/simulator.html -
+       deleting it is the step that takes this to all six apps. */
+    .gh-nav a { display: none; }
+    .gh-mark span { display: none; }
+
+    /* Boxed, on the dark bar, in the bar's own foreground - the shape `.layout-btn`
+       gives every other icon button here, so this needed no new visual language. */
+    .gh-menu-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      cursor: pointer;
+      background: none;
+      border: 1px solid var(--header-muted);
+      border-radius: var(--radius);
+      color: var(--header-fg);
+    }
+    .gh-menu-btn:hover { border-color: var(--header-fg); }
+    .gh-menu-btn svg { width: 16px; height: 16px; display: block; fill: currentColor; }
+
+    /* THE BAR SPANS THE WINDOW, where every other row on the page is a centred 1280px
+       column. That is the whole of it: `.gh-header-inner` is `max-width: 1280px; margin: 0
+       auto` in the shared block, so on a 2430px window its contents started 575px in -
+       right for the logo aligning with the crumb below it, wrong for a menu button and for
+       an account control, which belong at the window's edges the way an app shell's do.
+
+       One rule rather than three, and deliberately not `position: absolute` on each: with
+       the row full width, the button and the logo sit at the left padding edge in normal
+       flow, and `.gh-nav`'s own `margin-left: auto` (shared block) carries the account
+       control to the right one. So the three move by the layout they already had rather
+       than by three sets of coordinates that could disagree - and nothing overlaps at any
+       width, which is what an absolutely-positioned button did on a phone, where the
+       column IS the viewport and there is no gutter to move into.
+
+       No media query: below 1280px the row already filled the bar, so this is a no-op
+       there and there is no breakpoint to derive or to get wrong. */
+    .gh-header-inner { max-width: none; }
+
+    /* The same dim as the exercise sheet's backdrop, deliberately - one dialog idiom on
+       the page rather than two - and the panel is a CHILD of it, as the sheet is, which is
+       what makes shell.js's `ev.target === navBack` guard load-bearing instead of
+       unfalsifiable. Both halves transition `visibility` alongside the visual property so
+       that a closed drawer is neither clickable nor focusable off-screen, while still being
+       visible for the length of its own closing animation. Note the backdrop sets no
+       transform or filter, so the fixed panel inside it stays fixed to the viewport. */
+    .nav-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 2050;
+      background: rgba(31, 35, 40, 0.5);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 220ms ease, visibility 220ms;
+    }
+    .nav-backdrop.open { opacity: 1; visibility: visible; }
+    .nav-drawer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      z-index: 2100;
+      width: min(300px, 84vw);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      background: var(--canvas-default);
+      border-right: 1px solid var(--border-default);
+      box-shadow: var(--shadow-overlay);
+      transform: translateX(-100%);
+      visibility: hidden;
+      transition: transform 220ms ease, visibility 220ms;
+    }
+    .nav-drawer.open { transform: translateX(0); visibility: visible; }
+    /* An animation is a nicety; a page that moves for someone who asked it not to is
+       not. The drawer still opens and closes, it just arrives. */
+    @media (prefers-reduced-motion: reduce) {
+      .nav-drawer, .nav-backdrop { transition: none; }
+    }
+    /* Same reason the exercise sheet locks it: the page behind a modal panel scrolling
+       under the pointer makes the panel look as though it is drifting. */
+    body.nav-open { overflow: hidden; }
+
+    .nav-drawer-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-default);
+    }
+    /* The wordmark is cloned out of the header, where `.gh-mark svg` carries an
+       UNCONDITIONAL `filter: invert(1)` - the bar is dark in both colour modes, so the
+       black artwork has to become white in both. This surface is `--canvas-default`, so
+       this instance drops the filter rather than that rule gaining a query, which is the
+       rule CLAUDE.md states for the logo landing anywhere light. Keeping the invert here
+       renders the mark as a white-on-white ghost in light mode. */
+    .nav-drawer-mark svg { height: 18px; width: auto; filter: none; }
+    .nav-drawer-close { margin-left: auto; }
+
+    .nav-drawer-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 8px;
+    }
+    .nav-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: var(--radius);
+      color: var(--fg-default);
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .nav-row:hover { background: var(--canvas-subtle); }
+    /* The current app, in two encodings of one bit - a fill and an accent rule down its
+       left edge - the same rule the hub's chips and the Scoreboard's flags are held to,
+       so it survives greyscale. The rule is an INSET shadow rather than a border because
+       that cannot change the row's size, so marking one cannot reflow the list. */
+    .nav-row.current {
+      background: var(--canvas-subtle);
+      font-weight: 600;
+      box-shadow: inset 2px 0 0 var(--accent-fg);
+    }
+    .nav-row-icon {
+      display: inline-flex;
+      flex-shrink: 0;
+      width: 16px;
+      height: 16px;
+      color: var(--fg-muted);
+    }
+    .nav-row-icon svg { width: 16px; height: 16px; fill: currentColor; }
+
+                                      /* --- additions for editor / console / assembly listing / register & memory panel, same visual language --- */
     /* The frontend radios, in the editor card's own header. Each label is a pill
        so the pair reads as one control rather than as two stray form controls,
        and the whole label is the hit target so the word "Python" is clickable
@@ -856,6 +1175,15 @@
         grid-template-rows: repeat(16, auto);
         grid-template-columns: repeat(2, 1fr);
       }
+      /* style.css raises every focusable control to 16px at this width, because iOS
+         Safari zooms the whole page for anything under it. This editor is the one
+         that rule cannot reach: it is styled `textarea#codeInput` (deliberately - it
+         stacks the debugger's line-highlight band behind the text, so it is
+         positioned rather than flexed), and an id out-specifies anything the shared
+         block is allowed to say. The gutter follows from `body .gutter` there, and
+         the band is positioned from getComputedStyle metrics rather than constants,
+         so both stay aligned to the new line-height. */
+      #codeInput { font-size: 16px; }
     }
     .footer {
       text-align: center;
@@ -871,13 +1199,13 @@
 
   <header class="gh-header">
     <div class="gh-header-inner">
-      <a class="gh-mark" href="index.html"><svg viewBox="0 0 60 26" fill="none" stroke="black" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M 37.7373 21.25 C 37.752447 18.600017 37.722157 13.899983 37.7373 11.25 C 37.722157 8.899983 35.2373 6.25 32.7373 6.25 C 30.143462 6.25 32.549622 6.25 29.955782 6.25 C 23.70574 6.25 22.45574 11.25 22.501176 13.75 C 22.45574 16.25 23.70574 21.25 29.955782 21.25 C 30.8163 21.25 31.67682 21.25 32.53734 21.25"/><path d="M 2.2184386 2.5 C 2.2184386 7.5 2.2184386 16.25 2.2184386 21.25 C 4.7184386 21.25 7.139786 21.23971 9.999958 21.25 C 16.249958 21.25 17.508377 16.090111 17.499958 13.75 C 17.508377 11.090111 16.249958 6.25 9.999958 6.25 C 8.027672 6.25 9.095067 6.25 7.4284 6.25"/><path d="M 58.03152 6.25 C 55.53152 6.25 53.11017 6.26029 50.25 6.25 C 44 6.25 42.74158 11.409889 42.75 13.75 C 42.74158 16.409889 44 21.25 50.25 21.25 C 52.222286 21.25 56.5836 21.25 58.25027 21.25"/><rect x="47.95" y="13.625" width="9.8" height=".125"/></svg><span>Baerilog</span></a>
+      <a class="gh-mark" href="index.html"><svg viewBox="0 0 58 26" fill="none" stroke="black" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M 37.7373 21.25 C 37.752447 18.600017 37.722157 13.899983 37.7373 11.25 C 37.722157 8.899983 35.2373 6.25 32.7373 6.25 C 30.143462 6.25 32.549622 6.25 29.955782 6.25 C 23.70574 6.25 22.45574 11.25 22.501176 13.75 C 22.45574 16.25 23.70574 21.25 29.955782 21.25 C 30.8163 21.25 31.67682 21.25 32.53734 21.25"/><path d="M 2.2184386 2.5 C 2.2184386 7.5 2.2184386 16.25 2.2184386 21.25 C 4.7184386 21.25 7.139786 21.23971 9.999958 21.25 C 16.249958 21.25 17.508377 16.090111 17.499958 13.75 C 17.508377 11.090111 16.249958 6.25 9.999958 6.25 C 8.027672 6.25 9.095067 6.25 7.4284 6.25"/><path d="M 56.0315 6.25 C 53.5315 6.25 53.11017 6.26029 50.25 6.25 C 44 6.25 42.74158 11.409889 42.75 13.75 C 42.74158 16.409889 44 21.25 50.25 21.25 C 52.222286 21.25 54.583635 21.25 56.2503 21.25"/><rect x="47.95" y="13.625" width="8" height=".125"/></svg><span>Baerilog</span></a>
       <nav class="gh-nav"><a href="simulator.html">Simulator</a><a href="synthesis.html">Synthesizer</a><a href="compiler.html" class="here">Compiler</a><a href="index.html">Practice</a></nav>
     </div>
   </header>
 
-  <h1><a href="https://jeremyjbae.github.io/Baerilog">Baerilog</a>: Compiler</h1>
-  <div class="subtitle">Write · Compile · Run — a C or Python subset to RISC-V or AVR, all in the browser</div>
+  <h1 class="gh-crumb"><a href="index.html">Baerilog</a><span class="sep">/</span><span class="here">Compiler</span></h1>
+  <div class="gh-sub">Write · Compile · Run — a C or Python subset to RISC-V or AVR, all in the browser</div>
 
   <div class="grid">
 
@@ -9084,7 +9412,41 @@ fileOpenInput.addEventListener('change', () => {
   };
   reader.readAsText(file);
 });
+/* ---- "save as", so the download name is the reader's to choose ----
+   Every Save in every app asks, with the CURRENT name as the default, and what the
+   reader types becomes the current name - so a rename sticks for the rest of the
+   session exactly as opening a file already sets it. Hand-maintained in six copies,
+   because these are six standalone single-file apps with no shared script; that is the
+   busyLabel/withBusyButton arrangement, and tools/check_theme.py asserts the copies
+   agree, collected by this banner rather than from a list so a seventh is covered too.
+
+   Three rules, and each is a decision rather than a detail:
+
+   Cancel ABORTS the save. `null` from prompt is the reader saying "not like that", so
+   nothing is written and the current name is left alone.
+
+   An EMPTY answer keeps the default rather than writing a nameless file - trimmed, so
+   a stray space is not a filename either.
+
+   A missing `prompt` saves under the default instead of throwing. That covers an
+   environment without one, and it is deliberately NOT extended to the suppressed case:
+   after several dialogs a browser offers "prevent additional dialogs", and from then on
+   `prompt` returns null, which is indistinguishable from Cancel. Guessing between them
+   by how fast it returned was considered and rejected - a heuristic that cannot be
+   tested, and one that would save a file the reader had deliberately cancelled. So a
+   suppressed prompt reads as Cancel, which is the safe direction: it writes nothing. */
+function askFileName(defaultName) {
+  if (typeof window.prompt !== 'function') return defaultName;
+  const answer = window.prompt('Save as', defaultName);
+  if (answer === null) return null;
+  const name = answer.trim();
+  return name || defaultName;
+}
+
 document.getElementById('editorSaveBtn').addEventListener('click', () => {
+  const name = askFileName(currentFileName);
+  if (name === null) return;
+  currentFileName = name;
   const blob = new Blob([codeInput.value], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -9193,6 +9555,28 @@ function buildRamDumpText(program) {
   return out.join('\n') + '\n';
 }
 
+/* The name each of these buttons last wrote, so a rename sticks the way the source
+   editor's does - `currentFileName` is that variable for the source, and these four
+   have no equivalent because they used to write literals. Keyed by PURPOSE rather than
+   by button, since rom.txt and the .s listing are the same button on different targets.
+   In memory only, like currentFileName: a name is a property of this session's work,
+   not a setting.
+
+   Worth knowing before renaming rom.txt or ram.txt: those two are a CONTRACT, not a
+   label. A design says `$readmemh("rom.txt", ...)` and the simulator resolves an
+   attachment by name, so a renamed image will not be found unless the Verilog is edited
+   to match. The default is always the contract name, so this only bites a deliberate
+   rename - and the log line below names what was actually written rather than what the
+   contract expects, which is what makes the mismatch visible. */
+const savedNames = {};
+function saveAs(key, defaultName, text) {
+  const name = askFileName(savedNames[key] || defaultName);
+  if (name === null) return null;
+  savedNames[key] = name;
+  downloadText(name, text);
+  return name;
+}
+
 // One download path, so the Blob dance exists once rather than per button.
 function downloadText(name, text) {
   const blob = new Blob([text], { type: 'text/plain' });
@@ -9217,7 +9601,7 @@ document.getElementById('asmSaveBtn').addEventListener('click', () => {
   }
   // Strip whatever source extension the current frontend uses, rather than `.c`
   // specifically - the listing is named after the program, not the language.
-  downloadText(spec ? spec.file : currentFileName.replace(/\.[A-Za-z0-9]+$/, '') + '.s', text);
+  saveAs('asm', spec ? spec.file : currentFileName.replace(/\.[A-Za-z0-9]+$/, '') + '.s', text);
 });
 
 /* The two explicit buttons. `Save rom.txt` shares buildRomDumpText with the
@@ -9247,8 +9631,9 @@ function saveImage(kind) {
     logLine('<span class="err">' + escapeHtml(e.message) + '</span>');
     return;
   }
-  downloadText(name, text);
-  logLine('<span class="info">wrote ' + escapeHtml(name) + ' (' + text.split('\n').length
+  const wrote = saveAs(kind, name, text);
+  if (wrote === null) return;
+  logLine('<span class="info">wrote ' + escapeHtml(wrote) + ' (' + text.split('\n').length
     + ' lines) — attach it in the simulator’s Memory Viewer, or use the workbench,'
     + ' which hands both images straight to $readmemh.</span>');
 }
@@ -9273,13 +9658,7 @@ function buildDataDumpText() {
 }
 document.getElementById('dataSaveBtn').addEventListener('click', () => {
   if (!lastResult) return;
-  const blob = new Blob([buildDataDumpText()], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'data.txt';
-  a.click();
-  URL.revokeObjectURL(url);
+  saveAs('data', 'data.txt', buildDataDumpText());
 });
 
 /* ---- collapse buttons (generic, works for any .card-collapse-btn) ---- */
@@ -10251,6 +10630,151 @@ document.querySelectorAll('.help-icon').forEach(btn => {
 document.addEventListener('click', () => {
   document.querySelectorAll('.help-popup.visible').forEach(p => p.classList.remove('visible'));
 });
+
+/* >>> NAV MENU (canonical copy in tools/navmenu.js - do not edit in place) */
+(function () {
+  var inner = document.querySelector('.gh-header-inner');
+  if (!inner || document.getElementById('navMenuBtn')) return;   // no bar, or already built
+
+  /* The rows, in order. Bare filenames because these pages are siblings; Home is the
+     one link that leaves the site. The three apps outside this directory (emulator,
+     verify, workbench) are deliberately absent: they live one level ABOVE the deployed
+     root, so a `../` row would resolve in the repo and 404 on the site. */
+  var ITEMS = [
+    ['Home', 'https://jeremyjbae.github.io/Baerilog', 'home'],
+    ['Practice', 'index.html', 'book'],
+    ['Simulator', 'simulator.html', 'pulse'],
+    ['Synthesizer', 'synthesis.html', 'chip'],
+    ['Compiler', 'compiler.html', 'code']
+  ];
+  var G = {
+    menu: '<svg viewBox="0 0 16 16"><path d="M1.5 3.25h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Z"/></svg>',
+    home: '<svg viewBox="0 0 16 16"><path d="M8 1.2 15 7l-.94 1.15-1.06-.88V14a1 1 0 0 1-1 1H9.5v-4.5h-3V15H4a1 1 0 0 1-1-1V7.27l-1.06.88L1 7 8 1.2Zm4 4.83L8 2.7 4 6.03V13.5h1V9h6v4.5h1V6.03Z"/></svg>',
+    book: '<svg viewBox="0 0 16 16"><path d="M2 2.5A1.5 1.5 0 0 1 3.5 1H13a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a2 2 0 0 0-2 2V2.5Zm2.5-.5a.5.5 0 0 0-.5.5v10.1c.3-.07.63-.1.5-.1h8V2H4.5Z"/></svg>',
+    pulse: '<svg viewBox="0 0 16 16"><path d="M6 2.5a.75.75 0 0 1 .7.48L9.3 10l1-2.5a.75.75 0 0 1 .7-.5h4v1.5h-3.5l-1.8 4.5a.75.75 0 0 1-1.4 0L5.7 5.5 4.7 8a.75.75 0 0 1-.7.5H0V7h3.5l1.8-4.02A.75.75 0 0 1 6 2.5Z"/></svg>',
+    chip: '<svg viewBox="0 0 16 16"><path d="M5 1.5h1.5v1.5h3V1.5H11v1.5h1.5A1.5 1.5 0 0 1 14 4.5V6h1.5v1.5H14v1H15.5V10H14v1.5a1.5 1.5 0 0 1-1.5 1.5H11v1.5H9.5V13h-3v1.5H5V13H3.5A1.5 1.5 0 0 1 2 11.5V10H.5V8.5H2v-1H.5V6H2V4.5A1.5 1.5 0 0 1 3.5 3H5V1.5Zm-1.5 3v7h9v-7h-9Zm2 2h5v3h-5v-3Z"/></svg>',
+    code: '<svg viewBox="0 0 16 16"><path d="M5.7 4.3a.75.75 0 0 1 0 1.06L3.06 8l2.64 2.64a.75.75 0 1 1-1.06 1.06L1.47 8.53a.75.75 0 0 1 0-1.06L4.64 4.3a.75.75 0 0 1 1.06 0Zm4.6 0a.75.75 0 0 1 1.06 0l3.17 3.17a.75.75 0 0 1 0 1.06L11.36 11.7a.75.75 0 1 1-1.06-1.06L12.94 8l-2.64-2.64a.75.75 0 0 1 0-1.06Z"/></svg>'
+  };
+
+  function mk(tag, cls, id, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (id) e.id = id;
+    if (text !== undefined && text !== null) e.textContent = text;
+    return e;
+  }
+
+  /* THREE OF THE SIX APPS LIVE OUTSIDE Baerilog/ - emulator, verify and workbench - so
+     a bare filename does not resolve from them and this has to prefix. They are also
+     the three that are NOT in the menu, and each carried a single `&larr; Baerilog` link
+     back to the hub; the shared block hides `.gh-nav a`, so that link is gone and the
+     drawer's Practice row is what replaces it. Getting this wrong is not cosmetic: it
+     would leave those three with no way back at all. */
+  var OUTSIDE = ['emulator', 'verify', 'workbench'];
+  function base() {
+    var parts = (window.location && window.location.pathname || '').split('/');
+    var dir = parts[parts.length - 2] || '';
+    return OUTSIDE.indexOf(dir) >= 0 ? '../Baerilog/' : '';
+  }
+
+  /* Which row is current, from the page's own URL rather than a per-app variable: one
+     fewer thing for a copy to set wrong. A practice EXERCISE page is not index.html but
+     is still Practice, which is why the marker falls back to it inside this directory -
+     and why it marks NOTHING from the three outside it, none of which is a row. */
+  function currentHref() {
+    if (base()) return '';
+    var file = (window.location && window.location.pathname || '').split('/').pop() || '';
+    var known = ['simulator.html', 'synthesis.html', 'compiler.html'];
+    return known.indexOf(file) >= 0 ? file : 'index.html';
+  }
+
+  var btn = mk('button', 'gh-menu-btn', 'navMenuBtn');
+  btn.setAttribute('type', 'button');
+  btn.setAttribute('aria-label', 'Open menu');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-controls', 'navDrawer');
+  btn.setAttribute('title', 'Menu');
+  btn.innerHTML = G.menu;
+  inner.insertBefore(btn, inner.firstChild);
+
+  var back = mk('div', 'nav-backdrop', 'navBackdrop');
+  var panel = mk('aside', 'nav-drawer', 'navDrawer');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  panel.setAttribute('aria-label', 'Site menu');
+
+  var head = mk('div', 'nav-drawer-head');
+  /* The wordmark is CLONED out of the header rather than pasted in as another copy of
+     those three paths: tools/logo.py rewrites every copy in the repo after a re-export,
+     and one it does not know about goes stale silently. Two simple selectors, not the
+     compound `.gh-mark svg`, because the stub DOM the harnesses use resolves one at a
+     time and the compound form returns null - the drawer would ship with no logo while
+     every test passed. On this light surface it drops the header's unconditional
+     invert (style.css does that) or it renders white on white. */
+  var wrap = document.querySelector('.gh-mark');
+  var src = wrap && wrap.querySelector('svg');
+  var mark = mk('span', 'nav-drawer-mark');
+  if (src && src.cloneNode) mark.appendChild(src.cloneNode(true));
+  head.appendChild(mark);
+  var close = mk('button', 'ex-close nav-drawer-close', 'navCloseBtn', '✕');
+  close.setAttribute('type', 'button');
+  close.setAttribute('title', 'Close');
+  close.setAttribute('aria-label', 'Close menu');
+  head.appendChild(close);
+  panel.appendChild(head);
+
+  var list = mk('nav', 'nav-drawer-list', 'navDrawerList');
+  var here = currentHref();
+  var pre = base();
+  for (var i = 0; i < ITEMS.length; i++) {
+    var row = mk('a', 'nav-row' + (ITEMS[i][1] === here ? ' current' : ''));
+    // the off-site row is absolute and must not be prefixed
+    row.setAttribute('href', /^https?:/.test(ITEMS[i][1]) ? ITEMS[i][1] : pre + ITEMS[i][1]);
+    var ic = mk('span', null, 'nav-row-icon');
+    ic.className = 'nav-row-icon';
+    ic.innerHTML = G[ITEMS[i][2]] || '';
+    row.appendChild(ic);
+    row.appendChild(mk('span', 'nav-row-label', null, ITEMS[i][0]));
+    list.appendChild(row);
+  }
+  panel.appendChild(list);
+  /* The panel is a CHILD of the backdrop, as every dialog here is: that is what makes
+     the ev.target guard below load-bearing rather than unfalsifiable - as siblings, a
+     click inside the panel could never reach the backdrop's handler. */
+  back.appendChild(panel);
+  document.body.appendChild(back);
+
+  function isOpen() { return panel.classList.contains('open'); }
+  function open() {
+    /* One drawer at a time: cloud-ui.js's account drawer comes in from the right and is
+       looked up at click time, so neither depends on loading before the other. */
+    var ab = document.getElementById('cloudDrawerBack');
+    var ap = document.getElementById('cloudDrawer');
+    if (ab) ab.classList.remove('open');
+    if (ap) ap.classList.remove('open');
+    panel.classList.add('open');
+    back.classList.add('open');
+    document.body.classList.add('nav-open');
+    btn.setAttribute('aria-expanded', 'true');
+    var first = list.children[0];
+    if (first && first.focus) first.focus();
+  }
+  function shut() {
+    panel.classList.remove('open');
+    back.classList.remove('open');
+    document.body.classList.remove('nav-open');
+    btn.setAttribute('aria-expanded', 'false');
+    if (btn.focus) btn.focus();
+  }
+  btn.addEventListener('click', function () { if (isOpen()) shut(); else open(); });
+  close.addEventListener('click', shut);
+  back.addEventListener('click', function (ev) { if (ev.target === back) shut(); });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && isOpen()) shut();
+  });
+})();
+/* <<< NAV MENU */
+
 </script>
 <!-- Optional cloud progress. These four siblings are the ONLY external files this
      app references, and every one of them is optional: cloud-config.js ships with

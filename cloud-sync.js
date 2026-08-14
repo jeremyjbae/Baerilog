@@ -182,14 +182,21 @@
   }
 
   if (app === 'practice') {
+    /* BOTH run buttons on a synthesis page: Run Simulation, and the netlist card's Run
+       Gate-level Simulation. A gate-level run replaces the panels and the pill, so the
+       stored verdict has to follow them or the hub would report a run that is no longer
+       on screen. Safe to bind here because practice-synth.js builds that button at load,
+       several script tags before this file - and its own handler is registered first, so
+       the console is written by the time this one reads it. */
     var runBtn = document.getElementById('runBtn');
+    var gateBtn = document.getElementById('gateRunBtn');
     var box = document.getElementById('consoleBox');
     if (runBtn && box) {
       /* Registered after app.js's handler (which writes the console) and after
          practice.js's (which refreshes the pill), because a classic script's
          listeners fire in load order and this file is loaded last. runSimulation
          is synchronous, so the console is complete by the time this runs. */
-      runBtn.addEventListener('click', function () {
+      var record = function () {
         var text = box.textContent || '';
         var pass = countOf(text, 'PASS'), fail = countOf(text, 'FAIL');
         window.CLOUD.save(app, item, {
@@ -200,7 +207,9 @@
              that never did. */
           verdict: { pass: pass, fail: fail, state: fail > 0 ? 'fail' : (pass > 0 ? 'pass' : 'none') }
         });
-      });
+      };
+      runBtn.addEventListener('click', record);
+      if (gateBtn) gateBtn.addEventListener('click', record);
     }
 
     /* Reset un-runs the page - app.js drops the result, empties the waveform and puts
@@ -220,6 +229,17 @@
     var resetBtn = document.getElementById('resetBtn');
     if (resetBtn) {
       resetBtn.addEventListener('click', function () {
+        window.CLOUD.save(app, item, { source: getText(), verdict: null });
+      });
+    }
+    /* The Console's Clear button, for the same reason and by the same rule: it silences the
+       pill, so the badge that reads the same verdict has to go quiet with it. A pill and a
+       badge disagreeing is precisely the bug the Reset handler above was written for. Note
+       Clear is NOT a Reset - the waveform and the netlist stay - but the stored verdict
+       speaks for the Console, and the Console is what was just discarded. */
+    var clearBtn = document.getElementById('consoleClearBtn');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function () {
         window.CLOUD.save(app, item, { source: getText(), verdict: null });
       });
     }

@@ -11,34 +11,18 @@
  * `here` marker onto the Practice link.
  */
 
-/* --------------------------------------------------- breadcrumb and sub-line */
-/* The breadcrumb IS the h1, the way a repo page's owner/name is, so the centred
-   heading style.css gives an h1 has to be undone for this page. */
-.gh-crumb {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 16px 24px 0;
-  text-align: left;
-  font-size: 20px;
-  font-weight: 400;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.gh-crumb a { color: var(--accent-fg); text-decoration: none; font-weight: 600; }
-.gh-crumb a:hover { text-decoration: underline; }
-.gh-crumb .sep { color: var(--fg-muted); }
-.gh-crumb .here { font-weight: 600; color: var(--fg-default); }
-.gh-crumb .gh-label { font-size: 12px; margin-left: 6px; }
-.gh-sub {
-  max-width: 1280px;
-  margin: 4px auto 0;
-  padding: 0 24px;
-  text-align: left;
-  font-size: 14px;
-  color: var(--fg-muted);
-}
+/* ---- the Console's section rules ----
+   The box is ordered by WHEN each thing ran, oldest at the top, and each block sits under
+   its own `— simulation —` / `— gate-level simulation —` / `— synthesis —` line. The rule
+   only needs separating from the block above it; the colour comes from the `.info` span
+   inside, as every other console line's does. Not in style.css: sections exist because
+   this page has two things that write to one Console, which no other app has. */
+.console-rule { margin-top: 10px; }
+.console-box > .console-rule:first-child { margin-top: 0; }
+
+
+/* The breadcrumb and its sub-line USED to live here. They are style.css's now, because
+   the three apps the menu offers carry the same heading - see the .gh-crumb block there. */
 
 /* Every link inside a container this site owns, so none is left at the browser's
    default blue - legible on white, nearly invisible on a dark canvas. */
@@ -111,7 +95,12 @@
   margin-top: 20px;
 }
 
-/* ------------------------------------------ the exercise sheet, a Primer dialog */
+/* The menu button and its drawer moved into style.css, so all six apps have one
+   reading of them - see "The navigation drawer" there. What was practice-only about
+   them turned out to be nothing at all: the button, the panel, the rows, the
+   full-width bar and the hidden nav links are the same on every app. */
+
+/* -------------------------------------------- the exercise sheet, a Primer dialog */
 .ex-backdrop {
   position: fixed;
   inset: 0;
@@ -245,7 +234,12 @@ body.ex-sheet-open { overflow: hidden; }
 .gh-page {
   max-width: 1328px;
   margin: 0 auto;
-  padding: 16px 24px 32px;
+  /* No bottom padding: the footer sits OUTSIDE this wrapper and brings its own 24px
+     margin-top, the same gap every other page has between its last card and the footer.
+     This used to be 32px, which was right while .gh-readme was the last thing inside and
+     nothing followed - but added to the footer's own margin it made the hub's gap 56px
+     against everyone else's 24px. Room below the footer comes from body's `0 0 32px`. */
+  padding: 16px 24px 0;
 }
 .gh-box {
   background: var(--canvas-default);
@@ -409,7 +403,9 @@ body.ex-sheet-open { overflow: hidden; }
    scrolling vertically over it loses nothing; a netlist is two-dimensional, so one
    finger has to be able to move it in both. React Flow's own pane does the same, which
    is also what synthesis.html gets today. The cost is real and bounded: a touch that
-   lands inside this 520px box scrolls the graph rather than the page. */
+   lands inside this 520px box scrolls the graph rather than the page - which is fine
+   beside a desktop pointer and a trap on a phone, where it is the only way past the
+   card, so the mobile block at the foot of this file relaxes it to pan-y. */
 #flowRoot { touch-action: none; cursor: grab; }
 .pn-nodes, .pn-edges {
   position: absolute;
@@ -462,4 +458,87 @@ body.ex-sheet-open { overflow: hidden; }
   font: 11px "SF Mono", Menlo, Consolas, monospace;
   color: var(--accent-fg);
   flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   A phone, and what is left here now that the shared layer exists.
+
+   `style.css` carries the narrow-screen rules every app shares - the single column
+   and its 16px gutters, wrapping card headers, the stacked split row, the static
+   compact header, 16px on every focusable control and on the read-only dark panels,
+   and `.card { min-width: 0 }` at every width (which is what stops one wide panel
+   ballooning the grid: measured 19,628px -> 812px at a 320px viewport on this very
+   page). All of that USED to be in this file, and deleting it was the point: six
+   readings of one breakpoint is how the four different `style.css` variants happened.
+
+   So what stays is only what belongs to the practice site: the tab strip, the
+   exercise sheet, this site's own run-length field, and the netlist viewer's touch
+   behaviour. 760px is app.css's own breakpoint, reused rather than reinvented.
+
+   Specificity note, still true for the rules below that touch a shared class: 18 of
+   the twenty pages load synth.css AFTER this file, and it carries its own copies of
+   .gutter, .editor-wrap textarea, .console-box and select/.btn/.num-input - so a rule
+   colliding with those needs `body` to win on specificity rather than on order.
+   --------------------------------------------------------------------------- */
+@media (max-width: 760px) {
+  /* 1. The tab strip, which was the whole of the horizontal overflow left once the
+     cards could shrink: six tabs plus Reset need ~900px, and a flex row with no wrap
+     and no scroll simply made the DOCUMENT that wide (812px of it, measured). Since
+     .gh-header is only ever as wide as the viewport, the bar then rendered narrower
+     than the page it sits on. One swipeable row is what github.com's own repo tabs do
+     at this width.
+
+     Reset is pinned rather than left to scroll away, because it is the one
+     destructive control here and a tab strip that hides it is worse than one that
+     scrolls. `margin-left: auto` on its base rule does nothing in an overflowing
+     container (there is no free space for an auto margin to absorb), so it sits
+     after the last tab and sticks there; the opaque background is what stops the
+     tabs sliding visibly under it, and the base rule's :hover fill still wins.
+
+     overflow-y is pinned to hidden on purpose: .gh-tab carries margin-bottom: -1px
+     to sit ON the strip's bottom rule, and inside a scroll container that 1px
+     becomes vertical overflow. The cost is that the selected tab's 2px underline is
+     clipped to 1px above the strip's own rule, which is not a difference anyone can
+     see; the alternative was a 1px vertical jiggle on every strip. */
+  .gh-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .gh-tabs::-webkit-scrollbar { display: none; }
+  .gh-tab { flex: 0 0 auto; }
+  .ex-reset {
+    position: sticky;
+    right: 0;
+    flex: 0 0 auto;
+    background: var(--canvas-default);
+  }
+
+  /* 2. Two controls the shared block cannot size, for opposite reasons. The cloud
+     dialog's input is injected by cloud-ui.js into a <style> in the head at runtime,
+     so it lands after every stylesheet and needs beating on specificity - and under
+     16px iOS zooms the page when it is focused, which is the one place a learner
+     types an emailed code. The run-length field is this site's own width (76px for
+     four digits at 12px), so 16px needs more room. */
+  body .cloud-modal input { font-size: 16px; }
+  body .num-input { width: 84px; }
+  #maxTimeInput { width: 84px; }
+
+  /* 3. The exercise sheet is the first thing on the page, so its chrome is worth
+     the width: 24px of backdrop on each side is 12% of the screen. A wide table in
+     a description has nowhere to go inside a sheet that hides its overflow, so it
+     is given its own scroll rather than being clipped. */
+  .ex-backdrop { padding: 8px; }
+  .ex-sheet-head, .ex-sheet-body { padding: 12px; }
+  .ex-sheet-body table { display: block; overflow-x: auto; }
+
+  /* 4. #flowRoot's `touch-action: none` above is deliberate on a desktop pointer and
+     a trap on a phone - a 520px box that eats every vertical drag is a page you
+     cannot scroll past. pan-y hands vertical drags back to the browser and keeps
+     horizontal ones for the pan; the graph is also shorter here, since 520px is most
+     of a phone screen. */
+  #flowRoot { touch-action: pan-y; height: 360px; }
 }

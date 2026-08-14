@@ -189,7 +189,7 @@ class Parser {
       const ioKind = this.next().value;
       let kind = ioKind;
       if (this.atKw('reg') || this.atKw('wire')) kind = this.next().value;
-      const width = this.parseRange();
+      const { width, msb, lsb } = this.parseRange();
       /* The direction, reg/wire-ness and range carry across commas until a new
          direction appears, so `input [7:0] r0, r1, r2` declares all three - which
          is what the LOOKAHEAD is for: only a bare identifier continues this
@@ -207,7 +207,7 @@ class Parser {
       }
       for (const name of names) {
         ports.push(name);
-        decls.push({ kind, ioKind, name, width, array: null });
+        decls.push({ kind, ioKind, name, width, msb, lsb, array: null });
       }
       return;
     }
@@ -244,6 +244,16 @@ class Parser {
     return { port: null, expr: this.parseExpr() };
   }
 
+  /* Returns the WIDTH the simulator runs on plus the msb/lsb exactly AS WRITTEN,
+     both null for a scalar. The width expression is untouched: everything
+     downstream (declareSignal, maskVal, widthOfExpr, the radix menu) still sees
+     the same bit count it always did, and nothing in the engine reads msb/lsb at
+     all - they exist only so the Module Hierarchy panel and the waveform's name
+     column can print `d[4:1]` for a signal declared `reg [4:1] d;` rather than
+     the `d[3:0]` a width-derived label would invent. Deriving the label from the
+     width is right for every declaration in EXAMPLES (all are [N-1:0]) and wrong
+     for any design that indexes from something other than 0, which is precisely
+     the kind of plausible-looking wrong number this panel must not show. */
   parseRange() {
     if (this.atOp('[')) {
       this.next();
@@ -251,9 +261,11 @@ class Parser {
       this.expectOp(':');
       const lo = this.parseExpr();
       this.expectOp(']');
-      return Math.abs(evalConstExpr(hi, this.curModule, this.params) - evalConstExpr(lo, this.curModule, this.params)) + 1;
+      const msb = evalConstExpr(hi, this.curModule, this.params);
+      const lsb = evalConstExpr(lo, this.curModule, this.params);
+      return { width: Math.abs(msb - lsb) + 1, msb, lsb };
     }
-    return 1;
+    return { width: 1, msb: null, lsb: null };
   }
 
   // A second `[first:second]` following a declared name makes it a memory
@@ -295,14 +307,14 @@ class Parser {
     const kind = this.next().value;
     let kind2 = null;
     if (this.atKw('reg') || this.atKw('wire')) kind2 = this.next().value;
-    const width = this.parseRange();
+    const { width, msb, lsb } = this.parseRange();
     const entries = [this.parseDeclName()];
     while (this.atOp(',')) { this.next(); entries.push(this.parseDeclName()); }
     this.expectOp(';');
     return entries.map(({ name, array }) => ({
       kind: kind2 || kind,
       ioKind: (kind === 'input' || kind === 'output') ? kind : null,
-      name, width, array
+      name, width, msb, lsb, array
     }));
   }
 
@@ -985,7 +997,7 @@ function elaborate(modules) {
         localSeen.add(fullName);
       }
       if (d.array) declaredMemoryNames.add(fullName);
-      decls.push({ kind: d.kind, ioKind: d.ioKind, name: fullName, width: d.width, array: d.array });
+      decls.push({ kind: d.kind, ioKind: d.ioKind, name: fullName, width: d.width, msb: d.msb, lsb: d.lsb, array: d.array });
     }
     for (const item of mod.items) {
       if (item.type === 'Assign') {
@@ -3568,7 +3580,27 @@ let tbSpan = null;             // {start, end} of the testbench region, null whe
    NO MARKER MEANS NO TESTBENCH REGION, and that is what keeps this neutral: the
    design span is then the whole file, the Testbench card shows its empty state,
    and every path below behaves as it did. */
-const TB_MARKER_RE = /^[ \t]*\/\/[ \t]*=+[ \t]*TESTBENCH[ \t]*=+[ \t]*$/m;
+/* The marker is matched ANYWHERE ON A LINE, not only alone on one, so
+   `endmodule// ======== TESTBENCH ========module tb;` splits where it says it
+   does. The pattern starts at the `//` rather than at the decoration, which is
+   what lets tbMarkerIn keep code that precedes it on the same line in the design
+   half; and it requires the `=` decoration, because TESTBENCH on its own is an
+   ordinary word in a comment and `// checked by the testbench below` must not
+   silently delete the rest of the file.
+
+   This is the ONE definition, and that is the point: `practice-synth.js` cuts the
+   design out for the synthesizer and `Baerilog/test.py` compares the two halves,
+   and both read tbMarkerIn rather than restating the pattern - five copies of it
+   is how one consumer would come to disagree with another about where the same
+   document splits. `Baerilog/synthesis.html` cannot share a binding with this
+   file (separate apps, no shared script) so it carries the pattern itself, and
+   test.py asserts the two spellings agree.
+
+   Block comments deliberately do NOT carry it. The synthesizer's lexer tests
+   comment text and so would accept a block-comment marker for free, but a
+   document that cuts there and does not split here is the disagreement this one
+   definition exists to prevent. */
+const TB_MARKER_RE = /\/\/[^\n]*?=+[ \t]*TESTBENCH[ \t]*=+/i;
 const TB_MARKER = '// ======== TESTBENCH ========';
 
 /* A document only HAS a testbench region where there is a second editor to show
@@ -3580,13 +3612,34 @@ const TB_MARKER = '// ======== TESTBENCH ========';
    and five of its checks failed. One editor therefore means one span. */
 function hasTestbenchEditor() { return !!tbInput; }
 
-// Where the marker line starts, or -1. The marker itself belongs to NEITHER
-// view: it is the boundary, so the design ends before it and the testbench
-// begins after its newline.
+/* Where the boundary starts, or -1 — and DOM-FREE, which is what lets the two
+   other consumers (practice-synth.js's designOnly, and the harness) read one
+   definition instead of restating the pattern. `tbMarkerAt` is the same question
+   asked by this app, where a document only has a testbench region if there is a
+   second editor to show it in; nothing else may inherit that condition, because
+   a page with one editor still needs the design cut out for the synthesizer.
+
+   The marker itself belongs to NEITHER view: it is the boundary, so the design
+   ends before it and the testbench begins after its newline.
+
+   The WALK-BACK is what keeps this neutral. An own-line marker puts its own
+   indentation in the boundary, which is byte-for-byte where the line-anchored
+   rule this replaced split every document that exists today; only a marker with
+   real code before it on the line starts the boundary at the `//` instead, since
+   that code cannot be dragged out of the design half. Note the text after such a
+   marker is inside its comment, so it stays in the boundary and is spliced back
+   untouched rather than being un-commented into the testbench view - the document
+   says it is a comment, and rewriting the reader's file is not this function's
+   job. */
+function tbMarkerIn(src) {
+  const m = TB_MARKER_RE.exec(src);
+  if (!m) return -1;
+  const lineStart = src.lastIndexOf('\n', m.index) + 1;
+  return src.slice(lineStart, m.index).trim() === '' ? lineStart : m.index;
+}
 function tbMarkerAt(src) {
   if (!hasTestbenchEditor()) return -1;
-  const m = TB_MARKER_RE.exec(src);
-  return m ? m.index : -1;
+  return tbMarkerIn(src);
 }
 function designSpan(src) {
   const at = tbMarkerAt(src);
@@ -3622,6 +3675,19 @@ const maxTimeAutoNote = document.getElementById('maxTimeAutoNote');
 const consoleBox = document.getElementById('consoleBox');
 const waveCanvas = document.getElementById('waveCanvas');
 const waveEmpty = document.getElementById('waveEmpty');
+/* The plot-off control. Null on any page that carries this script with its OWN markup -
+   workbench/index.html does, and the slice cannot bring markup with it (the same hazard
+   #card-model records) - so every use of these three is guarded. */
+const waveOffCheckbox = document.getElementById('waveOffCheckbox');
+const waveControls = document.getElementById('waveControls');
+const waveMemNote = document.getElementById('waveMemNote');
+/* Read from the markup rather than restated here, the same rule RUN_LABEL_FRESH follows,
+   so simulator.html stays the one source of the wording and a page with its own shorter
+   copy is not clobbered with this one's. */
+const WAVE_EMPTY_TEXT = (waveEmpty.textContent || '').trim();
+const WAVE_OFF_TEXT = 'Plot off to save memory — untick to draw it again.';
+const WAVE_NOTE_OFF = 'plot off — canvas released';
+let waveOff = false;
 const badgeRow = document.getElementById('badgeRow');
 const hierarchyTree = document.getElementById('hierarchyTree');
 const waveZoomInBtn = document.getElementById('waveZoomIn');
@@ -3992,8 +4058,42 @@ document.getElementById('editorCopyBtn').addEventListener('click', () => {
   spliceEditorChangesBack(); // always merges, so Copy can never hand back a stale file
   copyTextToClipboard(editorFullSource);
 });
+/* ---- "save as", so the download name is the reader's to choose ----
+   Every Save in every app asks, with the CURRENT name as the default, and what the
+   reader types becomes the current name - so a rename sticks for the rest of the
+   session exactly as opening a file already sets it. Hand-maintained in six copies,
+   because these are six standalone single-file apps with no shared script; that is the
+   busyLabel/withBusyButton arrangement, and tools/check_theme.py asserts the copies
+   agree, collected by this banner rather than from a list so a seventh is covered too.
+
+   Three rules, and each is a decision rather than a detail:
+
+   Cancel ABORTS the save. `null` from prompt is the reader saying "not like that", so
+   nothing is written and the current name is left alone.
+
+   An EMPTY answer keeps the default rather than writing a nameless file - trimmed, so
+   a stray space is not a filename either.
+
+   A missing `prompt` saves under the default instead of throwing. That covers an
+   environment without one, and it is deliberately NOT extended to the suppressed case:
+   after several dialogs a browser offers "prevent additional dialogs", and from then on
+   `prompt` returns null, which is indistinguishable from Cancel. Guessing between them
+   by how fast it returned was considered and rejected - a heuristic that cannot be
+   tested, and one that would save a file the reader had deliberately cancelled. So a
+   suppressed prompt reads as Cancel, which is the safe direction: it writes nothing. */
+function askFileName(defaultName) {
+  if (typeof window.prompt !== 'function') return defaultName;
+  const answer = window.prompt('Save as', defaultName);
+  if (answer === null) return null;
+  const name = answer.trim();
+  return name || defaultName;
+}
+
 document.getElementById('editorSaveBtn').addEventListener('click', () => {
   spliceEditorChangesBack(); // ditto: Save writes what's on screen, syntax error or not
+  const name = askFileName(currentFileName);
+  if (name === null) return;
+  currentFileName = name;
   const blob = new Blob([editorFullSource], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -4475,6 +4575,46 @@ document.querySelectorAll('[data-collapse]').forEach(btn => {
   });
 })();
 
+/* ---- the plot-off control ----
+   Default OFF, i.e. the plot is drawn, so nothing about this page changes until the box
+   is ticked. `=== '1'` is therefore the form that honours the stored value in BOTH
+   directions - the trap this file records for the Scoreboard's checkbox was a default-ON
+   flag read with a test that could only ever turn it on.
+
+   Guarded on the element, because workbench/index.html carries this script with its own
+   markup and has no such box; there `waveOff` stays false and the app behaves as before.
+
+   Nothing on this path may touch PAD_TOP/ROW_H or waveCanvasBytes. This block runs at
+   LOAD, some 1200 lines above where the renderer's layout constants are declared, and a
+   `const` read before its declaration is a temporal-dead-zone throw that takes the whole
+   page down with it - which is what the harness caught twice while this was written, once
+   for `waveOff` itself and once for `PAD_TOP`. The megabyte figure is drawWaveform's to
+   fill in; with no run behind it there are no rows to describe anyway. */
+(() => {
+  if (!waveOffCheckbox) return;
+  /* The no-run path: what to show when there is no result for drawWaveform to render. */
+  function applyNoRun() {
+    waveEmpty.textContent = waveOff ? WAVE_OFF_TEXT : WAVE_EMPTY_TEXT;
+    if (waveControls) waveControls.style.display = waveOff ? 'none' : '';
+    if (waveMemNote) waveMemNote.textContent = waveOff ? WAVE_NOTE_OFF : '';
+    if (waveOff) releaseWaveCanvas();
+  }
+  waveOffCheckbox.checked = localStorage.getItem('waveOff') === '1';
+  waveOff = waveOffCheckbox.checked;
+  waveOffCheckbox.addEventListener('change', () => {
+    waveOff = waveOffCheckbox.checked;
+    localStorage.setItem('waveOff', waveOff ? '1' : '0');
+    /* Redraw where there is something to draw. With no run behind it drawWaveform is
+       never called (every caller guards on lastResult), so the release and the controls
+       have to be applied here too - otherwise ticking the box before the first Run looks
+       as though it did nothing at all. */
+    if (lastResult) drawWaveform(lastResult);
+    else applyNoRun();
+  });
+  // the persisted state has to be applied at load, not only on a change
+  if (waveOff) applyNoRun();
+})();
+
 /* ---- module hierarchy panel toggle ---- */
 (() => {
   const splitRow = document.getElementById('waveSplitRow');
@@ -4497,6 +4637,29 @@ document.querySelectorAll('[data-collapse]').forEach(btn => {
     apply(visible);
   });
   apply(localStorage.getItem('waveHierarchyVisible') === '1');
+})();
+
+/* ---- bit widths on the waveform's name column ----
+   Default OFF, so `=== '1'` honours the stored value in both directions. The
+   Module Hierarchy panel prints the range unconditionally; this governs only the
+   canvas's name column, which is the crowded one - it is right-aligned at
+   NAME_W - 8 and drawn outside the plot clip, so a long name plus a suffix runs
+   off the left edge rather than being clipped. The name/value divider is
+   draggable to 200px, which is the escape hatch. */
+let waveShowWidths = false;
+(() => {
+  const btn = document.getElementById('waveWidthsBtn');
+  function apply(shown) {
+    waveShowWidths = shown;
+    btn.classList.toggle('active', shown);
+    if (lastResult) drawWaveform(lastResult); // the labels are canvas text, so nothing changes until a redraw
+  }
+  btn.addEventListener('click', () => {
+    const shown = !waveShowWidths;
+    localStorage.setItem('waveShowWidths', shown ? '1' : '0');
+    apply(shown);
+  });
+  apply(localStorage.getItem('waveShowWidths') === '1');
 })();
 
 /* ---- waveform card expand (full-bleed to the browser width) ----
@@ -4569,28 +4732,66 @@ function escapeHtml(s) {
 
 /* ---- run / reset ---- */
 
-/* The Run button has two states, and the WORDING of neither is written here: the
-   markup carries the fresh label and the other is derived from it by turning `Run`
-   into `Re-run`, so `simulator.html` stays the single source of what the button says
-   and an app whose markup says something shorter keeps it short (`workbench`'s is
+/* The Run button has THREE states, and the WORDING of the first two is not written
+   here: the markup carries the fresh label and the second is derived from it by turning
+   `Run` into `Re-run`, so `simulator.html` stays the single source of what the button
+   says and an app whose markup says something shorter keeps it short (`workbench`'s is
    `▶ Run`, so it becomes `▶ Re-run` rather than being clobbered with this one's
    longer form).
    It matters because Run and Reset are genuinely different operations and used to look
    identical: a re-run keeps everything you set up in the Waveform Viewer - which rows
    are shown, their radix, the hierarchy's expansion, and now the zoom - while Reset is
    what throws all of that away. `Re-run Simulation` beside `Reset` is the panel saying
-   so. Keyed on `lastResult`, the same test the Scoreboard's empty state uses, so a run
-   that failed to parse (which returns early without touching it) does not relabel. */
+   so. The first two are keyed on `lastResult`, the same test the Scoreboard's empty
+   state uses; the third is the error state below, which is keyed on a run having
+   returned early without producing one. */
 const RUN_LABEL_FRESH = runBtn.textContent;
 const RUN_LABEL_AGAIN = RUN_LABEL_FRESH.replace(/\bRun\b/, 'Re-run');
+/* The third state: a run that did not do what was asked - the file did not parse, the
+   Simulator threw before producing anything, or the run completed with a runtime error
+   (a combinational loop, an unattached $readmemh file). The first two leave the page
+   with no result at all, so the button used to go on offering `Run` as though nothing
+   had happened; the third leaves a waveform, which stays, because for a loop that
+   waveform IS the diagnosis - but neither is a run to be re-run as though it worked.
+
+   This one is a LITERAL where RUN_LABEL_AGAIN is derived, and that is not an oversight.
+   The derivation exists because the base wording varies per app - this file says
+   `▶ Run Simulation` and workbench/index.html deliberately says the shorter `▶ Run` -
+   so a hardcoded base would clobber one of them. `Error (Retry)` contains no
+   app-specific words, so there is nothing for the two to disagree about.
+
+   The `︎` after the ⚠ is U+FE0E, the TEXT presentation selector, and it is
+   load-bearing. Bare U+26A0 renders as a colour emoji on most platforms - the
+   yellow-and-black sign - which ignores `color` entirely and would sit on the red fill
+   in a colour nobody picked, differently per OS. The text form is monochrome and
+   inherits currentColor, so it is the same --fg-on-emphasis white as the words beside
+   it. busyLabel already consumes an optional U+FE0E along with the glyph it follows
+   (Synthesize's gear carries one), so a retry press correctly reads `⏲ Error (Retry)`
+   rather than leaving the selector behind to re-present the ⏲. */
+const RUN_LABEL_ERROR = '⚠︎ Error (Retry)';
+/* Cleared at the top of runSimulation and set by every path that fails, so reaching the
+   end with no error leaves it false without needing to say so. Three paths set it, and
+   the third is where most failures actually land: the parse/elaborate catch, the
+   new Simulator/sim.run() catch, and a completed run whose `result.error` is set -
+   because `run()` catches into that field rather than throwing, so a combinational loop,
+   an unattached $readmemh file and the internal invariant violations never reach either
+   catch. A run that hits `maxTime` without $finish is NOT a failure: it is reported as
+   info, the waveform is complete as far as it goes, and the run length is a field the
+   reader chose. Nor is a model mismatch, which is the Scoreboard's verdict to give. */
+let lastRunFailed = false;
 /* Still exactly ONE writer of this label, which is what the busy state forced to be
    made explicit: `syncRunLabel` is called again when the state is set and when it is
    cleared, and it asks the button which form to write. Writing the ⏲ form directly
    from the busy helper instead would have it silently overwritten mid-run - the first
    Run relabels Run -> Re-run through here while the job is still notionally busy. */
 function syncRunLabel() {
-  const base = lastResult ? RUN_LABEL_AGAIN : RUN_LABEL_FRESH;
+  const base = lastRunFailed ? RUN_LABEL_ERROR : (lastResult ? RUN_LABEL_AGAIN : RUN_LABEL_FRESH);
   runBtn.textContent = runBtn.hasAttribute('data-busy') ? busyLabel(base) : base;
+  // set/removeAttribute rather than toggleAttribute, to match withBusyButton's
+  // handling of data-busy a few lines down - one idiom for the two states of this
+  // same button, and it needs nothing of the DOM the busy path does not already.
+  if (lastRunFailed) runBtn.setAttribute('data-error', '');
+  else runBtn.removeAttribute('data-error');
 }
 
 /* ---- "that click landed", for a job that blocks the main thread ----
@@ -4698,7 +4899,10 @@ resetBtn.addEventListener('click', () => {
   // checkbox itself is a user preference and survives, like the layout controls.
   modelCheck = null;
   renderModelCard();
-  // Reset is what makes the next Run a first run again, so the button says Run.
+  // Reset is what makes the next Run a first run again, so the button says Run - and
+  // that includes clearing the error state, or the button would go on reporting a
+  // failure belonging to a run this has just thrown away.
+  lastRunFailed = false;
   syncRunLabel();
 });
 
@@ -4706,6 +4910,25 @@ resetBtn.addEventListener('click', () => {
    directly by `workbench/index.html` at load and by every headless harness, where
    decorating a button would be noise at best. */
 runBtn.addEventListener('click', () => withBusyButton(runBtn, runSimulation, syncRunLabel));
+
+/* An edit retires the error, because the label describes text that no longer exists -
+   `⚠︎ Error (Retry)` over a file the reader has since fixed is the panel disagreeing
+   with itself. It reverts to `Run` or `Re-run` according to whether an earlier run
+   succeeded, which syncRunLabel already decides, so this needs no memory of its own.
+
+   BOTH editors, because the error can be in either half of the document and fixing the
+   testbench is as much a fix as fixing the design. `tbInput` is guarded because
+   `workbench/index.html` carries this script with no Testbench Editor at all.
+
+   Guarded on `lastRunFailed` so the common case - typing in a page that is not in the
+   error state - does no work beyond one boolean test. Note `setEditorText` uses
+   execCommand('insertText'), which fires `input` in a real browser, so loading an
+   example or switching module views clears the state too; that is correct, since each
+   of those replaces the text the error was about. */
+for (const ta of [codeInput, tbInput]) {
+  if (!ta) continue;
+  ta.addEventListener('input', () => { if (lastRunFailed) { lastRunFailed = false; syncRunLabel(); } });
+}
 
 // Best-effort static detection of when $finish executes, so "run for N time
 // units" can be auto-filled instead of guessed. Walks every `initial`
@@ -4795,11 +5018,26 @@ function tryApplyAutoFinishTime(src) {
   }
 }
 
-function runSimulation() {
+/* `overrideSrc` lets a CALLER say what to simulate, where this function otherwise reaches
+   into the editors for it. That is the only assumption it removes, and it removes rather
+   than adds one: the engine never cared whether Verilog is behavioural or gate-level, so
+   nothing here learns a new concept. Standalone this file has no second source of Verilog
+   and never passes it - the sole caller is `withBusyButton(runBtn, runSimulation, ...)`,
+   which invokes `work()` with no arguments, so no click Event can arrive here by accident.
+
+   It exists for Baerilog/, whose pages load this script body verbatim as app.js: there
+   `practice-synth.js` runs the synthesized netlist against the same testbench, through the
+   same engine and the same panels, and reimplementing this orchestration would be a second
+   copy of it free to drift. The same reason `hasTestbenchEditor` is in here.
+
+   The splice still runs, so the editors and `editorFullSource` stay current either way -
+   an override changes what is SIMULATED, never what is on screen. */
+function runSimulation(overrideSrc) {
   clearConsole();
+  lastRunFailed = false;   // cleared here, so reaching the end of this function IS success
   spliceEditorChangesBack(); // merges unconditionally, so Run can never simulate a stale file
   renderEditorHierarchyList();
-  const src = editorFullSource;
+  const src = overrideSrc || editorFullSource;
 
   let ast;
   try {
@@ -4810,6 +5048,7 @@ function runSimulation() {
     renderHierarchyTree(null);
     lastMemoryDecls = [];
     renderMemorySelect();
+    lastRunFailed = true;
     return;
   }
   showEditorSyncWarning(null); // the file parses again, so any fallback notice is stale
@@ -4821,7 +5060,11 @@ function runSimulation() {
   /* Whether this is a first look at this design decides two things now - which
      signals are shown, and whether the zoom survives - so it is read ONCE, before the
      block below consumes it by updating lastTopModuleName. */
-  const freshDesign = ast.tree.modType !== lastTopModuleName;
+  /* An override is a different design by definition - a gate-level netlist reuses the top
+     module's NAME, so the name test alone would call it the same one and keep the waveform's
+     signal selection and zoom. Those signals mostly do not exist in a netlist, so the plot
+     would open on rows it cannot draw. */
+  const freshDesign = !!overrideSrc || ast.tree.modType !== lastTopModuleName;
   if (freshDesign) {
     // first run against this top-level module (a fresh design, or Reset was
     // clicked): show only the top module's own signals, collapse every
@@ -4851,6 +5094,7 @@ function runSimulation() {
     renderHierarchyTree(ast.tree); // tree structure is still valid even though the run itself crashed
     modelCheck = null;
     renderModelCard();
+    lastRunFailed = true;
     return;
   }
 
@@ -4904,6 +5148,13 @@ function runSimulation() {
 
   if (result.error) {
     logLine('<span class="err">Runtime error: ' + escapeHtml(result.error) + '</span>');
+    /* A completed run can still be a failed one, and this is where most of them land:
+       `sim.run()` catches into `this.error` rather than throwing, so a combinational
+       loop, an unattached $readmemh file and the internal invariant violations all
+       arrive here rather than at either early return. There IS a waveform in this case
+       and it stays on screen - it is evidence, and for a loop it is the whole diagnosis
+       - but the run did not do what was asked, so the button says so. */
+    lastRunFailed = true;
   }
   if (result.log.length === 0 && !result.error) {
     logLine('<span class="info">(no $display output — see the waveform below)</span>');
@@ -5335,13 +5586,14 @@ function ownSignalsOf(path) {
 }
 
 // Populates declKindMap/clockSignalNames from a freshly-elaborated ast, so the
-// hierarchy checklist can pick each signal's icon (clock/input/output/wire/reg).
+// hierarchy checklist can pick each signal's icon (clock/input/output/wire/reg)
+// and print its declared bit range.
 // There's no dedicated "this is a clock" declaration in Verilog, so it's a
 // heuristic: any signal ever used as a posedge/negedge sensitivity target,
 // anywhere in the design, is treated as a clock.
 function computeDeclMeta(ast) {
   declKindMap = new Map();
-  for (const d of ast.decls) declKindMap.set(d.name, { kind: d.kind, ioKind: d.ioKind, array: d.array });
+  for (const d of ast.decls) declKindMap.set(d.name, { kind: d.kind, ioKind: d.ioKind, array: d.array, msb: d.msb, lsb: d.lsb });
   clockSignalNames = new Set();
   for (const item of ast.items) {
     if (item.type === 'Always' && Array.isArray(item.sensitivity)) {
@@ -5375,6 +5627,25 @@ function classifySignalKind(fullName) {
   if (meta.ioKind === 'input') return 'input';
   if (meta.ioKind === 'output') return 'output';
   return meta.kind === 'reg' ? 'reg' : 'wire';
+}
+
+/* The declared bit range as a display suffix: `[3:0]` for `reg [3:0] d;`, and
+   `[7:0][0:15]` for the memory `reg [7:0] mem[0:15];` - element range first,
+   then the depth in DECLARATION order, which is the order $readmemh's fill
+   direction is defined in and the order parseArrayRange already keeps.
+
+   A scalar gets '' rather than `[0:0]`, so a clock stays `clk`.
+
+   There is deliberately no fallback for a signal with no decl entry: using an
+   undeclared signal is a parse error (checkUndeclaredSignals), so every signal
+   that reaches a completed run has one, and a `?` or a guessed range here could
+   only ever be reached by a bug elsewhere. */
+function signalRangeLabel(fullName) {
+  const meta = declKindMap.get(fullName);
+  if (!meta) return '';
+  let label = meta.msb === null || meta.msb === undefined ? '' : '[' + meta.msb + ':' + meta.lsb + ']';
+  if (meta.array) label += '[' + meta.array.first + ':' + meta.array.second + ']';
+  return label;
 }
 
 function renderHierarchyTree(tree) {
@@ -5474,18 +5745,30 @@ function renderHierarchyTree(tree) {
         const fullName = prefix + localName;
         const item = document.createElement('div');
         const kind = classifySignalKind(fullName);
+        // The declared range rides on every row as a dimmed suffix, so the row
+        // reads as `d[3:0]` while the range stays visibly secondary to the name -
+        // the same treatment an instance's `(dff)` type label gets.
+        const range = signalRangeLabel(fullName);
+        function appendLabel() {
+          item.appendChild(document.createTextNode(localName));
+          if (!range) return;
+          const rangeSpan = document.createElement('span');
+          rangeSpan.className = 'hierarchy-signal-range';
+          rangeSpan.textContent = range;
+          item.appendChild(rangeSpan);
+        }
         // memories never appear in result.signals/the waveform, so their row is
         // purely informational: always shown dimmed/"off", no click-to-toggle.
         if (kind === 'mem') {
           item.className = 'hierarchy-signal-item off';
           item.insertAdjacentHTML('beforeend', signalIconSvg(kind));
-          item.appendChild(document.createTextNode(localName));
+          appendLabel();
           list.appendChild(item);
           return;
         }
         item.className = 'hierarchy-signal-item' + (isSignalHidden(fullName) ? ' off' : '');
         item.insertAdjacentHTML('beforeend', signalIconSvg(kind));
-        item.appendChild(document.createTextNode(localName));
+        appendLabel();
 
         function paint(visible) {
           if (visible) hiddenSignals.delete(fullName); else hiddenSignals.add(fullName);
@@ -5529,12 +5812,72 @@ const VALUE_W = 64;
 const PAD_TOP = 40;
 const PAD_BOTTOM = 10;
 
+/* The canvas backing store is width x height x dpr^2 x 4 bytes, and cssHeight grows
+   with the number of SHOWN rows - so on a design with hundreds of signals it is by far
+   the largest allocation on the page (measured: 377 rows at 2400px on a dpr-2 display
+   is ~471 MB, against ~560 KB for the whole recorded history of a 100,000-unit run).
+   `waveOff` forfeits the plot to get that back.
+
+   Two things about it are load-bearing. `display: none` DOES NOT free a canvas - the
+   element keeps its width/height attributes and the browser keeps the bitmap - so the
+   attributes have to be zeroed, which is the only part of this that actually reclaims
+   anything. And it cannot touch `history`: that is pushed by writeLValue in the engine,
+   guarded solely by "did the value change", and the Scoreboard's sampler, valueAtTime
+   and the divergence cursor all read it. Forfeiting the plot must not quietly cost the
+   reader their verdict, so the run is untouched and only the drawing is given up.
+
+   `waveOff` itself is declared up with the other wave state, NOT here: the control's
+   wiring block runs at load, hundreds of lines above this, and a `let` read before its
+   declaration is a temporal-dead-zone throw that takes the whole page down with it. */
+
+function releaseWaveCanvas() {
+  waveCanvas.style.display = 'none';
+  // the attributes, not the style: zeroing these is what frees the bitmap
+  waveCanvas.width = 0;
+  waveCanvas.height = 0;
+  waveLayout = null;   // every pointer handler guards on this, as the empty path does
+}
+
+/* What ticking the box would save, from the same expression that sizes the canvas, so the
+   estimate cannot drift from the allocation it describes.
+
+   It takes the width and dpr rather than READING them, and that is the whole point: this
+   is called from the draw path, and a geometry read there is a forced synchronous layout.
+   The first version of this function read `parentElement.clientWidth` itself and was
+   called at the TOP of drawWaveform, between two groups of style writes - so a draw paid
+   TWO reflows where it used to pay one, in the DEFAULT state, i.e. whether or not anybody
+   ever ticked the box. Measured through the stub: 2 reads and 1 note-write per draw
+   against 1 and 0 before. That is the hazard this repo already records for verify's
+   render loop, where one such read per frame cost three quarters of renderLive - and no
+   harness here could see it, because a stub DOM has no layout engine and `clientWidth` is
+   a plain property get. So the numbers are handed in from what drawWaveform has already
+   measured, and the write happens at the END of the draw, after the read. */
+function waveNoteFor(rowCount, cssWidth, dpr) {
+  if (!rowCount) return '';
+  const cssHeight = PAD_TOP + rowCount * ROW_H + PAD_BOTTOM;
+  const mb = Math.round(cssWidth * dpr) * Math.round(cssHeight * dpr) * 4 / 1048576;
+  return '(' + rowCount + ' row' + (rowCount === 1 ? '' : 's') + ', ~' + mb.toFixed(1) + ' MB of canvas)';
+}
+
 function drawWaveform(result) {
   const names = Object.keys(result.signals).filter(n => !isSignalHidden(n));
+  if (waveOff) {
+    waveEmpty.textContent = WAVE_OFF_TEXT;
+    waveEmpty.style.display = 'block';
+    if (waveControls) waveControls.style.display = 'none';
+    releaseWaveCanvas();
+    // a static string: this path reads no geometry at all, and returns before the one read
+    if (waveMemNote) waveMemNote.textContent = WAVE_NOTE_OFF;
+    return;
+  }
+  if (waveControls) waveControls.style.display = '';
   if (names.length === 0) {
+    waveEmpty.textContent = WAVE_EMPTY_TEXT;
     waveEmpty.style.display = 'block';
     waveCanvas.style.display = 'none';
     waveLayout = null;
+    // no rows, so no canvas to describe - and still no geometry read on this path
+    if (waveMemNote) waveMemNote.textContent = '';
     return;
   }
   waveEmpty.style.display = 'none';
@@ -5546,7 +5889,25 @@ function drawWaveform(result) {
   const histEnd = Math.max(viewEnd, fullEnd);
 
   const wrapWidth = waveCanvas.parentElement.clientWidth || 800;
-  const cssWidth = Math.max(wrapWidth, 600);
+  /* The canvas is drawn at EXACTLY its container's width, and the floor here is a
+     guard against a nonsense measurement rather than a minimum drawing size.
+
+     It used to be `Math.max(wrapWidth, 600)`, on the reasonable-sounding grounds that
+     a narrow window should get a 600px drawing and scroll it - `#waveScroll` is
+     `overflow-x: auto`, after all. That never worked and could not: `canvas { width:
+     100% !important }` in the shared block beats the inline `style.width` this sets,
+     so a 600px backing store on a 288px container is not scrolled, it is STRETCHED
+     over 288px - every glyph horizontally compressed by 600/288, which reads as "the
+     waveform uses a condensed font" rather than as a geometry bug. Worse, `waveLayout`
+     records plotX0/plotW in the 600px space while every click handler measures the box
+     through getBoundingClientRect(), so on a phone the cursor landed at 2.08x the time
+     you tapped. This is the same stale-drawing hazard documented at the hierarchy
+     toggle above, except permanent rather than transient.
+
+     Now cssWidth == the box, so the two agree by construction and a narrow plot is
+     honestly narrow. Nothing changes at 600px or wider, which is every desktop layout
+     and every headless harness here (the stub's container is 900). */
+  const cssWidth = Math.max(wrapWidth, 240);
   const cssHeight = PAD_TOP + names.length * ROW_H + PAD_BOTTOM;
   const dpr = window.devicePixelRatio || 1;
 
@@ -5702,7 +6063,7 @@ function drawWaveform(result) {
     ctx.fillStyle = THEME.text;
     ctx.font = '600 11px "SF Mono", Menlo, monospace';
     ctx.textAlign = 'right';
-    ctx.fillText(name, NAME_W - 8, rowMid + 4);
+    ctx.fillText(waveShowWidths ? name + signalRangeLabel(name) : name, NAME_W - 8, rowMid + 4);
 
     ctx.fillStyle = isFullyKnown(value) ? color : THEME.danger;
     ctx.font = '600 11px "SF Mono", Menlo, monospace';
@@ -5734,6 +6095,11 @@ function drawWaveform(result) {
   waveZoomLevelEl.textContent = (zoomFactor >= 10 ? zoomFactor.toFixed(0) : zoomFactor.toFixed(1)) + '×';
   waveStartInput.value = viewStart.toFixed(2);
   waveEndInput.value = viewEnd.toFixed(2);
+
+  /* LAST, and from cssWidth/dpr the draw already measured rather than a read of its own -
+     see waveNoteFor. Writing here dirties layout that nothing reads again before the next
+     draw, which begins with style writes anyway, so this costs no reflow. */
+  if (waveMemNote) waveMemNote.textContent = waveNoteFor(names.length, cssWidth, dpr);
 }
 
 /* ---- waveform mouse interaction ----
@@ -6043,3 +6409,147 @@ document.querySelectorAll('.help-icon').forEach(btn => {
 document.addEventListener('click', () => {
   document.querySelectorAll('.help-popup.visible').forEach(p => p.classList.remove('visible'));
 });
+
+/* >>> NAV MENU (canonical copy in tools/navmenu.js - do not edit in place) */
+(function () {
+  var inner = document.querySelector('.gh-header-inner');
+  if (!inner || document.getElementById('navMenuBtn')) return;   // no bar, or already built
+
+  /* The rows, in order. Bare filenames because these pages are siblings; Home is the
+     one link that leaves the site. The three apps outside this directory (emulator,
+     verify, workbench) are deliberately absent: they live one level ABOVE the deployed
+     root, so a `../` row would resolve in the repo and 404 on the site. */
+  var ITEMS = [
+    ['Home', 'https://jeremyjbae.github.io/Baerilog', 'home'],
+    ['Practice', 'index.html', 'book'],
+    ['Simulator', 'simulator.html', 'pulse'],
+    ['Synthesizer', 'synthesis.html', 'chip'],
+    ['Compiler', 'compiler.html', 'code']
+  ];
+  var G = {
+    menu: '<svg viewBox="0 0 16 16"><path d="M1.5 3.25h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Z"/></svg>',
+    home: '<svg viewBox="0 0 16 16"><path d="M8 1.2 15 7l-.94 1.15-1.06-.88V14a1 1 0 0 1-1 1H9.5v-4.5h-3V15H4a1 1 0 0 1-1-1V7.27l-1.06.88L1 7 8 1.2Zm4 4.83L8 2.7 4 6.03V13.5h1V9h6v4.5h1V6.03Z"/></svg>',
+    book: '<svg viewBox="0 0 16 16"><path d="M2 2.5A1.5 1.5 0 0 1 3.5 1H13a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a2 2 0 0 0-2 2V2.5Zm2.5-.5a.5.5 0 0 0-.5.5v10.1c.3-.07.63-.1.5-.1h8V2H4.5Z"/></svg>',
+    pulse: '<svg viewBox="0 0 16 16"><path d="M6 2.5a.75.75 0 0 1 .7.48L9.3 10l1-2.5a.75.75 0 0 1 .7-.5h4v1.5h-3.5l-1.8 4.5a.75.75 0 0 1-1.4 0L5.7 5.5 4.7 8a.75.75 0 0 1-.7.5H0V7h3.5l1.8-4.02A.75.75 0 0 1 6 2.5Z"/></svg>',
+    chip: '<svg viewBox="0 0 16 16"><path d="M5 1.5h1.5v1.5h3V1.5H11v1.5h1.5A1.5 1.5 0 0 1 14 4.5V6h1.5v1.5H14v1H15.5V10H14v1.5a1.5 1.5 0 0 1-1.5 1.5H11v1.5H9.5V13h-3v1.5H5V13H3.5A1.5 1.5 0 0 1 2 11.5V10H.5V8.5H2v-1H.5V6H2V4.5A1.5 1.5 0 0 1 3.5 3H5V1.5Zm-1.5 3v7h9v-7h-9Zm2 2h5v3h-5v-3Z"/></svg>',
+    code: '<svg viewBox="0 0 16 16"><path d="M5.7 4.3a.75.75 0 0 1 0 1.06L3.06 8l2.64 2.64a.75.75 0 1 1-1.06 1.06L1.47 8.53a.75.75 0 0 1 0-1.06L4.64 4.3a.75.75 0 0 1 1.06 0Zm4.6 0a.75.75 0 0 1 1.06 0l3.17 3.17a.75.75 0 0 1 0 1.06L11.36 11.7a.75.75 0 1 1-1.06-1.06L12.94 8l-2.64-2.64a.75.75 0 0 1 0-1.06Z"/></svg>'
+  };
+
+  function mk(tag, cls, id, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (id) e.id = id;
+    if (text !== undefined && text !== null) e.textContent = text;
+    return e;
+  }
+
+  /* THREE OF THE SIX APPS LIVE OUTSIDE Baerilog/ - emulator, verify and workbench - so
+     a bare filename does not resolve from them and this has to prefix. They are also
+     the three that are NOT in the menu, and each carried a single `&larr; Baerilog` link
+     back to the hub; the shared block hides `.gh-nav a`, so that link is gone and the
+     drawer's Practice row is what replaces it. Getting this wrong is not cosmetic: it
+     would leave those three with no way back at all. */
+  var OUTSIDE = ['emulator', 'verify', 'workbench'];
+  function base() {
+    var parts = (window.location && window.location.pathname || '').split('/');
+    var dir = parts[parts.length - 2] || '';
+    return OUTSIDE.indexOf(dir) >= 0 ? '../Baerilog/' : '';
+  }
+
+  /* Which row is current, from the page's own URL rather than a per-app variable: one
+     fewer thing for a copy to set wrong. A practice EXERCISE page is not index.html but
+     is still Practice, which is why the marker falls back to it inside this directory -
+     and why it marks NOTHING from the three outside it, none of which is a row. */
+  function currentHref() {
+    if (base()) return '';
+    var file = (window.location && window.location.pathname || '').split('/').pop() || '';
+    var known = ['simulator.html', 'synthesis.html', 'compiler.html'];
+    return known.indexOf(file) >= 0 ? file : 'index.html';
+  }
+
+  var btn = mk('button', 'gh-menu-btn', 'navMenuBtn');
+  btn.setAttribute('type', 'button');
+  btn.setAttribute('aria-label', 'Open menu');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-controls', 'navDrawer');
+  btn.setAttribute('title', 'Menu');
+  btn.innerHTML = G.menu;
+  inner.insertBefore(btn, inner.firstChild);
+
+  var back = mk('div', 'nav-backdrop', 'navBackdrop');
+  var panel = mk('aside', 'nav-drawer', 'navDrawer');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  panel.setAttribute('aria-label', 'Site menu');
+
+  var head = mk('div', 'nav-drawer-head');
+  /* The wordmark is CLONED out of the header rather than pasted in as another copy of
+     those three paths: tools/logo.py rewrites every copy in the repo after a re-export,
+     and one it does not know about goes stale silently. Two simple selectors, not the
+     compound `.gh-mark svg`, because the stub DOM the harnesses use resolves one at a
+     time and the compound form returns null - the drawer would ship with no logo while
+     every test passed. On this light surface it drops the header's unconditional
+     invert (style.css does that) or it renders white on white. */
+  var wrap = document.querySelector('.gh-mark');
+  var src = wrap && wrap.querySelector('svg');
+  var mark = mk('span', 'nav-drawer-mark');
+  if (src && src.cloneNode) mark.appendChild(src.cloneNode(true));
+  head.appendChild(mark);
+  var close = mk('button', 'ex-close nav-drawer-close', 'navCloseBtn', '✕');
+  close.setAttribute('type', 'button');
+  close.setAttribute('title', 'Close');
+  close.setAttribute('aria-label', 'Close menu');
+  head.appendChild(close);
+  panel.appendChild(head);
+
+  var list = mk('nav', 'nav-drawer-list', 'navDrawerList');
+  var here = currentHref();
+  var pre = base();
+  for (var i = 0; i < ITEMS.length; i++) {
+    var row = mk('a', 'nav-row' + (ITEMS[i][1] === here ? ' current' : ''));
+    // the off-site row is absolute and must not be prefixed
+    row.setAttribute('href', /^https?:/.test(ITEMS[i][1]) ? ITEMS[i][1] : pre + ITEMS[i][1]);
+    var ic = mk('span', null, 'nav-row-icon');
+    ic.className = 'nav-row-icon';
+    ic.innerHTML = G[ITEMS[i][2]] || '';
+    row.appendChild(ic);
+    row.appendChild(mk('span', 'nav-row-label', null, ITEMS[i][0]));
+    list.appendChild(row);
+  }
+  panel.appendChild(list);
+  /* The panel is a CHILD of the backdrop, as every dialog here is: that is what makes
+     the ev.target guard below load-bearing rather than unfalsifiable - as siblings, a
+     click inside the panel could never reach the backdrop's handler. */
+  back.appendChild(panel);
+  document.body.appendChild(back);
+
+  function isOpen() { return panel.classList.contains('open'); }
+  function open() {
+    /* One drawer at a time: cloud-ui.js's account drawer comes in from the right and is
+       looked up at click time, so neither depends on loading before the other. */
+    var ab = document.getElementById('cloudDrawerBack');
+    var ap = document.getElementById('cloudDrawer');
+    if (ab) ab.classList.remove('open');
+    if (ap) ap.classList.remove('open');
+    panel.classList.add('open');
+    back.classList.add('open');
+    document.body.classList.add('nav-open');
+    btn.setAttribute('aria-expanded', 'true');
+    var first = list.children[0];
+    if (first && first.focus) first.focus();
+  }
+  function shut() {
+    panel.classList.remove('open');
+    back.classList.remove('open');
+    document.body.classList.remove('nav-open');
+    btn.setAttribute('aria-expanded', 'false');
+    if (btn.focus) btn.focus();
+  }
+  btn.addEventListener('click', function () { if (isOpen()) shut(); else open(); });
+  close.addEventListener('click', shut);
+  back.addEventListener('click', function (ev) { if (ev.target === back) shut(); });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && isOpen()) shut();
+  });
+})();
+/* <<< NAV MENU */

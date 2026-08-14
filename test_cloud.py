@@ -658,6 +658,73 @@ def t_sign_out_is_local_first():
     return 'session cleared even though the logout call failed'
 
 
+
+def t_verify_tries_signup_after_email():
+    """A first-time learner's code comes from the "Confirm signup" template and
+    verifies as type 'signup'; a returning learner's comes from "Magic Link" and
+    verifies as 'email'. One request cannot serve both, and the failure lands on the
+    very first sign-in - correct code in the inbox, rejected by the page.
+
+    Found by a real signup email arriving as a confirm-link rather than a code."""
+    r = run_js("""
+      reply({status: 403, body: {msg: 'Token has expired or is invalid'}});   // as 'email'
+      reply({status: 200, body: {access_token:'A', refresh_token:'R', expires_in: 3600,
+                                 user: {id:'u-2', email:'new@b.c'}}});        // as 'signup'
+      CLOUD.verifyCode('new@b.c', '123456').then(function (v) {
+        out({ok: v.ok, types: CALLS.map(function (c) { return c.body.type; }),
+             signedIn: CLOUD.signedIn()});
+      });
+    """)
+    assert r['types'] == ['email', 'signup'], 'tried %s' % r['types']
+    assert r['ok'] and r['signedIn'], 'the signup token was not accepted: %s' % r
+    return "tried 'email' then 'signup', signed in on the second"
+
+
+def t_verify_stops_on_success():
+    """The common case must stay one request - a returning learner's token verifies
+    as 'email', and a second call would spend a token that is already used."""
+    r = run_js("""
+      reply({status: 200, body: {access_token:'A', refresh_token:'R', expires_in: 3600,
+                                 user: {id:'u-1', email:'a@b.c'}}});
+      CLOUD.verifyCode('a@b.c', '123456').then(function (v) {
+        out({ok: v.ok, calls: CALLS.length, types: CALLS.map(function (c) { return c.body.type; })});
+      });
+    """)
+    assert r['ok'] and r['calls'] == 1, 'made %d requests on a success' % r['calls']
+    assert r['types'] == ['email'], 'tried %s' % r['types']
+    return 'one request when the first type works'
+
+
+def t_verify_does_not_retry_offline():
+    """An offline first attempt produced no verdict to disagree with, so retrying
+    just doubles the wait before the honest message appears."""
+    r = run_js("""
+      reply({reject: true});
+      CLOUD.verifyCode('a@b.c', '123456').then(function (v) {
+        out({ok: v.ok, offline: !!v.offline, calls: CALLS.length, state: CLOUD.info().state});
+      });
+    """)
+    assert r['calls'] == 1, 'retried into a dead connection (%d calls)' % r['calls']
+    assert r['offline'] and r['state'] == 'offline', 'did not report offline: %s' % r
+    return 'one request, reported offline'
+
+
+def t_verify_reports_a_bad_code_once():
+    """A wrong code fails both types; the learner must get one clear message, not a
+    report about the second type they never heard of."""
+    r = run_js("""
+      reply({status: 403, body: {msg: 'Token has expired or is invalid'}});
+      reply({status: 403, body: {msg: 'Token has expired or is invalid'}});
+      CLOUD.verifyCode('a@b.c', '000000').then(function (v) {
+        out({ok: v.ok, error: v.error, calls: CALLS.length, signedIn: CLOUD.signedIn()});
+      });
+    """)
+    assert r['ok'] is False and r['signedIn'] is False, 'a bad code signed someone in'
+    assert r['calls'] == 2, 'made %d requests' % r['calls']
+    assert 'invalid' in r['error'], 'reported %r' % r['error']
+    return 'both types tried, one message, not signed in'
+
+
 # --------------------------------------------------------------------------
 # 6. the wiring: what the pages load, and in what order
 # --------------------------------------------------------------------------
@@ -869,6 +936,462 @@ def run_dom(config, preseed=None, edits=None, app=None):
     m = re.search(r'__RESULT__(.*)', proc.stdout)
     assert m, 'no result. stdout=%r stderr=%r' % (proc.stdout[:200], proc.stderr[:300])
     return json.loads(m.group(1))
+
+
+# --------------------------------------------------------------------------
+# 6c. the account control and its drawer (the practice pages' UI)
+# --------------------------------------------------------------------------
+
+# A driver of its own rather than more fields on the one above: this one has to sign
+# in, open a panel, walk three views and save a name, and threading that through a
+# driver whose job is "load and edit once" would make both harder to read. Everything
+# it asserts is behaviour no other check here reaches - the bar's two states, the
+# drawer, My Design's local+remote merge, and the display name round trip.
+ACCT_DRIVER = r"""
+const fs = require('fs'), path = require('path');
+const { makeDom } = require(TOOLS + '/fakedom.js');
+const HERE = APP_DIR;
+const dom = makeDom();
+const grid = dom.mk('__grid');
+const nav = dom.mk('__nav', 'nav', grid);
+nav.classList.add('gh-nav');
+dom.document.querySelector = (sel) => (sel === '.gh-nav' ? nav : null);
+
+const calls = [];
+dom.window.fetch = function (url, opts) {
+  const u = String(url), method = (opts && opts.method) || 'GET';
+  calls.push(method + ' ' + u.replace(/^https:\/\/[^/]+/, ''));
+  const body = (o) => Promise.resolve({ ok: true, status: 200,
+                                        text: () => Promise.resolve(JSON.stringify(o)) });
+  if (u.indexOf('/auth/v1/verify') >= 0) return body({
+    access_token: 'a', refresh_token: 'r', expires_in: 3600,
+    user: { id: 'u1', email: 'jeremyjbae@gmail.com', user_metadata: {} } });
+  if (u.indexOf('/auth/v1/user') >= 0) return body({ user_metadata: { full_name: 'Jeremy Bae' } });
+  /* TWO rows, and the second one is deliberately a document this browser also holds:
+     with only a cloud-only row, filtering the merge and not filtering it give the same
+     list, so the de-duplication would be unfalsifiable. */
+  if (u.indexOf('/rest/v1/progress') >= 0) return body([
+    { app: 'practice', item: 'mux-2to1', updated_at: new Date(Date.now() - 7200e3).toISOString(),
+      verdict: { state: 'pass', pass: 5 } },
+    { app: 'practice', item: 'shift-register-4bit',
+      updated_at: new Date(Date.now() - 60e3).toISOString(), verdict: { state: 'fail', fail: 2 } }]);
+  return body({});
+};
+dom.window.BAERILOG_CLOUD_CONFIG = CONFIG_JSON;
+/* Deliberately NO PRACTICE_SLUG: this is the configuration the three menu apps boot in,
+   and the account control was gated on that global while the practice pages were the
+   only ones with the new UI. Driving with it set would let a re-introduced gate hide
+   behind these checks - the mutant below is what proves it cannot. */
+dom.window.window = dom.window;
+dom.window.document = dom.document;
+if (!dom.window.setTimeout) dom.window.setTimeout = setTimeout;
+if (!dom.window.clearTimeout) dom.window.clearTimeout = clearTimeout;
+global.AbortController = function () { this.signal = {}; this.abort = function () {}; };
+
+/* innerHTML -> which drawing it is, so the check can assert the ARTWORK rather than the
+   element's own label about itself. Derived from the committed assets on the Python side. */
+const ART = ART_JSON;
+const EDITS = EDITS_JSON;
+const load = (n) => {
+  let s = fs.readFileSync(path.join(HERE, n), 'utf8');
+  if (EDITS[n]) {
+    if (s.indexOf(EDITS[n][0]) < 0) throw new Error('mutant pattern absent in ' + n);
+    s = s.replace(EDITS[n][0], EDITS[n][1]);
+  }
+  return s;
+};
+let threw = null;
+try {
+  new Function('window', 'document', 'localStorage', 'AbortController',
+    load('cloud-config.js') + '\n' + load('cloud.js') + '\n' + load('cloud-ui.js')
+  )(dom.window, dom.document, dom.localStorage, global.AbortController);
+} catch (e) { threw = (e && e.message) || String(e); }
+
+const $ = (id) => dom.document.getElementById(id);
+const seen = (id) => { const e = $(id); return e ? { text: e.textContent, hidden: e.style.display === 'none' } : null; };
+const tick = (ms) => new Promise(r => setTimeout(r, ms));
+
+(async () => {
+  const res = { threw, calls: null };
+  const conn = () => { const e = $('cloudConn'); return e ? {
+    hidden: e.style.display === 'none', cls: e.className,
+    form: e.getAttribute('data-form'), label: e.getAttribute('aria-label'),
+    art: ART[e.innerHTML] || ('other:' + String(e.innerHTML || '').slice(0, 60)) } : null; };
+  res.out = { sign: seen('cloudSignBtn'), avatar: seen('cloudAvatarBtn') };
+  res.connOut = conn();
+  await dom.window.CLOUD.requestCode('jeremyjbae@gmail.com');
+  await dom.window.CLOUD.verifyCode('jeremyjbae@gmail.com', '123456');
+  res.in = { sign: seen('cloudSignBtn'), avatar: seen('cloudAvatarBtn') };
+  res.connIn = conn();
+  /* Every state, driven through the same status() the network paths use, so the sweep
+     covers the table rather than the handful of states a scripted sign-in happens to
+     pass through. The drawer's dot is sampled at the same instant: the two encodings
+     must agree in EVERY state, which is the claim, not just in the ones we can reach. */
+  res.states = {};
+  const STATES = STATES_JSON;
+  for (const s of STATES) {
+    dom.window.CLOUD._setState(s);
+    const c = conn(), d = $('cloudState');
+    res.states[s] = { conn: c, dot: d ? d.children.map(x => x.className).join('|') : null,
+                      word: d ? d.textContent : null };
+  }
+  dom.window.CLOUD._setState('synced');
+
+  dom.window.CLOUD.save('practice', 'shift-register-4bit',
+                        { source: 'module a; endmodule', verdict: { state: 'fail', fail: 2 } });
+  dom.window.CLOUD.save('simulator', 'default', { source: 'module b; endmodule' });
+
+  $('cloudAvatarBtn').dispatch('click');
+  res.open = !!($('cloudDrawer') && $('cloudDrawer').classList.contains('open'));
+  res.head = { face: seen('cloudFace'), name: seen('cloudName'),
+               mail: seen('cloudEmail'), state: seen('cloudState') };
+  res.menu = ['cloudProfileRow', 'cloudDesignsRow', 'cloudSignOutRow'].filter(id => !!$(id));
+  res.menuText = res.menu.map(id => $(id).textContent);
+  // each row's glyph, which is set as innerHTML before the label span is appended
+  res.menuIcons = res.menu.map(id => $(id).innerHTML.indexOf('<svg') === 0);
+
+  $('cloudDesignsRow').dispatch('click');
+  await tick(20);
+  res.docs = ($('cloudDesignList') ? $('cloudDesignList').children : []).map(c => ({
+    text: c.textContent, href: c.getAttribute('href') || '' }));
+
+  $('cloudBackRow').dispatch('click');
+  $('cloudProfileRow').dispatch('click');
+  res.profileFields = [!!$('cloudNameInput'), !!$('cloudMailRead')];
+  $('cloudNameInput').value = 'Jeremy Bae';
+  $('cloudNameSave').dispatch('click');
+  await tick(20);
+  res.note = $('cloudProfileNote') ? $('cloudProfileNote').textContent : null;
+  res.nameNow = dom.window.CLOUD.info().name;
+  res.avatarNow = $('cloudAvatarBtn').textContent;
+
+  /* A click INSIDE the panel must not dismiss it, and one on the backdrop must -
+     the panel is a child of the backdrop, so the guard is what tells them apart. */
+  $('cloudDrawerBack').dispatch('click', { target: $('cloudDrawer') });
+  res.stillOpen = $('cloudDrawer').classList.contains('open');
+  $('cloudDrawerBack').dispatch('click', { target: $('cloudDrawerBack') });
+  res.closed = !$('cloudDrawer').classList.contains('open');
+
+  dom.window.CLOUD.signOut();
+  res.afterOut = { sign: seen('cloudSignBtn'), avatar: seen('cloudAvatarBtn') };
+  res.calls = calls;
+  console.log('__RESULT__' + JSON.stringify(res));
+})();
+"""
+
+
+def inline_art():
+    """The two artworks as cloud-ui.js must carry them, derived from the committed assets.
+    Used both to compare the source string and - the part that matters - to identify which
+    drawing actually reached the DOM: a check that reads the element's own data-form label
+    is satisfied by artwork that contradicts it, which is exactly how the swap mutant
+    survived its first sweep."""
+    out = {}
+    for name in ('connected', 'disconnected'):
+        a = (ROOT.parent / (name + '.svg')).read_text()
+        body = a[a.index('>', a.index('<svg')) + 1: a.rindex('</svg>')]
+        out[name] = '<svg viewBox="0 0 67 40">' + re.sub(r'\s+', ' ', body).strip() + '</svg>'
+    return out
+
+
+def words_table():
+    """cloud-ui.js's WORDS, parsed out of the shipped file: [dot class, word, connection
+    form] per state. The checks below derive what they expect from THIS rather than
+    restating it, so adding a state or changing a mapping cannot leave the test asserting
+    a table the app no longer has - it would have to be a deliberate edit here too."""
+    src = read('cloud-ui.js')
+    body = src[src.index('var WORDS = {'):]
+    body = body[:body.index('};')]
+    out = {}
+    for m in re.finditer(r"'([a-z-]+)':\s*\['([a-z]*)',\s*'([^']*)',\s*(null|'on'|'off')\]", body):
+        state, cls, word, form = m.groups()
+        out[state] = (cls, word, None if form == 'null' else form.strip("'"))
+    assert len(out) >= 12, 'parsed only %d WORDS rows' % len(out)
+    return out
+
+
+def run_account(edits=None):
+    src = (ACCT_DRIVER
+           .replace('TOOLS', json.dumps(str(ROOT / 'tools')))
+           .replace('APP_DIR', json.dumps(str(ROOT)))
+           .replace('STATES_JSON', json.dumps(sorted(words_table())))
+           .replace('ART_JSON', json.dumps({v: k for k, v in inline_art().items()}))
+           .replace('EDITS_JSON', json.dumps(edits or {}))
+           .replace('CONFIG_JSON', json.dumps({'url': 'https://p.supabase.co',
+                                               'anonKey': 'anon-key'})))
+    with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False) as f:
+        f.write(src)
+        path = f.name
+    proc = subprocess.run(['node', path], capture_output=True, text=True)
+    pathlib.Path(path).unlink()
+    if proc.returncode != 0:
+        raise AssertionError('node failed: ' + (proc.stderr.strip()[:400] or '(no stderr)'))
+    m = re.search(r'__RESULT__(.*)', proc.stdout)
+    assert m, 'no result. stdout=%r stderr=%r' % (proc.stdout[:200], proc.stderr[:300])
+    return json.loads(m.group(1))
+
+
+def t_bar_is_one_control_at_a_time():
+    """Signed out it is a Sign In button and nothing else; signed in it is the avatar,
+    with initials out of the email until a name is set. The signed-out half is the
+    check this feature shipped without: `subscribe()` calls back immediately, but
+    cloud-ui.js's WORDS table sat BELOW the code that builds the control, so that first
+    render read a hoisted-but-undefined var, threw, and had it swallowed by subscribe's
+    own try/catch - leaving a grey dot and an EMPTY button until the next state change,
+    which for a signed-out idle page never comes."""
+    r = run_account()
+    assert r['threw'] is None, 'a cloud file threw at load: %s' % r['threw']
+    assert r['out']['sign'] and r['out']['sign']['text'] == 'Sign In',            'signed out, the button reads %r' % (r['out']['sign'] and r['out']['sign']['text'])
+    assert r['out']['sign']['hidden'] is False, 'the Sign In button is hidden while signed out'
+    assert r['out']['avatar']['hidden'] is True, 'the avatar shows while signed out'
+    assert r['in']['sign']['hidden'] is True, 'the Sign In button survives signing in'
+    assert r['in']['avatar']['hidden'] is False, 'no avatar after signing in'
+    assert r['in']['avatar']['text'] == 'JE',            'the avatar reads %r, not JE from the email' % r['in']['avatar']['text']
+    assert r['afterOut']['sign']['hidden'] is False and r['afterOut']['avatar']['hidden'] is True,        'signing out did not put the Sign In button back'
+    return 'Sign In -> JE -> Sign In, and the button has text before any emit'
+
+
+def t_account_drawer_and_its_views():
+    """The panel: identity and sync state in its head, three rows, and My Progress
+    listing what is HERE plus what is only on the server - the second half being what
+    makes it honest on a machine that has never held these documents. A remote row is
+    listed, never adopted: merging is pull()'s job under the conflict rule."""
+    r = run_account()
+    assert r['open'] is True, 'the avatar did not open the drawer'
+    assert r['head']['face']['text'] == 'JE', 'the panel face reads %r' % r['head']['face']['text']
+    assert r['head']['name']['text'] == 'jeremyjbae@gmail.com',        'with no display name the name line should fall back to the email, got %r' % r['head']['name']['text']
+    assert 'sav' in r['head']['state']['text'], 'the sync state is %r' % r['head']['state']['text']
+    assert r['menu'] == ['cloudProfileRow', 'cloudDesignsRow', 'cloudSignOutRow'],        'the menu is %s' % r['menu']
+    # The wording, not just the row: the ids still say Designs (everything wired to
+    # them keeps working, as exReopenBtn did when it became a tab), so nothing else
+    # would notice the label going back.
+    assert r['menuText'] == ['Profile', 'My Progress', 'Sign out'],        'the menu reads %s' % r['menuText']
+    assert r['menuIcons'] == [True, True, True], 'a menu row has no glyph: %s' % r['menuIcons']
+
+    items = [d['text'] for d in r['docs']]
+    assert len(items) == 3, 'My Progress lists %s' % items
+    local = [t for t in items if 'shift-register-4bit' in t]
+    cloud = [t for t in items if 'mux-2to1' in t]
+    assert local and 'failing' in local[0], 'the local document lost its verdict: %s' % local
+    assert cloud and 'cloud' in cloud[0], 'the server-only document is not marked: %s' % cloud
+    hrefs = [d['href'] for d in r['docs']]
+    assert 'shift-register-4bit.html' in hrefs and 'simulator.html' in hrefs,        'a row does not link to its page: %s' % hrefs
+    assert '../' not in ' '.join(hrefs), 'a row walks out of Baerilog/: %s' % hrefs
+    assert r['stillOpen'] is True, 'a click inside the panel dismissed it'
+    assert r['closed'] is True, 'a click on the backdrop did not dismiss it'
+    return '3 rows, 2 local + 1 cloud-only, backdrop guard honoured'
+
+
+def t_display_name_round_trip():
+    """Profile writes the name to GoTrue's user_metadata - no table, no policy - and
+    the avatar follows it, which is the only reason the initials can be JB rather than
+    the JE an email can give. The session's copy comes from the RESPONSE, so what the
+    panel shows is what the server accepted."""
+    r = run_account()
+    assert r['profileFields'] == [True, True], 'Profile is missing the name or the email field'
+    assert r['note'] == 'Saved.', 'saving the name reported %r' % r['note']
+    assert r['nameNow'] == 'Jeremy Bae', 'the session name is %r' % r['nameNow']
+    assert r['avatarNow'] == 'JB', 'the avatar still reads %r after naming' % r['avatarNow']
+    assert 'PUT /auth/v1/user' in r['calls'], 'no user_metadata write: %s' % r['calls']
+    assert not [c for c in r['calls'] if 'profiles' in c], 'it invented a table: %s' % r['calls']
+    return 'name saved to user_metadata, avatar JE -> JB'
+
+
+def t_connection_indicator():
+    """The bar's connection icon, over EVERY state in the table rather than the few a
+    sign-in passes through. Three claims: the artwork follows WORDS' third field, the
+    colour class IS the drawer dot's class (so the two surfaces cannot disagree about one
+    state), and it is absent entirely when signed out - where the Sign In button beside it
+    already says so, and where an icon reading "connected" would answer nothing."""
+    words = words_table()
+    r = run_account()
+    assert r['threw'] is None, 'a cloud file threw at load: %s' % r['threw']
+    assert r['connOut'] is not None, 'no #cloudConn element in the bar at all'
+    assert r['connOut']['hidden'] is True, 'the indicator shows while signed out'
+    assert r['connIn']['hidden'] is False, 'no indicator after signing in'
+    bad = []
+    for state, (cls, word, form) in sorted(words.items()):
+        got = r['states'][state]
+        c = got['conn']
+        if form is None:
+            if not c['hidden']:
+                bad.append('%s: should show no icon, but it is visible' % state)
+            continue
+        if c['hidden']:
+            bad.append('%s: icon hidden, expected %s' % (state, form))
+            continue
+        if c['form'] != form:
+            bad.append('%s: artwork is %r, expected %r' % (state, c['form'], form))
+        # the colour class is the DOT's class - compared against the dot actually rendered
+        want = 'cloud-conn' + ((' ' + cls) if cls else '')
+        if c['cls'] != want:
+            bad.append('%s: class %r, expected %r (the dot\'s own class)' % (state, c['cls'], want))
+        if got['dot'] is not None and cls and cls not in got['dot']:
+            bad.append('%s: the drawer dot %r disagrees with the icon' % (state, got['dot']))
+        if word and word not in (c['label'] or ''):
+            bad.append('%s: label %r does not carry the word %r' % (state, c['label'], word))
+        want_art = 'connected' if form == 'on' else 'disconnected'
+        if c['art'] != want_art:
+            bad.append('%s: the DRAWING is %r, expected %s.svg' % (state, c['art'][:60], want_art))
+    assert not bad, 'the indicator disagrees with WORDS:\n  ' + '\n  '.join(bad)
+    on = [s for s, v in words.items() if v[2] == 'on']
+    off = [s for s, v in words.items() if v[2] == 'off']
+    return '%d states: %d connected, %d disconnected, 1 hidden' % (len(words), len(on), len(off))
+
+
+def t_connection_artwork_is_the_committed_asset():
+    """The inline copies and the two root assets are the same drawing, compared rather than
+    trusted: this is the one glyph in the repo that exists twice, and a re-export that never
+    reached cloud-ui.js would go stale in silence. Also the OmniGraffle trap, which these
+    two carried in its INVERTED form - a full-canvas opaque black rect over white artwork,
+    where bae.svg and the row glyphs arrived white-over-black. Left in, it paints a black
+    box on the bar; and a literal colour would defeat the token that drives the state."""
+    ui = read('cloud-ui.js')
+    problems = []
+    for name, key in (('connected.svg', 'connected'), ('disconnected.svg', 'disconnected')):
+        asset = (ROOT.parent / name).read_text()
+        if 'fill="black"' in asset or 'white' in asset:
+            problems.append('%s still carries a literal colour - re-clean it' % name)
+        if 'currentColor' not in asset:
+            problems.append('%s has no currentColor, so nothing can colour it' % name)
+        m = re.search(r"\n    %s: '(<svg.*?)',?\n" % key, ui, re.S)
+        if not m:
+            problems.append('cloud-ui.js has no GLYPH.%s' % key)
+            continue
+        inline = m.group(1)
+        if inline != inline_art()[key]:
+            problems.append('GLYPH.%s is not %s - re-paste it' % (key, name))
+    # both artworks must share one viewBox, or the slot changes width when the state flips
+    boxes = re.findall(r"(?:connected|disconnected): '<svg viewBox=\"([^\"]+)\"", ui)
+    if len(set(boxes)) != 1:
+        problems.append('the two artworks have different viewBoxes %s, so a state change reflows the bar' % boxes)
+    assert not problems, '\n  '.join(problems)
+    return 'both inline copies byte-identical to their assets, one shared viewBox %s' % boxes[0]
+
+
+def t_connection_css_is_bar_safe():
+    """Four claims no headless check here can see, so they are asserted against the CSS text -
+    the same standin the netlist viewer's rules get. Comments are stripped first: this file
+    EXPLAINS the token choice in prose that names both sets, and a regex over the raw text
+    would match the explanation and pass while comparing nothing (that is exactly how the
+    busy-button colour check was once vacuous)."""
+    css = read('cloud-ui.js')
+    css = re.sub(r'/\*.*?\*/', '', css, flags=re.S)
+    css = '\n'.join(l for l in css.splitlines() if l.strip().startswith("'."))
+    problems = []
+    # 1. sized by HEIGHT with width auto - a 67:40 ratio squashes in a square box, and the
+    #    ratio is not stable across a re-export (the wordmark's rule).
+    if 'height:14px;width:auto' not in css:
+        problems.append('the icon is not sized by height with width auto')
+    # 2. the paint is driven by `color`, so it reaches stroke AND fill (.gh-row-icon's lesson)
+    if 'color:var(--header-muted)' not in css:
+        problems.append('the resting colour is not --header-muted via `color`')
+    # 3. the three status hues are the BAR set, not the page-following ones. The bar is dark
+    #    in both modes, where --success-fg measures 2.88:1 and --danger-fg 2.74:1 - under the
+    #    3:1 floor for non-text graphics.
+    for cls, want, avoid in (('ok', '--header-success', '--success-fg'),
+                             ('busy', '--header-attention', '--attention-fg'),
+                             ('bad', '--header-danger', '--danger-fg')):
+        rule = [l for l in css.splitlines() if '.cloud-conn.' + cls in l]
+        if not rule:
+            problems.append('no .cloud-conn.%s rule' % cls)
+        elif want not in rule[0]:
+            problems.append('.cloud-conn.%s does not use %s: %s' % (cls, want, rule[0].strip()))
+        elif 'var(' + avoid + ')' in rule[0]:
+            problems.append('.cloud-conn.%s uses the page token %s on the dark bar' % (cls, avoid))
+    # 4. and those tokens have to exist, identically, everywhere cloud-ui.js is loaded
+    for f in ('app.css', 'simulator.html', 'synthesis.html', 'compiler.html'):
+        text = read(f)
+        missing = [n for n in ('--header-success', '--header-attention', '--header-danger')
+                   if n + ':' not in text]
+        if missing:
+            problems.append('%s defines none of %s' % (f, ', '.join(missing)))
+    assert not problems, '\n  '.join(problems)
+    return 'height-driven, colour-driven, three bar hues, resolving in 4 stylesheets'
+
+
+def t_account_mutants():
+    """Twelve, and the first is the bug this replaced: each must break a check above."""
+    MUTANTS = [
+        # Reproduces the shipped bug exactly rather than approximating it: WORDS is
+        # left undefined at the moment build() subscribes, so the immediate render
+        # throws on its first line and subscribe swallows it - which is what left the
+        # control half-drawn. The literal table survives under a dead name so the
+        # rest of the file still parses.
+        ('WORDS undefined when the control is built, as it was before the fix',
+         {'cloud-ui.js': ['  var WORDS = {',
+                          '  var WORDS = undefined; var WORDS_MOVED = {']}),
+        ('the bar never swaps control',
+         {'cloud-ui.js': ["    signInBtn.style.display = i.signedIn ? 'none' : '';",
+                          "    signInBtn.style.display = '';"]}),
+        ('initials ignore the display name',
+         {'cloud-ui.js': ['    var src = String(name || \'\').trim();', '    var src = \'\';']}),
+        ('the panel click closes the drawer',
+         {'cloud-ui.js': ["dBack.addEventListener('click', function (ev) { if (ev.target === dBack) closeDrawer(); });",
+                          "dBack.addEventListener('click', function () { closeDrawer(); });"]}),
+        # The gate is gone: every app gets the avatar and the drawer. Re-introducing it
+        # would leave the three menu apps on a control that no longer exists in the file,
+        # so the mutant reproduces the state this replaced rather than a hypothetical one.
+        ('the practice-only gate re-introduced',
+         {'cloud-ui.js': ['  function buildAccount(nav) {',
+                          '  function buildAccount(nav) {\n    if (!window.PRACTICE_SLUG) return;']}),
+        ('a server-only document is listed twice',
+         {'cloud.js': ['      var extra = r.rows.filter(function (d) { return !(seen[d.app] && seen[d.app][d.item]); });',
+                       '      var extra = r.rows;']}),
+        # ---- the bar's connection indicator ----
+        ('the connected and disconnected artworks are swapped',
+         {'cloud-ui.js': ["    var glyph = form === 'on' ? GLYPH.connected : GLYPH.disconnected;",
+                          "    var glyph = form === 'on' ? GLYPH.disconnected : GLYPH.connected;"]}),
+        # The whole point of reading w[0]: a second mapping is free to drift from the dot.
+        ('the icon colours itself instead of taking the dot\'s class',
+         {'cloud-ui.js': ["    connEl.className = 'cloud-conn' + (w[0] ? ' ' + w[0] : '');",
+                          "    connEl.className = 'cloud-conn' + (form === 'on' ? ' ok' : ' bad');"]}),
+        ('the icon stays visible when signed out',
+         {'cloud-ui.js': ['    var form = i.signedIn ? w[2] : null;',
+                          '    var form = w[2] || \'on\';']}),
+        ('offline shows no icon, as it did before',
+         {'cloud-ui.js': ["    'offline':    ['', 'offline — saved on this device', 'off'],",
+                          "    'offline':    ['', 'offline — saved on this device', null],"]}),
+        ('the label drops the word, so red-and-disconnected cannot be told apart',
+         {'cloud-ui.js': ["              + (w[1] ? ' \\u2014 ' + w[1] : '');", "              + '';"]}),
+        ('the artwork is never re-rendered after the first state',
+         {'cloud-ui.js': ["    if (connEl.getAttribute('data-form') !== form) {",
+                          "    if (connEl.getAttribute('data-form') === null) {"]}),
+    ]
+    caught = []
+    for name, edits in MUTANTS:
+        try:
+            r = run_account(edits)
+        except AssertionError as e:
+            caught.append(name + ' (driver: ' + str(e)[:40] + ')')
+            continue
+        broke = False
+        for fn in (t_bar_is_one_control_at_a_time, t_account_drawer_and_its_views,
+                   t_display_name_round_trip, t_connection_indicator):
+            try:
+                _assert_with(fn, r)
+            except AssertionError:
+                broke = True
+                break
+        if broke:
+            caught.append(name)
+        else:
+            raise AssertionError('mutant survived: ' + name)
+    return '%d of %d mutants caught' % (len(caught), len(MUTANTS))
+
+
+def _assert_with(fn, r):
+    """Re-run one check's assertions against an already-driven result. The three
+    checks above each call run_account() themselves, which a mutant sweep must not
+    do (it would drive the unmutated files), so the body is reused by handing the
+    result in through a one-shot patch of run_account."""
+    global run_account
+    real = run_account
+    run_account = lambda edits=None: r
+    try:
+        fn()
+    finally:
+        run_account = real
 
 
 def t_dom_unconfigured_is_a_non_event():
@@ -1103,6 +1626,15 @@ MUTANTS = [
     ('sign-out waits for the server',
      ("saveSession(null);\n    status('signed-out');", "status('signed-out');"),
      t_sign_out_is_local_first),
+
+    ('only the magic-link token type is tried, so a first sign-in always fails',
+     ("var VERIFY_TYPES = ['email', 'signup'];", "var VERIFY_TYPES = ['email'];"),
+     t_verify_tries_signup_after_email),
+
+    ('verify retries into a dead connection',
+     ("if (!r.offline && i + 1 < VERIFY_TYPES.length) return attempt(i + 1);",
+      "if (i + 1 < VERIFY_TYPES.length) return attempt(i + 1);"),
+     t_verify_does_not_retry_offline),
 ]
 
 
@@ -1178,6 +1710,11 @@ CHECKS = [
     ('resolving marks the adopted text synced', t_resolve_marks_adopted_text_synced),
     ('synced tracks the text sent, not a later edit', t_synced_tracks_the_pushed_text_not_a_later_edit),
     ('identity is email codes with no redirect anywhere', t_otp_endpoints),
+    ('a first-time signup token is accepted, not just a magic-link one',
+     t_verify_tries_signup_after_email),
+    ('a returning sign-in still costs one request', t_verify_stops_on_success),
+    ('verify does not retry into a dead connection', t_verify_does_not_retry_offline),
+    ('a wrong code is reported once and signs nobody in', t_verify_reports_a_bad_code_once),
     ('concurrent callers share one token refresh', t_refresh_is_shared),
     ('sign-out clears locally even when the server is unreachable', t_sign_out_is_local_first),
     ('all twenty pages load four scripts, after practice.js', t_pages_load_all_four_in_order),
@@ -1192,6 +1729,14 @@ CHECKS = [
     ('a half-document saved before the split is repaired on restore',
      t_dom_a_half_document_saved_before_the_split_is_repaired),
     ('both offline-neutrality guards are load-bearing', t_dom_guard_mutants),
+    ('the bar is one control at a time, with text before any emit',
+     t_bar_is_one_control_at_a_time),
+    ('the account drawer, its three views and My Progress', t_account_drawer_and_its_views),
+    ('the display name round trips through user_metadata', t_display_name_round_trip),
+    ('the bar names the connection, in every state, agreeing with the dot', t_connection_indicator),
+    ('the connection artwork is the committed asset, cleaned', t_connection_artwork_is_the_committed_asset),
+    ('the indicator is sized and coloured for the dark bar', t_connection_css_is_bar_safe),
+    ('every account-UI mutant is caught', t_account_mutants),
     ('every mutant is caught', t_mutants),
 ]
 

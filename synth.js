@@ -123,9 +123,15 @@ const STR_ESCAPES = { n: '\n', t: '\t', r: '\r', '0': '\0', '\\': '\\', '"': '"'
 /* A comment mentioning 'Skip Synthesis' TRUNCATES the source: everything from that comment
    to the end of the file is never lexed at all. That it happens here, in the lexer, rather
    than as a parser rule is the whole point — the text being skipped is a testbench, and a
-   testbench uses `initial`, `$readmemb`, `#delay` and 2-D memory arrays, none of which this
-   subset can even LEX (`$` is not a legal character here). So "parse it and mark the module
-   as skipped" is not available; the text has to disappear before tokenization.
+   testbench uses `initial`, `#delay` and 2-D memory arrays, none of which this subset can
+   even LEX. So "parse it and mark the module as skipped" is not available; the text has to
+   disappear before tokenization.
+
+   Note a system task is NOT one of those constructs any more: `$display` and friends lex
+   and are then deleted (see parseStmt's 'SysTask'), because they turn up inside otherwise
+   synthesizable modules where there is nothing to truncate. That is a statement about one
+   call, not about a testbench — `initial $display(...);` still needs this marker, since it
+   is `initial` that has nowhere to go.
 
    The match is a case-insensitive substring so the marker can carry decoration — the three
    in `simulator/index.html` are block comments reading `---- Testbench (Skip Synthesis) ----`
@@ -137,6 +143,31 @@ const STR_ESCAPES = { n: '\n', t: '\t', r: '\r', '0': '\0', '\\': '\\', '"': '"'
    parsing. A marker placed inside a module DOES take that module's `endmodule` with it, so
    every parse error that lands on `eof` carries Parser.skipHint(). */
 const SKIP_SYNTHESIS_MARKER = /skip\s*synthesis/i;
+
+/* The second marker, and the one a practice document actually carries: the very line
+   `Baerilog/simulator.html` splits its two editors on. Truncating here is what makes THIS app
+   able to open a whole exercise file — the design and its testbench in one document — where
+   before it stopped at the testbench's first `#delay` with `Lex error: unexpected character
+   '#'`, i.e. a message about a character in code the reader never meant to synthesize.
+
+   The pattern text is IDENTICAL to that file's `TB_MARKER_RE`, deliberately, and `test.py`
+   asserts the two spellings agree — two apps that disagree about where one document splits is
+   the failure this repo keeps recording, and these two cannot share a binding (separate apps,
+   no shared script), so the only alternative to a check is hoping. It includes the `//` so it
+   can be tested against a comment's text exactly as the marker above is, which is also what
+   lets it match `endmodule// ======== TESTBENCH ========module tb;` — the comment slice starts
+   at the `//` wherever on the line that falls.
+
+   It is offered to the LINE-comment branch only, not the block one. The block branch would
+   accept it for free, and that is precisely the problem: `simulator.html` splits on `//` only,
+   so a block-comment marker would cut here and not split there. */
+const TESTBENCH_MARKER = /\/\/[^\n]*?=+[ \t]*TESTBENCH[ \t]*=+/i;
+
+/* Which marker stopped the lexer, worded so it drops into `the ${marker} on line N`. The
+   'Skip Synthesis' wording is byte-for-byte what the five messages below said when it was the
+   only marker there could be; a TESTBENCH cut reporting itself as a Skip Synthesis comment
+   would send the reader looking for a comment they never wrote. */
+const MARKER_NAMES = { skip: "'Skip Synthesis' comment", testbench: 'TESTBENCH marker' };
 
 function lex(src) {
   const toks = [];
@@ -152,7 +183,9 @@ function lex(src) {
     if (c === '/' && src[i+1] === '/') {
       const start = i;
       while (i < n && src[i] !== '\n') i++;
-      if (SKIP_SYNTHESIS_MARKER.test(src.slice(start, i))) { skipInfo = { line, offset: start }; break; }
+      const text = src.slice(start, i);
+      if (SKIP_SYNTHESIS_MARKER.test(text)) { skipInfo = { line, offset: start, marker: MARKER_NAMES.skip }; break; }
+      if (TESTBENCH_MARKER.test(text)) { skipInfo = { line, offset: start, marker: MARKER_NAMES.testbench }; break; }
       continue;
     }
     if (c === '/' && src[i+1] === '*') {
@@ -160,7 +193,7 @@ function lex(src) {
       i += 2;
       while (i < n && !(src[i]==='*'&&src[i+1]==='/')) { if (src[i]==='\n') line++; i++; }
       i += 2;
-      if (SKIP_SYNTHESIS_MARKER.test(src.slice(start, i))) { skipInfo = { line: startLine, offset: start }; break; }
+      if (SKIP_SYNTHESIS_MARKER.test(src.slice(start, i))) { skipInfo = { line: startLine, offset: start, marker: MARKER_NAMES.skip }; break; }
       continue;
     }
     /* A string literal. Nothing in this subset can consume one — there is no $display
@@ -214,6 +247,19 @@ function lex(src) {
       i = j;
       continue;
     }
+    /* A system task or function name — `$display`, `$monitor`, `$finish`, `$time`. The `$`
+       is lexed as part of ONE token, so it can never be read as an operator beside an
+       identifier and `$display` cannot collide with a signal called `display`; the parser
+       then deletes the whole call (parseStmt's 'SysTask', dropped by stripUnsynthesizable).
+       A bare `$` with no name after it stays a lex error, since it is not a token in any
+       Verilog and naming the character is the honest message for it. */
+    if (c === '$' && isIdStart(src[i+1] || '')) {
+      let j = i + 1;
+      while (j < n && isIdChar(src[j])) j++;
+      toks.push({ type: 'systask', value: src.slice(i, j), line, start: i, end: j });
+      i = j;
+      continue;
+    }
     if (isIdStart(c)) {
       let j = i + 1;
       while (j < n && isIdChar(src[j])) j++;
@@ -238,7 +284,7 @@ function lex(src) {
     throw new Error(`Lex error: unexpected character '${c}' at line ${line}`);
   }
   toks.push({ type: 'eof', value: null, line, start: i, end: i });
-  // Where the text stopped, if a 'Skip Synthesis' comment stopped it. Carried on the token
+  // Where the text stopped, if a marker comment stopped it. Carried on the token
   // array rather than returned separately so every existing caller of lex() is unchanged.
   toks.skipInfo = skipInfo;
   return toks;
@@ -254,7 +300,7 @@ function describeSkip(src, skipInfo) {
   const dropped = src.slice(skipInfo.offset);
   const droppedLines = dropped.split('\n').length - (dropped.endsWith('\n') ? 1 : 0);
   const moduleNames = [...dropped.matchAll(/^[ \t]*module\s+([A-Za-z_][A-Za-z0-9_]*)/gm)].map(m => m[1]);
-  return { line: skipInfo.line, droppedLines, moduleNames };
+  return { line: skipInfo.line, droppedLines, moduleNames, marker: skipInfo.marker };
 }
 
 /* ---------------- Parser (recursive descent) ---------------- */
@@ -269,7 +315,7 @@ class Parser {
      being truncated on disk rather than by a comment the user wrote. */
   skipHint() {
     return this.skipInfo
-      ? ` — note the 'Skip Synthesis' comment on line ${this.skipInfo.line} drops everything below it, so the marker belongs at top level, between modules`
+      ? ` — note the ${this.skipInfo.marker} on line ${this.skipInfo.line} drops everything below it, so the marker belongs at top level, between modules`
       : '';
   }
   expect(type) {
@@ -392,12 +438,40 @@ class Parser {
     }
     return { port: null, expr: this.parseExpr() };
   }
+  /* An index or a range bound is a CONSTANT EXPRESSION position, not a literal token, and
+     routing all five brackets in the language through one reader is what makes `fsm[ST]`
+     work: parsePrimary already substitutes a parameter's value for its name, so a parameter
+     becomes usable as an index everywhere at once rather than in whichever bracket someone
+     remembered to teach about it. The five hand-written `expect('num')` copies this replaces
+     could each only ever see a literal.
+
+     It also fixes a radix bug all five shared. They read the digits with
+     `parseInt(digits, 10)`, which is the value only for a plain decimal literal: `d[4'hA]`
+     came out NaN (an index that silently compares false everywhere) and `d[8'b10]` came out
+     ten rather than two — a wrong bit, chosen quietly. numToBits is the one place that knows
+     what a based literal means, so the conversion goes through it.
+
+     `what` names the position, because `expected 'num' but got 'ident'` was the message for
+     `fsm[ST]`, `d[W-1:0]` and `mem[addr]` alike — a supported construct, an unfolded
+     expression and genuinely unsynthesizable hardware, which want three different answers. */
+  parseConstIndex(what) {
+    const tok = this.peek();
+    const node = this.parseExpr();
+    if (node.type !== 'Num') {
+      const named = node.type === 'Ident' && !this.params[node.name]
+        ? ` — '${node.name}' is not a parameter, and a netlist has to select a fixed bit`
+        : ` — write a literal or a parameter (arithmetic on parameters is not folded here)`;
+      throw new Error(`Parse error: ${what} must be a constant, got '${exprToStr(node)}' (line ${tok.line})${named}`);
+    }
+    // 32 bits is far more than an index can mean; the reduce is exact at this width.
+    return numToBits(node.value, 32).reduce((v, b, i) => v + b * 2 ** i, 0);
+  }
   parseRange() {
     if (!this.at('[')) return null;
     this.next();
-    const hi = parseInt(this.expect('num').value.digits, 10);
+    const hi = this.parseConstIndex('a range bound');
     this.expect(':');
-    const lo = parseInt(this.expect('num').value.digits, 10);
+    const lo = this.parseConstIndex('a range bound');
     this.expect(']');
     return { hi, lo };
   }
@@ -426,7 +500,7 @@ class Parser {
     if (this.at('.')) return this.parseHierRest(nameTok, 'HierLvalue');
     const name = nameTok.value;
     let bit = null;
-    if (this.at('[')) { this.next(); bit = parseInt(this.expect('num').value.digits, 10); this.expect(']'); }
+    if (this.at('[')) { this.next(); bit = this.parseConstIndex(`the bit index of '${name}'`); this.expect(']'); }
     return { type: 'Lvalue', name, bit };
   }
   /* A dotted name is a HIERARCHICAL reference into another instance (`u_alu.debug_alu`).
@@ -443,8 +517,8 @@ class Parser {
     let sel = null;
     if (this.at('[')) {
       this.next();
-      const hi = parseInt(this.expect('num').value.digits, 10);
-      sel = this.at(':') ? (this.next(), { hi, lo: parseInt(this.expect('num').value.digits, 10) }) : { hi, lo: hi };
+      const hi = this.parseConstIndex(`the selection on '${hierToStr({ path, sel: null })}'`);
+      sel = this.at(':') ? (this.next(), { hi, lo: this.parseConstIndex(`the selection on '${hierToStr({ path, sel: null })}'`) }) : { hi, lo: hi };
       this.expect(']');
     }
     return { type, path, sel, line: nameTok.line };
@@ -495,6 +569,34 @@ class Parser {
     return this.parseStmt();
   }
   parseStmt() {
+    /* A system task call — `$display("q=%b", q);`, `$monitor(...);`, `$finish;`. Parsed and
+       then DELETED by stripUnsynthesizable, on exactly the terms a debug string assignment
+       is: it exists to be watched in `simulator/index.html`, there is no hardware it could
+       become, and rejecting it would fail a design that simulates perfectly on the same page
+       over a line that was never going to generate anything. Unlike the two constructs
+       stripUnsynthesizable already drops, this one assigns NOTHING, so it can never leave a
+       signal without a driver and needs no ignored-target bookkeeping.
+
+       The ARGUMENTS are skipped by paren balance rather than parsed, and that is deliberate
+       rather than lazy: an argument list is the one place a testbench-ism can sit inside an
+       otherwise synthesizable module (`$display("%t", $time)`, `$display("%b", mem[addr])` —
+       a system function and a variable memory index, neither of which this expression parser
+       has), and none of it reaches the AST, so parsing it could only reject text whose whole
+       role is to be discarded. */
+    if (this.at('systask')) {
+      const tok = this.next();
+      if (this.at('(')) {
+        let depth = 0;
+        do {
+          if (this.at('eof')) throw new Error(`Parse error: unterminated argument list for '${tok.value}' (line ${tok.line})${this.skipHint()}`);
+          const t = this.next();
+          if (t.type === '(') depth++;
+          else if (t.type === ')') depth--;
+        } while (depth > 0);
+      }
+      this.expect(';');
+      return { type: 'SysTask', name: tok.value, line: tok.line };
+    }
     if (this.at('if')) {
       this.next();
       this.expect('(');
@@ -642,13 +744,22 @@ class Parser {
        instead would report `expected ')' but got 'str'` for `{"A", b}`. The `line` is what
        every message about this node quotes, since no other expression node carries one. */
     if (this.at('str')) { const t = this.next(); return { type: 'Str', value: t.value, line: t.line }; }
+    /* A system FUNCTION in an expression is an error, where a system TASK as a statement is
+       ignored, and the asymmetry is the whole point: a statement can be deleted because
+       nothing consumes it, while `assign y = $signed(a);` has a value this netlist would
+       have to produce and no cell can. Named here so the message says which construct it
+       is about rather than `expected 'ident' but got 'systask'`, which reads as a typo. */
+    if (this.at('systask')) {
+      const t = this.peek();
+      throw new Error(`Parse error: '${t.value}' is a system function used as a value (line ${t.line}) — only a system task written as its own statement (\`${t.value}(...);\`) can be ignored; there is no hardware that produces this value`);
+    }
     const nameTok = this.expect('ident');
     if (this.at('.')) return this.parseHierRest(nameTok, 'Hier');
     const name = nameTok.value;
     if (this.at('[')) {
       this.next();
-      const hi = parseInt(this.expect('num').value.digits, 10);
-      if (this.at(':')) { this.next(); const lo = parseInt(this.expect('num').value.digits, 10); this.expect(']'); return { type: 'Slice', name, hi, lo }; }
+      const hi = this.parseConstIndex(`the index of '${name}'`);
+      if (this.at(':')) { this.next(); const lo = this.parseConstIndex(`the range bound of '${name}'`); this.expect(']'); return { type: 'Slice', name, hi, lo }; }
       this.expect(']');
       return { type: 'Index', name, bit: hi };
     }
@@ -657,9 +768,14 @@ class Parser {
   }
 }
 
-/* ---------------- unsynthesizable assignments: ignored, not synthesized ----------------
-   Two constructs are deleted here rather than synthesized, because both exist only to be
-   watched in `simulator/index.html` and neither is hardware:
+/* ---------------- unsynthesizable statements: ignored, not synthesized ----------------
+   Three constructs are deleted here rather than synthesized, because all three exist only to
+   be watched in `simulator/index.html` and none is hardware:
+
+   A SYSTEM TASK CALL (`$display("q=%b", q);`, `$monitor`, `$finish`, `$dumpvars`). Parsed in
+   parseStmt (see there for why its arguments are skipped rather than parsed) and dropped
+   whole. It is the simplest of the three and the only one with no bookkeeping at all: a call
+   assigns nothing, so unlike the two below it can never be the last driver of a signal.
 
    A STRING. Other tools do synthesize `debug_alu <= "ADD"` — "ADD" is just a 24-bit constant
    — but a design that carries a handful of debug_* strings for the simulator's `str` radix
@@ -772,6 +888,12 @@ function stripUnsynthesizable(mod) {
         for (const it of stmt.items) { for (const p of it.patterns) rejectStrings(p, false); checkStmt(it.body); }
         checkStmt(stmt.defaultBody);
         return;
+      // A system task carries no expressions into the AST — its argument list was skipped
+      // unparsed — so there is nothing here to check. Written out rather than left to the
+      // default, which reads `stmt.rhs` off a statement that has none; the two are an
+      // EQUIVALENT MUTANT (rejectStrings(undefined) is a no-op, so no input can tell them
+      // apart) and this case is here to say which constructs pass 1 knows about.
+      case 'SysTask': return;
       default: rejectStrings(stmt.rhs, true);
     }
   };
@@ -787,6 +909,7 @@ function stripUnsynthesizable(mod) {
   /* Pass 2 — prune, recording what went. */
   const ignored = [];                   // {name, text, line} per dropped string assignment target
   const ignoredHier = [];               // {what, ref, line} per statement dropped for a hier ref
+  const ignoredSysTasks = [];           // {name, line} per dropped system task call
   const ignoredTargets = new Map();     // name -> {line, kinds:Set} of its first ignored assignment
   const recordTarget = (name, line, kind) => {
     if (!ignoredTargets.has(name)) ignoredTargets.set(name, { line, kinds: new Set() });
@@ -820,6 +943,11 @@ function stripUnsynthesizable(mod) {
   };
   const pruneStmt = stmt => {
     if (!stmt) return null;
+    /* Dropped with no target bookkeeping, deliberately: a call assigns nothing, so it cannot
+       be the last driver of anything, and pass 3 has nothing to decide about it. Bottom-up
+       pruning then does the rest for free — an `always @(*)` whose only statement was a
+       `$display` disappears entirely rather than being rejected as an empty block. */
+    if (stmt.type === 'SysTask') { ignoredSysTasks.push({ name: stmt.name, line: stmt.line }); return null; }
     if (stmt.type === 'Block') {
       const stmts = stmt.stmts.map(pruneStmt).filter(s => s !== null);
       return stmts.length ? { ...stmt, stmts } : null;
@@ -871,6 +999,7 @@ function stripUnsynthesizable(mod) {
 
   mod.ignoredStrings = ignored;
   mod.ignoredHier = ignoredHier;
+  mod.ignoredSysTasks = ignoredSysTasks;
   if (!ignoredTargets.size) { mod.droppedSignals = []; return mod; }
 
   /* Pass 3 — what is left of the module, so a signal whose only assignments were ignored can
@@ -942,7 +1071,7 @@ function parseVerilog(src) {
   const modules = [];
   while (!parser.at('eof')) modules.push(stripUnsynthesizable(parser.parseModule()));
   if (!modules.length) {
-    throw new Error(`Parse error: no module found${skipInfo ? ` before the 'Skip Synthesis' comment on line ${skipInfo.line}, which drops everything below it` : ''}`);
+    throw new Error(`Parse error: no module found${skipInfo ? ` before the ${skipInfo.marker} on line ${skipInfo.line}, which drops everything below it` : ''}`);
   }
   // Carried on the array so findTopModule and synthesizeAll can report the truncation without
   // a signature change, and so parseTopLevelModules (which returns a Map) can ignore it.
@@ -989,7 +1118,7 @@ function findTopModule(modules) {
   for (const m of modules) for (const inst of m.instances) instantiated.add(inst.modType);
   const candidates = modules.filter(m => !instantiated.has(m.name));
   const skipHint = modules.skipInfo
-    ? ` — note the 'Skip Synthesis' comment on line ${modules.skipInfo.line} dropped everything below it, so anything instantiated only down there now looks like a top module; move the marker below it if that is what happened`
+    ? ` — note the ${modules.skipInfo.marker} on line ${modules.skipInfo.line} dropped everything below it, so anything instantiated only down there now looks like a top module; move the marker below it if that is what happened`
     : '';
   if (candidates.length === 0) throw new Error('Cannot determine a top module: every module is instantiated by another (a cycle in the module hierarchy)');
   if (candidates.length > 1) throw new Error(`Cannot determine a top module: multiple modules are never instantiated (${candidates.map(m => m.name).join(', ')}) — expected exactly one${skipHint}`);
@@ -1052,7 +1181,7 @@ class Synthesizer {
     this.ast = ast;
     this.interfaces = interfaces || {}; // moduleName -> extractInterface(mod), for validating instance connections
     this.adderRegistry = adderRegistry || new Map(); // shared across all modules in this run: 'add4'/'sub4' -> module result, so +/- at the same width reuse one generated module
-    this.skipInfo = skipInfo || null;   // set when a 'Skip Synthesis' comment truncated the source, so an unknown module type can say where the definition went
+    this.skipInfo = skipInfo || null;   // set when a marker comment truncated the source, so an unknown module type can say where the definition went
     this.sig = {};
     this.cells = [];
     this.driven = new Set();
@@ -2299,6 +2428,7 @@ class Synthesizer {
     /* Reported rather than dropped silently — a netlist that is missing hardware the
        source appears to ask for has to say so, or the only evidence is an absence. */
     for (const s of this.ast.ignoredStrings || []) this.info(`ignored the assignment of ${s.text} to '${s.name}' (line ${s.line}) — a string is not synthesizable, so no hardware was generated for it`);
+    for (const t of this.ast.ignoredSysTasks || []) this.info(`ignored the '${t.name}' call (line ${t.line}) — a system task is simulation output, not hardware, so no hardware was generated for it`);
     for (const h of this.ast.ignoredHier || []) this.info(`ignored ${h.what} (line ${h.line}) — it references '${h.ref}', a net inside another module, which no netlist can reach except through a port, so no hardware was generated for it`);
     for (const d of this.ast.droppedSignals || []) this.info(`signal '${d.name}' (${d.width}-bit) was dropped entirely: every assignment to it was ignored (${d.why}) and nothing reads it`);
     for (const a of this.ast.assigns) this.synthAssign(a);
@@ -2313,10 +2443,10 @@ class Synthesizer {
   synthInstance(inst) {
     const iface = this.interfaces[inst.modType];
     if (!iface) {
-      // A module defined below a 'Skip Synthesis' marker was never read, so an instance of it
+      // A module defined below a truncation marker was never read, so an instance of it
       // is unknown for a reason the source does not show at the instantiation site.
       const hint = this.skipInfo && this.skipInfo.moduleNames.includes(inst.modType)
-        ? ` — it is defined below the 'Skip Synthesis' comment on line ${this.skipInfo.line}, which drops everything under it; move the marker below that module to synthesize it`
+        ? ` — it is defined below the ${this.skipInfo.marker} on line ${this.skipInfo.line}, which drops everything under it; move the marker below that module to synthesize it`
         : '';
       this.error(`Unknown module type '${inst.modType}' instantiated as '${inst.instName}' (line ${inst.line})${hint}`);
     }
@@ -3060,8 +3190,8 @@ function synthesizeAll(src) {
      a fact about one module, and a reader who does not see it here would look for the missing
      modules in a hierarchy that never mentions them. */
   if (modules.skipInfo) {
-    const { line, droppedLines, moduleNames } = modules.skipInfo;
-    allLog.push({ level: 'info', msg: `ignored the ${droppedLines} line${droppedLines === 1 ? '' : 's'} from the 'Skip Synthesis' comment on line ${line} to the end of the file${moduleNames.length ? ` — not synthesized: ${moduleNames.join(', ')}` : ''}` });
+    const { line, droppedLines, moduleNames, marker } = modules.skipInfo;
+    allLog.push({ level: 'info', msg: `ignored the ${droppedLines} line${droppedLines === 1 ? '' : 's'} from the ${marker} on line ${line} to the end of the file${moduleNames.length ? ` — not synthesized: ${moduleNames.join(', ')}` : ''}` });
   }
   const adderRegistry = new Map(); // shared so +/- at the same width across every module reuse one addN/subN
   for (const m of modules) {
@@ -3084,11 +3214,112 @@ function synthesizeModuleView(all, moduleName) {
   return { result, graph, layout };
 }
 
+/* ---- cell counts and relative area ----
+   Above the UI-wiring banner, and that placement is the point rather than tidiness:
+   the slice `Baerilog/synth.js` is exactly [<script>, "UI wiring"), so this is what
+   lets a practice page report cell counts and area from THIS function instead of a
+   second implementation of it. Two apps computing an area independently is two
+   answers for one design, which is the drift this repo keeps designing against.
+   It is pure - a function of a synthesizeAll result and nothing else - which is what
+   qualifies it to be here at all; `pushGraph` below the banner is not, and stays. */
+// Approximate relative cell area, in units of a 2-input NAND (the smallest
+// static-CMOS gate at 4 transistors, so it's the natural baseline). Simple
+// gates are estimated from their usual static-CMOS transistor count relative
+// to that baseline (NOT/BUF need half or one inverter stage, AND/OR are a
+// NAND/NOR plus an inverter, XOR/XNOR need roughly 2.5x the transistors of a
+// NAND for a compact implementation, DFF and MUX2 are standard textbook
+// figures for a reset-capable flip-flop and a transmission-gate 2:1 mux).
+// FA is deliberately NOT an independent guess - this app's own `fa` PRIMITIVE_SRC
+// is itself built from 2 XOR2 + 2 AND2 + 1 OR2 (see PRIMITIVE_SRC.fa), so its
+// area is derived by composing those same weights, keeping the two
+// consistent with each other instead of picking a second unrelated number.
+const GATE_AREA = (() => {
+  const a = { nand: 1, nor: 1, not: 0.5, buf: 1, mux2: 2, dff: 6, const: 0, instance: 0 };
+  a.and = a.nand + a.not;
+  a.or = a.nor + a.not;
+  a.xor = 2.5;
+  a.xnor = a.xor;
+  a.fa = 2 * a.xor + 2 * a.and + 1 * a.or;
+  return a;
+})();
+const GATE_DISPLAY_NAME = { and: 'AND', or: 'OR', nand: 'NAND', nor: 'NOR', xor: 'XOR', xnor: 'XNOR', not: 'NOT', buf: 'BUF', mux2: 'MUX2', fa: 'FA', dff: 'DFF', const: 'const', instance: 'sub-module' };
+const GATE_REPORT_ORDER = ['and', 'or', 'nand', 'nor', 'xor', 'xnor', 'not', 'buf', 'mux2', 'fa', 'dff', 'const', 'instance'];
+
+// Counts and areas every cell across the WHOLE design (every module actually
+// synthesized - currentAll.results already covers the top module, every
+// sub-module, and every auto-generated adder), matching the same
+// whole-design scope the existing "N cells total" summary line already
+// uses, not just whatever the diagram happens to be drilled into right now.
+// Counts every cell ONCE PER ACTUAL INSTANTIATION SITE, not once per
+// distinct module definition. `currentAll.results` holds exactly one
+// synthesis result per module TYPE - synthesizeAll synthesizes each module
+// definition once, keyed by name, regardless of how many places instantiate
+// it - so summing Object.values(all.results) directly silently undercounts
+// any module instantiated more than once (an 8-bit adder instantiated
+// twice would only contribute its 8 FAs once instead of 16). Recursing
+// from the real top module and re-walking a child's cells at every
+// 'instance' cell that references it - rather than caching a single
+// "multiplicity" per module name - is also what keeps this correct when
+// the SAME module is reused from more than one place in the hierarchy,
+// not just instantiated repeatedly from one place.
+function collectWholeDesignCellCounts(all) {
+  const counts = {};
+  let totalCells = 0;
+  function walk(moduleName) {
+    const result = all.results[moduleName];
+    if (!result) return;
+    for (const c of result.cells) {
+      counts[c.type] = (counts[c.type] || 0) + 1;
+      totalCells++;
+      if (c.type === 'instance') walk(c.modType);
+    }
+  }
+  walk(all.top.name);
+  return { counts, totalCells };
+}
+
+function buildAreaReport(all) {
+  const { counts, totalCells } = collectWholeDesignCellCounts(all);
+  const dffCount = counts.dff || 0;
+  const instanceCount = counts.instance || 0;
+  const physicalCells = totalCells - instanceCount; // a sub-module 'instance' cell is a hierarchy pointer, not a gate - its own gates are counted when THAT module's results are processed
+  const combCells = physicalCells - dffCount;
+
+  const pad = (label, value) => label.padEnd(32) + value;
+  const lines = [];
+  lines.push(pad('Number of cells:', physicalCells));
+  lines.push(pad('Number of combinational cells:', combCells));
+  lines.push(pad('Number of sequential cells:', dffCount));
+  if (instanceCount) lines.push(pad('Number of sub-module instances:', instanceCount));
+  lines.push('');
+  lines.push('Gate counts:');
+  const areaLines = [];
+  let totalArea = 0;
+  for (const type of GATE_REPORT_ORDER) {
+    const n = counts[type];
+    if (!n) continue;
+    lines.push(pad('  ' + GATE_DISPLAY_NAME[type] + ':', n));
+    const area = n * GATE_AREA[type];
+    totalArea += area;
+    if (GATE_AREA[type]) areaLines.push(pad('  ' + GATE_DISPLAY_NAME[type] + ':', area.toFixed(2)));
+  }
+  lines.push('');
+  lines.push('Approx. area (2-input NAND = 1.00):');
+  lines.push(...areaLines);
+  lines.push('');
+  lines.push(pad('Total cell area:', totalArea.toFixed(2)));
+  return lines.join('\n');
+}
+
 return {
   synthesizeAll: synthesizeAll,
   synthesizeModuleView: synthesizeModuleView,
   toFlowElements: toFlowElements,
   genVerilog: genVerilog,
+  // The cell/area report, so a practice page logs the SAME numbers synthesis.html does
+  // rather than computing its own. It is in the slice because it was moved above that
+  // app's UI-wiring banner for exactly this.
+  buildAreaReport: buildAreaReport,
   // The one piece of engine state that lives above the banner but is written by a
   // control below it: the Netlist Viewer's "Bundle multi-bit logic" checkbox.
   setBundleMultibit: function (on) { bundleMultibitLogic = !!on; },

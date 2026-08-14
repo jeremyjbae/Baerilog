@@ -46,9 +46,22 @@
       --btn-primary-bg: #1f883d;
       --btn-primary-hover: #1a7f37;
       --btn-busy-bg: #9a6700;
+      --btn-danger-bg: #cf222e;
       --header-bg: #24292f;
       --header-fg: #ffffff;
       --header-muted: rgba(255, 255, 255, 0.7);
+      /* Status hues FOR THE BAR, and identical in both modes for the same reason
+         --panel-* below are: the bar is dark either way (#24292f light, #010409 dark),
+         so a token that follows the page is the wrong tool. These are Primer's
+         DARK-mode green/amber/red, which is what a dark surface needs — the
+         light-mode ones measure 2.88:1, 3.01:1 and 2.74:1 against #24292f, i.e. below
+         the 3:1 floor for non-text graphics, while these give 5.77, 5.80 and 4.37 on
+         that bar and 8.08, 8.14 and 6.13 on the dark one. Same hues as --success-fg
+         and friends, so a bar indicator and a page one still read as one state; this
+         is the logo's unconditional-invert rule applied to colour. */
+      --header-success: #3fb950;
+      --header-attention: #d29922;
+      --header-danger: #f85149;
       --shadow-overlay: 0 8px 24px rgba(31, 35, 40, 0.2);
       --radius: 6px;
       --radius-lg: 12px;
@@ -95,6 +108,7 @@
         --btn-primary-bg: #238636;
         --btn-primary-hover: #2ea043;
         --btn-busy-bg: #9e6a03;
+        --btn-danger-bg: #da3633;
         --header-bg: #010409;
         --header-fg: #e6edf3;
         --header-muted: #9198a1;
@@ -173,6 +187,49 @@
       color: var(--fg-muted);
       margin-bottom: 24px;
     }
+    /* --- the breadcrumb heading, on the hub and the three apps the menu offers ---
+
+       The breadcrumb IS the h1, the way a repo page's owner/name is, so the centred
+       heading above has to be undone where it is used. Both rules carry the SAME box as
+       .grid - max-width 1280, auto margins, 24px side padding - which is what makes the
+       crumb align with the cards under it on an app page; on the hub the same class sits
+       inside .gh-page and aligns with the Box under it instead. Each page is therefore
+       aligned to its own content rather than all four to one absolute inset.
+
+       These were practice.css's until three apps wanted them, which is exactly the
+       promotion that file's own comments anticipate. h1/.subtitle above stay, because
+       emulator, verify and workbench are not in the menu and keep the centred heading. */
+    .gh-crumb {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 16px 24px 0;
+      text-align: left;
+      font-size: 20px;
+      font-weight: 400;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .gh-crumb a { color: var(--accent-fg); text-decoration: none; font-weight: 600; }
+    .gh-crumb a:hover { text-decoration: underline; }
+    .gh-crumb .sep { color: var(--fg-muted); }
+    .gh-crumb .here { font-weight: 600; color: var(--fg-default); }
+    .gh-crumb .gh-label { font-size: 12px; margin-left: 6px; }
+    .gh-sub {
+      max-width: 1280px;
+      margin: 4px auto 0;
+      padding: 0 24px;
+      text-align: left;
+      font-size: 14px;
+      color: var(--fg-muted);
+    }
+    /* The 24px the centred .subtitle carried as a margin-bottom, scoped to the case that
+       needs it instead of put on .gh-sub. .gh-sub itself is byte-identical to what the hub
+       already had, so promoting it cannot have moved that page - and it must not, since
+       nothing follows the sub-line there but a Box with no margin of its own, and on an
+       exercise page shell.js inserts the tab strip between the two so this never matches. */
+    .gh-sub + .grid { margin-top: 24px; }
     .grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -460,7 +517,268 @@
     }
     .hierarchy-children { margin-left: 12px; border-left: 1px solid var(--border-default); padding-left: 6px; }
 
-                /* --- additions for editor / console / waveform, same visual language --- */
+    /* =====================================================================
+       A card must be allowed to SHRINK, at every width.
+
+       `.grid` is `1fr`-based and `1fr` is `minmax(auto, 1fr)`, so a track's floor
+       is the largest min-content width among its items - and a grid item defaults
+       to `min-width: auto`, which refuses to go below its own content. One
+       unshrinkable descendant therefore sets the width of every card on the page,
+       while `.gh-header` is an ordinary block that stays at the viewport: so the
+       symptom reads as "the header bar is narrower than the page" rather than as
+       "this panel is too wide". Every panel's own `overflow: auto` is unreachable
+       until this rule exists, because the card grows instead of the panel
+       scrolling.
+
+       Measured on a practice page at a 320px viewport, after a synthesis: the
+       document was 19,628px wide, and this one property took it to 812px. It was
+       `Baerilog/compiler.html`'s own rule first (as `.card:not(.full)`, added when a
+       half-width Assembly card ballooned its column at 642px against its
+       neighbour's 440px); it is here now because all six apps have the same grid
+       and the same hazard.
+       ===================================================================== */
+    .card { min-width: 0; }
+    /* .split-row's children are flex items, where the same automatic minimum
+       applies - and style.css's own first-child rule above gives one a fixed width
+       with no floor. */
+    .split-row > .card { min-width: 0; }
+
+    /* =====================================================================
+       ONE narrow-screen layer for all six apps, at app.css's own breakpoint.
+
+       760px is where every app already drops `.grid` to a single column, so this
+       block reuses that number rather than introducing a second one. It is here
+       rather than in six additions sections because every rule in it is about the
+       shared chrome - the header, the grid, a card's header row, the split row -
+       or about a control that exists in all six.
+
+       Two things decide the shape of it:
+
+       - The `body` prefix is not decoration. Each app's additions block is pasted
+         AFTER this one and restates `select`, `.num-input`, `.gutter`,
+         `.console-box` and the editor textarea at 12px, so an equal-specificity
+         rule here is silently dead everywhere. `body` beats them all; the two
+         textarea selectors are listed because `.editor-wrap textarea` (one class)
+         out-specifies a bare `body textarea`, and an app whose editor is styled by
+         ID has to raise it in its own block (compiler's `#codeInput`, verify's
+         `#rtlInput`, workbench's `#cCodeInput`).
+
+       - 16px is a REQUIREMENT, not a preference: iOS Safari zooms the whole page
+         when a focused control computes under 16px, and it does not zoom back. One
+         tap in an editor left the page at ~1.7x with only a pinch to undo it. The
+         other way out is `maximum-scale=1` in the viewport meta, which "fixes" it
+         by disabling pinch-zoom for everyone. The read-only dark panels come along
+         for legibility rather than for zoom - they cannot be focused - because four
+         panels that are obviously one kind of thing in two sizes reads as though a
+         card had been missed. They all handle running out of room already (the
+         consoles wrap; the listings and the netlist scroll), so the cost is content
+         per line and never reachability.
+
+       Deliberately NOT raised: the register and compare GRIDS (`.reg-grid`,
+       `.compare-grid`, `.cmp-grid`). They are dense hex, which is what lets a whole
+       register file be read at a glance, and their containers are `overflow:
+       hidden` with cells sized in `ch` - so raising them would CLIP a column rather
+       than scroll it. Their narrow-screen job is to re-flow into fewer columns,
+       which each app does in its own block, and the row count has to move with the
+       column count or the items keep flowing at the old rate and quietly start an
+       extra column.
+       ===================================================================== */
+    @media (max-width: 760px) {
+      /* One column, and gutters that match the 16px the page's other rows use.
+         The single column is repeated in most apps' own blocks; stating it here is
+         what gives it to `emulator/index.html`, which never had it. */
+      .grid { grid-template-columns: 1fr; padding: 0 16px; }
+      /* A card header is a no-wrap flex row that can hold seven icon buttons, so at
+         this width it kept the buttons and broke the TITLE across three lines. */
+      .card h2 { flex-wrap: wrap; row-gap: 6px; }
+      /* The hierarchy panel is a fixed 220px of a ~290px card, which left the
+         waveform or the netlist about 60px. Stacked, each gets the full width. */
+      .split-row { flex-wrap: wrap; }
+      .split-row > .card:first-child { flex: 1 1 100%; width: auto; }
+      /* The bar wraps to three rows here - wordmark, app links, and whatever a page
+         appends to the nav - which is ~100px of a ~700px viewport held permanently
+         by `position: sticky`. Static gives it back; the nav is one scroll away. */
+      .gh-header { position: static; }
+      .gh-header-inner { padding: 10px 16px; gap: 8px 12px; }
+      .gh-nav { font-size: 12px; gap: 12px; }
+      /* Focusable: 16px or iOS zooms the page. */
+      body select,
+      body .num-input,
+      body input[type="number"],
+      body textarea,
+      body .editor-wrap textarea { font-size: 16px; }
+      /* The gutter is scroll-synced to the textarea, so it moves in the SAME rule or
+         the line numbers slide off their own lines; both carry a unitless
+         line-height, which scales for both. 38px held three digits at 12px and
+         these files run past line 999. */
+      body .gutter { font-size: 16px; width: 52px; }
+      /* Read-only dark panels, held to the same size as the editors. */
+      body .console-box,
+      body .code-out,
+      body .asm-listing,
+      body .trace-listing,
+      body table.memory-table { font-size: 16px; }
+      /* A memory table's comment column is wider than a phone; the wrap scrolls it
+         rather than the card growing (which `min-width: 0` above now forbids). */
+      body .memory-table-wrap { overflow-x: auto; }
+    }
+    /* =====================================================================
+       THE NAVIGATION DRAWER, on every app.
+
+       The bar used to carry four app links. They are gone: a menu button at the top
+       left opens a panel that slides in from the left, which is the app-shell shape a
+       phone wants and which a bar cannot grow into. Written for the practice pages
+       first and moved here once it was verified on a phone - and what was
+       practice-only about it turned out to be nothing at all.
+
+       The MARKUP and the wiring are per app, because these are six standalone
+       single-file pages with no shared script: tools/navmenu.py pastes one canonical
+       builder into each of them and `--check` proves the copies are identical, the
+       same arrangement this block itself lives under.
+       ===================================================================== */
+    /* The four app links used to sit in the bar; the drawer replaces them at every
+       width, so they go - but it is the LINKS that go and NOT `.gh-nav`, because
+       cloud-ui.js appends the account control into that nav and hiding the container
+       would take the sign-in state with it. The wordmark text beside the logo goes too:
+       the logo says it, and the bar has a button to make room for now. Both are hidden
+       rather than deleted because that markup is a slice of Baerilog/simulator.html -
+       deleting it is the step that takes this to all six apps. */
+    .gh-nav a { display: none; }
+    .gh-mark span { display: none; }
+
+    /* Boxed, on the dark bar, in the bar's own foreground - the shape `.layout-btn`
+       gives every other icon button here, so this needed no new visual language. */
+    .gh-menu-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      cursor: pointer;
+      background: none;
+      border: 1px solid var(--header-muted);
+      border-radius: var(--radius);
+      color: var(--header-fg);
+    }
+    .gh-menu-btn:hover { border-color: var(--header-fg); }
+    .gh-menu-btn svg { width: 16px; height: 16px; display: block; fill: currentColor; }
+
+    /* THE BAR SPANS THE WINDOW, where every other row on the page is a centred 1280px
+       column. That is the whole of it: `.gh-header-inner` is `max-width: 1280px; margin: 0
+       auto` in the shared block, so on a 2430px window its contents started 575px in -
+       right for the logo aligning with the crumb below it, wrong for a menu button and for
+       an account control, which belong at the window's edges the way an app shell's do.
+
+       One rule rather than three, and deliberately not `position: absolute` on each: with
+       the row full width, the button and the logo sit at the left padding edge in normal
+       flow, and `.gh-nav`'s own `margin-left: auto` (shared block) carries the account
+       control to the right one. So the three move by the layout they already had rather
+       than by three sets of coordinates that could disagree - and nothing overlaps at any
+       width, which is what an absolutely-positioned button did on a phone, where the
+       column IS the viewport and there is no gutter to move into.
+
+       No media query: below 1280px the row already filled the bar, so this is a no-op
+       there and there is no breakpoint to derive or to get wrong. */
+    .gh-header-inner { max-width: none; }
+
+    /* The same dim as the exercise sheet's backdrop, deliberately - one dialog idiom on
+       the page rather than two - and the panel is a CHILD of it, as the sheet is, which is
+       what makes shell.js's `ev.target === navBack` guard load-bearing instead of
+       unfalsifiable. Both halves transition `visibility` alongside the visual property so
+       that a closed drawer is neither clickable nor focusable off-screen, while still being
+       visible for the length of its own closing animation. Note the backdrop sets no
+       transform or filter, so the fixed panel inside it stays fixed to the viewport. */
+    .nav-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 2050;
+      background: rgba(31, 35, 40, 0.5);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 220ms ease, visibility 220ms;
+    }
+    .nav-backdrop.open { opacity: 1; visibility: visible; }
+    .nav-drawer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      z-index: 2100;
+      width: min(300px, 84vw);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      background: var(--canvas-default);
+      border-right: 1px solid var(--border-default);
+      box-shadow: var(--shadow-overlay);
+      transform: translateX(-100%);
+      visibility: hidden;
+      transition: transform 220ms ease, visibility 220ms;
+    }
+    .nav-drawer.open { transform: translateX(0); visibility: visible; }
+    /* An animation is a nicety; a page that moves for someone who asked it not to is
+       not. The drawer still opens and closes, it just arrives. */
+    @media (prefers-reduced-motion: reduce) {
+      .nav-drawer, .nav-backdrop { transition: none; }
+    }
+    /* Same reason the exercise sheet locks it: the page behind a modal panel scrolling
+       under the pointer makes the panel look as though it is drifting. */
+    body.nav-open { overflow: hidden; }
+
+    .nav-drawer-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-default);
+    }
+    /* The wordmark is cloned out of the header, where `.gh-mark svg` carries an
+       UNCONDITIONAL `filter: invert(1)` - the bar is dark in both colour modes, so the
+       black artwork has to become white in both. This surface is `--canvas-default`, so
+       this instance drops the filter rather than that rule gaining a query, which is the
+       rule CLAUDE.md states for the logo landing anywhere light. Keeping the invert here
+       renders the mark as a white-on-white ghost in light mode. */
+    .nav-drawer-mark svg { height: 18px; width: auto; filter: none; }
+    .nav-drawer-close { margin-left: auto; }
+
+    .nav-drawer-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 8px;
+    }
+    .nav-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: var(--radius);
+      color: var(--fg-default);
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .nav-row:hover { background: var(--canvas-subtle); }
+    /* The current app, in two encodings of one bit - a fill and an accent rule down its
+       left edge - the same rule the hub's chips and the Scoreboard's flags are held to,
+       so it survives greyscale. The rule is an INSET shadow rather than a border because
+       that cannot change the row's size, so marking one cannot reflow the list. */
+    .nav-row.current {
+      background: var(--canvas-subtle);
+      font-weight: 600;
+      box-shadow: inset 2px 0 0 var(--accent-fg);
+    }
+    .nav-row-icon {
+      display: inline-flex;
+      flex-shrink: 0;
+      width: 16px;
+      height: 16px;
+      color: var(--fg-muted);
+    }
+    .nav-row-icon svg { width: 16px; height: 16px; fill: currentColor; }
+
+                                      /* --- additions for editor / console / waveform, same visual language --- */
     /* Expand: the waveform row breaks out of .grid's max-width to the full body
        content width, leaving every other card centred at 1100px. This is an
        app-specific rule and stays out of style.css even though .split-row itself
@@ -487,11 +805,30 @@
       color: var(--fg-default);
       cursor: pointer;
       user-select: none;
+      /* Same three as .hierarchy-node-row, and for the same reason: the panel is a
+         fixed 220px, so a name plus a range wider than that has to CLIP rather than
+         wrap. Without this a memory's `mem[15:0][0:255]` broke after the first `]`
+         and rendered as two stacked lines, which reads as two separate facts about
+         two different things rather than as one declaration. */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .hierarchy-signal-item:hover { background: var(--canvas-subtle); }
     .hierarchy-signal-item.off { color: var(--fg-muted); }
     .hierarchy-signal-icon { width: 16px; height: 10px; flex-shrink: 0; color: var(--fg-default); }
     .hierarchy-signal-item.off .hierarchy-signal-icon { color: var(--fg-muted); opacity: 0.4; }
+    /* The declared bit range, e.g. the `[3:0]` of `d[3:0]`. The negative margin
+       cancels .hierarchy-signal-item's 6px flex gap, so the range reads as part
+       of the name rather than as a separate column; muted mono keeps it
+       secondary, the same treatment .hierarchy-node-type gives an instance's
+       module name. */
+    .hierarchy-signal-range {
+      margin-left: -6px;
+      color: var(--fg-muted);
+      font-size: 10px;
+      font-family: var(--font-mono);
+    }
     .toolbar {
       display: flex;
       gap: 8px;
@@ -546,6 +883,14 @@
        The :hover twin is not redundant: `.btn:hover` and `.btn[data-busy]` have equal
        specificity, so without it the rule would depend on source order alone. */
     .btn:active:not(:disabled) { background: var(--btn-busy-bg); }
+    /* [data-error] is the ⚠︎ state after a run that never started - the file did not
+       parse, or the Simulator threw before producing anything. It sits BEFORE the
+       busy rule on purpose: the two have equal specificity, so source order is what
+       makes the amber press win over the red resting state when the retry is clicked.
+       Its own :hover twin is needed for the same reason .btn[data-busy]'s is.
+       The label stays --fg-on-emphasis from .btn - never --canvas-default, which is
+       white in light mode and #0d1117 in dark, i.e. near-black text on a red fill. */
+    .btn[data-error], .btn[data-error]:hover { background: var(--btn-danger-bg); }
     .btn[data-busy], .btn[data-busy]:hover { background: var(--btn-busy-bg); }
     .time-label { font-size: 12px; color: var(--fg-muted); margin-right: -2px; }
 
@@ -709,10 +1054,14 @@
       gap: 1px; background: var(--panel-bg); border-radius: var(--radius) 12px 0 0; overflow: hidden;
       font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
     }
-    /* Half width cannot hold four groups, so it becomes two of sixteen - and the
+    /* Half width cannot hold four groups, so it becomes two of eighteen - and the
        row count has to move with the column count or the items keep flowing
-       9-per-column and the arrangement is silently wrong. */
-    .card:not(.full) .compare-grid { grid-template-rows: repeat(17, auto); grid-template-columns: repeat(2, 1fr); }
+       9-per-column and the arrangement is silently wrong. EIGHTEEN, not seventeen:
+       renderModelCard emits 36 cells (four groups of a header plus eight registers),
+       and 17 x 2 is 34, so a 17-row template put the last two into a THIRD column and
+       split a group across the seam. It read as a near-miss rather than as a bug,
+       which is why it survived - the arithmetic is the check. */
+    .card:not(.full) .compare-grid { grid-template-rows: repeat(18, auto); grid-template-columns: repeat(2, 1fr); }
     .cmp-row { display: grid; grid-template-columns: 4ch 1fr 3.5ch; gap: 8px; padding: 3px 12px; background: var(--panel-bg-alt); }
     .cmp-row .rn { color: var(--panel-blue); }
     .cmp-row .rv { color: var(--panel-fg); text-align: right; }
@@ -811,6 +1160,15 @@
 
     @media (max-width: 760px) {
       .grid { grid-template-columns: 1fr; }
+      /* Four columns of `4ch 1fr 3.5ch` cells cannot shrink below ~95px each, so the
+         Scoreboard overflowed its card - and with the card now allowed to shrink
+         (style.css's `.card { min-width: 0 }`), an unshrinkable grid would be clipped
+         by `.compare-grid`'s own `overflow: hidden` instead. Two columns of the 36
+         cells, so 18 rows: the same arithmetic as the half-width rule above. */
+      .compare-grid, .card:not(.full) .compare-grid {
+        grid-template-rows: repeat(18, auto);
+        grid-template-columns: repeat(2, 1fr);
+      }
     }
     .footer {
       text-align: center;

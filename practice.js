@@ -171,6 +171,22 @@
     var maxInput = document.getElementById('maxTimeInput');
     if (maxInput) maxInput.value = String(ex.maxTime || 2000);
     setEditorText(ex.starter);
+    /* And so does the file name, for the same reason and from the same cause: app.js
+       loaded an example on the way past, and loadExample sets `currentFileName` from the
+       example's NAME. The first entry of EXAMPLES is the D flip-flop, so without this
+       every one of the twenty pages saved the learner's work as `D_Flip-Flop.v`. All
+       twenty were wrong, including `d-flip-flop`, whose own name is `d-flip-flop.v` - and
+       that page is the trap rather than the exception, because `D_Flip-Flop.v` reads as
+       deliberate there, so the one page anybody would spot-check is the one page that
+       looks fine. Nothing else writes it here: Import File is hidden on these pages,
+       so the example load is the only other writer, and Reset does not touch it.
+
+       PRACTICE_META.slug, not window.PRACTICE_SLUG: the binding shell.js already
+       normalised (it falls back to the raw slug when no manifest entry claims the page),
+       which is the form this file uses everywhere else. It needs no sanitising the way
+       loadExample's example names do - build.py names each page `<slug>.html`, so a slug
+       that was not filename-safe could not have a page in the first place. */
+    currentFileName = PRACTICE_META.slug + '.v';
     resetEditorHierarchyState();
     tryApplyAutoFinishTime(codeInput.value);
   }
@@ -181,6 +197,7 @@
      free. A design whose checker prints neither says so ("no checks reported")
      instead of claiming a pass: the CPU exercises are judged by the CPU / Memory
      Model card, which has its own verdict of its own. ---- */
+  var clearBtn = null;
   var verdict = document.createElement('span');
   verdict.className = 'ex-verdict';
   verdict.id = 'exVerdict';
@@ -193,6 +210,38 @@
     var controls = consoleHead.querySelector('.header-controls');
     if (controls) consoleHead.insertBefore(verdict, controls);
     else consoleHead.appendChild(verdict);
+    /* Clear. A worded button rather than an icon, which makes it the only one in any card
+       header here - deliberate, because every icon in these headers ADJUSTS something
+       (height, a panel, a radix) and this one discards. `.btn.secondary`, not the green
+       primary: the card's primary action is not throwing its contents away. */
+    clearBtn = document.createElement('button');
+    clearBtn.className = 'btn secondary';
+    clearBtn.id = 'consoleClearBtn';
+    clearBtn.type = 'button';
+    clearBtn.textContent = 'Clear';
+    clearBtn.style.marginLeft = '10px';
+    if (controls) consoleHead.insertBefore(clearBtn, controls);
+    else consoleHead.appendChild(clearBtn);
+  }
+
+  /* Clear discards what the Console SHOWS and everything that speaks for it - the pill,
+     the remembered synthesis log (or the next Run would re-print it and half-undo this),
+     and the hub badge, which cloud-sync clears from this same button. A pill and a badge
+     that disagree is the bug Reset already had once.
+
+     `hasRun` going false is not tidiness: refreshVerdict reports "no checks reported" for
+     a run that printed nothing, which is a real verdict, so without this the pill would
+     claim a silent run instead of going quiet.
+
+     Deliberately NOT a Reset: the waveform, the Scoreboard, the netlist and the editor are
+     left exactly as they are. This is the Console's own control. */
+  function clearConsoleSection() {
+    consoleBox.innerHTML = '<span class="info">Click Run to simulate…</span>';
+    if (window.PRACTICE_SYNTH_API && window.PRACTICE_SYNTH_API.forgetLog) {
+      window.PRACTICE_SYNTH_API.forgetLog();
+    }
+    hasRun = false;
+    refreshVerdict();
   }
 
   function countOf(text, word) {
@@ -223,27 +272,59 @@
       verdict.textContent = 'no checks reported';
     }
   }
+  /* Everything that has to happen AFTER a simulation, whichever button caused one.
+     Extracted because there are two now: Run Simulation, and the netlist card's Run
+     Gate-level Simulation, which practice-synth.js wires to this through PRACTICE_API.
+     One writer with two callers rather than two copies - the arrangement showPreRunState
+     already has, and for the same reason: the two would agree today and drift later. */
+  /* `— simulation —`, prepended after the run rather than printed before it, because
+     app.js's runSimulation clears the console as its first act - anything written ahead of
+     it is wiped. So the rows are already there and the rule goes on top of them.
+
+     Every section is labelled, including this one on a page with no synthesizer at all:
+     an unlabelled block would mean "RTL" only by implication, and the Console is now
+     ordered by WHEN each thing ran rather than by what it is, so a reader needs each
+     block to say which it is. Held to the same rule the synthesis log is: no PASS or
+     FAIL in the words, since the verdict pill counts those over the whole box. */
+  function prependRow(html, cls) {
+    var el = document.createElement('div');
+    if (cls) el.className = cls;
+    el.innerHTML = html;
+    consoleBox.insertBefore(el, consoleBox.firstChild);
+  }
+  /* `detail` is a line that belongs to this section rather than to the run - what the
+     gate-level button says about how the netlist was assembled. Prepended BEFORE the rule
+     so it ends up just under it: both go to the top of the box, so the last one written is
+     the one on top. It used to be logged by the caller, which appended it, leaving it
+     stranded at the very bottom under the simulation output. */
+  function noteRun(label, detail) {
+    if (detail) prependRow('<span class="info">' + detail + '</span>');
+    prependRow('<span class="info">— ' + (label || 'simulation') + ' —</span>', 'console-rule');
+    var first = !hasRun;
+    hasRun = true;
+    refreshVerdict();
+    refreshTabs();
+    if (first) {
+      FOLD_UNTIL_RUN.forEach(function (id) { foldCard(id, false); });
+      /* The waveform was drawn while its card was folded, i.e. against a canvas of no
+         width - and `canvas { width: 100% !important }` means a stale drawing is
+         STRETCHED rather than clipped, leaving waveLayout's plotX0/plotW describing
+         geometry the click handlers no longer measure. Same obligation the hierarchy
+         panel and the full-bleed expand carry in app.js: change the container, redraw. */
+      if (typeof lastResult !== 'undefined' && lastResult) drawWaveform(lastResult);
+    }
+  }
   /* Registered after app.js's own handlers, and runSimulation is synchronous, so the
      console is already written by the time this fires. */
   (function () {
     var b = document.getElementById('runBtn');
     if (!b) return;
-    b.addEventListener('click', function () {
-      var first = !hasRun;
-      hasRun = true;
-      refreshVerdict();
-      refreshTabs();
-      if (first) {
-        FOLD_UNTIL_RUN.forEach(function (id) { foldCard(id, false); });
-        /* The waveform was drawn while its card was folded, i.e. against a canvas of no
-           width - and `canvas { width: 100% !important }` means a stale drawing is
-           STRETCHED rather than clipped, leaving waveLayout's plotX0/plotW describing
-           geometry the click handlers no longer measure. Same obligation the hierarchy
-           panel and the full-bleed expand carry in app.js: change the container, redraw. */
-        if (typeof lastResult !== 'undefined' && lastResult) drawWaveform(lastResult);
-      }
-    });
+    b.addEventListener('click', function () { noteRun('simulation'); });
   })();
+  /* Registered here rather than where the button is built, so the Console's two handlers
+     read together. cloud-sync adds its own to the same button, later in load order, which
+     is what clears the hub badge. */
+  if (clearBtn) clearBtn.addEventListener('click', clearConsoleSection);
 
   /* Reset is NOT a run, and used to be wired as one - which put the Scoreboard, the
      Waveform Viewer and the Module Hierarchy on screen at the moment their contents
@@ -500,6 +581,11 @@
   // Named for the harness, which drives these paths without a browser.
   window.PRACTICE_API = {
     refreshVerdict: refreshVerdict,
+    clearConsole: clearConsoleSection,
+    /* What Run does to this page once the simulation itself is over - the pill, the tab
+       strip, and the first-run unfold. practice-synth.js calls it after a gate-level run,
+       so that run lands on the page exactly as a behavioural one does. */
+    noteRun: noteRun,
     openSheet: openSheet,
     closeSheet: closeSheet,
     isSheetOpen: function () { return backdrop.classList.contains('open'); },
