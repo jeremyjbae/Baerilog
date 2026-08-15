@@ -190,6 +190,43 @@ for (const e of entries) {
    phase makes it a train of narrow pulses with a lopsided duty cycle, which is what
    the hand-driven idiom used to produce, and no amount of reading the source says so
    as plainly as the deltas do. */
+check('a testbench name picks the top when several modules are uninstantiated', () => {
+  /* The top is normally whichever module nobody instantiates, and more than one used to be a
+     flat refusal. A file may legitimately DEFINE more than it drives - a page showing all seven
+     gates while its testbench exercises one - so when several are uninstantiated and exactly one
+     is named `tb` or ends `_tb`, that one is the top.
+
+     Three cases, because the rule is only worth anything if it still refuses the ambiguous ones:
+     it fires, it names what it left out, and it does NOT fire when the tie cannot be broken. */
+  const LIB = 'module and_gate(input a, input b, output y); assign y = a & b; endmodule\n'
+            + 'module or_gate(input a, input b, output y); assign y = a | b; endmodule\n';
+  const TB = 'module tb; reg a, b; wire y; and_gate u(.a(a), .b(b), .y(y));\n'
+           + '  initial begin a = 1; b = 1; #1 $display("y=%b", y); $finish; end\nendmodule\n';
+  const r = sim.run(LIB + TB);
+  ok(!r.parseError, 'a library plus a tb did not parse: ' + r.parseError);
+  ok((r.text || '').includes('y=1'), 'it ran but the testbench did not: ' + (r.text || '(no output)'));
+
+  /* The AST says which module was chosen and which were left behind - that list is what the app
+     prints, and a forgotten instantiation is indistinguishable from this shape without it. */
+  const ast = sim.API.parseVerilog(LIB + TB);
+  ok(ast.name === 'tb', 'the top is ' + ast.name + ', not tb');
+  ok((ast.unusedModules || []).join(',') === 'or_gate',
+     'the unused modules are [' + (ast.unusedModules || []) + '], expected [or_gate]');
+
+  /* One candidate: untouched, and unusedModules is empty rather than absent. */
+  const one = sim.API.parseVerilog('module tb; initial $finish; endmodule\n');
+  ok((one.unusedModules || []).length === 0, 'a single-root design reported unused modules');
+
+  /* No tb among several, and two of them: both still refuse, with the message unchanged. */
+  const none = sim.run(LIB);
+  ok(/expected exactly one top-level module/.test(none.parseError || ''),
+     'two roots and no testbench was accepted: ' + none.parseError);
+  const two = sim.run(LIB + TB + TB.replace(/\btb\b/g, 'other_tb'));
+  ok(/expected exactly one top-level module/.test(two.parseError || ''),
+     'two testbench-named roots were accepted, so the tie was guessed: ' + two.parseError);
+  return 'tb chosen, or_gate reported, both ambiguous cases still refused';
+});
+
 check('every clock is the same square wave', () => {
   const HALF = 5;
   const clocked = [];
@@ -386,7 +423,7 @@ function boot(slug, sharedDom) {
   simLink.setAttribute('href', 'simulator.html');
   simLink.className = 'here';
   const pracLink = dom.mk('__navPractice', 'a', nav);
-  pracLink.setAttribute('href', 'index.html');
+  pracLink.setAttribute('href', 'practice.html');
   /* Three (?) icon/popup pairs, because the stub does not parse the injected markup
      and app.js's handler binds to whatever .help-icon elements exist when it runs.
      The MARKUP side of this - one popup per icon, adjacency, no card left with a
@@ -1405,6 +1442,53 @@ if (page) {
     return pill.textContent + ' (engine agrees)';
   });
 
+  /* The sheet belongs to an EXERCISE page, and the claim is about what shell.js does when
+     the page is not one. It is appended already carrying `open`, and practice.js owns every
+     way out of it - Get Started, the close button, Escape, the backdrop - so on a page that
+     does not load practice.js the sheet came up over the content with nothing able to
+     dismiss it. That shipped on the learn topic pages: an undismissable modal reading "This
+     exercise has no description yet." over the article.
+
+     Driven here rather than on a learn page because this is where shell.js is booted, and the
+     condition is shell.js's own: PRACTICE_SLUG absent means "not one of the twenty". The
+     empty tab strip is the same point at smaller scale - practice.js is what fills it. */
+  check('shell.js builds no exercise sheet on a page that is not an exercise', () => {
+    const d = makeDom();
+    const markupSrc = fs.readFileSync(path.join(HERE, 'shell.js'), 'utf8');
+    const mm = markupSrc.match(/String\.raw`([\s\S]*?)`;/);
+    ok(mm, 'shell.js has no markup region');
+    const re = /<(\w+)[^>]*\bid="([^"]+)"/g;
+    let m;
+    while ((m = re.exec(mm[1]))) d.mk(m[2], m[1]);
+    const g = d.mk('__grid', 'div');
+    g.classList.add('grid');
+    d.mk('__h1', 'h1', g);
+    d.mk('__sub', 'div', g).classList.add('gh-sub');
+    /* No PRACTICE_SLUG, which is exactly the configuration a learn topic boots in. */
+    new Function('document', 'window', 'localStorage', markupSrc)
+      (d.document, d.window, d.localStorage);
+    ok(!d.document.getElementById('exBackdrop'),
+       'the exercise sheet was built with no PRACTICE_SLUG - on a page without practice.js '
+       + 'nothing can dismiss it');
+    ok(!d.document.getElementById('exTabs'),
+       'the tab strip was built with no PRACTICE_SLUG, so it is an empty ruled strip');
+    /* And the breadcrumb shape above that guard IS shared - every page wants it, and
+       learn.js retitles it - so the guard must not have skipped the whole file. */
+    ok(/gh-crumb/.test(d.document.getElementById('__h1').className || ''),
+       'the shared breadcrumb was skipped too, so the guard is in the wrong place');
+    /* But it must not LABEL a page it has no entry for. With no slug, PRACTICE_META is the
+       `{slug: undefined, title: undefined}` fallback, so without the `|| ''` guards these two
+       writes put the literal string `undefined` in the crumb and on the line under it - which
+       is what a learn topic page showed, since it is this configuration. Asserted here rather
+       than in test_learn.py: there, learn.js overwrites both lines, so the fault is invisible
+       and a mutant restoring it survives. */
+    const crumbText = d.document.getElementById('__h1').innerHTML || '';
+    const subText = d.document.getElementById('__sub').textContent || '';
+    ok(!/undefined/.test(crumbText), 'the crumb says undefined on a page with no entry');
+    ok(!/undefined/.test(subText), 'the sub-line says undefined on a page with no entry');
+    return 'no sheet, no strip, breadcrumb shaped and unlabelled';
+  });
+
   check('the exercise sheet is open on load, with the description in it', () => {
     ok(dom.window.PRACTICE_API.isSheetOpen(), 'the sheet is not open');
     ok(/ex-sheet-open/.test(dom.document.body.className), 'body scroll was not locked');
@@ -1444,14 +1528,22 @@ if (page) {
 
   check('the page is retitled and the example picker is hidden', () => {
     const h1 = dom.document.querySelector('h1');
-    /* The breadcrumb IS the h1 now, the way a repo page's owner/name is: the slug is
-       the last segment and the human title moved to the line below it. */
+    /* THREE SEGMENTS - Baerilog / Practice / <title> - the shape the hub and the three apps
+       already use. The leaf is the human title, not the slug, and the title therefore leaves
+       the sub-line rather than being said twice. Both halves are asserted, since dropping the
+       title from the sub-line without putting it in the crumb loses it altogether. */
     ok(/gh-crumb/.test(h1.className), 'the h1 is not the breadcrumb: ' + h1.className);
-    ok(h1.innerHTML.includes(shell.PRACTICE_META.slug), 'the breadcrumb does not name the slug');
-    ok(/href="index\.html"/.test(h1.innerHTML), 'the breadcrumb does not link back to the hub');
+    ok(h1.innerHTML.includes(shell.PRACTICE_META.title),
+       'the breadcrumb does not name the exercise: ' + h1.innerHTML);
+    ok(!h1.innerHTML.includes(shell.PRACTICE_META.slug),
+       'the breadcrumb still carries the slug: ' + h1.innerHTML);
+    ok(/href="index\.html">Baerilog</.test(h1.innerHTML),
+       'the breadcrumb has no Baerilog root: ' + h1.innerHTML);
+    ok(/href="practice\.html">Practice</.test(h1.innerHTML),
+       'the breadcrumb does not link back to the hub: ' + h1.innerHTML);
     const sub = dom.document.querySelector('.gh-sub');
-    ok(sub && sub.textContent.includes(shell.PRACTICE_META.title),
-       'the sub-line does not carry the exercise title');
+    ok(sub && sub.textContent === (shell.PRACTICE_META.blurb || ''),
+       'the sub-line is not the blurb alone: ' + JSON.stringify(sub && sub.textContent));
     ok($('exampleSelect').style.display === 'none', 'the example picker is still visible');
     return h1.textContent.replace(/\s+/g, ' ').trim();
   });
@@ -1510,29 +1602,33 @@ if (page) {
   check('the drawer lists real destinations, one of them marked current', () => {
     const rows = [...$('navDrawerList').children];
     ok(rows.length >= 4, 'only ' + rows.length + ' rows in the drawer');
-    /* Every row resolves to something. A row pointing at a file that is not there is
-       the class of bug this repo has shipped before (an example with no <option>), and
-       it is invisible until someone taps it. The one off-site row is asserted to BE
-       off-site rather than skipped silently. */
-    let external = 0;
+    /* Every row resolves to a FILE. A row pointing at something that is not there is the
+       class of bug this repo has shipped before (an example with no <option>), and it is
+       invisible until someone taps it.
+
+       There is no off-site row any anymore: Home is index.html, the landing page, in this
+       directory. That makes the claim stronger rather than weaker - every row is a bare
+       local filename, so the drawer needs no network, which is the property every page
+       here is built for. It used to assert exactly one off-site row, and that assertion is
+       what this replaces. */
     for (const r of rows) {
       const href = r.getAttribute('href') || '';
       ok(href, 'a drawer row has no href at all');
-      if (/^https?:\/\//.test(href)) { external++; continue; }
+      ok(!/^[a-z]+:/i.test(href),
+         href + ' leaves the site - every row is a local page now, Home included');
       ok(fs.existsSync(path.join(HERE, href)), 'the drawer links to ' + href + ', which does not exist');
       ok(!href.includes('../'),
          href + ' walks out of Baerilog/, which is the deployed root - it would 404');
     }
-    ok(external === 1, external + ' off-site rows, expected exactly 1 (Home)');
     const cur = rows.filter(r => r.classList.contains('current'));
     ok(cur.length === 1, cur.length + ' rows marked current');
-    ok(cur[0].getAttribute('href') === 'index.html',
+    ok(cur[0].getAttribute('href') === 'practice.html',
        'the current row is ' + cur[0].getAttribute('href') + ', not the hub');
     // Every row carries a glyph, and the head carries the wordmark cloned from the bar.
     for (const r of rows) ok(r.children[0].innerHTML.indexOf('<svg') === 0, 'a row has no icon');
     ok(dom.document.querySelector('.nav-drawer-mark').children.length === 1,
        'the drawer head has no wordmark - the cloneNode of .gh-mark svg failed');
-    return rows.length + ' rows, ' + external + ' off-site, current = index.html';
+    return rows.length + ' rows, all local, current = practice.html';
   });
 
   check('the chrome is there: header bar and a tab strip whose targets all exist', () => {
@@ -1546,7 +1642,7 @@ if (page) {
     ok(nav, 'no nav in the header bar');
     const here = [...nav.querySelectorAll('a')].filter(a => /\bhere\b/.test(a.className));
     ok(here.length === 1, here.length + ' nav links marked current');
-    ok(here[0].getAttribute('href') === 'index.html',
+    ok(here[0].getAttribute('href') === 'practice.html',
        'the current-app marker is on ' + here[0].getAttribute('href') + ', not the hub');
     const ids = api().tabs();
     ok(ids.length >= 4, 'only ' + ids.length + ' tabs');
@@ -2483,6 +2579,29 @@ for (const slug of SYNTH_SLUGS) {
       ok($(card), tab + ' points at ' + card + ', which does not exist');
       ok($(card).style.display !== 'none', tab + ' points at a hidden card');
     }
+    /* A STRUCTURAL DESIGN LOSES THE LISTING, AND ITS TAB WITH IT. A design whose every cell is an
+       instantiated single gate is already a netlist, so practice-synth suppresses the listing card -
+       and a tab pointing at a hidden card is the dead control this strip exists to avoid. No
+       exercise has that shape and a topic page has no strip at all, so the only way to reach the
+       branch is to put such a design in a real page's editor. Restored afterwards, since every check
+       on this page shares it. */
+    const before = p.app.fullSource();
+    p.app.setEditorText(
+      'module top(input a, input b, output y);\n  g0 u(.p(a), .q(b), .r(y));\nendmodule\n'
+      + 'module g0(input p, input q, output r);\n  assign r = p & q;\nendmodule\n');
+    $('synthBtn').click();
+    ok($('card-netlist').style.display === 'none',
+       'a design that was already a netlist kept its listing card');
+    const sIds = $('exTabs').children.map(b => b.getAttribute('id'));
+    ok(!sIds.includes('tabNetlist'),
+       'the Netlist tab survived, pointing at a card that is hidden: ' + sIds.join(' '));
+    ok(sIds.includes('tabNetlistView'), 'the Viewer tab went with it: ' + sIds.join(' '));
+    /* And back: the tab set follows the cards rather than being built once. */
+    p.app.setEditorText(before);
+    $('synthBtn').click();
+    ok($('exTabs').children.map(b => b.getAttribute('id')).includes('tabNetlist'),
+       'the Netlist tab did not come back when the listing did');
+
     const lit = () => strip.children.filter(b => b.classList.contains('selected')).length;
     $('tabNetlist').click();
     ok(lit() === 1, 'clicking the Netlist tab left ' + lit() + ' tabs lit');
@@ -2777,6 +2896,108 @@ check('the Console section rules are spaced, and the first one is not', () => {
   return 'spaced, with the first section flush';
 });
 
+/* The learn site's own two identity bugs, both from deriving learn.html out of index.html:
+   the drawer marked Practice on every learn page, and the hub's breadcrumb read
+   `Baerilog / practice`. Asserted as TEXT because neither is reachable from a booted stub -
+   currentHref() reads window.location, which the stub does not model, and the crumb is
+   markup the stub never parses. The chain that makes the first one sound is
+   check_theme.py's: it proves all seven copies of the drawer are identical, so pinning the
+   canonical one pins every page's. */
+/* index.html is the LANDING page and practice.html is the hub. The rename is the kind of
+   change that leaves one dead link somewhere nobody looks, so what is asserted is the
+   property rather than the spelling: no page still points at index.html as if it were the
+   hub, and the landing page carries the bar it is supposed to sit under. */
+check('the landing page sits under the bar, and nothing links to it as the hub', () => {
+  const lp = fs.readFileSync(path.join(HERE, 'index.html'), 'utf8');
+  ok(/<header class="gh-header">/.test(lp), 'the landing page has no header bar');
+  ok(/id="navMenuBtn"/.test(lp) || /navMenuBtn/.test(lp),
+     'the landing page carries the bar but not the drawer, so the menu button strands');
+  ok((lp.match(/src="cloud-[a-z]+\.js"|src="cloud\.js"/g) || []).length === 4,
+     'the landing page does not load all four cloud scripts, so the account control is absent');
+  ok(!/class="card"|class="grid"/.test(lp), 'the landing page is built out of app cards');
+
+  /* The hub moved, so a nav link or crumb still naming index.html would be pointing at the
+     landing page while calling it Practice. The wordmark and the crumb's ROOT are the two
+     that legitimately do point there - a logo goes home - so they are excluded by shape
+     rather than by file. */
+  for (const f of ['practice.html', 'learn.html', 'simulator.html', 'synthesis.html',
+                   'compiler.html', 'shell.js']) {
+    const src = fs.readFileSync(path.join(HERE, f), 'utf8');
+    ok(!/<a href="index\.html">Practice<\/a>/.test(src),
+       f + ' still calls index.html Practice');
+    ok(!/href="index\.html"[^>]*class="here">Practice/.test(src),
+       f + ' still marks index.html as the current Practice link');
+  }
+  const hub = fs.readFileSync(path.join(HERE, 'practice.html'), 'utf8');
+  ok(/<h1 class="gh-crumb">/.test(hub), 'practice.html is not the hub any more');
+  return 'landing page under the bar, hub at practice.html, no stale Practice links';
+});
+
+check('every learn page marks the Learn row, and the hub says learn', () => {
+  const nav = fs.readFileSync(path.join(HERE, '..', 'tools', 'navmenu.js'), 'utf8');
+  ok(/\['Learn', 'learn\.html'/.test(nav), 'tools/navmenu.js has no Learn row');
+  /* The crumb's SECTION carries the same name the drawer gives it, capitalised, while the
+     leaf stays the lowercase slug. Both hubs and both page kinds, because the four writers
+     are four files and the point of the rule is that the site agrees with itself about what
+     it calls its own sections.
+
+     Each pattern is anchored on the WRITER, not on the text: shell.js's nav bar also
+     contains `<a href="index.html">Practice</a>`, so the loose form matched that and a
+     mutant putting the crumb back to lowercase survived. Matching `h1.innerHTML =` is what
+     makes the assertion about the breadcrumb rather than about the file containing the word
+     somewhere - the take-the-wrong-match failure this repo keeps recording for CSS text. */
+  const writers = [
+    ['practice.html', /<h1 class="gh-crumb">[\s\S]*?<span class="here">Practice<\/span>/, 'the practice hub'],
+    ['learn.html', /<h1 class="gh-crumb">[\s\S]*?<span class="here">Learn<\/span>/, 'the learn hub'],
+    /* Both leaf writers open on the Baerilog root now, so the section link is the SECOND
+       segment - anchoring on `h1.innerHTML = ` still keeps this about the crumb rather than
+       about the file containing the word somewhere, which is what the note above is for. */
+    ['shell.js', /h1\.innerHTML = '<a href="index\.html">Baerilog<\/a>'[\s\S]{0,200}?'<a href="practice\.html">Practice<\/a>'/, 'an exercise page'],
+    ['learn.js', /h1\.innerHTML = '<a href="index\.html">Baerilog<\/a>'[\s\S]{0,200}?'<a href="learn\.html">Learn<\/a>'/, 'a topic page']
+  ];
+  for (const [file, re, what] of writers) {
+    const src = fs.readFileSync(path.join(HERE, file), 'utf8');
+    ok(re.test(src), what + " does not capitalise its crumb section (" + file + ')');
+  }
+  /* The hub AND its topic pages. Without the prefix test a `learn-<slug>.html` topic falls
+     through to the index.html fallback and the drawer says Practice on it - which is what
+     shipped, and what a check for the row alone would have missed. */
+  ok(/file === 'learn\.html' \|\| file\.indexOf\('learn-'\) === 0/.test(nav),
+     'the drawer does not treat learn-<slug>.html topic pages as Learn, so they mark Practice');
+  /* An APP in this directory with no row of its own must mark NOTHING. The fallback exists so a
+     practice exercise page marks Practice, and it catches every filename it has not been told
+     about - which is how pnr.html came to mark Practice, measured in a browser. Naming it in the
+     known list returns a value no row matches. The list is read from the source rather than the
+     rows, because the bug is the fallback swallowing a name, not a missing row. */
+  const known = (nav.match(/var known = \[([^\]]*)\]/) || ['', ''])[1];
+  const items = (nav.match(/var ITEMS = \[([\s\S]*?)\];/) || ['', ''])[1];
+  ok(known && items, 'the drawer source has no known list or no ITEMS, so this checks nothing');
+  for (const app of ['pnr.html']) {
+    ok(known.includes("'" + app + "'"),
+       app + ' is not in the drawer\'s known list, so it falls through and marks Practice');
+    ok(!items.includes("'" + app + "'"),
+       app + ' IS a drawer row, so "marks nothing" is not the claim to be making about it');
+  }
+  /* And it names the LEARN site, not the practice one - the bug this check was written for
+     was a hub derived from index.html that still said practice and linked back to it. Case
+     insensitive, because which case it uses is the writers check above's business. */
+  const hub = fs.readFileSync(path.join(HERE, 'learn.html'), 'utf8');
+  const crumb = (hub.match(/<h1 class="gh-crumb">[\s\S]*?<\/h1>/) || [''])[0];
+  ok(/>learn</i.test(crumb), 'the learn hub\'s breadcrumb does not name learn: ' + crumb.trim());
+  ok(!/>practice</i.test(crumb), 'the learn hub\'s breadcrumb still says practice');
+  /* The ROOT is the hub crumb's only link - `Learn` is the leaf and this IS that page - so
+     what has to be true is that the root goes to the landing page and that nothing in the
+     crumb points at the practice hub. The old form here required `href="learn.html"`, which
+     on this page could only be the root: it was satisfied by a bug, the hub's Baerilog link
+     pointing at itself, and it FAILED the moment that was fixed. A check that only passes
+     while a link is wrong is worse than no check, and this one was written before the crumb
+     had a root at all. */
+  ok(/href="index\.html">Baerilog</.test(crumb),
+     'the learn hub\'s breadcrumb root does not go to the landing page: ' + crumb.trim());
+  ok(!/href="practice\.html"/.test(crumb), 'the learn hub\'s breadcrumb links to the practice hub');
+  return 'Learn row present, topics prefixed, crumb sections capitalised';
+});
+
 check('practice.css consumes the shared tokens and defines none of its own', () => {
   const css = fs.readFileSync(path.join(HERE, 'practice.css'), 'utf8');
   const appCss = fs.readFileSync(path.join(HERE, 'app.css'), 'utf8');
@@ -2980,7 +3201,7 @@ check('the drawer resolves from Baerilog/ and from the three directories above i
   };
 
   const inside = at('/Baerilog/cpu-16bit.html');
-  ok(inside.hrefs.includes('index.html') && inside.hrefs.includes('simulator.html'),
+  ok(inside.hrefs.includes('practice.html') && inside.hrefs.includes('simulator.html'),
      'inside Baerilog/ the rows are not bare filenames: ' + inside.hrefs.join(' '));
   ok(inside.current.join() === 'Practice',
      'an exercise page marks ' + (inside.current.join() || '(nothing)') + ', not Practice');
@@ -2994,7 +3215,13 @@ check('the drawer resolves from Baerilog/ and from the three directories above i
        'from ' + dir + '/ the rows do not reach Baerilog/: ' + local.join(' '));
     ok(out.current.length === 0,
        'from ' + dir + '/ the drawer marks ' + out.current.join() + ', but none of its rows is this app');
-    ok(out.hrefs.some(h => /^https?:/.test(h)), 'the off-site Home row was prefixed');
+    /* EVERY row is prefixed from out here, Home included - it is index.html in Baerilog/
+       now, so from emulator/ it has to reach ../Baerilog/index.html like any other. The
+       check this replaces asserted the opposite about an off-site row that no longer
+       exists. */
+    ok(local.length === out.hrefs.length,
+       'from ' + dir + '/ a row was left unprefixed: '
+       + out.hrefs.filter(h => /^[a-z]+:/i.test(h)).join(' '));
   }
   return 'bare inside, ../Baerilog/ from the three outside, current row per page';
 });
@@ -3042,9 +3269,24 @@ check('the drawer slides, and the bar keeps its account control', () => {
      'a rule hides .gh-nav itself, which takes the cloud account control out of the bar');
   ok(/display:\s*none/.test(rule('.gh-mark span')), 'the Baerilog wordmark text is still shown');
 
-  // the cloned logo on a light surface drops the header's unconditional invert
+  /* The cloned logo's filter is CONDITIONAL, where the header's is unconditional, and both
+     halves have to be asserted - each is a different way for the mark to vanish. Dropping
+     the invert is right on a light panel and made it a black-on-black ghost in dark mode,
+     which shipped; keeping it unconditionally would be white-on-white in light mode.
+
+     `rule()` concatenates every match, so it cannot tell the two apart - it returns the
+     base rule and the dark override joined, and a test for `filter: none` passes whatever
+     the query says. So the dark half is read out of the dark BLOCK by hand. */
   ok(/filter:\s*none/.test(rule('.nav-drawer-mark svg')),
-     "the drawer's wordmark keeps the header's invert, so it is white on white");
+     "the drawer's wordmark keeps the header's invert unconditionally, so it is white on "
+     + 'white in light mode');
+  const darkBlocks = css.match(/@media\s*\(prefers-color-scheme:\s*dark\)\s*\{[\s\S]*?\n    \}/g) || [];
+  const markDark = darkBlocks.filter(b => /\.nav-drawer-mark svg/.test(b));
+  ok(markDark.length === 1,
+     markDark.length + ' dark-mode rules for the drawer wordmark, expected exactly 1 - '
+     + 'without it the black artwork sits on a #0d1117 panel and is invisible');
+  ok(/filter:\s*invert\(1\)/.test(markDark[0]),
+     'the drawer wordmark is not inverted in dark mode: ' + markDark[0]);
   /* The bar spans the window, so the button and logo sit at its left edge and the
      account control at its right. Three claims, because each is a different way for
      that to come apart: without `max-width: none` the whole row is back in the 1280px
@@ -3280,7 +3522,7 @@ function bootHub(sharedDom) {
      than the record behind it. */
   const dom = sharedDom || makeDom();
   const box = dom.mk('hubBox');
-  const html = fs.readFileSync(path.join(HERE, 'index.html'), 'utf8');
+  const html = fs.readFileSync(path.join(HERE, 'practice.html'), 'utf8');
   const body = html.slice(html.lastIndexOf('<scr' + 'ipt>') + 8, html.lastIndexOf('</scr' + 'ipt>'));
   const man = fs.readFileSync(path.join(HERE, 'manifest.js'), 'utf8');
   new Function('document', 'window', man.replace(/\bvar /g, 'window.') + '\n'

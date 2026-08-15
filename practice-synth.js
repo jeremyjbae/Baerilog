@@ -40,7 +40,28 @@
      declares both with a top-level `var`, so in a browser either form works - but the
      harness hands them to a scope as parameters, where only this one does. A guard that
      is silently false headlessly would make the whole feature untestable. */
-  if (typeof PRACTICE_META === 'undefined' || !PRACTICE_META || !PRACTICE_META.synthesis) return;
+  /* Does THIS page want the synthesizer. Two catalogues ask for it now: a practice page
+     through its manifest entry's "synthesis", and a learn topic through a netlist slot in
+     its own manifest entry. The question is the same one either way, which is why this is a
+     widened guard rather than a second copy of this file - the cards, the viewer and the
+     gate-level run are identical on both, and a topic page is a place to SHOW a netlist for
+     exactly the reason an exercise page is. */
+  var wantsSynth = (typeof PRACTICE_META !== 'undefined' && PRACTICE_META && PRACTICE_META.synthesis)
+                || (window.LEARN_SLUG && (function () {
+                     /* window.LEARN_SLUG, not `typeof LEARN_SLUG`: the generated page
+                        declares it with a top-level `var`, which IS a window property in a
+                        browser, and learn.js reads it the same way - while the harness hands
+                        globals to a scope as parameters, where the bare form is undefined.
+                        That is the mirror image of the PRACTICE_META note above, and getting
+                        it the wrong way round makes this whole branch silently dead
+                        headlessly. */
+                     var m = (window.LEARN_MANIFEST || []).filter(function (e) {
+                       return e.slug === window.LEARN_SLUG;
+                     })[0];
+                     var slots = (m && m.slots) || [];
+                     return slots.indexOf('netlist') >= 0 || slots.indexOf('netlist-view') >= 0;
+                   })());
+  if (!wantsSynth) return;
   if (!window.SYNTH) return;
 
   var S = window.SYNTH;
@@ -106,7 +127,17 @@
     def.height = Math.round(vb[3] * GATE_PX_PER_UNIT * scale);
   });
 
-  var PORT_D = 'M0,8 A8,8 0 0 1 8,0 L72,0 L100,20 L72,40 L8,40 A8,8 0 0 1 0,32 Z';
+  /* The port pennant, transcribed from port.svg at the repo root and normalised into the 100x40
+     box this node is drawn in (the export is 115 x 35 at an offset, and `preserveAspectRatio="none"`
+     stretches whatever is here onto the node's real size). Square left corners now, where it used
+     to carry two 8-unit arcs; the shoulder at 71.74 is the export's own 85-of-115.
+
+     THE EXPORT'S COLOURS ARE NOT COPIED, and that is the rule this repo records for every
+     OmniGraffle asset: it arrives with an opaque full-canvas `<rect fill="white">`, a `fill="white"`
+     body and a `stroke="#5856d6"` - a legacy iOS colour, and a fixed white fill under a themed
+     label is invisible in one mode. The classes stay `port-stroke node-fill`, so the stroke and the
+     fill keep coming from the tokens. */
+  var PORT_D = 'M71.74,0 L100,20 L71.74,40 L0,40 L0,0 Z';
 
   /* Every node's box, in the same numbers the CSS and the inline styles use, so an
      edge endpoint and the drawn shape cannot disagree. Only the constant node is an
@@ -224,6 +255,16 @@
   var K_BUNDLE = 'practiceNetlistBundle';
   var K_HEIGHT = 'practiceNetlistHeight';
   var K_VIEW_HEIGHT = 'practiceNetlistViewHeight';
+
+  /* The viewer's two heights, DECLARED HERE because the wiring block below sets the empty
+     one and `var` hoisting made a declaration further down read as `undefined` - the box
+     came out `height: undefinedpx`, which a browser ignores, so it silently kept the 520px
+     it was meant to replace. The same trap this repo records twice for the plot-off note.
+
+     VIEW_EMPTY_H is the no-diagram state: one line of placeholder text, so 520px there was
+     an empty panel taller than the prose above it. VIEW_MIN_H is the floor once there IS a
+     diagram. Together: as small as the content, never taller than the reader's own choice. */
+  var VIEW_MIN_H = 200, VIEW_EMPTY_H = 96, viewHeightPinned = false;
   var K_EXPANDED = 'practiceNetlistExpanded';
   var K_MODPANEL = 'practiceNetlistModPanel';
 
@@ -607,7 +648,13 @@
   wireHeight(K_VIEW_HEIGHT, flowRoot,
              document.getElementById('netlistViewHeightDec'),
              document.getElementById('netlistViewHeightInc'),
-             function () { invalidateFit(); fitView(); });
+             function () { viewHeightPinned = true; invalidateFit(); fitView(); });
+  /* The empty box starts small too, not only once something has been rendered into it: a
+     page that has never synthesized never reaches renderGraph, so without this the first
+     thing the reader sees is the 520px synth.css gives it. Set DIRECTLY rather than through
+     sizeViewToGraph(), which reads `lastGraph` - a `var` declared hundreds of lines below
+     and therefore still undefined here, so the call did nothing at all. */
+  flowRoot.style.height = VIEW_EMPTY_H + 'px';
 
   (function () {
     var btn = document.getElementById('codeOutHierarchyToggleBtn');
@@ -696,7 +743,10 @@
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
-    a.download = PRACTICE_META.slug + '_netlist.v';
+    /* PRACTICE_META is shell.js's, built from PRACTICE_SLUG - which a learn page does not
+       declare, so there its slug is undefined and this would offer `undefined_netlist.v`. */
+    var stem = (PRACTICE_META && PRACTICE_META.slug) || window.LEARN_SLUG || 'netlist';
+    a.download = stem + '_netlist.v';
     a.click();
     URL.revokeObjectURL(url);
   });
@@ -706,18 +756,30 @@
      cards are hidden until a synthesis succeeds. practice.js rebuilds only its own tabs
      (inserting them before whatever is already there), so these two can be added and
      removed independently and always sit at the end. */
+  var synthTabsSkip = null;   // which tab set is on the strip, see syncSynthTabs
   var synthTabs = [];
-  function syncSynthTabs(show) {
+  /* `skipNetlist` drops the Netlist tab when its card is suppressed, because a tab pointing at a
+     hidden card is the dead control this strip is built to avoid. It is remembered rather than
+     tested for presence alone: a design edited from structural to RTL keeps the same two cards
+     shown, so `synthTabs.length` would say "already built" and the strip would stay one tab short
+     of the cards on the page. */
+  function syncSynthTabs(show, skipNetlist) {
     var strip = document.getElementById('exTabs');
     if (!strip) return;
     if (!show) {
       synthTabs.forEach(function (b) { b.remove(); });
       synthTabs = [];
+      synthTabsSkip = null;
       return;
     }
-    if (synthTabs.length) return;
+    if (synthTabs.length && synthTabsSkip === !!skipNetlist) return;
+    synthTabs.forEach(function (b) { b.remove(); });
+    synthTabs = [];
+    synthTabsSkip = !!skipNetlist;
     [['tabNetlist', 'Netlist', 'code', 'card-netlist'],
-     ['tabNetlistView', 'Viewer', 'chip', 'card-netlist-view']].forEach(function (t) {
+     ['tabNetlistView', 'Viewer', 'chip', 'card-netlist-view']]
+      .filter(function (t) { return !(skipNetlist && t[3] === 'card-netlist'); })
+      .forEach(function (t) {
       var b = mk('button', 'gh-tab', t[0]);
       b.setAttribute('type', 'button');
       b.innerHTML = ((typeof ICON !== 'undefined' && ICON[t[2]]) || '') + '<span>' + t[1] + '</span>';
@@ -747,9 +809,22 @@
      would be a badly framed diagram. */
   function showCards(on) {
     cardsShown = !!on;
-    netlistCard.style.display = cardsShown ? '' : 'none';
+    /* THE LISTING IS SUPPRESSED FOR A DESIGN THAT WAS ALREADY A NETLIST. A card titled
+       "Synthesized Gate-level Verilog Netlist" over a design that instantiated its cells by hand is
+       showing the reader their own source back under a heading that claims it was produced - the
+       viewer beside it is the useful half, because a picture of a structure is not the structure's
+       text. Derived per synthesis from the result, so an edit from an instantiation to an operator
+       brings the card back with nothing to keep in step.
+
+       ONE THING GOES WITH IT: the gate-level Run button lives at the bottom of that card. On a
+       structural design it would re-run the very modules the simulator just ran - the netlist and
+       the source are the same modules - so losing it costs nothing there, and it returns the moment
+       something is actually synthesized. */
+    var structural = cardsShown
+      && topIsStructural(currentAll && currentAll.top && currentAll.top.name);
+    netlistCard.style.display = (cardsShown && !structural) ? '' : 'none';
     viewerRow.style.display = cardsShown ? '' : 'none';
-    syncSynthTabs(cardsShown);
+    syncSynthTabs(cardsShown, structural);
     syncSynthLabel();   // the label follows the cards, and syncSynthLabel is its only writer
     if (cardsShown) fitView();
   }
@@ -952,7 +1027,7 @@
       netlistSegments = gen.segments;
       renderNetlistView();
       renderModulePanel();
-      lastGraph = packColumns(S.toFlowElements(v.graph, v.layout));
+      lastGraph = packColumns(symbolizeGateCells(S.toFlowElements(v.graph, v.layout)));
       renderGraph(lastGraph);
       renderBreadcrumb();
       return true;
@@ -999,7 +1074,10 @@
     }
     netlistSelectedModule = '(all)';
     try {
-      currentAll = S.synthesizeAll(cut.src);
+      /* window.LEARN_SYNTH_TOP is a topic page's derived top - the sole module in its `verilog`
+         part, with its cell library beside it in the same design half. Undefined everywhere else,
+         so the eighteen practice pages and synthesis.html keep inferring as they always did. */
+      currentAll = S.synthesizeAll(cut.src, window.LEARN_SYNTH_TOP || undefined);
     } catch (e) {
       clearNetlist(e.message);
       synthLog('err', 'error: ' + e.message);
@@ -1041,6 +1119,16 @@
        returns one multi-line string and is logged as one row: the console box is monospace
        and pre-wrap, so its padded columns line up, and one row is what keeps the section's
        own bookkeeping (printedEls, the re-print ordering, Clear) working unchanged. */
+    /* SAY WHICH IT WAS. A design that only instantiates cells was already a netlist, and calling
+       that a synthesis claims work nobody did - the cells on screen are the ones the source named.
+       The area report still follows, because the cost of those cells is the same question either
+       way. Derived per press from the result, so an edit from an instantiation to an operator
+       changes the sentence with nothing to keep in step. */
+    if (topIsStructural(currentAll.top && currentAll.top.name)) {
+      var cells = currentAll.results[currentAll.top.name].cells.length;
+      synthLog('info', 'this design is already a netlist: ' + cells + ' instantiated cell'
+             + (cells === 1 ? '' : 's') + ', nothing to infer - the diagram is its structure');
+    }
     synthLog('info', S.buildAreaReport(currentAll));
   }
 
@@ -1256,6 +1344,95 @@
      y's move, which is what preserves its layered ranking. `clk` keeps its place at the
      bottom of its own column, since layoutGraph already gives it the largest y there. */
   var COLUMN_GAP = 24;
+  /* ---- a cell that IS one gate is drawn as that gate ---------------------------------
+     An instantiation is drawn as a block, which is right for a CPU and wrong for a gate: a design
+     that instantiates `and_gate u0(...)` is ALREADY a netlist, and drawing its one cell as a box
+     with `double-click` on it hides the very thing the page is about one level down.
+
+     DERIVED, never declared. `currentAll.results` holds every module's own synthesis, so the
+     question "is this cell a single gate" is already answered: `cells` is one entry and its type is
+     one the viewer has a symbol for. Nothing in a topic file or a manifest says so, so nothing can
+     go stale when the design changes - swap the instantiation for `assign y = a & b` and the same
+     rule draws the same symbol for the other reason.
+
+     A VIEWER concern, so it lives here beside packColumns rather than in the engine: the netlist
+     TEXT is untouched, the hierarchy is still real, and `genVerilog` still emits the instance. Only
+     the picture changes.
+
+     FLIP-FLOPS FALL OUT ON THEIR OWN, and it is worth being precise about why rather than claiming
+     a special case: a flop takes d, clk and rstn, so the arity rule below already leaves it a
+     block - listing `dff` here would change nothing, which a mutant adding it confirmed. That also
+     keeps the drill-down that shift-register-4bit, register-file and traffic-light are checked
+     through, but as a consequence rather than as this list's doing.
+
+     The handles have to be REMAPPED, which is the whole of the work: an instance's pins are its
+     port names (`inSlots`/`outSlots`, whatever the module called them) while a gate's are `a`, `b`
+     and `y`. So the inputs map in declaration order and the single output becomes `y` - and a cell
+     with more than two inputs or more than one output is left as a block, because there would be no
+     pin to map it onto. */
+  var SYMBOLIZABLE = { and: 1, nand: 1, or: 1, nor: 1, xor: 1, xnor: 1, not: 1, buf: 1 };
+  function cellIsOneGate(modType) {
+    var r = currentAll && currentAll.results && currentAll.results[modType];
+    if (!r || !r.cells || r.cells.length !== 1) return null;
+    var kind = r.cells[0].type;
+    return SYMBOLIZABLE[kind] ? kind : null;
+  }
+  function symbolizeGateCells(g) {
+    if (!currentAll) return g;
+    var swapped = {};      // node id -> { in: {portId: pin}, out: {portId: 'y'} }
+    var nodes = g.nodes.map(function (n) {
+      if (n.type !== 'instance' || !n.data || n.data.isAdder) return n;
+      var kind = cellIsOneGate(n.data.modType);
+      var ins = n.data.inSlots || [], outs = n.data.outSlots || [];
+      if (!kind || ins.length < 1 || ins.length > 2 || outs.length !== 1) return n;
+      var map = { in: {}, out: {} };
+      var pins = ins.length === 1 ? ['a'] : ['a', 'b'];
+      ins.forEach(function (s, i) { map.in[s.id] = pins[i]; });
+      map.out[outs[0].id] = 'y';
+      swapped[n.id] = map;
+      /* The instance NAME survives in the title, where a block showed it as text: a symbol has
+         nowhere to put it, and the page is about the gate rather than about what it was called. */
+      return { id: n.id, type: 'gate', position: n.position,
+               data: { kind: kind, unary: ins.length === 1,
+                       label: n.data.instName + ' (' + n.data.modType + ')' } };
+    });
+    var edges = g.edges.map(function (e) {
+      var s = swapped[e.source], d = swapped[e.target];
+      if (!s && !d) return e;
+      var out = {};
+      for (var k in e) if (Object.prototype.hasOwnProperty.call(e, k)) out[k] = e[k];
+      if (s && s.out[e.sourceHandle]) out.sourceHandle = s.out[e.sourceHandle];
+      if (d && d.in[e.targetHandle]) out.targetHandle = d.in[e.targetHandle];
+      return out;
+    });
+    return { nodes: nodes, edges: edges };
+  }
+
+  /* Was the design ALREADY a gate-level netlist? Two conditions, and the second is what stops this
+     from claiming too much: the top has no logic of its own - every cell is an instantiation, so
+     nothing was inferred - AND every one of those cells is a single gate, so there is nothing left
+     to expand either.
+
+     THE SECOND CONDITION IS NOT PEDANTRY. `shift-register-4bit` instantiates four `dff` modules and
+     nothing else, so by the first test alone it is "structural" - but its listing genuinely adds
+     something, because each dff is RTL that gets expanded into cells. Without this, that page lost
+     its netlist card and eleven checks went with it. A design whose cells are all single gates is
+     the case where the listing really is the source back again: the same gates the viewer is already
+     drawing as symbols, which is why the two rules share `cellIsOneGate`.
+
+     Derived per press, so an edit from an instantiation to an operator - or to a cell with a body -
+     changes the answer with nothing to keep in step. */
+  function topIsStructural(topName) {
+    var r = currentAll && currentAll.results && currentAll.results[topName];
+    if (!r || !r.cells || !r.cells.length) return false;
+    for (var i = 0; i < r.cells.length; i++) {
+      var c = r.cells[i];
+      if (c.type !== 'instance') return false;      // logic of its own: something was synthesized
+      if (!cellIsOneGate(c.modType)) return false;  // a cell with a body: the listing expands it
+    }
+    return true;
+  }
+
   function packColumns(g) {
     var cols = {};
     g.nodes.forEach(function (n) { (cols[n.position.x] || (cols[n.position.x] = [])).push(n); });
@@ -1304,6 +1481,40 @@
      the height buttons. */
   var fitCache = null;
   function invalidateFit() { fitCache = null; }
+
+  /* ---- the box is as tall as its diagram, up to the height it has always had ----
+     synth.css gives #flowRoot 520px and wireHeight then applies whatever the reader
+     stored. That is right for a CPU netlist and wrong for a two-gate one: Fit does not
+     magnify past FIT_MAX_K, so one cell sat in the middle of a box that was mostly empty
+     canvas - and on a learn page it pushed the prose that follows off the screen.
+
+     The height taken is what the diagram needs at the scale its WIDTH allows, which is the
+     tallest it could usefully be, clamped to [VIEW_MIN_H, the height it would otherwise
+     have had]. So nothing is ever taller than before and a small netlist is shorter.
+     Touching the height buttons PINS it for the session: after that the box is the
+     reader's, not the diagram's, which is why the flag is not persisted - a choice made on
+     one topic should not silently govern a CPU on another page tomorrow. */
+  // VIEW_MIN_H / VIEW_EMPTY_H / viewHeightPinned are declared beside K_VIEW_HEIGHT above,
+  // because the wiring block sets the empty height long before this point.
+  function fullViewHeight() {
+    // Stored-or-520, the same fallback and the same reason as viewportSize() below.
+    var stored = parseInt(localStorage.getItem(K_VIEW_HEIGHT), 10);
+    return isNaN(stored) ? 520 : stored;
+  }
+  function sizeViewToGraph() {
+    if (viewHeightPinned) return;
+    var b = graphBounds();
+    if (!b) {
+      flowRoot.style.height = VIEW_EMPTY_H + 'px';
+      invalidateFit();
+      return;
+    }
+    var w = flowRoot.clientWidth || 900;
+    var k = Math.min((w - 2 * FIT_PAD) / b.w, FIT_MAX_K);
+    var need = Math.round(b.h * k + 2 * FIT_PAD);
+    flowRoot.style.height = Math.max(VIEW_MIN_H, Math.min(fullViewHeight(), need)) + 'px';
+    invalidateFit();                       // the box moved, so the fit it was cached for is stale
+  }
   function fitScale() {
     if (fitCache !== null) return fitCache;
     var b = graphBounds();
@@ -1381,6 +1592,7 @@
         ? 'Nothing to draw — ' + reason
         : 'Nothing synthesized yet - press Synthesize.';
     }
+    sizeViewToGraph();                     // before the fit, which reads the box's height
     fitView();
   }
 
@@ -1610,8 +1822,105 @@
   markStale(false);
 
   // Named for the harness, which drives all of this without a browser.
+  /* ---- a STATIC diagram, drawn anywhere on the page -----------------------------------
+     The viewer above is a SINGLETON: flowRoot, pnNodes and pnEdgeG are captured once at
+     setup, so renderGraph can only ever draw into that one card. A topic page wants a second
+     diagram inside its prose as an illustration, and the reason to draw it with this code
+     rather than as an SVG asset is that the shapes are GATE_DEFS and the colours are
+     synth.css's tokens: the illustration cannot drift from the netlist the same page shows
+     below it, and it is right in both colour modes for free.
+
+     What it deliberately is NOT: no pan, no zoom, no net selection, no fit, and no
+     touch-action - so the page keeps scrolling over it. And it touches none of the viewer's
+     state (lastGraph, drawn, byNet, view, fitCache), which is what keeps a figure from
+     disturbing the card. It draws once; nothing re-renders it.
+
+     The container is sized to its CONTENT, since an illustration is as big as the thing it
+     illustrates, and `.pn-nodes > .rf-node` is absolutely positioned so a container with no
+     height would collapse to nothing - the same reason #flowRoot has one at all.
+
+     What it RETURNS is the count of wires actually drawn, and that is the whole report an
+     illustration needs: this geometry silently discards an edge naming a pin the node does not
+     have, so a caller comparing `edges` against what it asked for is what turns a mistyped pin
+     into a failure instead of a diagram quietly missing a wire. A separate `dropped` counter was
+     written and removed - it can only ever move in lockstep with this one, so a mutant deleting
+     it changed nothing, which is this repo's test for a field nothing can falsify. */
+  function drawStatic(el, g) {
+    var out = { nodes: 0, edges: 0, width: 0, height: 0 };
+    if (!el || !g || !g.nodes || !g.nodes.length) return out;
+    el.innerHTML = '';
+    /* An INNER layer sized to the drawing, because `.pn-nodes` and `.pn-edges` are
+       `position: absolute; inset: 0` - they fill their positioned ancestor, so with the
+       container as that ancestor the content is pinned to its left edge whatever width the
+       container has. A wrapper of exactly the content's width can then be centred by CSS
+       (`margin: 0 auto`), which is what the figures want and what a per-figure x offset in the
+       topic file was doing by hand - centred at one column width and off-centre at every
+       other, with the box scrolling through the offset before reaching the first symbol. */
+    var inner = mk('div', 'pn-static');
+    el.appendChild(inner);
+    var edges = document.createElementNS(SVG_NS, 'svg');
+    edges.setAttribute('class', 'pn-edges');
+    var edgeG = document.createElementNS(SVG_NS, 'g');
+    edges.appendChild(edgeG);
+    inner.appendChild(edges);
+    var nodes = mk('div', 'pn-nodes');
+    inner.appendChild(nodes);
+
+    var byId = {}, x1 = 0, y1 = 0;
+    g.nodes.forEach(function (n) {
+      byId[n.id] = n;
+      nodes.appendChild(buildNode(n));
+      var sz = nodeSize(n);
+      x1 = Math.max(x1, n.position.x + sz.width);
+      y1 = Math.max(y1, n.position.y + sz.height);
+    });
+    g.edges.forEach(function (e) {
+      var from = byId[e.source], to = byId[e.target];
+      var a = from && handlePoint(from, e.sourceHandle);
+      var b = to && handlePoint(to, e.targetHandle);
+      if (!a || !b) return;          // no such pin: the caller's edge count is what says so
+      edgeG.appendChild(svg('path', { class: 'pn-edge' + (e.bus ? ' bus' : ''),
+                                      d: roundedPath(edgePoints(a, b), 8) }));
+      out.edges++;
+    });
+    out.nodes = g.nodes.length;
+    out.width = x1;
+    out.height = y1;
+    /* THE WRAPPER OWNS BOTH THE EXTENT AND THE HEIGHT, and the container is left to size itself
+       in normal flow. Setting the container's height to the content's was wrong in a way only a
+       browser could show: `box-sizing: border-box` is global here, so an inline height INCLUDES
+       the padding and the border - a caller with 12px padding and a 1px border had 26px less
+       content area than the drawing needed, and since `overflow-x: auto` forces `overflow-y` to
+       `auto` the bottom of every figure was CLIPPED rather than spilling. Measured in Chrome:
+       height 74, clientHeight 72, scrollHeight 98, with the captions and half an input port cut
+       off. The wrapper still needs an explicit height, because everything inside it is absolutely
+       positioned and it would otherwise collapse to nothing.
+
+       `position: relative` INLINE, not left to a stylesheet. This wrapper's whole purpose is to
+       be the positioning context - `.pn-nodes` and `.pn-edges` are `inset: 0` absolute, and a
+       caller's overlays (a topic's symbol captions) are absolute too - so the one property
+       everything inside depends on is set by the code that depends on it. Leaving it to a rule in
+       another file is what broke the captions: they are children of this wrapper now, and when
+       that rule was missing they positioned against the nearest positioned ancestor instead,
+       which took them out of the figure entirely. */
+    inner.style.position = 'relative';
+    inner.style.width = x1 + 'px';
+    inner.style.height = y1 + 'px';
+    out.layer = inner;                 // where a caller may add its own absolute overlays
+    return out;
+  }
+
   window.PRACTICE_SYNTH_API = {
     runSynthesis: runSynthesis,
+    /* Did the last synthesis - or the gate button - report a problem. Read off synthLines,
+       the stored log, rather than off the console's rendered rows: the rows carry
+       `class="err"` and a stub DOM does not parse injected markup, so a DOM test for it is
+       invisible headlessly and therefore unfalsifiable. This also catches the gate-level
+       button's two REFUSALS (stale netlist, nothing synthesized), which log and return
+       without setting synthFailed at all. */
+    hasError: function () {
+      return synthLines.some(function (l) { return l.level === 'err'; });
+    },
     /* For the Console's Clear button, and deliberately narrower than reset(): it drops the
        remembered log and the rows showing it, so a later Run cannot re-print what was just
        cleared - and leaves the netlist, the diagram and the cards alone, because Clear is
@@ -1634,6 +1943,14 @@
       showCards(false);      // takes the two tabs with it, and puts the verb back
     },
     designOnly: designOnly,
+    /* The gate-level netlist the last synthesis produced, as TEXT. It has a second reader now: a
+       topic page's placement figure places it, which is what makes that figure follow the Synthesize
+       button rather than the file the page shipped with - an RTL design becomes cells here for the
+       first time, and a structural one comes back as the cells it named. Empty before the first
+       synthesis; the caller decides what to draw then, since this reports rather than substitutes.
+       (A DUPLICATE of this entry was added for that reader before noticing this one existed. A
+       repeated key is legal JavaScript and the last wins, so nothing broke - which is exactly why it
+       took a mutant surviving to find it: the mutation hit the first copy and the second answered.) */
     netlistText: function () { return netlistFullText; },
     segments: function () { return netlistSegments.slice(); },
     graph: function () { return lastGraph; },
@@ -1659,6 +1976,9 @@
     cardsShown: function () { return cardsShown; },
     subsetHints: subsetHints,
     synthLog: function () { return synthLines.slice(); },
+    /* For a topic page's illustrations - see drawStatic's own note. Exported rather than
+       inlined there so the figure and the card cannot end up drawing gates two ways. */
+    drawStatic: drawStatic,
     nodeSize: nodeSize,
     handlePoint: handlePoint,
     edgePoints: edgePoints,

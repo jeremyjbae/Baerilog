@@ -745,8 +745,18 @@
        black artwork has to become white in both. This surface is `--canvas-default`, so
        this instance drops the filter rather than that rule gaining a query, which is the
        rule CLAUDE.md states for the logo landing anywhere light. Keeping the invert here
-       renders the mark as a white-on-white ghost in light mode. */
+       renders the mark as a white-on-white ghost in light mode.
+
+       But `--canvas-default` FOLLOWS the reader's OS, where the bar does not - it is
+       #0d1117 in dark mode, and black artwork on it is invisible rather than merely dim.
+       That shipped. So this instance's filter is CONDITIONAL where the header's is
+       unconditional, and the two are different for the same underlying reason: the bar is
+       dark in both modes and needs the invert in both, this panel is dark in one and needs
+       it in one. The query below is the whole of that difference. */
     .nav-drawer-mark svg { height: 18px; width: auto; filter: none; }
+    @media (prefers-color-scheme: dark) {
+      .nav-drawer-mark svg { filter: invert(1); }
+    }
     .nav-drawer-close { margin-left: auto; }
 
     .nav-drawer-list {
@@ -784,7 +794,7 @@
     }
     .nav-row-icon svg { width: 16px; height: 16px; fill: currentColor; }
 
-                                      /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
+                                                    /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
     /* Expand: the netlist row breaks out of .grid's max-width to the full body content
        width, leaving every other card centred at 1100px. Same control, same geometry and
        the same reasoning as `simulator/index.html`'s waveform expand (`.wave-expanded`),
@@ -1159,7 +1169,7 @@
   <header class="gh-header">
     <div class="gh-header-inner">
       <a class="gh-mark" href="index.html"><svg viewBox="0 0 58 26" fill="none" stroke="black" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M 37.7373 21.25 C 37.752447 18.600017 37.722157 13.899983 37.7373 11.25 C 37.722157 8.899983 35.2373 6.25 32.7373 6.25 C 30.143462 6.25 32.549622 6.25 29.955782 6.25 C 23.70574 6.25 22.45574 11.25 22.501176 13.75 C 22.45574 16.25 23.70574 21.25 29.955782 21.25 C 30.8163 21.25 31.67682 21.25 32.53734 21.25"/><path d="M 2.2184386 2.5 C 2.2184386 7.5 2.2184386 16.25 2.2184386 21.25 C 4.7184386 21.25 7.139786 21.23971 9.999958 21.25 C 16.249958 21.25 17.508377 16.090111 17.499958 13.75 C 17.508377 11.090111 16.249958 6.25 9.999958 6.25 C 8.027672 6.25 9.095067 6.25 7.4284 6.25"/><path d="M 56.0315 6.25 C 53.5315 6.25 53.11017 6.26029 50.25 6.25 C 44 6.25 42.74158 11.409889 42.75 13.75 C 42.74158 16.409889 44 21.25 50.25 21.25 C 52.222286 21.25 54.583635 21.25 56.2503 21.25"/><rect x="47.95" y="13.625" width="8" height=".125"/></svg><span>Baerilog</span></a>
-      <nav class="gh-nav"><a href="simulator.html">Simulator</a><a href="synthesis.html" class="here">Synthesizer</a><a href="compiler.html">Compiler</a><a href="index.html">Practice</a></nav>
+      <nav class="gh-nav"><a href="simulator.html">Simulator</a><a href="synthesis.html" class="here">Synthesizer</a><a href="compiler.html">Compiler</a><a href="practice.html">Practice</a></nav>
     </div>
   </header>
 
@@ -4487,9 +4497,21 @@ function toFlowElements(graph, layout) {
 
 // Top-level driver: parse -> pick top module -> synthesize every module independently
 // (so drilling into any instance can show its own diagram) -> per-module results.
-function synthesizeAll(src) {
+/* `topName` is optional and is what lets a caller whose design deliberately declares MORE than it
+   drives be synthesized at all: a learn topic ships a library of alternative cells beside the one
+   module its page is about, so every cell it does not instantiate is a second root and
+   findTopModule would refuse the file. Naming the top is not a guess there - it is the sole module
+   in the topic's own design part - and a name that is not in the file is an error rather than a
+   silent fall back to inference, which would report the ambiguity the caller had just resolved. */
+function synthesizeAll(src, topName) {
   const modules = parseVerilog(src);
-  const top = findTopModule(modules);
+  let top;
+  if (topName) {
+    top = modules.find(m => m.name === topName);
+    if (!top) throw new Error(`Cannot synthesize: no module named '${topName}' in this design (found ${modules.map(m => m.name).join(', ') || 'none'})`);
+  } else {
+    top = findTopModule(modules);
+  }
   const interfaces = {};
   for (const m of modules) interfaces[m.name] = extractInterface(m);
   const results = {};
@@ -5522,7 +5544,7 @@ function PortNode({ data }) {
     <div class="rf-node rf-node-port ${isIn ? 'port-in' : 'port-out'} ${data.isBus ? 'is-bus' : ''}">
       ${!isIn && html`<${Handle} type="target" position=${Position.Left} id="y" />`}
       <svg viewBox="0 0 100 40" preserveAspectRatio="none">
-        <path d="M0,8 A8,8 0 0 1 8,0 L72,0 L100,20 L72,40 L8,40 A8,8 0 0 1 0,32 Z" class="port-stroke node-fill" stroke-width="3" stroke-linejoin="round" />
+        <path d="M71.74,0 L100,20 L71.74,40 L0,40 L0,0 Z" class="port-stroke node-fill" stroke-width="3" stroke-linejoin="round" />
       </svg>
       <div class="rf-node-label">${data.label}</div>
       ${isIn && html`<${Handle} type="source" position=${Position.Right} id="y" />`}
@@ -5755,13 +5777,17 @@ root.render(html`<${FlowApp} />`);
   var inner = document.querySelector('.gh-header-inner');
   if (!inner || document.getElementById('navMenuBtn')) return;   // no bar, or already built
 
-  /* The rows, in order. Bare filenames because these pages are siblings; Home is the
-     one link that leaves the site. The three apps outside this directory (emulator,
+  /* The rows, in order, and EVERY one is a bare filename because every one is a sibling -
+     Home included, now that index.html is a landing page in this directory. It used to be
+     the GitHub Pages site, which was a stand-in for a home that did not exist; with a real
+     one the drawer needs no network at all, which is the property every other page here is
+     built for. The three apps outside this directory (emulator,
      verify, workbench) are deliberately absent: they live one level ABOVE the deployed
      root, so a `../` row would resolve in the repo and 404 on the site. */
   var ITEMS = [
-    ['Home', 'https://jeremyjbae.github.io/Baerilog', 'home'],
-    ['Practice', 'index.html', 'book'],
+    ['Home', 'index.html', 'home'],
+    ['Learn', 'learn.html', 'cap'],
+    ['Practice', 'practice.html', 'mind'],
     ['Simulator', 'simulator.html', 'pulse'],
     ['Synthesizer', 'synthesis.html', 'chip'],
     ['Compiler', 'compiler.html', 'code']
@@ -5769,7 +5795,44 @@ root.render(html`<${FlowApp} />`);
   var G = {
     menu: '<svg viewBox="0 0 16 16"><path d="M1.5 3.25h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Z"/></svg>',
     home: '<svg viewBox="0 0 16 16"><path d="M8 1.2 15 7l-.94 1.15-1.06-.88V14a1 1 0 0 1-1 1H9.5v-4.5h-3V15H4a1 1 0 0 1-1-1V7.27l-1.06.88L1 7 8 1.2Zm4 4.83L8 2.7 4 6.03V13.5h1V9h6v4.5h1V6.03Z"/></svg>',
-    book: '<svg viewBox="0 0 16 16"><path d="M2 2.5A1.5 1.5 0 0 1 3.5 1H13a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a2 2 0 0 0-2 2V2.5Zm2.5-.5a.5.5 0 0 0-.5.5v10.1c.3-.07.63-.1.5-.1h8V2H4.5Z"/></svg>',
+    /* LEARN: a mortarboard. Fill-only, like every glyph here except `mind` below - the cap is
+       a solid silhouette in the artwork it comes from, so it needs no stroke exception.
+
+       Four subpaths, and the three that could go wrong at 16px were each settled by rasterising
+       at that size and magnifying with nearest-neighbour rather than by looking at it large.
+       The BOARD is narrower than the artwork's (right tip at 14.6, not 15.2) so the tassel has a
+       pixel column clear of it; a wider board swallows the cord into its own right edge. The GAP
+       between board and body is 1.5 units, because at 0.7 it antialiases into a gray smear and
+       the cap reads as one blob. And the CORD is exactly 1 unit wide on integer x, so it lands
+       on one whole pixel - at 0.75 it spread across two at half strength and vanished.
+
+       Winding matters here: the cord overlaps the board and the tip overlaps the cord, so all
+       four subpaths are drawn CLOCKWISE. Under the nonzero rule an opposed subpath would punch a
+       hole through the overlap instead of merging, which reads as a nick in the tassel. The tip
+       also has to reach the cord - a 0.7 break between them is invisible large and reads as a
+       detached speck at 16px. */
+    cap: '<svg viewBox="0 0 16 16"><path d="M8 1.9 14.6 5.4 8 8.9 1.4 5.4Z M4.5 8.6v2.8C4.5 12.6 6 13.4 8 13.4s3.5-.8 3.5-2V8.6L8 10.4Z M13 5.4h1v5.9h-1Z M12.5 11.2h2l-1 2.1Z"/></svg>',
+    /* PRACTICE: a head in profile with a chip in it. Two things about it are deliberate, and
+       the first is the only STROKED glyph in this set.
+
+       The head is `fill="none" stroke="currentColor"` where every other glyph here is a
+       filled silhouette. A head outline as a filled ring means hand-offsetting the profile
+       curve inward, and the reason it is safe to stroke instead is that `.nav-row-icon` sets
+       `color` rather than `fill` - so one token drives both halves, which is exactly the fix
+       CLAUDE.md records for the hub's stroked combinational-gate glyph. The `fill="none"` is
+       a presentation attribute on the PATH, and it beats the stylesheet's `fill: currentColor`
+       on the parent `svg` because that value only reaches the path by inheritance, and any
+       declaration on an element - a presentation attribute included - wins over an inherited
+       one. Verified in a browser rather than reasoned about, since getting it wrong fills the
+       head in solid and the glyph becomes a blob.
+
+       The chip is two pins a side and no inner die, where the artwork it comes from has three
+       and a die. This box is a fixed 16x16 and never renders larger, and at 16px both of those
+       details antialias into a gray smear across the body - measured the same way as `cap`
+       above. Two pins on whole-pixel coordinates stay crisp, and a square body with a hole is
+       already this set's shorthand for a chip (see `chip` below). So the simplification is what
+       makes it legible at the one size it is used. */
+    mind: '<svg viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M5.3 15.3V12.9C5.3 12 1.4 11.2 1.4 7.3 1.4 3.8 4.3 1 7.9 1 10.9 1 12.9 3 13 5.3L14.8 7.8 13.1 8.6C13.1 10.2 12.2 11.2 10.9 11.4V15.3"/><path d="M3.7 3.9h6.2v6.2H3.7V3.9Zm1.2 1.2v3.8h3.8V5.1H4.9ZM2.5 5h1.2v1H2.5V5ZM2.5 8h1.2v1H2.5V8ZM9.9 5h1.2v1H9.9V5ZM9.9 8h1.2v1H9.9V8Z"/></svg>',
     pulse: '<svg viewBox="0 0 16 16"><path d="M6 2.5a.75.75 0 0 1 .7.48L9.3 10l1-2.5a.75.75 0 0 1 .7-.5h4v1.5h-3.5l-1.8 4.5a.75.75 0 0 1-1.4 0L5.7 5.5 4.7 8a.75.75 0 0 1-.7.5H0V7h3.5l1.8-4.02A.75.75 0 0 1 6 2.5Z"/></svg>',
     chip: '<svg viewBox="0 0 16 16"><path d="M5 1.5h1.5v1.5h3V1.5H11v1.5h1.5A1.5 1.5 0 0 1 14 4.5V6h1.5v1.5H14v1H15.5V10H14v1.5a1.5 1.5 0 0 1-1.5 1.5H11v1.5H9.5V13h-3v1.5H5V13H3.5A1.5 1.5 0 0 1 2 11.5V10H.5V8.5H2v-1H.5V6H2V4.5A1.5 1.5 0 0 1 3.5 3H5V1.5Zm-1.5 3v7h9v-7h-9Zm2 2h5v3h-5v-3Z"/></svg>',
     code: '<svg viewBox="0 0 16 16"><path d="M5.7 4.3a.75.75 0 0 1 0 1.06L3.06 8l2.64 2.64a.75.75 0 1 1-1.06 1.06L1.47 8.53a.75.75 0 0 1 0-1.06L4.64 4.3a.75.75 0 0 1 1.06 0Zm4.6 0a.75.75 0 0 1 1.06 0l3.17 3.17a.75.75 0 0 1 0 1.06L11.36 11.7a.75.75 0 1 1-1.06-1.06L12.94 8l-2.64-2.64a.75.75 0 0 1 0-1.06Z"/></svg>'
@@ -5798,13 +5861,27 @@ root.render(html`<${FlowApp} />`);
 
   /* Which row is current, from the page's own URL rather than a per-app variable: one
      fewer thing for a copy to set wrong. A practice EXERCISE page is not index.html but
-     is still Practice, which is why the marker falls back to it inside this directory -
-     and why it marks NOTHING from the three outside it, none of which is a row. */
+     is still Practice, which is why the marker falls back to practice.html inside this
+     directory - and why it marks NOTHING from the three outside it, none of which is a row.
+     index.html is the LANDING page and its own row, so it is named rather than fallen into.
+
+     The LEARN pages need naming before that fallback, and this is not a special case so
+     much as the fallback's own limit: `learn.html` and every `learn-<slug>.html` topic page
+     are as much Learn as an exercise page is Practice, and without this they took the
+     Practice row - the drawer said Practice on a page of the learn site. The prefix is what
+     makes one test cover the hub and its topics together, exactly as the fallback covers
+     index.html and its twenty. */
   function currentHref() {
     if (base()) return '';
     var file = (window.location && window.location.pathname || '').split('/').pop() || '';
-    var known = ['simulator.html', 'synthesis.html', 'compiler.html'];
-    return known.indexOf(file) >= 0 ? file : 'index.html';
+    if (file === 'learn.html' || file.indexOf('learn-') === 0) return 'learn.html';
+    /* `pnr.html` is in this list without being a ROW, and that is the point: the fallback below
+       exists so a practice EXERCISE page marks Practice, and it catches every filename it has not
+       been told about - so an app with no row of its own was marking Practice too. Naming it here
+       returns a value no row matches, which marks nothing, exactly as the three apps above the
+       deployed root do. It gains a row when it is ready for one. */
+    var known = ['index.html', 'simulator.html', 'synthesis.html', 'compiler.html', 'pnr.html'];
+    return known.indexOf(file) >= 0 ? file : 'practice.html';
   }
 
   var btn = mk('button', 'gh-menu-btn', 'navMenuBtn');
@@ -5847,7 +5924,8 @@ root.render(html`<${FlowApp} />`);
   var pre = base();
   for (var i = 0; i < ITEMS.length; i++) {
     var row = mk('a', 'nav-row' + (ITEMS[i][1] === here ? ' current' : ''));
-    // the off-site row is absolute and must not be prefixed
+    /* No row is absolute today, but the guard stays: it is what would keep an off-site
+       row from being turned into `../Baerilog/https://...`, and it costs one regex. */
     row.setAttribute('href', /^https?:/.test(ITEMS[i][1]) ? ITEMS[i][1] : pre + ITEMS[i][1]);
     var ic = mk('span', null, 'nav-row-icon');
     ic.className = 'nav-row-icon';

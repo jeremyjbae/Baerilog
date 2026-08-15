@@ -756,12 +756,65 @@ def t_three_apps_declare_themselves():
     return 'three apps declare their own name and load all four'
 
 
+def t_no_source_page_stores_none():
+    """A page declaring CLOUD_NO_SOURCE stores no source and restores none.
+
+    A learn topic seeds its design from its own topic file, and the prose around it is ABOUT
+    that design - so the text is the lesson's, not the reader's. Saving it would store
+    something nobody typed; restoring it would replace the code the article explains with an
+    older edit, which is exactly what put a stale testbench back on a topic page.
+
+    Asserted on the SOURCE, because a topic page's own cloud path needs a booted page with a
+    configured project to drive, and what is worth pinning is narrower than that: every place
+    this file reaches for the editor's text is gated, and the generated page declares the
+    flag. The verdict seam is asserted to survive - that was the point of keeping it."""
+    js = read('cloud-sync.js')
+    assert 'var storesSource = !window.CLOUD_NO_SOURCE;' in js, \
+        'cloud-sync.js does not read CLOUD_NO_SOURCE'
+    # EVERY use of the editor's text has to be behind the flag. Anchoring on lines that
+    # hold both `CLOUD.save(` and `getText()` was the first form of this and it missed the
+    # verdict write, whose save call and getText() are on DIFFERENT lines - so a mutant that
+    # saved the source there survived. The rule is per USE instead: any line mentioning
+    # getText(), other than its own definition, must mention the flag too.
+    # COMMENTS STRIPPED FIRST. Without that, the check "caught" its mutant on a comment
+    # line that happens to mention getText() while the real unguarded save sat untouched -
+    # a vacuous catch, and the fourth time a text check here has matched inside prose.
+    code = re.sub(r'/\*.*?\*/', '', js, flags=re.S)
+    code = re.sub(r'^\s*//.*$', '', code, flags=re.M)
+    # Per STATEMENT, not per line: two of the real uses sit on the continuation line of a
+    # multi-line ternary whose `storesSource` is on the line above, so a per-line rule fails
+    # on correct code - and a per-line rule keyed on `CLOUD.save(` missed the mutant entirely
+    # for the mirror-image reason. Splitting on `;` puts each guard with the use it governs.
+    for stmt in code.split(';'):
+        if 'getText()' not in stmt or 'function getText' in stmt:
+            continue
+        assert 'storesSource' in stmt, \
+            'the editor text is used without checking storesSource: ' + ' '.join(stmt.split())[-90:]
+    # and the restore
+    restore = [l for l in js.split('\n') if 'restore(got.source)' in l]
+    assert restore and all('storesSource' in l for l in restore), \
+        'the restore-on-load is not gated: ' + '; '.join(l.strip() for l in restore)
+    # the verdict seam survives
+    assert re.search(r'\{ verdict: null \}', js), \
+        'a no-source page can no longer clear its verdict, so the seam is gone'
+    # the generated topic page declares it
+    page = read('learn-logic-gates.html')
+    assert 'var CLOUD_NO_SOURCE = true;' in page, \
+        'the generated topic page does not declare CLOUD_NO_SOURCE'
+    return 'source neither stored nor restored; verdict seam intact'
+
+
 def t_hub_loads_before_its_own_script():
     """The hub's renderer reads CLOUD.load for each row's badge and runs at parse
-    time, so cloud.js has to already exist."""
-    hub = read('index.html')
-    assert hub.find('src="cloud.js"') < hub.find('function progressBadge'), \
-        'index.html defines its renderer before loading cloud.js'
+    time, so cloud.js has to already exist.
+
+    BOTH hubs: practice.html is the practice catalogue (index.html is the landing page
+    now, and has no renderer), and learn.html is the learn one - a page derived from the
+    other and therefore able to inherit exactly this mistake."""
+    for rel in ('practice.html', 'learn.html'):
+        hub = read(rel)
+        assert hub.find('src="cloud.js"') < hub.find('function progressBadge'), \
+            '%s defines its renderer before loading cloud.js' % rel
     # The badge must not wear .gh-label: the two Labels are what the chips filter
     # on, and Baerilog/test.py counts that class exactly to assert two per row.
     # Scoped to progressBadge's own body rather than the whole file, which also
@@ -1719,6 +1772,7 @@ CHECKS = [
     ('sign-out clears locally even when the server is unreachable', t_sign_out_is_local_first),
     ('all twenty pages load four scripts, after practice.js', t_pages_load_all_four_in_order),
     ('the three menu apps declare their own CLOUD_APP', t_three_apps_declare_themselves),
+    ('a topic page stores no source, and restores none', t_no_source_page_stores_none),
     ('the hub loads cloud.js before its renderer', t_hub_loads_before_its_own_script),
     ('the injected stylesheet contains no raw colour', t_no_raw_colour_in_injected_css),
     ('unconfigured, all four files load and change nothing', t_dom_unconfigured_is_a_non_event),

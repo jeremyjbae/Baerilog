@@ -739,8 +739,18 @@
        black artwork has to become white in both. This surface is `--canvas-default`, so
        this instance drops the filter rather than that rule gaining a query, which is the
        rule CLAUDE.md states for the logo landing anywhere light. Keeping the invert here
-       renders the mark as a white-on-white ghost in light mode. */
+       renders the mark as a white-on-white ghost in light mode.
+
+       But `--canvas-default` FOLLOWS the reader's OS, where the bar does not - it is
+       #0d1117 in dark mode, and black artwork on it is invisible rather than merely dim.
+       That shipped. So this instance's filter is CONDITIONAL where the header's is
+       unconditional, and the two are different for the same underlying reason: the bar is
+       dark in both modes and needs the invert in both, this panel is dark in one and needs
+       it in one. The query below is the whole of that difference. */
     .nav-drawer-mark svg { height: 18px; width: auto; filter: none; }
+    @media (prefers-color-scheme: dark) {
+      .nav-drawer-mark svg { filter: invert(1); }
+    }
     .nav-drawer-close { margin-left: auto; }
 
     .nav-drawer-list {
@@ -778,7 +788,7 @@
     }
     .nav-row-icon svg { width: 16px; height: 16px; fill: currentColor; }
 
-                                      /* --- additions for editor / console / waveform, same visual language --- */
+                                                    /* --- additions for editor / console / waveform, same visual language --- */
     /* Expand: the waveform row breaks out of .grid's max-width to the full body
        content width, leaving every other card centred at 1100px. This is an
        app-specific rule and stays out of style.css even though .split-row itself
@@ -998,6 +1008,13 @@
       text-align: center;
       padding: 40px 0;
     }
+    /* The WAVEFORM's empty state is one line saying nothing has run, and it sat in a 98px
+       panel - 40px of padding each side of it - directly under a toolbar of controls that
+       cannot do anything yet. So an empty viewer was taller than the message it carries,
+       which on a learn page pushes the prose that follows off the screen. The other three
+       empty states keep the class's padding: each of them sits where a table or a grid
+       would be, and shrinking those would just move the same void somewhere else. */
+    #waveEmpty { padding: 18px 0; }
     .wave-tooltip {
       position: fixed;
       display: none;

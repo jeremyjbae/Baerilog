@@ -3179,9 +3179,21 @@ function toFlowElements(graph, layout) {
 
 // Top-level driver: parse -> pick top module -> synthesize every module independently
 // (so drilling into any instance can show its own diagram) -> per-module results.
-function synthesizeAll(src) {
+/* `topName` is optional and is what lets a caller whose design deliberately declares MORE than it
+   drives be synthesized at all: a learn topic ships a library of alternative cells beside the one
+   module its page is about, so every cell it does not instantiate is a second root and
+   findTopModule would refuse the file. Naming the top is not a guess there - it is the sole module
+   in the topic's own design part - and a name that is not in the file is an error rather than a
+   silent fall back to inference, which would report the ambiguity the caller had just resolved. */
+function synthesizeAll(src, topName) {
   const modules = parseVerilog(src);
-  const top = findTopModule(modules);
+  let top;
+  if (topName) {
+    top = modules.find(m => m.name === topName);
+    if (!top) throw new Error(`Cannot synthesize: no module named '${topName}' in this design (found ${modules.map(m => m.name).join(', ') || 'none'})`);
+  } else {
+    top = findTopModule(modules);
+  }
   const interfaces = {};
   for (const m of modules) interfaces[m.name] = extractInterface(m);
   const results = {};

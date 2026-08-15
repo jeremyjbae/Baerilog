@@ -1,0 +1,336 @@
+/* learn.css - what is specific to the learn site, and nothing else.
+ *
+ * Same division of labour practice.css follows: the tokens, the Box treatment, the card,
+ * button and control styling and the dark panels all arrive through app.css (which is
+ * style.css plus the simulator's own additions), and this file adds only what a topic page
+ * has and no other page here does - an article the app's cards sit inside, and the truth
+ * table. It defines no tokens of its own; a second palette creeping back in is exactly
+ * what the practice site's own check exists to prevent, and the learn harness asserts the
+ * same thing about this file.
+ */
+
+/* ---- the article ----
+   ONE COLUMN, and the prose and the cards share it. 1280px is the same cap `.grid` uses on
+   every other page here, so a topic page is as wide as the app it embeds - which is what
+   lets a waveform or a netlist have the pixels it wants without breaking out of anything.
+   The prose was capped narrower than this for a while, at a 68ch reading measure; see the
+   note below the heading rules for why that is gone. */
+.learn-article {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+/* THE MEASURE IS ON THE TEXT, NOT ON THE BLOCK, and the difference is the whole of this
+   rule. Capping `.learn-prose` capped its HEADINGS too, so an h2's bottom rule stopped at
+   the measure and read as a line someone had cut short - with the cards below it running
+   the full column, which made the page look like a narrow article that had been pasted
+   into a wide one. Now the section spans the column, so headings and their rules line up
+   with the card edges, and only the running text is held to a width it can be read at. */
+.learn-prose {
+  max-width: none;
+  margin: 0 0 18px;
+}
+/* NO MEASURE ON THE TEXT EITHER. A 68ch cap wrapped every paragraph at about half the
+   column while the headings, their rules and the cards all ran its full width - which
+   reads as hard line breaks in the source rather than as a deliberate column, and it was
+   asked about as exactly that. So the prose now shares one width with everything else on
+   the page: `.learn-article`'s 1280px is the only cap, and lines are as long as that
+   allows. That is longer than a typographer would choose, and it is the point - one
+   aligned column beats a narrow one with a void beside it. */
+.learn-prose h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 28px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-muted);
+}
+.learn-prose p { margin: 0 0 12px; line-height: 1.65; }
+.learn-prose ul { margin: 0 0 12px 22px; }
+.learn-prose li { margin: 0 0 6px; line-height: 1.6; }
+.learn-prose code {
+  font: 12px var(--font-mono);
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border-muted);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.learn-prose b { font-weight: 600; }
+
+/* A step in a walkthrough, under an h2's section. Deliberately NOT another ruled heading: the
+   h2's border is what separates one section of the page from the next, and repeating it here
+   would make each step read as a section of its own. */
+.learn-prose h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 20px 0 8px;
+}
+.learn-prose ol { margin: 0 0 12px 22px; }
+
+/* A quoted fragment of the design. It is a DARK panel from the `--panel-*` set, the same in both
+   colour modes, because that is what every read-only code surface here already is - the editor
+   above it, the console, the truth table - and a code block that followed the page's own light
+   surface would be the only one on the site that did. `pre` is what makes the indentation the
+   fragment's own rather than the markup's, so nothing may re-wrap it: it scrolls instead. */
+.learn-prose pre.learn-code {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  overflow-x: auto;
+  background: var(--panel-bg);
+  border-radius: var(--radius);
+  font: 12px/1.6 var(--font-mono);
+  color: var(--panel-fg);
+}
+
+/* A hole a card was moved into. The card keeps its own styling - it is the same element
+   app.js wired - so all this has to do is give it the width it no longer gets from being a
+   grid item, and space it from the prose around it. `min-width: 0` is in the shared block
+   already and still applies, which is what lets a panel inside scroll rather than the card
+   growing to its widest child. */
+.learn-slot { margin: 0 0 24px; }
+.learn-slot > .card { margin: 0; }
+
+/* ---- figures ----
+   A hand-authored diagram drawn by the netlist viewer's own code (learn.js's drawFigures), so
+   the node and wire rules come from synth.css and nothing here paints a shape. What is added is
+   only the FRAME: the surface it sits on, and the caption under it.
+
+   `position: relative` on the box is what the absolutely-positioned `.pn-nodes > .rf-node`
+   needs to be placed against - the netlist viewer gets that from #flowRoot's own rule, which a
+   figure is deliberately not. Its HEIGHT is set inline by drawStatic from the content, so there
+   is none here: a figure is as tall as the thing it illustrates.
+
+   `overflow-x: auto` rather than a scale-to-fit, so a wide diagram scrolls at full size instead
+   of being shrunk into illegibility on a phone - the same trade the emulator's TV makes. */
+.learn-fig { margin: 0 0 24px; }
+/* The drawing is a block of exactly its own width (drawStatic sets it), so `margin: 0 auto`
+   is the whole of the centring - no per-figure x offset in the topic file, which would only be
+   centred at one column width. Wider than the box, the auto margins collapse and it starts at
+   the left, which is what makes `overflow-x: auto` below behave on a phone. */
+.learn-fig-box > .pn-static { position: relative; margin: 0 auto; }
+.learn-fig-box {
+  /* A BACKSTOP for the wrapper's own `position: relative`, which drawStatic sets inline. If an
+     overlay inside a figure ever has no positioned ancestor it does not degrade, it LEAVES - the
+     captions positioned against the page instead of the figure, which is how they went missing
+     when this property was dropped from here and the wrapper's came from a rule alone. */
+  position: relative;
+  overflow-x: auto;
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+/* A symbol's name, under the shape. Absolutely positioned from the node's own box - learn.js
+   reads that from the exported nodeSize - so it is centred on the symbol it names whatever the
+   gate's width is. `pointer-events: none` because a figure is not interactive and a label must
+   not be the one thing on it that looks like it is. */
+.learn-fig-label {
+  position: absolute;
+  font: 11px var(--font-mono);
+  color: var(--fg-muted);
+  text-align: center;
+  pointer-events: none;
+}
+
+/* The measured line under a placement: what was placed and how big it is. Mono, because it is
+   numbers and cell names rather than prose - the same reason the truth table is - and a shade dimmer
+   than the caption above it, since the caption says why the figure is there and this says what it
+   contains. */
+/* The layer palette, INSIDE the view at its left, which is where a layout tool puts one. The box is a
+   flex row for it: a reserved column can never be slid under by a wide placement, where an absolutely
+   positioned overlay would be the moment a figure is wider than the space beside it.
+
+   `align-items: flex-start` keeps the palette at the TOP of the box rather than centred against the
+   drawing's height, so it reads as a list of layers and not as a caption. */
+.learn-fig-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.learn-fig-layers {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+/* The drawing target takes what is left of the box and keeps centring itself in it - `.pn-static`'s own
+   auto margins do that, so this only has to give it the room. It exists as a separate element because
+   drawStatic EMPTIES what it is handed, and the palette shares the box with it. `min-width: 0` because a
+   flex item refuses to shrink below its content otherwise, the same automatic-minimum trap `.card`
+   carries a floor for. */
+.learn-fig-draw { flex: 1 1 auto; min-width: 0; }
+
+/* A badge in the layer's own colour: the fill, the text on it and the border are all set inline by
+   learn.js from what the drawer reports, because they come from the artwork rather than from here.
+   What this rule owns is the SHAPE - a small pill, monospace like the other layer names on the page,
+   and wide enough that N-WELL and CONTACT read at the same width. */
+.learn-fig-layers .learn-layer-btn {
+  font: 11px var(--font-mono);
+  line-height: 18px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 2em;
+  cursor: pointer;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+.learn-fig-layers .learn-layer-btn:hover { filter: brightness(1.12); }
+/* An OFF badge is an outline: the colour is still there to identify the layer, and the empty middle
+   says the layer is not drawn. Two encodings of one bit, which is why the `.on` class exists as well
+   as the inline colours - a greyscale screenshot still tells them apart. */
+.learn-fig-layers .learn-layer-btn:not(.on) { background: transparent; }
+
+/* SELECT ALL / UNSELECT ALL: the same pill geometry as a badge, so the column reads as one control
+   rather than two, and deliberately NEUTRAL - a colour on these would claim to be a layer. They are
+   actions, so nothing here has an on state to paint. */
+.learn-fig-layers .learn-layer-all {
+  font: 11px var(--font-mono);
+  line-height: 18px;
+  padding: 0 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 2em;
+  cursor: pointer;
+  text-align: center;
+  letter-spacing: 0.02em;
+  background: transparent;
+  color: var(--fg-muted);
+}
+.learn-fig-layers .learn-layer-all:hover {
+  border-color: var(--accent-fg);
+  color: var(--accent-fg);
+}
+
+/* One row under the figure: what was measured on the left, who to credit on the right. `baseline` so
+   the mono numbers and the proportional credit sit on the same line rather than on the same box, and
+   `wrap` so a long tally drops the credit below it on a phone instead of squeezing it. */
+.learn-fig-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 6px;
+}
+.learn-fig-stats {
+  font: 11px var(--font-mono);
+  color: var(--fg-muted);
+}
+
+/* The credit for the cell artwork, bottom right of the figure it belongs to. Right-aligned rather
+   than centred like the line above it, because it is an attribution and not part of what the figure
+   says - the reading eye should pass over it, and find it when it looks. */
+.learn-fig-source {
+  font-size: 11px;
+  color: var(--fg-muted);
+  margin-left: auto;      /* right end of the row, and still right when the row wraps */
+}
+.learn-fig-source a { color: var(--fg-muted); }
+.learn-fig-source a:hover { color: var(--accent-fg); }
+
+.learn-fig-caption {
+  font-size: 12px;
+  color: var(--fg-muted);
+  margin-top: 8px;
+  text-align: center;
+}
+
+/* ---- Synthesize, inside the netlist viewer ----
+   learn.js moves the button into this row and puts the legend in it too. The button takes the
+   left; the legend is a centred flex row of its own, so giving it `flex: 1` lets it keep that
+   centring within whatever is left rather than being shoved along by the button. `wrap` is
+   what lets the legend drop below the button on a phone instead of squeezing it, and the
+   legend's own `margin-top` is dropped here because the footer now owns that gap. */
+.learn-synth-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.learn-synth-foot > .legend-row { flex: 1 1 auto; margin-top: 0; }
+
+/* ---- the truth table ----
+   A dark panel, like every other read-only output here, because that is what it is: the
+   values are the run's, not the page's. Sized in `ch` so the columns line up on their own
+   without a fixed width per column, and `overflow-x: auto` because a design with many
+   outputs will run wider than the column on a phone. */
+.truth-wrap {
+  overflow-x: auto;
+  background: var(--panel-bg);
+  border-radius: var(--radius);
+  padding: 10px 0;
+}
+/* A topic's prose may state a table of its own - the eight gates on `logic-gates`, one column
+   per gate - and it is the same panel, so it reuses these rules rather than growing a second
+   set of them. All it needs is the gap a paragraph has: inside the card the note below it owns
+   that space, in running text nothing does, and the panel would touch the line after it. */
+.learn-prose .truth-wrap { margin: 0 0 12px; }
+table.truth-table {
+  border-collapse: collapse;
+  font: 12px/1.7 var(--font-mono);
+  color: var(--panel-fg);
+  margin: 0 auto;
+}
+table.truth-table th,
+table.truth-table td {
+  padding: 2px 10px;
+  text-align: center;
+  min-width: 3ch;
+}
+table.truth-table thead th {
+  color: var(--panel-dim);
+  font-weight: 600;
+  border-bottom: 1px solid var(--panel-line);
+  padding-bottom: 5px;
+}
+/* The inputs are the question and the outputs are the answer, so the two halves are told
+   apart rather than run together: the inputs are dimmer, and one empty column rules
+   between them. A border on the cells themselves would draw a line through the header. */
+table.truth-table .in { color: var(--panel-blue); }
+table.truth-table th.in { color: var(--panel-blue); }
+table.truth-table .sep {
+  border-left: 1px solid var(--panel-line);
+  padding: 0;
+  min-width: 0;
+  width: 1px;
+}
+/* A 1 is what the reader is looking for, so it is the one that is lit; a 0 is legible but
+   recedes. Two encodings of the same bit would be better still, but the glyph IS the value
+   here - unlike the Scoreboard's flags, where the letter had to carry it too. */
+table.truth-table td.one { color: var(--panel-green); font-weight: 600; }
+table.truth-table td.zero { color: var(--panel-dim); }
+.truth-note {
+  font-size: 11px;
+  color: var(--fg-muted);
+  margin-top: 8px;
+}
+
+/* ---- the log dialog ----
+   The panel is the exercise sheet's own `.ex-backdrop`/`.ex-sheet` from practice.css, which
+   a topic page loads - one dialog idiom on the site rather than a second. What is added here
+   is only what a LOG needs that a description does not: the body is a dark console panel,
+   monospace and pre-wrap so the synthesis report's padded columns line up and long lines
+   wrap rather than being clipped, and it scrolls at a height that leaves the dialog on
+   screen. `.console-box` is on the element too, so it inherits the console's own colours -
+   this rule only overrides what the sheet's body would otherwise impose on it. */
+#learnLogBody {
+  max-height: 60vh;
+  overflow: auto;
+  font: 12px/1.6 var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- the hub ----
+   The rows, chips and Box treatment are all practice.css's, which this page loads for
+   exactly that reason. What differs is one word in the count and the kicker, so there is
+   almost nothing here. */
+.learn-kicker { font-size: 12px; color: var(--fg-muted); margin-bottom: 4px; }
+
+@media (max-width: 760px) {
+  /* The measure is a maximum, not a minimum: on a phone the column is the viewport, and
+     the prose padding matches the shared block's card padding so the two line up. */
+  /* Nothing to relax: the prose is uncapped at every width now, and the article's own
+     padding is what narrows it here. */
+  .learn-article { padding: 0 12px; }
+}

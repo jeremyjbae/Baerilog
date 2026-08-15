@@ -7,7 +7,7 @@
    selectors and all 29 are byte-identical, so there is no conflict of the kind the
    workbench had to resolve by id (its .gutter). The duplicates land after
    app.css's copy and paint the same thing. */
-                                      /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
+                                                    /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
     /* Expand: the netlist row breaks out of .grid's max-width to the full body content
        width, leaving every other card centred at 1100px. Same control, same geometry and
        the same reasoning as `simulator/index.html`'s waveform expand (`.wave-expanded`),

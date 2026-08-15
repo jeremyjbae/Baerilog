@@ -25,7 +25,7 @@ var PRACTICE_MARKUP = String.raw`
   <header class="gh-header">
     <div class="gh-header-inner">
       <a class="gh-mark" href="index.html"><svg viewBox="0 0 58 26" fill="none" stroke="black" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M 37.7373 21.25 C 37.752447 18.600017 37.722157 13.899983 37.7373 11.25 C 37.722157 8.899983 35.2373 6.25 32.7373 6.25 C 30.143462 6.25 32.549622 6.25 29.955782 6.25 C 23.70574 6.25 22.45574 11.25 22.501176 13.75 C 22.45574 16.25 23.70574 21.25 29.955782 21.25 C 30.8163 21.25 31.67682 21.25 32.53734 21.25"/><path d="M 2.2184386 2.5 C 2.2184386 7.5 2.2184386 16.25 2.2184386 21.25 C 4.7184386 21.25 7.139786 21.23971 9.999958 21.25 C 16.249958 21.25 17.508377 16.090111 17.499958 13.75 C 17.508377 11.090111 16.249958 6.25 9.999958 6.25 C 8.027672 6.25 9.095067 6.25 7.4284 6.25"/><path d="M 56.0315 6.25 C 53.5315 6.25 53.11017 6.26029 50.25 6.25 C 44 6.25 42.74158 11.409889 42.75 13.75 C 42.74158 16.409889 44 21.25 50.25 21.25 C 52.222286 21.25 54.583635 21.25 56.2503 21.25"/><rect x="47.95" y="13.625" width="8" height=".125"/></svg><span>Baerilog</span></a>
-      <nav class="gh-nav"><a href="simulator.html" class="here">Simulator</a><a href="synthesis.html">Synthesizer</a><a href="compiler.html">Compiler</a><a href="index.html">Practice</a></nav>
+      <nav class="gh-nav"><a href="simulator.html" class="here">Simulator</a><a href="synthesis.html">Synthesizer</a><a href="compiler.html">Compiler</a><a href="practice.html">Practice</a></nav>
     </div>
   </header>
 
@@ -180,7 +180,10 @@ var PRACTICE_MARKUP = String.raw`
           </label>
           <span class="time-label" id="waveMemNote"></span>
         </div>
-        <div class="toolbar" id="waveControls" style="margin-bottom:14px;">
+        <!-- Starts HIDDEN, because nothing runs at load and drawWaveform is what reveals
+             it: with the markup showing the toolbar, the first thing on the page would be
+             a row of controls over an empty plot. -->
+        <div class="toolbar" id="waveControls" style="margin-bottom:14px; display:none;">
           <div class="toolbar-group">
             <span class="time-label">Zoom</span>
             <button class="btn secondary icon-btn" id="waveZoomIn" title="Zoom in">+</button>
@@ -199,7 +202,17 @@ var PRACTICE_MARKUP = String.raw`
           </div>
         </div>
         <div id="waveScroll">
-          <canvas id="waveCanvas" height="120"></canvas>
+          <!-- HIDDEN AT LOAD, and this is the one that actually made an empty viewer tall.
+               A canvas is a REPLACED element with an intrinsic 300x120 ratio, and the shared
+               block gives every canvas width:100% with an !important while its height stays
+               auto - so the browser derives the height FROM the width: about 760px of blank
+               canvas on a 1900px card, above a message saying nothing has run. The height
+               attribute never governed that; it is the backing store. drawWaveform reveals
+               it when there are rows, and the empty path, the plot-off path and Reset all
+               hide it again, so this is the load state catching up with those three.
+               NOTE: no backticks in here - this markup is carried by a template literal in
+               shell.js, and build.py --sync refuses one. -->
+          <canvas id="waveCanvas" height="120" style="display:none"></canvas>
         </div>
         <div class="wave-empty" id="waveEmpty">No simulation data yet — run a design to see waveforms.</div>
         <div class="badge-row" id="badgeRow"></div>
@@ -301,10 +314,11 @@ var NAV_ITEMS = [
   if (nav) {
     var navLinks = nav.querySelectorAll('a');
     for (var i = 0; i < navLinks.length; i++) {
-      // The hub is index.html - it no longer has 'practice' in its href, so matching
-      // on that would mark nothing here and leave Simulator looking current.
+      /* The hub is practice.html now - index.html is the landing page - so the marker
+         follows the file rather than the word: matching on 'practice' in the href happens
+         to work again today and would break the moment the hub is renamed a second time. */
       var href = navLinks[i].getAttribute('href') || '';
-      navLinks[i].className = href === 'index.html' ? 'here' : '';
+      navLinks[i].className = href === 'practice.html' ? 'here' : '';
     }
   }
 
@@ -314,16 +328,51 @@ var NAV_ITEMS = [
   // throws on every one of the twenty pages.
   var sub = document.querySelector('.gh-sub');
 
-  /* The breadcrumb IS the h1, the way a repo page's owner/name is - the slug is the
-     last segment, and the human title moves to the line under it. */
+  /* THREE SEGMENTS: Baerilog / Practice / <the exercise's title>. The root and the section
+     are links, the leaf is plain text because it IS this page.
+
+     The leaf used to be the SLUG, on the reasoning that it is the URL, the manifest key and
+     the filename, and that dressing an identifier up as a title invites someone to type it.
+     That was overruled, and consistency is the argument: `Baerilog / Verilog Simulator` is
+     what the three apps show, `Baerilog / Practice` is what the hub shows, and the twenty
+     exercise pages were the only ones both missing the root and naming themselves with a
+     slug. `d-flip-flop` is also simply harder to read than `D Flip-Flop`.
+
+     The title therefore leaves the sub-line, which is now the blurb alone - it would
+     otherwise say the same words twice, once as the heading and once under it. That is what
+     a topic page already did.
+
+     `|| ''` on both reads for the reason the last commit added them: with no manifest entry
+     PRACTICE_META is `{slug: undefined, title: undefined}`, and an unlabelled crumb is right
+     where one labelled `undefined` is not. The slug is the fallback for the leaf, so such a
+     page still says WHICH page it is. */
   h1.className = 'gh-crumb';
-  h1.innerHTML = '<a href="index.html">practice</a>'
+  h1.innerHTML = '<a href="index.html">Baerilog</a>'
                + '<span class="sep">/</span>'
-               + '<span class="here">' + escapeHtml(PRACTICE_META.slug) + '</span>'
+               + '<a href="practice.html">Practice</a>'
+               + '<span class="sep">/</span>'
+               + '<span class="here">'
+               + escapeHtml(PRACTICE_META.title || PRACTICE_META.slug || '') + '</span>'
                + '<span class="gh-label">' + escapeHtml(levelText()) + '</span>';
   sub.className = 'gh-sub';
-  sub.textContent = PRACTICE_META.title
-                  + (PRACTICE_META.blurb ? ' — ' + PRACTICE_META.blurb : '');
+  sub.textContent = PRACTICE_META.blurb || '';
+
+  /* Everything from here down is the EXERCISE shell - the tab strip practice.js fills and
+     the sheet it owns every way out of - so a page that is not one of the twenty stops
+     here. It is not a defensive guard: the sheet is appended already carrying `open`, and
+     with practice.js absent nothing could dismiss it, so a learn topic came up behind an
+     undismissable modal reading "This exercise has no description yet." The tab strip is
+     the smaller half of the same point: practice.js is what puts tabs in it, so here it
+     would be an empty ruled strip under the crumb.
+
+     Keyed on PRACTICE_SLUG - the declaration that says this page IS one of the twenty -
+     rather than on whether an exercise was found, because a practice page whose exercise
+     file is missing should still show that sentence: there it is a diagnostic about a
+     missing file, and here it was the whole page.
+
+     What is above this line is shared on purpose: the breadcrumb shape and the header's
+     current-app marker are every page's, and learn.js retitles both for a topic. */
+  if (!window.PRACTICE_SLUG) return;
 
   var tabs = mk('nav', 'exTabs', 'gh-tabs');
   h1.parentElement.insertBefore(tabs, sub.nextSibling);
@@ -337,7 +386,17 @@ var NAV_ITEMS = [
      Built out of real elements rather than one innerHTML string, so the
      description is set on the body element itself. That keeps the sheet's parts
      addressable (practice.js finds each by id) instead of existing only as text
-     inside a parent. */
+     inside a parent.
+
+     ONLY ON AN EXERCISE PAGE, and this guard is not defensive - it is the difference
+     between a working page and a blocked one. The sheet is appended already carrying
+     `open`, and practice.js owns every way out of it (Get Started, the close button,
+     Escape, the backdrop). A learn topic loads learn.js instead, so on those pages this
+     built a modal reading "This exercise has no description yet." over the article with
+     NOTHING able to dismiss it. Keyed on PRACTICE_SLUG - the declaration that says this
+     page is one of the twenty exercises - rather than on whether an exercise was found,
+     because a practice page whose exercise file is missing SHOULD still show that
+     sentence: there it is a diagnostic, and here it was the whole page. */
   var backdrop = mk('div', 'exBackdrop', 'ex-backdrop open');
   var sheet = mk('div', 'exSheet', 'ex-sheet');
   sheet.setAttribute('role', 'dialog');

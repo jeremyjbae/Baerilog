@@ -31,15 +31,33 @@
             (typeof window.PRACTICE_SLUG === 'string' ? 'practice' : null);
   if (!app) return;
 
-  /* A practice page has twenty documents and the slug names which one. The three
-     menu apps have a single editor and no notion of a document, so they use one
-     fixed name - 'default' rather than the app's own name, so that adding a
-     document picker later is a new `item` and not a migration of this one. */
-  var item = (app === 'practice') ? String(window.PRACTICE_SLUG || '') : 'default';
+  /* Which document, within that app. A page that HAS more than one says so by declaring
+     CLOUD_ITEM - a learn topic does, and so its progress is its own row rather than every
+     topic sharing one. A practice page predates that declaration and names its document
+     with PRACTICE_SLUG, which is read here rather than migrated: twenty rows already exist
+     under those keys.
+
+     The three menu apps have a single editor and no notion of a document, so they use one
+     fixed name - 'default' rather than the app's own name, so that adding a document picker
+     later is a new `item` and not a migration of this one. */
+  var item = window.CLOUD_ITEM
+             || (app === 'practice' ? String(window.PRACTICE_SLUG || '') : 'default');
   if (!item) return;
 
+  /* Some pages have an editor but no DOCUMENT in it. A learn topic seeds its design from
+     topics/<slug>.js and the prose around it is ABOUT that design, so the text is the
+     lesson's rather than the reader's: saving it would be storing something nobody typed,
+     and restoring it would silently replace the code the article explains with an older
+     edit. That is not a hypothetical - it is what put a stale testbench back on a topic
+     page after learn.js had seeded the right one.
+
+     So such a page declares CLOUD_NO_SOURCE, and this file stores and restores no source
+     for it. The VERDICT seam is deliberately left intact: a topic can still get a row of
+     its own once it has something to report, and that row simply carries no `source`. */
+  var storesSource = !window.CLOUD_NO_SOURCE;
+
   var editor = document.getElementById('codeInput');
-  if (!editor) return;
+  if (!editor && storesSource) return;
 
   /* ---- reading and writing the editor --------------------------------- */
 
@@ -152,7 +170,7 @@
      delay nobody chose. */
   function saveSource() {
     if (restoring) return;
-    window.CLOUD.save(app, item, { source: getText() });
+    if (storesSource) window.CLOUD.save(app, item, { source: getText() });
   }
 
   editor.addEventListener('input', saveSource);
@@ -200,7 +218,7 @@
         var text = box.textContent || '';
         var pass = countOf(text, 'PASS'), fail = countOf(text, 'FAIL');
         window.CLOUD.save(app, item, {
-          source: getText(),
+          source: storesSource ? getText() : undefined,
           /* 'none' is a real verdict and not a missing one: cpu-16bit's testbench
              prints nothing deliberately and is judged by the Scoreboard instead,
              so storing null there would make a page that ran look like a page
@@ -229,7 +247,8 @@
     var resetBtn = document.getElementById('resetBtn');
     if (resetBtn) {
       resetBtn.addEventListener('click', function () {
-        window.CLOUD.save(app, item, { source: getText(), verdict: null });
+        window.CLOUD.save(app, item, storesSource
+          ? { source: getText(), verdict: null } : { verdict: null });
       });
     }
     /* The Console's Clear button, for the same reason and by the same rule: it silences the
@@ -240,7 +259,8 @@
     var clearBtn = document.getElementById('consoleClearBtn');
     if (clearBtn) {
       clearBtn.addEventListener('click', function () {
-        window.CLOUD.save(app, item, { source: getText(), verdict: null });
+        window.CLOUD.save(app, item, storesSource
+          ? { source: getText(), verdict: null } : { verdict: null });
       });
     }
   }
@@ -281,7 +301,7 @@
          that is left here is to put the adopted text on screen. */
       if (r.adopted.indexOf(item) >= 0) {
         var got = window.CLOUD.load(app, item);
-        if (got && typeof got.source === 'string' && got.source !== getText()) restore(got.source);
+        if (storesSource && got && typeof got.source === 'string' && got.source !== getText()) restore(got.source);
       }
       /* A conflict is never resolved automatically. The dialog states what each
          copy is and lets the learner choose; doing nothing keeps what is on
@@ -301,7 +321,7 @@
        account to attribute it to, so it exists only locally; pulling first would
        compare it against rows it has never been part of and could report a
        conflict against the learner's own unsent work. */
-    window.CLOUD.save(app, item, { source: getText() });
+    if (storesSource) window.CLOUD.save(app, item, { source: getText() });
     window.CLOUD.flush();
     syncDown();
   };

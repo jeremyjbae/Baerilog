@@ -1,0 +1,204 @@
+/* landing.css - Baerilog/index.html only.
+ *
+ * The landing page loads app.css for its TOKENS and nothing else: the Primer palette, the
+ * fonts, and the dark-mode block that redefines them. So its colours are the same ones
+ * every other page uses and it cannot drift into a second palette - which is the rule
+ * practice.css and learn.css are held to as well, and the reason this file defines no
+ * token of its own.
+ *
+ * What it does not reuse is the LAYOUT. Every other page here is a Box and a grid of
+ * cards, because every other page is a tool; this one is a single decision, centred, with
+ * nothing to navigate. Reusing `.card` and `.grid` to build it would have meant fighting
+ * both.
+ */
+
+/* This page is dark in both colour modes, deliberately, and it is the only page here that
+   is. It is a poster rather than a surface you work on, and the mock it is built from is
+   dark - so it uses the PANEL tokens, which are the same in both modes by design, exactly
+   as the editors and consoles do. `--canvas-default` would have made it follow the reader's
+   OS and turned the gradient headline unreadable in light mode. */
+body.landing {
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  padding: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.lp {
+  flex: 1 1 auto;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 72px 24px 0;
+  text-align: center;
+}
+
+/* ---- the kicker ----
+   A pill in the accent, on its own faint fill: the same idiom as the hub's Labels, so the
+   two pages agree about what a small rounded tag looks like. */
+.lp-pill {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--panel-blue);
+  background: rgba(121, 192, 255, 0.10);
+  border: 1px solid rgba(121, 192, 255, 0.28);
+  border-radius: 2em;
+  padding: 7px 18px;
+}
+
+/* ---- the headline ----
+   clamp() rather than a media query: the head is the one element whose size should track
+   the viewport continuously, and three breakpoints would each be a place for it to look
+   wrong just before the next one. 1.12 line-height because at this weight and size the
+   default leading opens a visible gap between the two lines of a wrapped headline. */
+.lp-head {
+  font-size: clamp(34px, 6.2vw, 68px);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  margin: 28px auto 0;
+  max-width: 22em;
+}
+/* The one word in the accent, as a gradient. -webkit-background-clip is still the only
+   form Safari accepts, so both spellings are set; `color: transparent` is what lets the
+   background show through the glyphs, and it is why this needs a fallback colour FIRST -
+   a browser that ignores background-clip would otherwise paint invisible text. */
+.lp-grad {
+  color: var(--panel-blue);
+  background: linear-gradient(90deg, #4493f8 0%, #a371f7 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.lp-sub {
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--panel-dim);
+  margin: 26px auto 0;
+  max-width: 42em;
+}
+/* Emphasis on this page is "brighten to the full foreground", not "bolden hard": both the
+   hero's sub-line and the band's paragraph are `--panel-dim`, so a browser-default
+   `<strong>` would come out heavier and still dim - the wrong axis, and visibly different
+   from the hero one section up. One declaration for both, so the two cannot drift; `b` and
+   `strong` are both listed because the hero was written with the short tag and the band
+   with the semantic one. */
+.lp-sub b, .lp-sub strong,
+.lp-band p b, .lp-band p strong { color: var(--panel-fg); font-weight: 600; }
+
+/* ---- the call to action ----
+   NOT `.btn`. The primary button in this repo is Primer's green, and it means "the one
+   action of this card" on a page full of controls. This is the only action on the page and
+   it is a poster's, so it takes the headline's own gradient - which is also what stops a
+   green button appearing on a page that has no other green on it. */
+.lp-cta {
+  display: inline-block;
+  margin: 40px 0 0;
+  padding: 16px 34px;
+  border-radius: 10px;
+  font-size: 17px;
+  font-weight: 700;
+  text-decoration: none;
+  color: #ffffff;
+  background: linear-gradient(90deg, #2f9bf6 0%, #8957e5 100%);
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+.lp-cta:hover { filter: brightness(1.08); }
+/* Moved on press rather than on hover: a hover lift on the only button on the page reads
+   as the page twitching, where a press is a direct answer to a click. */
+.lp-cta:active { transform: translateY(1px); }
+@media (prefers-reduced-motion: reduce) {
+  .lp-cta { transition: none; }
+  .lp-cta:active { transform: none; }
+}
+
+/* ---- the three cards ----
+   auto-fit rather than a fixed three columns, so the row becomes two and then one on its
+   own as the viewport narrows - no breakpoint to choose, and none to get wrong. The 260px
+   floor is where this copy stops fitting comfortably at 15px. */
+.lp-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 24px;
+  margin: 96px 0 0;
+  text-align: left;
+}
+.lp-card {
+  background: var(--panel-bg-alt);
+  border: 1px solid var(--panel-line);
+  border-radius: var(--radius-lg);
+  padding: 28px 26px;
+}
+.lp-card h2 {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--panel-blue);
+  margin: 0 0 14px;
+}
+.lp-card p {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--panel-dim);
+  margin: 0;
+}
+
+/* ---- the second hero ----
+   A band below the cards, centred like the first one but deliberately smaller: a page has
+   one headline, and a second at the same weight would compete with it rather than follow
+   it. So this sits between the hero and a card - larger than body copy, plainly not the
+   title - and carries no gradient, which is the first hero's alone.
+
+   The rule above it does the separating, so the band needs no fill of its own: another
+   panel colour here would read as a fourth card. */
+.lp-band {
+  margin: 96px auto 0;
+  padding: 56px 0 0;
+  border-top: 1px solid var(--panel-line);
+  max-width: 46em;
+}
+.lp-band h2 {
+  font-size: clamp(24px, 3.4vw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 18px;
+}
+.lp-band p {
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--panel-dim);
+  margin: 0;
+}
+
+/* ---- the footer ----
+   The MARKUP is the shared `.footer` div every other page carries, so the wording and the
+   link cannot drift from them; app.css already gives it `text-align: center` and its size.
+   Two things are overridden and only two, each because this page is genuinely different:
+
+   The RULE and the space above it. Everywhere else the footer follows a Box and 24px is
+   right; here it follows a full-bleed band, so it takes the same 96px rhythm the band and
+   the cards do, with a hairline to separate it - which is what `.lp-foot` was for.
+
+   The COLOUR, because this page is dark in BOTH colour modes (see the note at the top of
+   this file) while `.footer` is painted in `--fg-muted` with an `--accent-fg` link hover,
+   both of which follow the reader's OS. In light mode that is #656d76 text and a #0969da
+   link on a #0d1117 background - about 3.4:1 and 2.7:1. The panel tokens are the same in
+   both modes by design, so they are the set this page has to use, exactly as its headline
+   and its band already do. */
+body.landing .footer {
+  margin-top: 96px;
+  padding: 26px 24px;
+  border-top: 1px solid var(--panel-line);
+  color: var(--panel-dim);
+}
+body.landing .footer a { color: var(--panel-dim); }
+body.landing .footer a:hover { color: var(--panel-blue); }
+
+@media (max-width: 760px) {
+  .lp { padding: 48px 18px 0; }
+  .lp-cards { margin-top: 56px; }
+  .lp-band { margin-top: 56px; padding-top: 40px; }
+  body.landing .footer { margin-top: 56px; }
+}
