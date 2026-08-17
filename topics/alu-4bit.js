@@ -215,7 +215,7 @@ beside this topic.</p>
         { id: 'op', kind: 'in', label: 'op', x: 200, y: 0 },
         { id: 'add', kind: 'add', label: 'add', x: 170, y: 0+50 },
         { id: 'an', kind: 'and', label: 'and', x: 170, y: 150+50 },
-        { id: 'orr', kind: 'or', label: 'or', x: 170, y: 230+50 },
+        { id: 'orr', kind: 'or', label: 'or', x: 170, y: 225+50 },
         { id: 'xr', kind: 'xor', label: 'xor', x: 170, y: 310+50 },
         { id: 'm0', kind: 'mux2', label: 'mux2', x: 350, y: 44+60 },
         { id: 'm1', kind: 'mux2', label: 'mux2', x: 350, y: 240+50 },

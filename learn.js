@@ -94,6 +94,7 @@
   var figureHoles = {};
   var layoutHoles = {};
   var quizHoles = {};
+  var widgetHoles = {};
 
   /* ---- named sections, for a quiz to point back at -------------------------------
      A heading marked `data-sec="key"` in a topic's prose is a section a question may name. Two
@@ -151,6 +152,17 @@
         hole.setAttribute('data-app-slot', b.slot);
         slots[b.slot] = hole;
         article.appendChild(hole);
+        return;
+      }
+      if (b.widget) {
+        /* A WIDGET: the second interactive thing a topic can carry, and the same shape as a quiz - a
+           hole here, the data in `topic.widgets[name]`, the behaviour in this file. A topic stays DATA,
+           which is what lets `figures`, `layouts`, `quizzes` and now this one all be read the same way
+           and checked the same way. */
+        var wh = mk('div', 'learn-widget');
+        wh.setAttribute('data-widget', b.widget);
+        widgetHoles[b.widget] = wh;
+        article.appendChild(wh);
         return;
       }
       if (b.quiz) {
@@ -463,6 +475,92 @@
     row.appendChild(allBtn('Select All', true));
     made.forEach(function (m) { row.appendChild(m.btn); });
     row.appendChild(allBtn('Unselect All', false));
+
+    return row;
+  }
+
+  /* The cells' own artwork, or the abstract underneath it - and, separately, the wires.
+     `practice-pnr.js` owns the drawing and hands back the two switches; this owns the buttons, the
+     same division the badges above are built on.
+
+     THE STATE IS PER FIGURE AND NOT PERSISTED. A topic's prose points at what its figure shows
+     ("ten cells in a single row, 239.2 um long"), so a choice made on one page must not silently
+     decide what another page's sentence is describing. The opening state comes from the layout spec
+     - `view` for the cells, `routing: false` for a figure that wants the bare placement - and a
+     press is a look, not a preference. */
+  var figView = {}, figNoRouting = {};
+  function setViewButtons(name, hole, res) {
+    if (!hole || !res || !res.setView) return null;
+    /* A ROW OF ITS OWN, above the drawing, and NOT in the layer column beside it. These two switch
+       what is drawn where every badge in that column switches one mask, and the column has a shape
+       that says so: Select All at the top, Unselect All at the bottom, the stack between them, so
+       its two ends are the two ends of the range they cover. Putting another kind of control in it
+       breaks that reading - and the check that pins it, which is how this was noticed.
+
+       Inside `.learn-fig-mid`, before the drawing target, because `drawStatic` empties the target it
+       is handed: a row that lived in there would be deleted by the next redraw. Found-or-created and
+       then cleared, the same way the badge column is, so a redraw cannot leave two of them. */
+    var mid = hole.querySelector('.learn-fig-mid') || hole;
+    var row = mid.querySelector('.learn-fig-views');
+    if (!row) {
+      row = mk('div', 'learn-fig-views');
+      mid.insertBefore(row, mid.firstChild);
+    }
+    row.innerHTML = '';
+    function btn(text, on, title) {
+      var b = mk('button', 'layout-btn' + (on ? ' active' : ''));
+      b.setAttribute('type', 'button');
+      b.textContent = text;
+      if (title) b.setAttribute('title', title);
+      row.appendChild(b);
+      return b;
+    }
+    /* A PAIR, one active, exactly as pnr.html's own Abstract/Detail control is - so the standalone
+       layout app and a topic's figure read as the same control rather than as two ideas about the
+       same switch. `figView` is written before the redraw, so the rebuild that follows paints from
+       the state rather than from which button was clicked. */
+    var view = figView[name] || res.view;
+    var detail = btn('Detail', view !== 'phantom', 'The cells’ mask artwork');
+    var abstract = btn('Abstract', view === 'phantom', 'The cells as the router sees them: outline, pins and blockages');
+    function pickView(v) {
+      return function () {
+        if ((figView[name] || res.view) === v) return;      // pressing the lit one changes nothing
+        stopAnim(name);                                     // the same rule a badge press follows
+        figView[name] = v;
+        res.setView(v);
+        /* REBUILT, because the two views do not draw the same masks - the abstract has the metal-1
+           connector and none of the diffusions - so a column left from the other view would offer
+           buttons for shapes that are no longer in the picture. The per-layer state survives in
+           `layerOff`, so what the reader had hidden stays hidden. */
+        setLayerButtons(name, hole, res);
+        setViewButtons(name, hole, res);
+      };
+    }
+    detail.addEventListener('click', pickView('all'));
+    abstract.addEventListener('click', pickView('phantom'));
+
+    /* AND THE WIRES, as ONE switch for all four layers, because a wire is a via-metal-via-metal
+       stack: hiding one layer of it leaves a net that looks broken rather than hidden. The badges
+       below can still take a single layer out - this is the master switch, the way Select All is
+       for the stack - and hiding the group wins over them while it is off.
+
+       NOT DRAWN AT ALL when there are no wires: a one-cell figure has nothing to connect, and a
+       control that cannot change the picture is the dead control this site keeps refusing. */
+    if (res.routeShapes > 0) {
+      /* SEEDED FROM THE DRAWING, once: `drawStatic` has already applied the spec's `routing`, so
+         reading it back is how the topic's choice reaches the button rather than being overwritten
+         by it on the first paint. After that the reader owns it. */
+      if (figNoRouting[name] === undefined) figNoRouting[name] = !res.routingShown;
+      var on = !figNoRouting[name];
+      var wires = btn('Routing', on, 'VIA1, METAL2, VIA2 and METAL3 - the wires between the cells');
+      res.setRouting(on);
+      wires.addEventListener('click', function () {
+        var showing = !figNoRouting[name];
+        figNoRouting[name] = showing;                       // was showing, so this hides it
+        wires.classList.toggle('active', !showing);
+        res.setRouting(!showing);
+      });
+    }
     return row;
   }
 
@@ -1266,7 +1364,11 @@
       var netlist = layoutNetlist(spec);
       var res = api.drawStatic(drawTargetIn(layoutHoles[name]), {
         netlist: netlist, rowWidth: spec.rowWidth, rows: spec.rows,
-        view: spec.view, rowPx: spec.rowPx
+        /* `view` is the CELLS' opening look and `routing` the WIRES', both the topic's to choose and
+           both absent from every layout written so far - which is deliberate: the defaults are what
+           these figures already drew, so adding the two toggles moved no picture and no measured
+           claim on any page. */
+        view: spec.view, rowPx: spec.rowPx, routing: spec.routing
       });
       res.name = name;
       layoutsDrawn.push(res);
@@ -1280,6 +1382,7 @@
          the lambda the layout is laid out in, since lambda is a scalable rule and not a size. The
          lambda used is stated, because the number means nothing without it. */
       setLayerButtons(name, layoutHoles[name], res);
+      setViewButtons(name, layoutHoles[name], res);
       setStats(layoutHoles[name], res);
       setSource(layoutHoles[name], api.source);
       /* AFTER the badges, because the animation repaints them and `setSectionControls` reads the
@@ -1443,6 +1546,398 @@
     return v;
   }
 
+  /* ---- widgets: one stepper, three data sets -------------------------------------
+     `topic.widgets[name]` is `{ steps: [{ title, body, svg }] }` and nothing else - no functions, so a
+     topic file stays data the way `figures` and `quizzes` are. One mechanism rather than three, because
+     all three of `integrated-circuits`' widgets are the same thing: a walk along a fixed list, one item
+     at a time. The source article built them as two sliders and a scrubber; a stepper is what this site
+     already uses for the layout player, so it costs no new control and no new look.
+
+     THE CONTROLS ARE THAT PLAYER'S, class for class - `.learn-fig-ctl` holding two `.layout-btn`s, a
+     `.learn-anim-step` counter and a segmented `.learn-prog` - which is the whole of "keep the
+     consistent look": a reader who has stepped a cross section already knows how to drive this.
+
+     BUILT WITH createElement, not one innerHTML string, and that is a testability rule this repo
+     records twice over: the stub DOM parses no markup, so a panel built from a string has no button to
+     click and the feature cannot be checked headlessly at all. The step's own drawing IS a string,
+     because an <svg> is a leaf nobody clicks - and it is the one place a topic's markup lands here.
+
+     A SEGMENT IS A STEP, clickable, and the counter beside it says the same thing in numbers - the
+     two-encodings rule this repo holds anything meaningful in colour to. */
+  var widgetsBuilt = [];
+  var widgetState = {};
+
+  function buildWidgets() {
+
+  /* ---- 2f. THE MOORE CHART: one picture of the whole series, with the step marked ----------------
+     A stepper says what one year was; a chart says what the SHAPE is, and on this topic the shape is
+     the argument - the prediction holds for thirty years, overshoots in the middle, lands almost
+     exactly in 2020 and is out by a factor of two now. Seven tiles cannot say that and one plot can.
+
+     THE PREDICTION IS A STRAIGHT LINE, and that is not a simplification: doubling every two years is
+     exponential, the left axis is logarithmic, and an exponential on a log axis IS a straight line.
+     Which is why every drawing of Moore's law you have ever seen looks like this - and why two points
+     are enough to draw it, rather than a curve sampled per year.
+
+     TWO AXES, DELIBERATELY OPPOSED. Transistors climb on the left; the process node DESCENDS on the
+     right, because the right axis is labelled large-at-top - 10 um down to 2 nm - so "down" reads as
+     "smaller features". The alternative, small-at-top, makes both series climb and they become one
+     indistinguishable pair of rising lines; opposed, the crossing is the picture. The axis is labelled
+     either way, which is what keeps it honest rather than a trick.
+
+     BUILT WITH createElementNS, not an innerHTML string: the stub DOM parses no markup, so a chart
+     pasted as text has no elements for a harness to count or to read a coordinate off - and every
+     claim about it would pass vacuously. The same reason the netlist viewer's edge layer does it. */
+  var MOORE = { base: 2300, year0: 1971, years: 2 };
+  function moorePredict(year) {
+    return MOORE.base * Math.pow(2, (year - MOORE.year0) / MOORE.years);
+  }
+  /* The axes' own extents and ticks, in the units the data is in. Written out rather than derived from
+     the data, because a tick set that moves with the numbers is a chart whose gridlines change meaning
+     when a step is edited - and these are decades, which is what a log axis wants. */
+  var MOORE_LEFT = [[2300, '2,300'], [1e5, '100k'], [1e7, '10M'], [1e9, '1B'], [1e11, '100B']];
+  var MOORE_RIGHT = [[10000, '10 \u00b5m'], [1000, '1 \u00b5m'], [100, '100 nm'],
+                     [10, '10 nm'], [2, '2 nm']];
+  /* THE SAME TWO AXES, LINEAR, and this is the DEFAULT - which is a teaching decision rather than a
+     technical one. Every published drawing of Moore's law is logarithmic, and on a log axis an
+     exponential is a straight line: true, but it hides the thing a reader should feel first, which is
+     that 2,300 and two hundred billion are not comparable quantities. Linear, the transistor line sits
+     flat on the floor for thirty years and then leaves the top of the frame, and the feature-size line
+     drops to nothing before 1990 - so `Log scale` is the button that turns the dramatic picture into the
+     legible one, and pressing it is the moment the straightness means something.
+     0 to 450 billion covers the prediction's own 437 billion at 2026, so the dashed line stays inside
+     the plot in both modes. */
+  var MOORE_LEFT_LIN = [[0, '0'], [1e11, '100B'], [2e11, '200B'], [3e11, '300B'], [4e11, '400B']];
+  var MOORE_RIGHT_LIN = [[10000, '10 \u00b5m'], [7500, '7.5 \u00b5m'], [5000, '5 \u00b5m'],
+                         [2500, '2.5 \u00b5m'], [0, '0']];
+  var MOORE_LIN_MAX = 450e9, MOORE_LIN_NM = 10000;
+
+  function mooreChart(el, spec) {
+    var pts = (spec.steps || []).map(function (s) {
+      return { year: s.year, real: s.real, node: s.node };
+    });
+    /* A step missing any of the three is not chartable, and the widget keeps working without one -
+       so a topic that has not supplied numbers gets its stepper and no chart, rather than a broken
+       picture or a thrown error on load. */
+    if (!pts.length || pts.some(function (p) { return !p.year || !p.real || !p.node; })) return null;
+
+    /* 188 is THREE QUARTERS of the 250 this started at, and the reason is that `.learn-chart` is
+       `width: 100%; height: auto` - so H is not a height in pixels, it is the aspect. At 250 the chart
+       rendered 1222 x 391 in a full-width column, which is taller than everything around it and taller
+       than it needs to be for five gridlines. Every y below is derived from H through `yl`/`yr`, and T
+       and B are unchanged, so the axis labels and the legend keep their room and only the plot gets
+       shorter: 138px of it against 200 before. */
+    var W = 780, H = 188, L = 64, R = 74, T = 16, B = 34;
+    var y0 = pts[0].year, y1 = pts[pts.length - 1].year;
+    var loL = Math.log(2000) / Math.LN10, hiL = Math.log(1e12) / Math.LN10;
+    var loR = Math.log(2) / Math.LN10, hiR = Math.log(20000) / Math.LN10;
+    /* LINEAR BY DEFAULT, log behind the button - see the note above MOORE_LEFT_LIN for why round that
+       way. `logOn` is read by both scales and by the tick tables, so one flag decides the whole
+       picture and the two cannot end up describing different axes. */
+    var logOn = false;
+    function x(year) { return L + (year - y0) / (y1 - y0) * (W - L - R); }
+    function yl(n) {
+      if (!logOn) {
+        return T + (1 - Math.max(0, Math.min(1, n / MOORE_LIN_MAX))) * (H - T - B);
+      }
+      var v = (Math.log(n) / Math.LN10 - loL) / (hiL - loL);
+      return T + (1 - v) * (H - T - B);
+    }
+    /* LARGE AT TOP on the right, which is what makes the node line descend - see the note above. Linear
+       keeps that orientation, so the two modes cannot disagree about which way "smaller" is. */
+    function yr(nm) {
+      if (!logOn) {
+        return T + (1 - Math.max(0, Math.min(1, nm / MOORE_LIN_NM))) * (H - T - B);
+      }
+      var v = (hiR - Math.log(nm) / Math.LN10) / (hiR - loR);
+      return T + v * (H - T - B);
+    }
+    function el2(tag, attrs, cls) {
+      var e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, String(attrs[k])); });
+      if (cls) e.setAttribute('class', cls);
+      return e;
+    }
+    el.innerHTML = '';
+    /* THE BUTTON SITS OUTSIDE WHAT IS REDRAWN. Toggling the scale rebuilds the plot - thirty elements,
+       once, on a press nobody makes often, where STEPPING still moves the cursor without redrawing
+       anything - so the control has to live in its own row or it would be destroyed by the first press
+       of itself. `.layout-btn` with `.active` and `aria-pressed` is this site's existing toggle, in the
+       same text-button row the placement figures use, so it needed no styling of its own. */
+    var ctl = mk('div', 'learn-fig-views learn-chart-ctl');
+    /* THE STEP'S TITLE LIVES HERE when the widget asks for it (`titleOnChart`), which for the Moore
+       widget it does: its titles are bare years, and a big `2010` on a line of its own above the frame
+       said nothing the chart's own cursor, x-axis tick and counter were not already saying - it was a
+       heading for a picture that is already labelled. On the chart it is the plot's caption instead,
+       beside the control that changes the plot. */
+    var chartTitle = mk('span', 'learn-chart-title');
+    ctl.appendChild(chartTitle);
+    var logBtn = mk('button', 'layout-btn');
+    logBtn.textContent = 'Show as Log scale';
+    logBtn.setAttribute('type', 'button');
+    logBtn.setAttribute('aria-pressed', 'false');
+    logBtn.setAttribute('title', 'Plot both axes logarithmically');
+    ctl.appendChild(logBtn);
+    el.appendChild(ctl);
+    var body = mk('div', 'learn-chart-body');
+    el.appendChild(body);
+
+    var built = null, atStep = 0;
+    function draw() {
+    body.innerHTML = '';
+    var svg = el2('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img',
+                           'aria-label': 'Transistors per chip and the smallest feature size, '
+                                       + y0 + ' to ' + y1 },
+                  'learn-chart');
+    function add(e) { svg.appendChild(e); return e; }
+
+    (logOn ? MOORE_LEFT : MOORE_LEFT_LIN).forEach(function (t2) {
+      add(el2('line', { x1: L, x2: W - R, y1: yl(t2[0]), y2: yl(t2[0]) }, 'learn-chart-grid'));
+      add(el2('text', { x: L - 6, y: yl(t2[0]) + 3, 'text-anchor': 'end' },
+              'learn-chart-tick')).textContent = t2[1];
+    });
+    (logOn ? MOORE_RIGHT : MOORE_RIGHT_LIN).forEach(function (t2) {
+      add(el2('text', { x: W - R + 6, y: yr(t2[0]) + 3 },
+              'learn-chart-tick learn-chart-tick-node')).textContent = t2[1];
+    });
+    add(el2('line', { x1: L, x2: W - R, y1: H - B, y2: H - B }, 'learn-chart-axis'));
+    pts.forEach(function (p) {
+      add(el2('text', { x: x(p.year), y: H - B + 16, 'text-anchor': 'middle' },
+              'learn-chart-tick')).textContent = String(p.year);
+    });
+
+    /* THE PREDICTION IS SAMPLED PER YEAR, not drawn as two points, and that is what makes it right in
+       BOTH modes. An exponential is a straight line only on a logarithmic axis; drawn as two points it
+       stayed straight when the axis went linear - a tidy diagonal from 1971 to 2026 that no doubling
+       ever passed through, and the one line on the chart that was simply false. Sampled, it is straight
+       when the axis is log and the hockey stick it really is when the axis is not. Fifty-six points on a
+       press nobody makes often. */
+    var predPts = [];
+    for (var py = y0; py <= y1; py++) predPts.push(x(py) + ',' + yl(moorePredict(py)));
+    add(el2('polyline', { points: predPts.join(' ') }, 'learn-chart-pred'));
+    /* What shipped, and the node, each as a line through its own points. */
+    add(el2('polyline', { points: pts.map(function (p) { return x(p.year) + ',' + yl(p.real); }).join(' ') },
+            'learn-chart-real'));
+    add(el2('polyline', { points: pts.map(function (p) { return x(p.year) + ',' + yr(p.node); }).join(' ') },
+            'learn-chart-node'));
+
+    var cursor = add(el2('line', { x1: x(y0), x2: x(y0), y1: T, y2: H - B }, 'learn-chart-cursor'));
+    var realDots = pts.map(function (p) {
+      return add(el2('circle', { cx: x(p.year), cy: yl(p.real), r: 4,
+                                 'data-year': p.year, 'data-real': p.real }, 'learn-chart-dot'));
+    });
+    var nodeDots = pts.map(function (p) {
+      return add(el2('circle', { cx: x(p.year), cy: yr(p.node), r: 3,
+                                 'data-year': p.year, 'data-node': p.node },
+                     'learn-chart-dot learn-chart-dot-node'));
+    });
+
+    /* The legend names the three series in their own colours, because a reader cannot be asked to
+       remember which line is which - and it says which axis the node is on, since that is the one
+       thing a two-axis chart can be misread about. */
+    var keys = [['learn-chart-key-pred', 'doubling predicts'],
+                ['learn-chart-key-real', 'real chips'],
+                ['learn-chart-key-node', 'smallest feature (right)']];
+    var legend = mk('div', 'learn-chart-legend');
+    keys.forEach(function (k) {
+      var item = mk('span', 'learn-chart-key');
+      item.appendChild(mk('span', k[0]));
+      var lab = mk('span', 'learn-chart-key-label');
+      lab.textContent = k[1];
+      item.appendChild(lab);
+      legend.appendChild(item);
+    });
+    body.appendChild(svg);
+    body.appendChild(legend);
+
+    return {
+      /* THE STEP, MARKED IN THE PICTURE: the cursor moves and that year's two dots grow. Nothing is
+         redrawn, so the plot cannot flicker or re-lay-out as a reader steps through it. */
+      setStep: function (k) {
+        var i = Math.max(0, Math.min(pts.length - 1, k));
+        cursor.setAttribute('x1', String(x(pts[i].year)));
+        cursor.setAttribute('x2', String(x(pts[i].year)));
+        realDots.concat(nodeDots).forEach(function (d, j) {
+          var on = (j % pts.length) === i;
+          d.setAttribute('class', d.getAttribute('class').replace(/ on\b/, '') + (on ? ' on' : ''));
+        });
+      },
+      points: pts, svg: svg, dots: realDots, nodeDots: nodeDots
+    };
+    }
+
+    /* ONE WRITER FOR BOTH ENCODINGS of the state - the class and `aria-pressed` - which is the rule
+       this repo holds anything meaningful in colour to, and `add`/`remove` rather than `toggle(cls,
+       force)` because that is what the stub DOM models. The step is re-applied after a redraw, or
+       toggling the scale would silently move the cursor back to 1971. */
+    function paint() {
+      if (logOn) logBtn.classList.add('active'); else logBtn.classList.remove('active');
+      logBtn.setAttribute('aria-pressed', logOn ? 'true' : 'false');
+    }
+    logBtn.addEventListener('click', function () {
+      logOn = !logOn;
+      paint();
+      built = draw();
+      built.setStep(atStep);
+    });
+    paint();
+    built = draw();
+
+    return {
+      setStep: function (k) {
+        atStep = Math.max(0, Math.min(pts.length - 1, k));
+        built.setStep(atStep);
+      },
+      /* For the harness: which scale is on, and the button to press. Everything else it needs it can
+         read off the drawing, which is the point of building this with real elements. */
+      log: function () { return logOn; },
+      logButton: logBtn,
+      setTitle: function (t) { chartTitle.textContent = t || ''; },
+      points: pts,
+      svg: function () { return built.svg; },
+      dots: function () { return built.dots; },
+      nodeDots: function () { return built.nodeDots; }
+    };
+  }
+
+    Object.keys(widgetHoles).forEach(function (name) {
+      var spec = (topic && topic.widgets && topic.widgets[name]) || null;
+      var hole = widgetHoles[name];
+      if (!spec || !spec.steps || !spec.steps.length) return;
+
+      var fig = mk('div', 'learn-illus learn-widget-fig');
+      /* THE CHART IS BUILT ONCE for the whole series and only MARKED per step - it is a picture of
+         all seven years, where `st.svg` is a picture of one. A widget declaring `chart` therefore
+         keeps its own figure element for the chart and leaves the per-step drawing alone. */
+      var chartFig = spec.chart === 'moore' ? mk('div', 'learn-illus learn-widget-chart') : null;
+      var head = mk('div', 'learn-widget-head');
+      /* THE LABELLED FIELDS, and they are why a step is worth stepping to: a number on its own is not
+         readable, and `301.5 million` beside the words `estimated transistors` is. One tile per fact,
+         each `{label, value}`, in a grid that wraps - so a step can carry two or four of them and a
+         phone gets one column. A step with no `facts` builds no row at all. */
+      var stats = mk('div', 'learn-widget-stats');
+      var body = mk('div', 'learn-widget-body');
+      var row = mk('div', 'learn-fig-ctl');
+      var prev = mk('button', 'layout-btn');
+      var next = mk('button', 'layout-btn');
+      var count = mk('span', 'learn-anim-step');
+      var bar = mk('div', 'learn-prog');
+      prev.textContent = '◀';
+      next.textContent = '▶';
+      prev.setAttribute('title', 'Previous');
+      next.setAttribute('title', 'Next');
+      bar.setAttribute('role', 'slider');
+      bar.setAttribute('aria-label', spec.label || name);
+      /* The head is left OUT when the title belongs on the chart - not merely hidden, so nothing has to
+         remember to hide it, and a check reading the panel's parts sees exactly what is on the page. */
+      if (!spec.titleOnChart) hole.appendChild(head);
+      if (chartFig) hole.appendChild(chartFig);
+      hole.appendChild(fig);
+      hole.appendChild(stats);
+      hole.appendChild(body);
+      row.appendChild(prev);
+      row.appendChild(next);
+      row.appendChild(count);
+      row.appendChild(bar);
+      hole.appendChild(row);
+      /* WHAT THE BAR IS AN AXIS OF. `3 / 7` says where you are in a list; on a widget whose list is a
+         TIMELINE it does not say what the list is - so a spec may name its two ends and they are
+         printed under the bar, which is the axis label a chart would have. Absent means absent: the
+         other two widgets are lists of things rather than a range, and get no row. */
+      var ends = null;
+      if (spec.ends && spec.ends.length === 2) {
+        ends = mk('div', 'learn-widget-ends');
+        var lo = mk('span'), hi = mk('span');
+        lo.textContent = spec.ends[0];
+        hi.textContent = spec.ends[1];
+        ends.appendChild(lo);
+        ends.appendChild(hi);
+        hole.appendChild(ends);
+      }
+
+      var segs = spec.steps.map(function (_, i) {
+        var seg = mk('div', 'learn-prog-seg');
+        seg.addEventListener('click', function () { show(i); });
+        bar.appendChild(seg);
+        return seg;
+      });
+
+      var chart = chartFig ? mooreChart(chartFig, spec) : null;
+      if (chartFig && !chart) chartFig.style.display = 'none';   // no numbers: no chart, not a broken one
+
+      function show(k) {
+        k = Math.max(0, Math.min(spec.steps.length - 1, k));
+        var st = spec.steps[k];
+        widgetState[name] = k;
+        head.textContent = st.title || '';
+        if (spec.titleOnChart && chart && chart.setTitle) chart.setTitle(st.title);
+        /* The drawing is optional, and a step without one must not leave the panel holding the
+           PREVIOUS step's picture - which is the failure a `if (st.svg)` alone would ship. */
+        /* THE DRAWING AND THE PHOTOGRAPHS SHARE ONE ROW, which is the point of the photographs: a
+           schematic says what the part IS and a photograph says what it LOOKED LIKE, and the two are
+           worth having side by side rather than one under the other. `.learn-widget-fig` is the flex
+           row (see learn.css); it wraps, so a phone stacks them.
+
+           Rebuilt per step like the tiles are - a step with two photographs following one with three
+           must not keep the third - and the whole row is hidden when a step has neither. Every shot
+           carries its own CREDIT, because none of these pictures is this repo's: the same rule the
+           placement figures follow for the cell artwork they draw. */
+        fig.innerHTML = '';
+        if (st.svg) {
+          var drawn = mk('div', 'learn-widget-drawing');
+          drawn.innerHTML = st.svg;
+          fig.appendChild(drawn);
+        }
+        (st.shots || []).forEach(function (sh) {
+          var f = mk('figure', 'learn-widget-shot');
+          var im = mk('img');
+          im.setAttribute('src', sh.src);
+          /* Alt text is not optional on a photograph that is carrying part of the explanation. And NOT
+             `loading="lazy"`, which was the first thing tried and is the wrong tool here: these images
+             are not below the fold at load, they are not in the document at all until the reader steps
+             to them - at which point they are in view and wanted immediately. Lazy buys nothing and
+             costs a blank frame while the browser decides. Measured: with it, the images of a step
+             reached by pressing Next reported naturalWidth 0 for long enough to see. */
+          im.setAttribute('alt', sh.alt || '');
+          f.appendChild(im);
+          var cap = mk('figcaption');
+          cap.textContent = sh.credit || '';
+          f.appendChild(cap);
+          fig.appendChild(f);
+        });
+        fig.style.display = (st.svg || (st.shots && st.shots.length)) ? '' : 'none';
+        if (chart) chart.setStep(k);
+        /* Rebuilt per step rather than written into, for the reason the drawing is cleared above: a
+           step with three facts followed by one with two would otherwise keep the third. */
+        stats.innerHTML = '';
+        (st.facts || []).forEach(function (f) {
+          var tile = mk('div', 'learn-widget-stat');
+          var lab = mk('div', 'learn-widget-stat-label');
+          var val = mk('div', 'learn-widget-stat-value');
+          lab.textContent = f.label;
+          val.innerHTML = f.value;
+          tile.appendChild(lab);
+          tile.appendChild(val);
+          stats.appendChild(tile);
+        });
+        stats.style.display = (st.facts && st.facts.length) ? '' : 'none';
+        body.innerHTML = st.body || '';
+        count.textContent = (k + 1) + ' / ' + spec.steps.length;
+        segs.forEach(function (seg, i) {
+          if (i === k) seg.classList.add('on'); else seg.classList.remove('on');
+        });
+        /* Disabled at the ends rather than wrapping: a list with a first and a last item is what the
+           counter says it is, and a reader who reaches 6 / 6 should be told, not sent back to 1. */
+        prev.disabled = k === 0;
+        next.disabled = k === spec.steps.length - 1;
+      }
+      prev.addEventListener('click', function () { show((widgetState[name] || 0) - 1); });
+      next.addEventListener('click', function () { show((widgetState[name] || 0) + 1); });
+      show(0);
+      widgetsBuilt.push(name);
+    });
+  }
+
   function buildQuizzes() {
     Object.keys(quizHoles).forEach(function (name) {
       var hole = quizHoles[name];
@@ -1602,6 +2097,7 @@
   /* Once too, and before anything can be answered: a quiz is content, so nothing re-builds it.
      It reports nothing at load - an unanswered quiz is not a result, and writing one would put a
      row on the hub for a topic the reader has only opened. */
+  buildWidgets();
   buildQuizzes();
 
   /* Everything the topic did NOT ask for is removed outright rather than hidden: a learn
@@ -1985,8 +2481,14 @@
   if (topic && topic.verilog) {
     var maxInput = $('maxTimeInput');
     if (maxInput) maxInput.value = String(topicMaxTime());
-    setEditorText(topicDocument());
-    resetEditorHierarchyState();
+    /* The topic document is handed to seedFullSource, which splits it across the two
+       editors WITHOUT recording an undoable edit. Both halves of that matter. Writing it
+       into the design editor first (setEditorText, then a reset that read it back) put the
+       whole file into that textarea's undo stack, so one Cmd-Z brought the testbench in
+       below the design; and even split, a page's FIRST document replaces nothing of the
+       reader's - app.js loads EXAMPLES' first entry on the way past, so an undoable seed
+       left `module dff` one keystroke behind the topic. See app.js at seedFullSource. */
+    seedFullSource(topicDocument());
     tryApplyAutoFinishTime(codeInput.value);
     /* TRAILING BLANK LINES TRIMMED FROM THE VIEW. The seeded document puts a blank line
        before the marker so the two halves read apart, and `designSpan` keeps it - where
@@ -1997,9 +2499,13 @@
        The view only: this is an ordinary edit as far as the app is concerned, and every
        path that consumes the source merges first, so no merge is needed here. One was
        written and then removed - a mutant deleting it changed nothing observable, which
-       is this repo's own test for reassurance that cannot be checked. */
+       is this repo's own test for reassurance that cannot be checked.
+
+       setEditorView, not setEditorText: a view-only trim of a document the reader has not
+       touched yet is not an edit to undo, and recording one would put the untrimmed seed
+       one Cmd-Z behind the page - the same reason the seed above is not undoable. */
     var tidy = codeInput.value.replace(/\n\s*$/, '\n');
-    if (tidy !== codeInput.value) setEditorText(tidy);
+    if (tidy !== codeInput.value) setEditorView(tidy);
     /* ONE MODULE IN THE EDITOR. The design half holds the library too, and none of it is what
        the reader is reading, so the editor is narrowed to the module the page is about. The module
        browser is already hidden here, so there is no control that would wander off it.
@@ -2117,6 +2623,10 @@
        verdict the hub would be given - so a check can drive the real buttons and then ask what
        this page thinks it has, rather than recomputing the rule it is checking. */
     quizzes: function () { return quizzesBuilt.slice(); },
+    /* The widgets, for the harness: which were built, and the step each is on - so a check can drive
+       one without a pointer, the same way `section` exposes the cross-section's step. */
+    widgets: function () { return widgetsBuilt.slice(); },
+    widgetStep: function (n) { return widgetState[n] === undefined ? null : widgetState[n]; },
     quizState: function (n) { return (quizState[n] || []).slice(); },
     quizVerdict: quizVerdict,
     /* The sections a question may point back at, keyed as the prose marks them - so a check can

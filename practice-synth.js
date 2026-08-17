@@ -864,15 +864,24 @@
         b.classList.add('selected');
         var card = document.getElementById(t[3]);
         if (card && card.scrollIntoView) card.scrollIntoView({ block: 'start' });
+        // the page head is sticky, so the card would land behind it - practice.js owns the
+        // measurement, since these two tabs and its own six scroll the same way
+        if (window.PRACTICE_API && window.PRACTICE_API.clearStickyOverlap) {
+          window.PRACTICE_API.clearStickyOverlap();
+        }
       });
-      /* BEFORE the Reset button, not appended to the strip. Reset is pushed right by
-         `margin-left: auto`, and an auto margin absorbs the space before its own item -
-         it does not hold anything appended afterwards back. So appending here would put
-         the netlist pair to the right of Reset on every successful synthesis, which is
-         exactly the "rightmost" the button is meant to be. Inserting keeps DOM order,
-         keyboard order and visual order in agreement. */
-      var pin = (window.PRACTICE_API && window.PRACTICE_API.resetButton
-                 && window.PRACTICE_API.resetButton()) || null;
+      /* BEFORE the strip's ACTIONS GROUP, not appended to the strip. Exercise and Reset are
+         pushed right by `margin-left: auto` on the group, and an auto margin absorbs the
+         space before its own item - it does not hold anything appended afterwards back. So
+         appending here would put the netlist pair to the right of both on every successful
+         synthesis, which is exactly the "rightmost" they are meant to be. Inserting keeps
+         DOM order, keyboard order and visual order in agreement.
+
+         Pinned on the GROUP rather than on PRACTICE_API.resetButton(), which is a child of
+         it: `parentElement === strip` is false for a child, so pinning there would fall
+         silently through to the append and reintroduce the bug this comment is about. */
+      var pin = (window.PRACTICE_API && window.PRACTICE_API.stripActions
+                 && window.PRACTICE_API.stripActions()) || null;
       if (pin && pin.parentElement === strip) strip.insertBefore(b, pin);
       else strip.appendChild(b);
       synthTabs.push(b);

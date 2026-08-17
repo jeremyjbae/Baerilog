@@ -18,6 +18,17 @@
  * not an omission: `lego-logic` is prose and illustrations with nothing to run, so learn.js
  * removes every card and hides the app's grid, and the article is the whole page.
  *
+ * `history` puts a topic in the hub's SECOND table instead of its first, and it is a claim about
+ * what kind of page it is rather than about what the page is about. The three it is on are the
+ * long reads - how the chip, its tools and the processor got here - and they are a different thing
+ * to offer a reader from the run of circuits: nothing is built, nothing is run, and they are worth
+ * reading in any order, where the circuits are worth reading in this one. Note it is NOT the same
+ * question as `slots: []`, which is why it needs a field of its own: `lego-logic` has no design
+ * either and belongs at the top of the first table, being the page that explains what a gate is.
+ * The Category and Level chips are built from the first table's rows only, so a category that
+ * exists solely down here grows no chip - a chip that filtered a table it is not above would
+ * empty the listing for a reason nothing on screen explains.
+ *
  * Page filenames are `learn-<slug>.html`. Baerilog/ is flat - a page finds app.js by bare
  * filename - so a learn/ subdirectory would need ../app.js everywhere and break the one
  * property that makes every page here work over file://. The prefix is what keeps a topic
@@ -26,11 +37,13 @@
 var LEARN_MANIFEST = [
   {"slug": "lego-logic", "title": "Digital Logic is like LEGO!", "category": "Basics", "level": 1, "kind": "comb", "blurb": "Why a gate needs two inputs before it can decide anything", "slots": []},
   {"slug": "logic-gates", "title": "Logic Gates", "category": "Basics", "level": 1, "kind": "comb", "pnr": true, "blurb": "Basic logic gate, truth table, and how it becomes silicon", "slots": ["editor", "truth-table", "waveform", "netlist"]},
+  {"slug": "integrated-circuits", "title": "The Evolution of Integrated Circuits", "category": "Basics", "level": 1, "kind": "comb", "history": true, "blurb": "How a room of hand-soldered wires became billions of switches on a fingernail of silicon", "slots": []},
+  {"slug": "design-tools", "title": "The Evolution of Chip Design Tools", "category": "Basics", "level": 1, "kind": "comb", "history": true, "blurb": "From cutting masks with a razor blade to compiling a billion transistors", "slots": []},
   {"slug": "decoder-2to4", "title": "2:4 Decoder", "category": "Combinational", "level": 1, "kind": "comb", "pnr": true, "blurb": "Two bits in, one wire out of four - which is what an address is", "slots": ["editor", "truth-table", "waveform", "netlist"]},
   {"slug": "half-adder-1bit", "title": "1-Bit Half Adder", "category": "Combinational", "level": 2, "kind": "comb", "pnr": true, "blurb": "Two bits in, sum and carry out, built out of the gates from the last topic", "slots": ["editor", "truth-table", "waveform", "netlist"]},
   {"slug": "full-adder-1bit", "title": "1-Bit Full Adder", "category": "Combinational", "level": 2, "kind": "comb", "pnr": true, "blurb": "The same circuit given a carry in, which is what lets one column feed the next", "slots": ["editor", "truth-table", "waveform", "netlist"]},
-  {"slug": "ripple-carry-4bit", "title": "4-Bit Ripple-Carry Adder", "category": "Arithmetic", "level": 2, "kind": "comb", "pnr": true, "blurb": "Four of those chained carry to carry, and what happens when the answer will not fit", "slots": ["editor", "waveform", "netlist"]},
-  {"slug": "adder-8bit", "title": "8-Bit Adder with \"One line of Code\"", "category": "Arithmetic", "level": 2, "kind": "comb", "pnr": true, "blurb": "The same addition written as one line, and the chain the tool builds from it", "slots": ["editor", "waveform", "netlist"]},
+  {"slug": "ripple-carry-4bit", "title": "4-Bit Ripple-Carry Adder", "category": "Combinational", "level": 2, "kind": "comb", "pnr": true, "blurb": "Four of those chained carry to carry, and what happens when the answer will not fit", "slots": ["editor", "waveform", "netlist"]},
+  {"slug": "adder-8bit", "title": "8-Bit Adder with \"One line of Code\"", "category": "Combinational", "level": 2, "kind": "comb", "pnr": true, "blurb": "The same addition written as one line, and the chain the tool builds from it", "slots": ["editor", "waveform", "netlist"]},
   {"slug": "mux-2to1", "title": "2:1 Multiplexer", "category": "Combinational", "level": 2, "kind": "comb", "pnr": true, "blurb": "One bit of control choosing between two bits of data - the first circuit that does not compute", "slots": ["editor", "truth-table", "waveform", "netlist"]},
   {"slug": "mux-8to1", "title": "8:1 Multiplexer", "category": "Combinational", "level": 2, "kind": "comb", "pnr": true, "blurb": "Three select bits choosing one of eight - seven muxes in three levels, and where a case statement is exactly right", "slots": ["editor", "waveform", "netlist"]},
   {"slug": "subtractor-4bit", "title": "4-Bit Subtractor", "category": "Arithmetic", "level": 3, "kind": "comb", "pnr": true, "blurb": "There is no subtractor - it is the adder with b inverted, and that is where negative numbers come from", "slots": ["editor", "waveform", "netlist"]},
@@ -38,7 +51,8 @@ var LEARN_MANIFEST = [
   {"slug": "d-flip-flop", "title": "D Flip-Flop: One Bit of Memory", "category": "Sequential", "level": 2, "kind": "seq", "pnr": true, "blurb": "The first circuit that remembers, and the clock edge that tells it when", "slots": ["editor", "waveform", "netlist"]},
   {"slug": "register-4bit", "title": "4-Bit Register", "category": "Sequential", "level": 2, "kind": "seq", "pnr": true, "blurb": "Four flip-flops on one clock, and the mux that lets them keep what they have", "slots": ["editor", "waveform", "netlist"]},
   {"slug": "shift-register-4bit", "title": "4-Bit Shift Register", "category": "Sequential", "level": 2, "kind": "seq", "pnr": true, "blurb": "The same four flops in a line instead of side by side - four cells and no logic at all", "slots": ["editor", "waveform", "netlist"]},
-  {"slug": "counter-4bit", "title": "4-Bit Counter", "category": "Sequential", "level": 2, "kind": "seq", "pnr": true, "blurb": "An adder in front of a register, feeding itself - and what happens after 15", "slots": ["editor", "waveform", "netlist"]}
+  {"slug": "counter-4bit", "title": "4-Bit Counter", "category": "Sequential", "level": 2, "kind": "seq", "pnr": true, "blurb": "An adder in front of a register, feeding itself - and what happens after 15", "slots": ["editor", "waveform", "netlist"]},
+  {"slug": "cpu-architecture", "title": "The Evolution of the CPU", "category": "CPU", "level": 3, "kind": "mega", "history": true, "blurb": "Fetch, decode, execute - and fifty years of making that loop faster without making the clock faster", "slots": []}
 ];
 
 /* Row order on the hub, and the order of the Category chips. Same arrangement as
@@ -54,5 +68,10 @@ var LEARN_MANIFEST = [
  * is the one deliberate departure. A topic reads in hub order, `d-flip-flop`'s first sentence is
  * that every circuit on the pages before it forgets, and its last one is that an adder in front of
  * a flip-flop is a counter - so it has to sit after the arithmetic run rather than in the middle of
- * it. The word is the same either way; only the position moved. */
-var LEARN_CATEGORIES = ['Basics', 'Combinational', 'Arithmetic', 'Sequential'];
+ * it. The word is the same either way; only the position moved.
+ *
+ * `CPU` is after it, holding one topic, and that ordering is the same argument one step further on:
+ * the CPU page names the program counter as a counter, the instruction register as a register and
+ * the control unit as a decoder, so every part of it has to have been built already. It is the last
+ * row on the hub, and its exit is the practice site rather than another topic. */
+var LEARN_CATEGORIES = ['Basics', 'Combinational', 'Arithmetic', 'Sequential', 'CPU'];

@@ -45,8 +45,12 @@
   var PRAC = window.PRACTICE_MANIFEST || [];
   var CATS = window.PRACTICE_CATEGORIES || [];
 
-  var APP_TITLES = { simulator: 'Simulator', synthesis: 'Synthesizer', compiler: 'Compiler' };
-  var APP_ORDER = ['simulator', 'synthesis', 'compiler'];
+  var APP_TITLES = { simulator: 'Simulator', synthesis: 'Synthesizer',
+                     pnr: 'Place & Route', compiler: 'Compiler' };
+  /* The order the drawer lists them in, which is the order the flow runs in - so
+     Place & Route sits after the synthesizer here too, and My Projects reads the same
+     way as the navigation beside it. */
+  var APP_ORDER = ['simulator', 'synthesis', 'pnr', 'compiler'];
   var NEXT_MAX = 3;
 
   /* Relative time comes from CLOUD_UI so the dashboard and the account drawer's My
@@ -93,8 +97,16 @@
   }
 
   /* "In progress" is deliberately NOT "has a record": a passed exercise has one too.
-     It is anything begun and not finished - a verdict that is not a pass, or a source
-     saved with no verdict at all, which is an exercise edited but never run. */
+     It is anything begun and not finished - a verdict that is not a pass, or NO verdict
+     at all, which is an exercise begun and never run.
+
+     That second half used to read `!!d.source`, and it was DEAD CODE that cost the
+     dashboard a whole class of row: the rows this walks come from CLOUD.list()/listAll(),
+     which report a `bytes` count and never the source itself, so it was always false. A
+     record with no verdict was therefore dropped from In Progress AND from Next Steps
+     (which only tests whether a record exists) - it vanished from the dashboard entirely.
+     Pressing Get Started! now writes exactly such a record, so the rule is stated the way
+     the hub's own badge states it: a record with no passing verdict is in progress. */
   function inProgress(by) {
     var out = [];
     ['learn', 'practice'].forEach(function (app) {
@@ -102,7 +114,7 @@
       Object.keys(items).forEach(function (item) {
         var d = items[item];
         var v = d.verdict;
-        var started = v ? v.state !== 'pass' : !!d.source;
+        var started = v ? v.state !== 'pass' : true;
         if (!started) return;
         if (!entryFor(app, item)) return;   // a record for a slug no catalogue lists
         out.push({ app: app, item: item, doc: d });
@@ -135,7 +147,13 @@
 
   function verdictText(d) {
     var v = d.verdict;
-    if (!v) return 'edited, not run';
+    /* No verdict is two different states, told apart by whether there is any work here.
+       `bytes` is what both row shapes carry (listLocal measures the stored source,
+       listRemote reports 0 because the list query does not fetch it), so a row known only
+       from the server always takes the vaguer word - which is honest, where inventing a
+       size would not be. "in progress" is also the hub badge's wording for this record, so
+       the two surfaces describe a Get Started with the same phrase. */
+    if (!v) return d.bytes ? 'edited, not run' : 'in progress';
     /* `total` is deliberately not in a learn verdict - learn.js keeps it as that page's
        own business - so this cannot say "2 of 3" for a quiz and does not pretend to. */
     if (v.state === 'none') return 'no checks reported';

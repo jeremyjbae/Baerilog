@@ -67,6 +67,34 @@
 
   /* ---- reading and writing the editor --------------------------------- */
 
+  /* THE CHECKS ARE NOT THE READER'S WORK. On a page whose Testbench Editor is READ-ONLY -
+     every practice page, see practice.js - a restore takes only the DESIGN half of the
+     stored document and keeps the testbench the page seeded. Two reasons, and the second
+     is why this is a repair rather than a tidy-up:
+
+       - a card nobody can type in cannot have been edited, so a stored copy of it carries
+         no information about what the reader did; and
+       - a record saved while that card was momentarily EMPTY stores a document with a
+         marker and nothing after it. One browser's execCommand really did produce that
+         (see setTextIn's own note), and once such a record exists - locally or on the
+         server - restoring it blanks the card on every single load and pushes the blank
+         back, so the page can never heal itself from its own seed. Grafting the stored
+         design onto the page's own testbench makes an old bad record harmless.
+
+     The marker is matched here rather than imported because app.js keeps it in a local
+     const; it is the same line the two editors split on. A stored document with no marker
+     at all - anything saved before the split - is a design half already, which is exactly
+     what the fallback returns. */
+  var TB_MARKER = /^[ \t]*\/\/[ \t]*=+[ \t]*TESTBENCH[ \t]*=+[ \t]*$/m;
+  function designHalfOf(text) {
+    var m = TB_MARKER.exec(text || '');
+    return m ? text.slice(0, m.index) : (text || '');
+  }
+  function keepsItsOwnTestbench() {
+    var tb = document.getElementById('tbInput');
+    return !!(tb && tb.readOnly);
+  }
+
   /* setEditorText exists in the simulator and therefore on the twenty practice
      pages, and it matters: it writes through document.execCommand('insertText')
      so the textarea's NATIVE UNDO STACK SURVIVES. Assigning .value wipes it, and
@@ -76,6 +104,11 @@
      .value directly throughout, so there this is no worse than what they
      already do to themselves. */
   function setText(text) {
+    if (keepsItsOwnTestbench()) {
+      var mine = getText();                    // the document as this page has it, checks included
+      var m = TB_MARKER.exec(mine || '');
+      if (m) text = designHalfOf(text) + mine.slice(m.index);
+    }
     /* loadFullSource splits a whole document across the two editors AND resets the
        module browser, which is what a restore has to do: writing setEditorText
        alone puts the whole file in the DESIGN editor, leaving a page that claims
@@ -236,12 +269,60 @@
       if (gateBtn) gateBtn.addEventListener('click', record);
     }
 
-    /* Reset un-runs the page - app.js drops the result, empties the waveform and puts
-       the "Click Run to simulate…" line back - so the stored verdict has to go with it,
-       or the hub goes on reporting a result this page no longer shows. The row does not:
-       it still holds the learner's source, and clearing the verdict alone is what leaves
-       the badge reading `in progress`, which is the true state of a page that has been
-       edited but not run.
+    /* GET STARTED IS THE MARK. Pressing it is the first unambiguous "I am working on this"
+       a page gets - it happens before any keystroke and any Run - and the hub already has a
+       state for that: no record means no badge, and a record with no verdict reads
+       `in progress` (practice.html's progressBadge). So this CREATES the row and writes
+       nothing else. It is also what stops the exercise sheet greeting a returning reader,
+       since shell.js opens that sheet only when this row is absent - one fact, read by two
+       surfaces, rather than a badge rule and a seen-it flag that can disagree.
+
+       ONLY IF THERE IS NOTHING THERE, and both halves of that guard earn their line:
+         - the Exercise button re-opens this sheet, so Get Started is pressed again on a
+           page that may already be solved. Unguarded, `verdict: null` would go OVER a real
+           verdict and the hub would read `in progress` while the pill on that very page
+           says all 5 checks passing - the pill/badge disagreement the Reset path below was
+           written to prevent; and
+         - `save` restamps updated_at, so merely re-reading the brief would jump the
+           exercise to the top of the dashboard's newest-first In Progress list.
+
+       NULL rather than a 'none' state, for the reason the Clear handler below records:
+       'none' is what a real run of cpu-16bit stores, its testbench printing nothing by
+       design, so writing it here would make "begun" indistinguishable from "ran silently".
+
+       AND NO `source`, unlike Clear below - which is not an omission. A record whose source
+       is undefined has `source === synced`, so pull() sees no local edit and ADOPTS the
+       remote row, which is what a second machine must do. Storing the pristine starter here
+       would make it a local edit, and the first Get Started on a second machine would raise
+       a conflict dialog over work nobody had touched. */
+    var startBtn = document.getElementById('exStartBtn');
+    if (startBtn) {
+      startBtn.addEventListener('click', function () {
+        if (window.CLOUD.load(app, item)) return;
+        window.CLOUD.save(app, item, { verdict: null });
+      });
+    }
+
+    /* RESET FORGETS THE EXERCISE, which is a stronger thing than un-running it and is why
+       this is a delete rather than another save. The strip's Reset restores the starter and
+       re-opens the brief - it returns the page to what a first visit finds - so the hub
+       must stop badging it and the next load must show the brief again, and both of those
+       are read off whether this row exists. Clearing the verdict and keeping the row is
+       what `in progress` means, so it is the wrong answer here and the right one for Clear.
+
+       A HOOK, NOT A LISTENER ON `resetBtn`, and the ordering is the whole reason. doReset
+       clicks that hidden button FIRST and re-seeds the editor AFTER, and re-seeding fires
+       `input` - so a delete wired to the button would be undone by the save that follows it
+       microseconds later. practice.js calls this last, once the editor is already back to
+       the starter. Same idiom as LEARN_ON_QUIZ below, and one writer for one state. */
+    window.CLOUD_ON_RESET = function () { window.CLOUD.forget(app, item); };
+
+    /* The Console's Clear button. It silences the pill, so the badge that reads the same
+       verdict has to go quiet with it - a pill and a badge disagreeing is precisely the bug
+       this pair of handlers exists to prevent. Note Clear is NOT a Reset: the waveform, the
+       netlist and the learner's source all stay, so the ROW stays too and only the verdict
+       goes. That leaves the badge reading `in progress`, which is the true state of a page
+       that has been edited but not run - and is exactly what Reset above must NOT leave.
 
        NULL rather than a 'none' state, and the difference matters on exactly one page:
        'none' is what a real run of cpu-16bit stores (its testbench prints nothing by
@@ -250,18 +331,6 @@
        what lets null actually clear the field instead of falling back to the old value;
        pushNow sends `rec.verdict || null`, and a pull resolves on SOURCE, so a
        verdict-only change is neither dirty nor moved and no sync can resurrect it. */
-    var resetBtn = document.getElementById('resetBtn');
-    if (resetBtn) {
-      resetBtn.addEventListener('click', function () {
-        window.CLOUD.save(app, item, storesSource
-          ? { source: getText(), verdict: null } : { verdict: null });
-      });
-    }
-    /* The Console's Clear button, for the same reason and by the same rule: it silences the
-       pill, so the badge that reads the same verdict has to go quiet with it. A pill and a
-       badge disagreeing is precisely the bug the Reset handler above was written for. Note
-       Clear is NOT a Reset - the waveform and the netlist stay - but the stored verdict
-       speaks for the Console, and the Console is what was just discarded. */
     var clearBtn = document.getElementById('consoleClearBtn');
     if (clearBtn) {
       clearBtn.addEventListener('click', function () {

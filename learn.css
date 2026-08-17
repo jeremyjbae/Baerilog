@@ -26,6 +26,40 @@
    measured, not assumed. Without it a paragraph starts hard against the blurb under the crumb
    and the two read as one wrapped line. */
 .gh-sub + .learn-article { margin-top: 24px; }
+
+/* ---- THE HUB'S TWO TABLES ------------------------------------------------------------
+   The learn hub lists the run of circuits in one Box and the three history topics in a second
+   below it (see `history` in learn-manifest.js). Three rules, and all three are here rather than
+   in practice.css because only this hub has two: that file owns `.gh-box` and everything in its
+   header, and a practice hub that grew these classes would be carrying rules for a split it does
+   not have.
+
+   THE TITLE IS A HEADER ITEM, not a heading above the box, so it sits on the row that already
+   carries the filter labels and the count - which is what keeps a named table the same height as
+   the unnamed one it replaced. `--fg-default` against the header labels' `--fg-muted`, since the
+   name of the table outranks the name of a filter on it. */
+.gh-strand-title { font-weight: 600; color: var(--fg-default); white-space: nowrap; }
+/* The second table's header has no chips, so there is room for a line saying what it is - and it
+   needs saying, because "Evolution" alone does not tell a reader that nothing here is built. It
+   shrinks before the count does and disappears rather than wrapping the header onto two rows on a
+   phone, which is the one thing it must not cost. */
+.gh-strand-note {
+  color: var(--fg-muted);
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The gap between the two boxes. On the box rather than as a `+` rule, because the first table's
+   own margin is not this file's business and the second may be hidden - a `+` selector would then
+   leave the gap behind with nothing under it. */
+#hubHistoryBox { margin-top: 16px; }
+@media (max-width: 760px) {
+  /* The note is the first thing to go: on a narrow header the title and the count are the two
+     facts, and a truncated sentence between them reads as a rendering fault. */
+  .gh-strand-note { display: none; }
+}
 /* THE MEASURE IS ON THE TEXT, NOT ON THE BLOCK, and the difference is the whole of this
    rule. Capping `.learn-prose` capped its HEADINGS too, so an h2's bottom rule stopped at
    the measure and read as a line someone had cut short - with the cards below it running
@@ -170,6 +204,66 @@
    flex item refuses to shrink below its content otherwise, the same automatic-minimum trap `.card`
    carries a floor for. */
 .learn-fig-draw { flex: 1 1 auto; min-width: 0; }
+
+/* THE DRAWING'S OWN TOGGLES - the cells' mask artwork against the abstract, and the wires - in a row
+   above the picture rather than in the mask column beside it. Two kinds of control, so two places:
+   the column is the stack, top of the wafer downwards, and this is about what is drawn at all.
+   `.layout-btn` supplies the look, so this rule is only the row. */
+.learn-fig-views { display: flex; gap: 4px; margin-bottom: 4px; }
+
+/* THE MOORE CHART. Every colour is a token, and each series has ONE of them so the legend, the line
+   and the dots cannot say different things: the prediction is muted and dashed because it is a model
+   rather than a measurement, what shipped is the accent, and the node is amber on the right axis.
+   Nothing here is a literal colour - the canvas-renderer rule this repo states, applied to SVG. */
+.learn-widget-chart { padding: 0; }
+/* The scale toggle's row: the placement figures' own text-button row (`.learn-fig-views` supplies the
+   look), pushed to the right so it reads as a control ON the chart rather than a heading above it. It
+   is a SIBLING of the plot, not inside it, because toggling redraws the plot - see learn.js. */
+/* The row holds the plot's caption on the left and its control on the right, so `space-between` rather
+   than the `flex-end` this had when the button was alone in it. */
+.learn-chart-ctl { justify-content: space-between; align-items: center; margin-bottom: 2px; }
+.learn-chart-title { font-size: 13px; font-weight: 600; color: var(--fg-default); }
+.learn-chart-body { display: block; width: 100%; }
+.learn-chart { display: block; width: 100%; height: auto; }
+.learn-chart-grid { stroke: var(--border-muted); stroke-width: 1; }
+.learn-chart-axis { stroke: var(--border-default); stroke-width: 1; }
+.learn-chart-tick { fill: var(--fg-muted); font: 11px var(--font-mono); }
+.learn-chart-tick-node { fill: var(--attention-fg); }
+/* Dashed, and it is the one series that is not data. */
+/* `fill: none` is load-bearing now that this is a POLYLINE rather than a line: an unfilled polyline
+   defaults to a black fill, so the prediction would come out as a solid shape under its own dashes. */
+.learn-chart-pred { stroke: var(--fg-muted); stroke-width: 1.5; stroke-dasharray: 6 4; fill: none; }
+.learn-chart-real { stroke: var(--accent-fg); stroke-width: 2; fill: none; }
+.learn-chart-node { stroke: var(--attention-fg); stroke-width: 2; fill: none; }
+.learn-chart-dot { fill: var(--accent-fg); stroke: var(--canvas-default); stroke-width: 1; }
+.learn-chart-dot-node { fill: var(--attention-fg); }
+/* THE MARKED STEP is bigger AND ringed - two encodings of one bit, the rule the layer badges and the
+   Scoreboard's flags are both held to, so the mark survives a greyscale screenshot. */
+.learn-chart-dot.on { r: 6; stroke: var(--fg-default); stroke-width: 2; }
+.learn-chart-cursor { stroke: var(--fg-muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.learn-chart-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px;
+                      font: 11px var(--font-sans); color: var(--fg-muted); }
+.learn-chart-key { display: inline-flex; align-items: center; gap: 5px; }
+.learn-chart-key-pred, .learn-chart-key-real, .learn-chart-key-node {
+  width: 14px; height: 0; border-top-width: 2px; border-top-style: solid; display: inline-block;
+}
+.learn-chart-key-pred { border-top-color: var(--fg-muted); border-top-style: dashed; }
+.learn-chart-key-real { border-top-color: var(--accent-fg); }
+.learn-chart-key-node { border-top-color: var(--attention-fg); }
+/* AND THEY CARRY WORDS, where every other `.layout-btn` in this repo carries a 13px glyph: the shared
+   rule is a fixed 24 x 20 box built for an icon, so `Detail`, `Abstract` and `Routing` overflowed it
+   and printed across each other. Only the two properties that make a fixed box a text box are
+   overridden - the width and the padding - so the border, the radius, the colours and the `.active`
+   accent all still come from the shared control and cannot drift from it.
+   11px to match the layer badges beside them, and `line-height: 18px` for the reason `.btn` pins one:
+   it is what stops a label from resizing the row. */
+.learn-fig-views .layout-btn {
+  width: auto;
+  padding: 0 8px;
+  font: 11px var(--font-sans);
+  line-height: 18px;
+  letter-spacing: 0.02em;
+}
 
 /* A badge in the layer's own colour: the fill, the text on it and the border are all set inline by
    learn.js from what the drawer reports, because they come from the artwork rather than from here.
@@ -431,71 +525,13 @@ span.learn-sec-mode { background: var(--accent-subtle); }
   width: 100%;
   height: auto;
 }
-/* ---- THE MATERIALS: silicon and oxide, which are not masks ----
-   These four are the only LITERAL colours in this file, and the reason is the one the emulator's TV
-   palette gives for not being themed: they are the product rather than chrome. Silicon is tan and
-   oxide is pale blue in both colour modes, because a wafer does not change colour when the reader's
-   OS does - the same statement the `--panel-*` set makes about editors and consoles. They are also
-   not in the legend, having no mask to tick, which is exactly why each one is LABELLED in the
-   drawing instead.
-
-   The mask colours are untouched: those come from the cell artwork through the drawer, so the
-   section, the layout and the badges beside them stay one palette. */
-.pnr-sec-sub { fill: #d4a574; stroke: #a87f52; stroke-width: 250; }
-.pnr-sec-fieldox { fill: #8fbfd4; }
 /* `.pnr-mat-*` carry no styling: they exist ONLY so the process animation can hide a material it has
    not made yet, the way a layer class lets it hide a mask. The look comes from the `.pnr-sec-*` class
    on the same element, so these two concerns stay apart - one says what a shape IS, the other what
    turns it off. */
 
-/* OPAQUE, and painted first of the above-surface shapes so the poly and the metal sit on it. It was
-   55% translucent, which looked right in light mode and came out grey-blue in dark: a translucent
-   material composites against the page behind it, and the page moves with the reader's OS. */
-.pnr-sec-ild { fill: #a8d5e5; }
-/* The sliver under a gate, the one shape whose whole job is to say the gate does not touch the
-   silicon. Darker than the oxide above it so it reads at 6px. */
-.pnr-sec-gox { fill: #5a8fa8; }
-.pnr-sec-surface { stroke: #8a6642; stroke-width: 250; }
-/* A mask shape. Rounded and lightly outlined, as the reference draws them - the outline is the
-   figure's own surface, so a shape reads as sitting on the page in either mode. */
-.pnr-sec-shape { fill-opacity: 0.9; stroke: var(--canvas-subtle); stroke-width: 150; }
-/* TEXT ON A MATERIAL IS A FIXED DARK, chosen against the fill rather than taken from the page -
-   this repo's rule wherever text lands on a coloured surface, and here the surface is fixed in both
-   modes so the text has to be too. */
-.pnr-sec-mat-tag {
-  fill: #5a4030;
-  font-family: var(--font-sans);
-  font-size: 2400px;
-  text-anchor: middle;
-}
-/* A tag on a mask shape (N+, P+, POLY, M1) carries that mask's class, so it goes when the layer does.
-   NO OUTLINE and no fill here: the colour is set per element by the drawer, measured against the fill
-   the tag sits on. A halo was how one white label was made to work on seven different colours, and it
-   reads as a sticker stuck to the shape rather than as a label on it. */
-.pnr-sec-tag {
-  font-family: var(--font-sans);
-  font-size: 2200px;
-  text-anchor: middle;
-}
 
-.pnr-sec-text {
-  fill: var(--fg-muted);
-  font-family: var(--font-sans);
-  font-size: 2600px;      /* user units: the section's viewBox is in milli-lambda like the layout's */
-  text-anchor: middle;
-}
 
-/* THE CUT MARKER on the layout. It needs a rule at all because an SVG line with no stroke is
-   INVISIBLE while still having a bounding box - so it measured 220px tall in a browser and drew
-   nothing, which is the one failure mode a DOM check cannot see. Dashed and in the accent colour,
-   the same treatment the abutment box and the waveform's cursor get: it is an annotation on the
-   artwork rather than part of it. The width is in the placement's own milli-lambda units, so it
-   scales with the drawing like every other shape in that SVG. */
-.pnr-cut-line {
-  stroke: var(--accent-fg);
-  stroke-width: 600;
-  stroke-dasharray: 2000 1400;
-}
 /* The layout only advertises the drag while there is a section for it to move, which is also the
    only time the handler does anything - a resize cursor over a figure that cannot be dragged is a
    control that does not exist. */
@@ -620,11 +656,16 @@ span.learn-sec-mode { background: var(--accent-subtle); }
    the illustration rather than at its top, and 1fr/1fr because the two halves are peers - the
    picture is the argument as much as the sentence is. It stacks at 760px, which is the one
    breakpoint every app here uses. */
+/* TOP-ALIGNED, not centred. Two columns of prose are never the same height - the Kilby and Noyce
+   paragraphs are 92px and 115px - and centring them against each other splits the difference, so the
+   shorter column starts about 12px LOWER than the taller one. Measured: the two illustration panels are
+   the same 198px, their tops were at 626 and 614, and nothing about the drawings was wrong. Aligning to
+   the start puts both panels on one line, which is what a side-by-side comparison is for. */
 .learn-split {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 20px 24px;
-  align-items: center;
+  align-items: start;
   margin: 0 0 18px;
 }
 /* `min-width: 0` for the automatic-minimum trap `.card` carries a floor for: `1fr` is
@@ -633,8 +674,8 @@ span.learn-sec-mode { background: var(--accent-subtle); }
    the symptom would be the header bar reading narrower than the document. Measured here at 500px
    with nothing overflowing; the floor is what keeps that true of a narrower one. */
 .learn-split > * { min-width: 0; }
-/* The last paragraph in a column keeps no trailing gap: with the columns centred against each
-   other, a 12px margin under the final line reads as the column sitting high. */
+/* The last paragraph in a column keeps no trailing gap: a 12px margin under the final line is space
+   the column does not need, and with the columns top-aligned it shows up as an uneven bottom edge. */
 .learn-split > div > p:last-child,
 .learn-split > div > .truth-wrap:last-child { margin-bottom: 0; }
 
@@ -671,6 +712,133 @@ span.learn-sec-mode { background: var(--accent-subtle); }
    site's existing "this one is marked" idiom (`.layout-btn.active`, `.hierarchy-node-row.active`,
    the hub's chips) rather than a colour of its own, and the radius is square on the barred
    edge so the bar reads as an edge and not as a stripe inside a box. */
+/* ---- a stepper widget in the prose ----
+   The frame only: the DRAWING inside it is a `.learn-illus`, the controls under it are the layout
+   player's own `.learn-fig-ctl` row, and both are reused rather than restyled - which is what makes a
+   widget look like the rest of the page instead of like the page it was ported from. So these four
+   rules are the head, the body and the two things the shared `.learn-illus` gets wrong when it is
+   holding a step's picture rather than a standalone illustration: it must not stretch to 180px for a
+   small chip drawing, and it must not centre a paragraph. */
+.learn-widget { margin: 0 0 24px; }
+.learn-widget-head {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg-default);
+  margin-bottom: 8px;
+}
+/* Shorter than a standalone illustration and never taller than its drawing: a step's picture is one
+   chip, and a 180px floor would leave a band of empty canvas under every one of them. */
+/* A ROW, not a column, because a step may put a drawing and one or more photographs beside each other
+   - and `flex-wrap` is what makes that a stack on a phone with no second breakpoint. `align-items:
+   flex-start` so a short drawing sits level with the top of a tall photograph rather than floating in
+   the middle of it. */
+.learn-widget-fig {
+  min-height: 0;
+  padding: 12px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 14px;
+}
+.learn-widget-drawing { flex: 0 0 auto; }
+/* SHRINKABLE, not fixed. `flex: 0 0 auto` is what made a row of four items throw the last one onto a
+   second line for the sake of five pixels: measured, a drawing and three photographs came to 1227px of
+   items and gaps against a 1222px content box, and none of them was allowed to give. With `0 1 auto`
+   and `min-width: 0` they lose a few pixels each instead, and the wrap is left for a phone, where it is
+   what you want. */
+.learn-widget-shot { flex: 0 1 auto; min-width: 0; margin: 0; max-width: 100%; }
+/* Capped in BOTH axes. The height cap is what lines several pictures up along their tops, and it used
+   to be the only one - so a wide photograph took 337px of the row while a tall one took 154, and
+   whether everything fitted depended on the aspect ratios of whatever pictures a step happened to
+   carry. The width cap makes a step's row predictable: four items at 260 plus a 330 drawing and three
+   gaps is 1042 of 1222, so a step can hold three photographs and still be one row.
+   150px rather than 190 for the same reason a reader gave: at 190 these were simply too big beside
+   156px of drawing. `--radius` and a border because a photograph on a panel wants an edge, the way
+   every other box on this site has one. */
+.learn-widget-shot img {
+  display: block;
+  max-height: 150px;
+  max-width: min(260px, 100%);
+  height: auto;
+  width: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  background: var(--canvas-default);
+}
+/* WHOSE PICTURE IT IS, under it. None of these is this repo's, so the credit is part of the figure
+   rather than a line at the bottom of the page nobody reads next to the thing it is about. */
+.learn-widget-shot figcaption {
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-align: center;
+  margin-top: 4px;
+  /* Never wider than the picture's own cap, or a long credit sets the width of the figure and the row
+     stops fitting for a reason that is not the picture. */
+  max-width: 260px;
+}
+/* HALF AGAIN AS BIG as the drawings are authored. Every widget SVG here is written 220 units wide - the
+   heights differ, because a chip package and a scale bar are different shapes - so scaling by WIDTH is
+   what grows each one 1.5x while keeping its own aspect. A fixed HEIGHT would not: at 156px the short
+   scale bars would come out 490px wide. `max-width` from `.learn-illus svg` still applies, so a narrow
+   column shrinks it rather than overflowing. */
+.learn-widget-fig svg { width: 330px; }
+.learn-widget-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--fg-default);
+  margin-top: 10px;
+}
+.learn-widget-body b { font-weight: 600; }
+/* THE LABELLED FIELDS. `auto-fit` with a floor rather than a fixed column count, so three tiles sit in
+   a row on a desktop and stack on a phone without a second breakpoint - and the floor is what stops a
+   long value from squeezing its neighbours into two characters. Same surface and border as
+   `.learn-fig-stats`, which is this site's existing small-number box, so a tile reads as one of those
+   rather than as a new kind of panel. */
+.learn-widget-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+/* `--canvas-subtle`, where `.learn-fig-stats` uses `--canvas-default` - and the difference is what
+   each one SITS ON rather than a second opinion about the same box. That line is inside a figure, whose
+   frame is already subtle, so default reads as inset there. These tiles sit on the page, which IS
+   default, so default would leave them as border-only outlines with no surface at all: measured in dark
+   mode, tile #0d1117 on page #0d1117. Subtle gives them the raised box the labels want. */
+.learn-widget-stat {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  background: var(--canvas-subtle);
+  padding: 8px 10px;
+  min-width: 0;
+}
+/* The label is the quiet half and the value is the loud one, which is the whole point of a tile: the
+   words say what the number is before the number has to be guessed at. */
+.learn-widget-stat-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin-bottom: 3px;
+}
+.learn-widget-stat-value {
+  font: 14px/1.35 var(--font-mono);
+  color: var(--fg-default);
+  overflow-wrap: anywhere;
+}
+/* The axis under a timeline's bar: the two ends of the range, so `4 / 7` has something to be four of. */
+.learn-widget-ends {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  margin-top: 4px;
+}
+/* The muted half of a step: the numbers it is really there to show, one per line so two steps can be
+   compared by eye down the page rather than across a sentence. */
+.learn-widget-body .learn-widget-facts { color: var(--fg-muted); margin-top: 6px; }
+
 .learn-note {
   border-left: 3px solid var(--accent-fg);
   background: var(--accent-subtle);

@@ -201,6 +201,47 @@ window.PRACTICE_PNR_API = (function () {
     out.ioNets = rt ? rt.io.length : 0;
     out.unrouted = rt ? rt.unrouted.length : 0;
     out.svg = svg;
+
+    /* TWO LOOKS AT ONE PLACEMENT. The buttons are the CALLER'S - learn.js owns them, as it already
+       owns the cross section's mask column - and what this file owns is what it drew, so the two
+       switches are closures over the plan and the <svg> it made rather than a second entry point
+       that would have to rebuild both and could disagree with this one.
+
+       `setView` RE-RENDERS ON THE SAME PLAN, which is the whole reason it is safe: the placement and
+       the routing are untouched, so the viewBox, the box's size, the cell count and every micron in
+       the caption stay exactly as they were and only the cells' own artwork is swapped for the
+       abstract underneath it. Rebuilding the plan would re-run the placer and the router - both
+       deterministic, so it could not move, but it would be a second opportunity for it to.
+
+       `setRouting` is a CLASS rather than a redraw, because placementSvg already puts every wire in
+       one `.pnr-routing` group: hiding them is one rule in pnr.css, the cells are not re-drawn, and
+       the wires come back in the state they left. */
+    out.setView = function (name) {
+      var next = name || DEFAULT_VIEW;
+      var v = P.placementSvg(built.plan, next);
+      if (!v) return out.view;
+      svg.innerHTML = v.markup;
+      out.view = next;
+      /* Re-read, because the two views do not draw the same masks: the abstract has `CALU1` in it
+         and none of the diffusions, so a legend derived from this would otherwise describe the
+         picture the reader is no longer looking at. */
+      out.layers = layersIn(v.markup);
+      return out.view;
+    };
+    out.setRouting = function (on) {
+      inner.classList.toggle('pnr-no-routing', !on);
+      out.routingShown = !!on;
+      return out.routingShown;
+    };
+    /* HOW MANY WIRE SHAPES THERE ARE, so a caller can tell whether a Routing button would do
+       anything at all: a one-cell figure has nothing to connect, and a control that cannot change
+       what is on screen is the dead control this site keeps designing against. */
+    out.routeShapes = rt ? rt.shapes.length : 0;
+    /* And the opening state, from the topic: `routing: false` for a figure that wants the bare
+       placement first. Absent means the wires are shown, which is what every figure does today, so
+       no topic file has to change and no page's picture moves. */
+    if (opts.routing === false) out.setRouting(false);
+    else out.routingShown = true;
     return out;
   }
 
@@ -314,6 +355,38 @@ window.PRACTICE_PNR_API = (function () {
     return out;
   }
 
+  /* WHAT A LAYER CLASS IS CALLED and where it sits in the stack, in one place each: `layersIn` reads
+     them off a drawing's markup and `legendOf` off the shapes a section drew, and a palette built from
+     one that disagreed with the other about METAL1's name or its position would be two legends for one
+     wafer. The `_ALL` suffix is the .ap exporter's, and `ALU1` is what the artwork calls metal 1 where
+     `METAL1` is what a reader needs. */
+  function labelOfClass(c) {
+    var raw = c.replace(/^layer-/, '').replace(/_ALL$/, '');
+    return LAYER_NAME[raw] || raw;
+  }
+  function rankOfClass(c) {
+    var i = LAYER_STACK.indexOf(labelOfClass(c));
+    return i < 0 ? LAYER_STACK.length : i;
+  }
+  /* ONE PILL'S WORTH OF FACTS about a layer. `colour` is what the SHAPES are painted in - the
+     artwork's own - and `onPage` is what a control beside them may be painted in. Two fields because
+     they answer two questions, and a badge that used the first was invisible in dark mode. */
+  function metaOfClass(c, label) {
+    var cols = coloursOf();
+    return { cls: c, label: label || labelOfClass(c), colour: cols[c] || null,
+             onPage: pageColour(cols[c] || null), textOn: readableOn(cols[c]) };
+  }
+  /* THE LEGEND FOR A SECTION, from the classes it actually put on elements rather than from the masks
+     it was asked for - the same reported-not-recomputed rule the regions and the zones follow. It is
+     what lets a palette exist before anything is placed: the ideal pair has no layout beside it, so
+     there is no `layersIn` result to build one from, and a card with no palette would be a card whose
+     mask buttons appear only once a design has been placed. */
+  function legendOf(classes) {
+    return (classes || []).slice().sort(function (a, b) {
+      return rankOfClass(a) - rankOfClass(b) || (a < b ? -1 : 1);
+    }).map(function (c) { return metaOfClass(c); });
+  }
+
   function layersIn(markup) {
     var seen = {}, order = [];
     var re = /class="([^"]*)"/g, m;
@@ -326,31 +399,19 @@ window.PRACTICE_PNR_API = (function () {
     }
     var label = {}, taken = {};
     order.forEach(function (c) {
-      var raw = c.replace(/^layer-/, '').replace(/_ALL$/, '');
-      label[c] = LAYER_NAME[raw] || raw;
+      label[c] = labelOfClass(c);
       taken[label[c]] = (taken[label[c]] || 0) + 1;
     });
-    var cols = coloursOf();
     /* Sorted on `label[c]` - the mask name BEFORE the ambiguity fallback below - so two classes that
        collapse to one mask still sit together in the stack even though their buttons end up carrying
        their .ap names. The class is the last tie-break, so the row is stable rather than depending on
        the order the regex happened to meet the shapes in. */
-    var rank = function (c) {
-      var i = LAYER_STACK.indexOf(label[c]);
-      return i < 0 ? LAYER_STACK.length : i;
-    };
+    var rank = rankOfClass;
     return order.slice().sort(function (a, b) {
       return rank(a) - rank(b)
              || (label[a] < label[b] ? -1 : label[a] > label[b] ? 1 : (a < b ? -1 : 1));
     }).map(function (c) {
-      return { cls: c,
-               label: taken[label[c]] > 1 ? c.replace(/^layer-/, '') : label[c],
-               /* `colour` is what the SHAPES are painted in - the artwork's own - and `onPage` is what
-                  a control beside them may be painted in. Two fields because they answer two
-                  questions, and a badge that used the first was invisible in dark mode. */
-               colour: cols[c] || null,
-               onPage: pageColour(cols[c] || null),
-               textOn: readableOn(cols[c]) };
+      return metaOfClass(c, taken[label[c]] > 1 ? c.replace(/^layer-/, '') : label[c]);
     });
   }
 
@@ -468,18 +529,6 @@ window.PRACTICE_PNR_API = (function () {
     return out;
   }
 
-  /* The cell under a cut, and the cut in that cell's own coordinates. A vertical cut crosses
-     exactly one cell of a row, so a section is always of ONE cell - which is why this returns the
-     cell rather than trying to compose a stack out of two. */
-  function cellAtCut(res, cutX) {
-    var placed = (res && res.placed) || [];
-    for (var i = 0; i < placed.length; i++) {
-      var p = placed[i];
-      if (cutX >= p.x && cutX <= p.x + p.w) return p;
-    }
-    return null;
-  }
-
   var geomCache = {};
   function geomOf(type) {
     if (geomCache[type]) return geomCache[type];
@@ -524,59 +573,108 @@ window.PRACTICE_PNR_API = (function () {
     return classForMask[mask] || 'layer-' + mask;
   }
 
-  /* What the cut crosses, per mask: the intervals along the cell's HEIGHT. This is the whole of the
-     derivation - everything the section draws is one of these intervals given a depth. */
-  function sectionAt(res, cutX) {
-    var cell = cellAtCut(res, cutX);
-    if (!cell) return null;
-    var local = cutX - cell.x;
-    var geom = geomOf(cell.type), by = {};
-    Object.keys(geom).forEach(function (cls) {
-      var mask = maskOf(cls);
-      var iv = [];
-      geom[cls].forEach(function (r) {
-        if (r[0] <= local && local <= r[2]) iv.push([r[1], r[3]]);
-      });
-      if (!iv.length) return;
-      iv.sort(function (a, b) { return a[0] - b[0]; });
-      by[mask] = { cls: cls, intervals: iv };
+  /* What the cut crosses, per mask: the intervals along the WHOLE PLACEMENT's height. This is the
+     whole of the derivation - everything the section draws is one of these intervals given a depth.
+
+     THE CUT CROSSES EVERY ROW, not the first one. A vertical line through a two-row placement passes
+     through a cell in each, and the section is the wafer along that line: one substrate, with each
+     row's own well, diffusions, poly and metal in its own stretch of it. taking the first hit and stopping
+     is what made this a picture of one cell, and it is what a reader comparing the drawing
+     with the layout beside it would have found disagreeing - the layout shows three rows of cells and
+     the section showed the top one.
+
+     THE AXIS IS ABSOLUTE y, MEASURED UP FROM THE PLACEMENT'S BOTTOM, and a single-row placement is
+     therefore unchanged by construction: `TOTAL - y` with TOTAL = one row is exactly the
+     `h - (y - cell.y)` the one-cell version used, so every learn figure draws what it drew.
+
+     AND THE MIRROR IS APPLIED TO THE CELL rather than to the wires, which is where it belongs. Every
+     odd row is flipped so its rails abut the row below, so its artwork's own y-up runs the other way;
+     the wires are in placement coordinates and need no flip at all. That branch was unreachable while
+     a cut could only land on the first row - the file said so, and said it would be needed the day a
+     cut could choose its row. This is that day. */
+  function cellsAtCut(res, cutX) {
+    var hits = [];
+    ((res && res.placed) || []).forEach(function (p) {
+      if (cutX >= p.x && cutX <= p.x + p.w) hits.push(p);
     });
-    /* AND THE WIRES OVER IT, which are the PLACEMENT's shapes rather than the cell's - so they are
-       absolute where everything above is cell-local, and they have to be brought into the same frame
-       before their intervals can join the others.
-
-       THE FRAME IS y-UP FROM THE CELL'S BOTTOM, because that is what `geomOf` reads out of the view
-       body (every one of which is drawn through `translate(0,h) scale(1,-1)`). So an upright cell maps
-       an absolute y to `h - (y - cell.y)` and a MIRRORED one to `y - cell.y` - the same pair of rules
-       the router itself uses to find an access point, and wrong in the same invisible way if they
-       disagree: the section would draw a wire crossing a cell it does not cross.
-
-       THE MIRRORED BRANCH IS UNREACHABLE TODAY, and that is worth stating rather than leaving to be
-       discovered: `cellAtCut` resolves a cut by x alone, so every cut lands on the FIRST row's cell -
-       which is never the flipped one. A mutant that drops `cell.flip` from these two lines therefore
-       survives the whole suite, and it is listed as a known gap instead of being papered over with a
-       check that cannot reach it. The branch stays because it is right, and because the day a cut can
-       choose its row is the day it is needed.
+    return hits;
+  }
+  /* HOW FAR THE CUT RUNS: the placement's own height, from the cells rather than from `res.height`,
+     which is a PIXEL height for the box the layout is drawn in. Mixing the two would scale every
+     interval by the zoom. */
+  function cutSpan(res) {
+    var t = 0;
+    ((res && res.placed) || []).forEach(function (p) { t = Math.max(t, p.y + p.h); });
+    return t;
+  }
+  function sectionAt(res, cutX) {
+    var hits = cellsAtCut(res, cutX);
+    if (!hits.length) return null;
+    var TOTAL = cutSpan(res);
+    var by = {}, rows = [];
+    /* Bottom of the placement first, so the drawing reads in the same direction as the axis and a
+       report of the rows is in the order they appear on it. */
+    hits.slice().sort(function (a, b) { return (b.y + b.h) - (a.y + a.h); }).forEach(function (cell) {
+      var base = TOTAL - (cell.y + cell.h);       // where this row's own frame starts along the cut
+      var local = cutX - cell.x;
+      var geom = geomOf(cell.type);
+      rows.push({ type: cell.type, name: cell.name, base: base, h: cell.h,
+                  flip: !!cell.flip, local: local, cell: cell });
+      Object.keys(geom).forEach(function (cls) {
+        var mask = maskOf(cls);
+        geom[cls].forEach(function (r) {
+          if (r[0] > local || local > r[2]) return;
+          var a = cell.flip ? (base + cell.h - r[3]) : (base + r[1]);
+          var b = cell.flip ? (base + cell.h - r[1]) : (base + r[3]);
+          if (!by[mask]) by[mask] = { cls: cls, intervals: [] };
+          by[mask].intervals.push([Math.min(a, b), Math.max(a, b)]);
+        });
+      });
+    });
+    /* AND THE WIRES OVER IT, which are the PLACEMENT's shapes rather than any cell's - so they are
+       already in the frame this axis is built from and convert with one subtraction. A wire that
+       passes over a row this cut has no cell in is still on the cut and is still drawn: that is the
+       whole point of a section across the rows, since METAL2 and METAL3 run between them.
 
        A cut is a vertical line, so a METAL2 column AT that x reads as a tall band and a METAL3 span
-       CROSSING it reads as a 2-lambda segment at its own track. That asymmetry is the picture being
+       CROSSING it reads as a short segment at its own track. That asymmetry is the picture being
        honest about which layer runs which way. */
     var routes = (res && res.routes && res.routes.shapes) || [];
     routes.forEach(function (r) {
       if (cutX < r.x || cutX > r.x + r.w) return;
       var mask = ROUTE_MASK[r.layer];
       if (!mask) return;
-      var a = cell.flip ? (r.y - cell.y) : (cell.h - (r.y + r.h - cell.y));
-      var b = cell.flip ? (r.y + r.h - cell.y) : (cell.h - (r.y - cell.y));
-      var lo = Math.max(0, Math.min(a, b)), hi = Math.min(cell.h, Math.max(a, b));
-      if (hi <= lo) return;                       // the wire passes over another row, not this cell
+      var lo = Math.max(0, TOTAL - (r.y + r.h)), hi = Math.min(TOTAL, TOTAL - r.y);
+      if (hi <= lo) return;                       // entirely off the placement
       if (!by[mask]) by[mask] = { cls: 'layer-' + r.layer + '_ALL', intervals: [] };
       by[mask].intervals.push([lo, hi]);
     });
     Object.keys(by).forEach(function (k) {
       by[k].intervals.sort(function (u, v) { return u[0] - v[0]; });
     });
-    return { cell: cell, cut: cutX, local: local, height: cell.h, masks: by };
+    /* `cell` is the bottom-most row's, kept because the label and every existing caller ask a section
+       what cell it is of; `cells` is the honest answer once a cut can cross several. */
+    /* HOW MANY METAL LEVELS THE WAFER HAS, which is a property of the DESIGN and not of this x. A
+       routed placement has been through the whole back end of the line, so the dielectric and the
+       passivation are there at every point of it - including where this cut crosses no wire at all.
+       Without this the drawing stopped at whatever the cut happened to touch, so a section through a
+       gap between two METAL2 columns showed the transistors, one oxide, and then empty page where the
+       rest of the chip is: the reader saw a different chip at every x.
+
+       `routes.shapes` rather than `routes` being present, because a design whose every net is an I/O
+       pin routes nothing - and a one-cell topic figure is exactly that, so its stack still ends at
+       METAL1 and its ten steps are unchanged. */
+    var wired = !!(res && res.routes && res.routes.shapes && res.routes.shapes.length);
+    var top = wired ? 'METAL3' : null;
+    if (!top) {
+      ['METAL1', 'METAL2', 'METAL3'].forEach(function (m) { if (by[m]) top = m; });
+    }
+    /* `local` is the cut's x INSIDE the cell it is in, and it is kept because a caller asks a section
+       where in the cell it was taken - dropping it silently made that read `undefined` while every
+       interval was still right, which is the shape of regression a geometry check cannot see. With
+       several rows it is the bottom-most row's, the same cell `cell` names. */
+    return { cell: rows[0].cell, cells: rows, cut: cutX, local: rows[0].local,
+             height: TOTAL, masks: by, stackTop: top };
   }
 
   function crosses(sec, mask) { return !!(sec && sec.masks[mask]); }
@@ -682,15 +780,25 @@ window.PRACTICE_PNR_API = (function () {
     { key: 'ILD', materials: ['ild'] },
     { mask: 'CONTACT' },
     { mask: 'METAL1' },
-    /* AND THE ROUTING, which is the same three steps over again one level up: cut holes in the oxide,
-       fill them, pattern the metal. They are here because `applyStep` reveals a layer only if some
-       step names it - so a mask with no step is hidden for the WHOLE animation, which is how METAL2
-       and METAL3 would have disappeared the moment a reader pressed play. Each appears only on a cut
-       that has it, like every other step. */
+    /* AND THE ROUTING, WHICH IS THE SAME THREE STEPS OVER AGAIN, ONCE PER LEVEL: cover the metal in
+       oxide, cut holes through it, fill them and pattern the next metal. That is why each via now has
+       a dielectric step in front of it - `ILD2` before VIA1 and `ILD3` before VIA2 - exactly as `ILD`
+       sits in front of CONTACT, and for the reason recorded there: the oxide is thick and unbroken
+       before anything is etched, so depositing it and etching it are one MASK and two steps on the
+       wafer. `ILD4` is the passivation over the top metal, which is where a real line ends.
+
+       They are here because `applyStep` reveals a layer only if some step names it - so a mask with no
+       step is hidden for the WHOLE animation, which is how METAL2 and METAL3 would have disappeared
+       the moment a reader pressed play. Each appears only on a cut that has it, like every other step:
+       a single-metal figure has no VIA1 above its METAL1, so it grows none of these and its ten steps
+       are unchanged. */
+    { key: 'ILD2', materials: ['ild2'] },
     { mask: 'VIA1' },
     { mask: 'METAL2' },
+    { key: 'ILD3', materials: ['ild3'] },
     { mask: 'VIA2' },
-    { mask: 'METAL3' }
+    { mask: 'METAL3' },
+    { key: 'ILD4', materials: ['ild4'] }
   ];
   /* Every mask the ideal pair draws, so the panel's default view gets the full eight steps the
      reference has - derived from the drawing rather than listed twice. */
@@ -780,7 +888,14 @@ window.PRACTICE_PNR_API = (function () {
      the gate oxides on top of the bare substrate, because a shape with no class is a shape nothing
      can turn off. Deliberately NOT the layer classes: the oxide is not the CONTACT mask, so
      unticking that badge must take the plugs away and leave the dielectric they sit in. */
-  var MATERIAL_CLASS = { fieldox: 'pnr-mat-fieldox', gateox: 'pnr-mat-gateox', ild: 'pnr-mat-ild' };
+  var MATERIAL_CLASS = { fieldox: 'pnr-mat-fieldox', gateox: 'pnr-mat-gateox', ild: 'pnr-mat-ild',
+                         /* ONE CLASS PER DIELECTRIC LEVEL, because each is made at its own step and a
+                            material is hidden by the class its step names. One shared `pnr-mat-ild`
+                            for all four would put the whole back end of the line on screen the moment
+                            the contacts' oxide arrived - which is what "a shape nothing can hide is a
+                            shape that is always there" means here. They all take the same FILL (see
+                            CLS_FOR_KIND), so this costs no CSS: oxide is oxide. */
+                         ild2: 'pnr-mat-ild2', ild3: 'pnr-mat-ild3', ild4: 'pnr-mat-ild4' };
 
   /* ---- WHAT EACH STEP OF THE PROCESS IS, in the words a reader needs ----
    * One entry per MASK rather than per step, because the steps are derived from the masks a drawing
@@ -828,6 +943,20 @@ window.PRACTICE_PNR_API = (function () {
           desc: 'A thick oxide is deposited over everything. It is what electrically isolates the '
               + 'metal interconnect stacked above from the transistors below, and from itself where '
               + 'one wire crosses another.' },
+    /* THE SAME STEP, ONE STOREY UP, THREE TIMES - and each has a title of its own rather than four
+       lines all reading `Interlayer dielectric (ILD)`. A reader stepping through would otherwise see
+       the same words at steps 8, 11, 14 and 17 with no way to tell which level they were on, and the
+       first one's title is left byte-identical because it is the one every check names. */
+    'ILD2': { title: 'Interlayer dielectric · over METAL1',
+          desc: 'Cover the first metal in oxide. The wires are buried in it, and the holes for '
+              + 'whatever level comes next are cut through it - which is why it is deposited before '
+              + 'VIA1 rather than with it.' },
+    'ILD3': { title: 'Interlayer dielectric · over METAL2',
+          desc: 'Oxide again over the second metal, ready for the vias to the level above. The stack '
+              + 'is the same three steps repeated: bury, cut, fill and pattern.' },
+    'ILD4': { title: 'Passivation',
+          desc: 'A last dielectric over the top metal, sealing the finished wafer. Only the bond pads '
+              + 'are opened through it, which is where the chip meets its package.' },
     'CONTACT': { title: 'Contact etch',
           desc: 'Blanket the wafer in dielectric, then etch holes through it and fill them with '
               + 'metal. One mask, but a layout tool splits it by what it lands on - diffusion, poly, '
@@ -928,9 +1057,69 @@ window.PRACTICE_PNR_API = (function () {
        It is a material like the substrate and the field oxide: its own step shows it, and no badge owns
        it because there is no mask to tick. It is still only drawn where there is something above the
        surface for it to hold. */
-    if (sec.masks.CONTACT || sec.masks.METAL1) {
-      add(null, 'ild', 0, H, G.oxideTop, G.surface, MATERIAL_LABEL.ild, null,
-          sec.masks.POLY ? (sec.masks.POLY.intervals[0][0]) / 2 : H / 2);
+    /* THE DIELECTRIC IS BUILT FROM THE METALS THAT ARE THERE, level by level, and that is a fix rather
+       than a refinement: the bands used to be keyed on PAIRS of adjacent levels - one for METAL1 with
+       METAL2, one for METAL2 with METAL3 - so a cut carrying METAL1 and METAL3 but no METAL2 got
+       neither of them and the drawing showed a floating gap of page between the two wires. Measured on
+       the three-inverter example: most cuts are exactly that shape, since METAL2 runs in columns and a
+       cut between two of them crosses none.
+
+       So the rule is stated over the levels PRESENT: the oxide fills from the wafer to the lowest
+       metal, then from each metal to the next one above it, and a passivation seals the top. Nothing
+       can leave a hole, because each band ends where the next begins.
+
+       Each band BURIES THE METAL BELOW IT - it spans from that metal's own bottom up to the next
+       metal's bottom, so it fills the gaps beside the wires as well as the via level over them, and a
+       wire reads as embedded in oxide rather than laid on top of it. That works because the materials
+       are painted FIRST and the masks after, so a band covering a metal level sits behind that metal's
+       own shapes.
+
+       A CUT WITH ONE METAL AND NOTHING ABOVE IT GETS NO NEW BAND, which is what keeps every learn
+       figure that draws no routing at exactly the steps it had: there is nothing to bury it under yet,
+       and the passivation belongs to a finished stack. `processSteps` includes a step iff its band was
+       drawn, so the list follows the picture with no second rule to keep in step. */
+    /* THE DIELECTRIC IS BUILT OVER THE LEVELS THE WAFER HAS, level by level, and that is the whole of
+       why it is not built over the ones this cut crosses. Two bugs came out of the shorter reading, and
+       the second is the one a reader sees at every x:
+
+       keyed on PAIRS of adjacent levels - one for METAL1 with METAL2, one for METAL2 with METAL3 - a
+       cut carrying METAL1 and METAL3 but no METAL2 got neither band, and the drawing showed a floating
+       gap of page between the two wires;
+
+       and gated on the CUT's own metals, a section through a gap between two METAL2 columns stopped at
+       the contact oxide, so the top half of the panel was empty page where the rest of the chip is.
+
+       So the levels come from `sec.stackTop` - METAL3 on a routed design, whatever the cut carries on an
+       unrouted one - and the slices join edge to edge from the wafer to the passivation. Nothing can
+       leave a hole, because each band ends where the next begins, and every cut of one design is the
+       same height of material with its own wires inside it.
+
+       Each band BURIES THE METAL BELOW IT - from that metal's own bottom up to the next metal's bottom -
+       so it fills the gaps beside the wires as well as the via level over them, and a wire reads as
+       embedded in oxide rather than laid on top of it. That works because the materials are painted
+       FIRST and the masks after, so a band covering a metal level sits behind that metal's own shapes.
+
+       `processSteps` includes a step iff its band was drawn, so the step list follows the picture with
+       no second rule to keep in step. */
+    var LEVELS = ['METAL1', 'METAL2', 'METAL3'];
+    var has = sec.stackTop ? LEVELS.slice(0, LEVELS.indexOf(sec.stackTop) + 1) : [];
+    var lowest = has[0], highest = has[has.length - 1];
+    if (sec.masks.CONTACT || has.length) {
+      add(null, 'ild', 0, H, lowest ? S[lowest].bottom : G.oxideTop, G.surface, MATERIAL_LABEL.ild,
+          null, sec.masks.POLY ? (sec.masks.POLY.intervals[0][0]) / 2 : H / 2);
+    }
+    /* KEYED BY THE METAL IT BURIES, not by the pair it sits between - which is why the step titles say
+       `over METAL1` rather than `METAL1 to METAL2`. */
+    var ILD_OVER = { METAL1: 'ild2', METAL2: 'ild3' };
+    has.forEach(function (m, i) {
+      var up = has[i + 1];
+      if (!up || !ILD_OVER[m]) return;
+      add(null, ILD_OVER[m], 0, H, S[up].bottom, S[m].bottom, null);
+    });
+    /* AND THE PASSIVATION over the topmost level, once there is a stack to seal: a lone METAL1 with
+       nothing above it is an unfinished wafer, not a sealed one. */
+    if (highest && highest !== 'METAL1') {
+      add(null, 'ild4', 0, H, S[highest].top - 3000, S[highest].bottom, null);
     }
     var order = ['N-WELL', 'N-DIFF', 'P-DIFF', 'POLY', 'POLY2'];
     /* FIELD OXIDE IS THE SURFACE THAT IS NOT ACTIVE, so it is the complement of the diffusions -
@@ -1021,14 +1210,47 @@ window.PRACTICE_PNR_API = (function () {
                                                        : MATERIAL_LABEL_SHORT.sub;
       out[sub.i].textAt = (widest[0] + widest[1]) / 2;
     }
+    /* THE REGION CAPTIONS ARE PER ROW, because a cut across a three-row placement has three of each:
+       captioning the widest substrate stretch and the first well once would name row 0's halves and
+       leave the other rows' unlabelled, which reads as though only one row had transistors in it.
+       Each row's own span is what its caption is derived from, using the same free-stretch and well
+       arithmetic as the label above - so on a single-row cut this produces exactly the pair it always
+       did, from the same numbers. */
+    /* PAST TWO ROWS THERE ARE NO REGION CAPTIONS, and that is a legibility rule rather than a
+       tidiness one: the pair is drawn once PER ROW, so a cut through a real design's placement
+       stacks `NMOS region` / `PMOS region` seventeen times over a section whose rows are a few
+       pixels tall - text over text, naming what the layer legend beside it already names. One or
+       two rows is the case the captions were written for (a topic page's figure is one), and
+       there they still say which half of a CMOS pair you are looking at.
+
+       The shapes, the legend, the axis and the measured line are untouched: what goes is the
+       words inside the drawing, which is what a reader asked to have back. */
+    var rowCount = (sec.cells || []).length || 1;
+    if (rowCount > 2) return { width: H, shapes: out, wellAt: sec.masks['N-WELL']
+                                 ? (sec.masks['N-WELL'].intervals[0][0]
+                                    + sec.masks['N-WELL'].intervals[0][1]) / 2
+                                 : null,
+                               substrateAt: widest ? (widest[0] + widest[1]) / 2 : undefined,
+                               regions: [] };
     var regions = [];
-    if (widest) regions.push({ x: (widest[0] + widest[1]) / 2, text: 'NMOS region', sub: true });
-    if (sec.masks['N-WELL']) {
-      var w0 = sec.masks['N-WELL'].intervals[0];
+    (sec.cells || [{ base: 0, h: H }]).forEach(function (row) {
+      var lo = row.base, hi = row.base + row.h;
+      var clip = function (list) {
+        var out2 = [];
+        list.forEach(function (iv) {
+          var a = Math.max(iv[0], lo), b = Math.min(iv[1], hi);
+          if (b > a) out2.push([a, b]);
+        });
+        return out2;
+      };
+      var wells = sec.masks['N-WELL'] ? clip(sec.masks['N-WELL'].intervals) : [];
+      var mine = clip(free), pick = null;
+      mine.forEach(function (f) { if (!pick || f[1] - f[0] > pick[1] - pick[0]) pick = f; });
+      if (pick) regions.push({ x: (pick[0] + pick[1]) / 2, text: 'NMOS region', sub: true });
       /* Short, for the reason the ideal pair's is: a caption is clipped by the viewBox rather than
          wrapped, and the well is named in place inside the drawing anyway. */
-      regions.push({ x: (w0[0] + w0[1]) / 2, text: 'PMOS region' });
-    }
+      if (wells.length) regions.push({ x: (wells[0][0] + wells[0][1]) / 2, text: 'PMOS region' });
+    });
     return { width: H, shapes: out, wellAt: sec.masks['N-WELL']
                ? (sec.masks['N-WELL'].intervals[0][0] + sec.masks['N-WELL'].intervals[0][1]) / 2
                : null,
@@ -1039,7 +1261,12 @@ window.PRACTICE_PNR_API = (function () {
      reports back - so the picture and the record of it are the same thing rather than two
      descriptions that could disagree. */
   var CLS_FOR_KIND = { substrate: 'pnr-sec-sub', fieldox: 'pnr-sec-fieldox',
-                       gateox: 'pnr-sec-gox', ild: 'pnr-sec-ild' };
+                       gateox: 'pnr-sec-gox', ild: 'pnr-sec-ild',
+                       /* THE SAME FILL for every dielectric level: oxide is oxide, and giving each
+                          level a shade of its own would say the process deposits four different
+                          materials. Their STEPS differ, and their hide classes differ; their colour
+                          must not. */
+                       ild2: 'pnr-sec-ild', ild3: 'pnr-sec-ild', ild4: 'pnr-sec-ild' };
 
   /* WHERE A SHAPE'S LABEL IS DRAWN. A shape may name its own x, because a material's midpoint is
      often the wrong place for its name - the substrate spans the whole cell, so centring `p-type Si
@@ -1055,7 +1282,7 @@ window.PRACTICE_PNR_API = (function () {
     var vb = [0, SEC.top, W, SEC.floor - SEC.top];
     var svg = svgEl('svg', { viewBox: vb.join(' '), class: 'pnr-sec-svg',
                              preserveAspectRatio: 'xMidYMid meet' });
-    var drawn = 0, labels = [], mats = [];
+    var drawn = 0, labels = [], mats = [], classes = [];
     plan.shapes.forEach(function (s) {
       var cls = CLS_FOR_KIND[s.kind] || 'pnr-sec-shape';
       if (MATERIAL_CLASS[s.kind]) cls += ' ' + MATERIAL_CLASS[s.kind];
@@ -1064,6 +1291,11 @@ window.PRACTICE_PNR_API = (function () {
          there is no mask to tick, so nothing may hide the wafer. */
       var lcls = s.mask ? (s.cls || classOfMask(s.mask)) : null;
       if (lcls) cls += ' ' + lcls;
+      /* THE CLASSES THIS DRAWING REALLY PUT ON ELEMENTS, collected here rather than derived from the
+         mask list a caller passed in: `classOfMask` is what resolves METAL1 to the artwork's
+         `layer-ALU1_ALL`, so a legend built from the masks would name classes that are not in the
+         picture and its buttons would switch nothing. */
+      if (lcls && classes.indexOf(lcls) < 0) classes.push(lcls);
       var attrs = { x: s.x, y: s.top, width: s.w, height: s.bottom - s.top, class: cls, rx: 600 };
       if (lcls && cols) attrs.fill = cols[lcls] || '';
       if (!attrs.fill) delete attrs.fill;
@@ -1118,6 +1350,8 @@ window.PRACTICE_PNR_API = (function () {
        figure - the caller places them as ordinary 11px text instead, at a percentage of the width, so
        one number still positions them and the typography is the page's. */
     return { svg: svg, shapes: drawn, aspect: vb[2] / vb[3], materials: mats,
+             /* THE PALETTE THIS DRAWING WOULD NEED, one entry per layer class it drew - see legendOf. */
+             legend: legendOf(classes),
              /* WHERE EACH STEP HAPPENS, one zone per shape - what the effects fire at. Collected while
                 drawing rather than recomputed, so a beam cannot land somewhere the picture does not. */
              zones: zonesOf(plan, cols),
@@ -1162,6 +1396,7 @@ window.PRACTICE_PNR_API = (function () {
        there: a cut with no field oxide grows none. */
     out.materials = r.materials;
     out.regions = r.regions;
+    out.legend = r.legend;
     out.zones = r.zones;
     /* REPORTED FROM THE SHAPE THAT WAS DRAWN, not computed a second time: a mutant that nulled the
        label's own x left this reporting the right number while the drawing put the name back in the
@@ -1193,6 +1428,7 @@ window.PRACTICE_PNR_API = (function () {
     out.svg = r.svg;
     out.materials = r.materials;
     out.regions = r.regions;
+    out.legend = r.legend;
     out.zones = r.zones;
     return out;
   }
@@ -1303,7 +1539,19 @@ window.PRACTICE_PNR_API = (function () {
        oxide, whatever brings it. */
     'ILD':     { kind: 'deposit', from: 'ild',     name: 'Oxide deposition · ILD', paint: '#7ec8e3' },
     'CONTACT': { kind: 'etch',    from: 'CONTACT', name: 'Contact etch', paint: '#ffc850' },
-    'METAL1':  { kind: 'sputter', from: 'METAL1',  name: 'Metal sputter + pattern' }
+    'METAL1':  { kind: 'sputter', from: 'METAL1',  name: 'Metal sputter + pattern' },
+    /* THE BACK END OF THE LINE HAD NO EFFECTS AT ALL, and that was visible rather than subtle: the
+       field went idle from VIA1 onwards, so the second half of the animation was a slideshow while the
+       first half was a process. Each is the same physical step as its counterpart below - an oxide is
+       deposited, a hole is etched, a metal is sputtered - so it takes the same kind and the same
+       paint, and only the zones differ. */
+    'ILD2':    { kind: 'deposit', from: 'ild2',    name: 'Oxide deposition · ILD', paint: '#7ec8e3' },
+    'ILD3':    { kind: 'deposit', from: 'ild3',    name: 'Oxide deposition · ILD', paint: '#7ec8e3' },
+    'ILD4':    { kind: 'deposit', from: 'ild4',    name: 'Passivation deposition', paint: '#7ec8e3' },
+    'VIA1':    { kind: 'etch',    from: 'VIA1',    name: 'Via etch', paint: '#ffc850' },
+    'VIA2':    { kind: 'etch',    from: 'VIA2',    name: 'Via etch', paint: '#ffc850' },
+    'METAL2':  { kind: 'sputter', from: 'METAL2',  name: 'Metal sputter + pattern' },
+    'METAL3':  { kind: 'sputter', from: 'METAL3',  name: 'Metal sputter + pattern' }
   };
   var FX_IDLE = { kind: 'idle', zones: [], name: 'Clean wafer', colour: null };
 

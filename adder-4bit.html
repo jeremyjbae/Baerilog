@@ -16,19 +16,28 @@
 <script>var PRACTICE_SLUG = 'adder-4bit';</script>
 <script src="manifest.js"></script>
 <script src="exercises/adder-4bit.js"></script>
+<!-- These two ahead of shell.js, and the rest of the cloud layer at the end. shell.js
+     decides whether the exercise sheet is built OPEN - a page you have begun does not
+     get the brief unasked - and it reads that off CLOUD.load, so the record has to be
+     readable before the markup is built. Closing the sheet later instead would be a
+     FLASH of a full-page modal rather than an absence of one: app.js is a quarter of a
+     megabyte of blocking script between here and practice.js, and a browser paints
+     during that fetch. Safe to hoist because neither file touches the DOM or depends on
+     anything; cloud-ui.js and cloud-sync.js cannot move, needing the injected header
+     and the seeded editor respectively. -->
+<script src="cloud-config.js"></script>
+<script src="cloud.js"></script>
 <script src="shell.js"></script>
 <script src="app.js"></script>
 <script src="practice.js"></script>
 <script src="synth.js"></script>
 <script src="practice-synth.js"></script>
-<!-- Optional cloud progress, last so cloud-sync.js sees the skeleton practice.js
-     seeded and restores saved work OVER it rather than under it. Every one of the
-     four is inert until cloud-config.js names a Supabase project, so a checkout
-     with none behaves exactly as it did before they existed. No CLOUD_APP
+<!-- The rest of the optional cloud progress, last so cloud-sync.js sees the
+     skeleton practice.js seeded and restores saved work OVER it rather than under it.
+     Every one of the four is inert until cloud-config.js names a Supabase project, so a
+     checkout with none behaves exactly as it did before they existed. No CLOUD_APP
      declaration here: PRACTICE_SLUG above already says which app and which of the
      twenty documents this page is. -->
-<script src="cloud-config.js"></script>
-<script src="cloud.js"></script>
 <script src="cloud-ui.js"></script>
 <script src="cloud-sync.js"></script>
 </body>

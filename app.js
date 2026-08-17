@@ -4043,10 +4043,15 @@ for (const name of Object.keys(EXAMPLES)) {
   opt.value = name; opt.textContent = name;
   exampleSelect.appendChild(opt);
 }
-function loadExample(name) {
-  setEditorText(EXAMPLES[name]);
+function loadExample(name, keepUndo = true) {
+  /* The document goes to resetEditorHierarchyState, never through setEditorText:
+     writing the whole file into the design editor first is one undoable edit too
+     many, and Cmd-Z then hands the reader the testbench back. See that function.
+     `keepUndo` is for a caller re-loading an example as a page SEED rather than on
+     the reader's behalf - workbench/index.html does, over the one its own slice
+     loaded a moment earlier. See seedFullSource. */
   currentFileName = name.replace(/[^A-Za-z0-9_-]+/g, '_') + '.v';
-  resetEditorHierarchyState();
+  resetEditorHierarchyState(EXAMPLES[name], keepUndo);
   tryApplyAutoFinishTime(editorFullSource);
 }
 exampleSelect.addEventListener('change', () => loadExample(exampleSelect.value));
@@ -4061,10 +4066,9 @@ fileOpenInput.addEventListener('change', () => {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
-    setEditorText(reader.result);
     currentFileName = file.name;
     exampleSelect.selectedIndex = -1;
-    resetEditorHierarchyState();
+    resetEditorHierarchyState(reader.result);
     tryApplyAutoFinishTime(editorFullSource);
   };
   reader.readAsText(file);
@@ -4281,10 +4285,28 @@ function updateTbGutter() { if (tbInput) renderGutter(tbInput, tbGutter); }
 // textarea focused, so this steals focus - guarded on the editor already having
 // content, which is what keeps the initial example load (empty textarea,
 // nothing to undo to) from yanking focus on page load.
-function setTextIn(ta, gut, text) {
+/* `keepUndo: false` is the FAST path, and a module view switch is the one caller that wants it.
+   execCommand replaces the whole textarea through the editing pipeline, which is what keeps the undo
+   stack - and costs 124.8ms on the 8-bit CPU's 386 lines against 0.18ms for an assignment, measured
+   in Chrome. That is the whole of the lag a reader feels pressing a name in the module list, and on
+   THAT path the undo stack is not what protects their work: spliceEditorChangesBack has already
+   merged the visible text into editorFullSource before the swap, and the span-based splice cannot
+   refuse it. Undo was the backstop for a merge that COULD refuse, which is the design this file
+   replaced. Every other caller - an example, an opened file, a cloud restore, the initial seed -
+   still goes through execCommand, because there the outgoing text is the reader's own and Cmd-Z is
+   the only way back to it. */
+function setTextIn(ta, gut, text, keepUndo = true) {
   if (ta.value === text) return;
   let ok = false;
-  if (ta.value !== '' && text !== '') {
+  /* A READ-ONLY textarea is assigned, never inserted into, and that is a correctness rule
+     rather than an optimisation. execCommand is here to preserve the undo stack, which a
+     box nobody can type in does not have - and asking it to replace a selection in a field
+     the browser will not let it edit is not portable: Chrome declines the whole command and
+     falls through to the assignment below, while WebKit was observed to drop the selected
+     text and refuse the insertion, leaving the textarea EMPTY. Which is how a practice
+     page's Testbench card, made read-only because it is the exercise's checker, came up
+     blank in one browser and correct in another. */
+  if (keepUndo && ta.value !== '' && text !== '' && !ta.readOnly) {
     ta.focus();
     /* CONFIRM THE FOCUS TOOK. execCommand acts on the DOCUMENT's selection, not on `ta`,
        so when `ta` refuses focus - detached, disabled, hidden - the insert lands in
@@ -4303,7 +4325,12 @@ function setTextIn(ta, gut, text) {
   renderGutter(ta, gut);
 }
 function setEditorText(text) { setTextIn(codeInput, gutter, text); }
-function setTestbenchText(text) { if (tbInput) setTextIn(tbInput, tbGutter, text); }
+/* The module browser's own swap: same text, same gutter, no undo record - see setTextIn. Named so a
+   call site says which of the two it means rather than passing a bare `false`. The page's own SEED
+   is the second caller of that path, through seedFullSource, for a different reason: there is
+   nothing behind the first document to undo TO. */
+function setEditorView(text) { setTextIn(codeInput, gutter, text, false); }
+function setTestbenchText(text, keepUndo = true) { if (tbInput) setTextIn(tbInput, tbGutter, text, keepUndo); }
 
 function wireEditor(ta, gut) {
   ta.addEventListener('input', () => renderGutter(ta, gut));
@@ -4376,7 +4403,7 @@ function showModuleInEditor(name) {
       editorSelectedModule = name;
       editorModuleSpan = { start: mod.srcStart, end: mod.srcEnd };
       showEditorSyncWarning(null);
-      setEditorText(editorFullSource.slice(mod.srcStart, mod.srcEnd));
+      setEditorView(editorFullSource.slice(mod.srcStart, mod.srcEnd));
       return;
     }
     showEditorSyncWarning(parseErr
@@ -4391,18 +4418,24 @@ function showModuleInEditor(name) {
      no marker the span is the whole file, so this is the old line. */
   editorSelectedModule = '(all)';
   editorModuleSpan = designSpan(editorFullSource);
-  setEditorText(editorFullSource.slice(editorModuleSpan.start, editorModuleSpan.end));
+  setEditorView(editorFullSource.slice(editorModuleSpan.start, editorModuleSpan.end));
 }
 
 /* The testbench editor is a view of the span after the marker, and it is shown
    only when there IS one - a document with no testbench region gets the card's
    empty state rather than an editable void that would silently become the
-   file's tail on the first keystroke. */
-function showTestbenchInEditor() {
+   file's tail on the first keystroke.
+
+   `keepUndo` is the SEED's, and it is passed on rather than left at its default
+   because both editors have a stack and both were being handed a state the reader
+   never made: this card is writable in the standalone app, so seeding it over the
+   example app.js loaded on the way past put that example's testbench one Cmd-Z
+   behind the exercise's. Whatever is true of the design half is true of this one. */
+function showTestbenchInEditor(keepUndo = true) {
   if (!tbInput) return;
   const span = testbenchSpan(editorFullSource);
   tbSpan = span;
-  setTestbenchText(span ? editorFullSource.slice(span.start, span.end) : '');
+  setTestbenchText(span ? editorFullSource.slice(span.start, span.end) : '', keepUndo);
   tbInput.disabled = !span;
   tbInput.style.display = span ? '' : 'none';
   tbGutter.style.display = span ? '' : 'none';
@@ -4430,10 +4463,10 @@ function currentFullSource() {
 
 /* And the counterpart: put a whole document back, splitting it across the two
    editors. Restoring through setEditorText alone writes the DESIGN editor, which
-   is what silently un-split a restored file. */
+   is what silently un-split a restored file - and writing it there on the way to
+   the split is what put the testbench one Cmd-Z away from the design. */
 function loadFullSource(text) {
-  setEditorText(text);
-  resetEditorHierarchyState();
+  resetEditorHierarchyState(text);
 }
 
 // Merges whatever is currently visible in the textarea back into
@@ -4450,7 +4483,15 @@ function spliceEditorChangesBack() {
   /* The testbench half first, because the design half's splice moves every
      offset after it and `tbSpan` would then point into the wrong place. Both are
      plain textual splices of a tracked span - the same merge, twice. */
-  if (tbInput && tbSpan) {
+  /* A READ-ONLY testbench view is not merged back, and this is a safety rule rather than a
+     saving. The view cannot have been edited, so there is nothing to merge - and if it is
+     ever empty for any reason (it is filled by a seed that a browser could refuse; see
+     setTextIn), merging it would write that emptiness OVER the document's testbench and
+     take the checks out of the file. Nothing downstream could tell that from an author
+     having deleted them: Run would compile a design with no testbench, Save would write
+     one out, and cloud-sync would push it. `tbSpan` is left alone, since the region it
+     points at has not moved. */
+  if (tbInput && tbSpan && !tbInput.readOnly) {
     const s = tbSpan.start;
     editorFullSource = editorFullSource.slice(0, s) + tbInput.value + editorFullSource.slice(tbSpan.end);
     tbSpan = { start: s, end: s + tbInput.value.length };
@@ -4488,12 +4529,38 @@ function renderEditorHierarchyList() {
   const s = designSpan(editorFullSource);
   try { lastGoodModuleNames = [...parseTopLevelModules(editorFullSource.slice(s.start, s.end)).keys()]; }
   catch (e) { /* keep the last-good list: a transient syntax error shouldn't empty the panel */ }
+  const want = ['(all)', ...lastGoodModuleNames];
+  /* THE ROWS ARE REUSED WHEN THE LIST HAS NOT CHANGED, and that is what makes ONE click select a
+     module. This function is also called from the editor's `blur`, and pressing a row blurs the
+     editor first - so rebuilding the panel here destroyed the very row the pointer was on, between
+     its mousedown and its mouseup. A browser only fires `click` when both landed on the SAME element,
+     so the press did nothing at all and the module changed on the SECOND one, which is what this
+     read as: a list that needs double-clicking. Nothing about the handler was wrong.
+     Measured in a browser: focus the editor, blur it, and the row you were pressing reported
+     `document.contains(row) === false`.
+     Only the ACTIVE class is written on this path, so the nodes outlive a blur and the click lands.
+     A genuine change to the module set still rebuilds - that is the panel doing its job, and a press
+     landing on a list that has just changed under the pointer has no right answer anyway. */
+  const rows = [...editorHierarchyPanel.children];
+  const same = rows.length === want.length && rows.every((r, i) => r.textContent === want[i]);
+  if (same) {
+    rows.forEach((r, i) => r.classList.toggle('active', want[i] === editorSelectedModule));
+    return;
+  }
   editorHierarchyPanel.innerHTML = '';
-  for (const name of ['(all)', ...lastGoodModuleNames]) {
+  for (const name of want) {
     const row = document.createElement('div');
     row.className = 'editor-module-row' + (name === editorSelectedModule ? ' active' : '');
     row.textContent = name;
-    row.addEventListener('click', () => selectEditorModule(name));
+    /* ON MOUSEDOWN, NOT CLICK, and preventDefault with it. `click` fires on mouse RELEASE, so
+       nothing at all happened - no highlight, no text - until the button came back up: the whole
+       human press, ~100ms of it, with the panel looking inert. Acting on the press is what every
+       list of this kind does.
+       preventDefault stops the press MOVING FOCUS, which is worth more than it looks: without it the
+       editor blurs, the blur handler splices and re-renders, and this row's own selection has to
+       survive that. With it there is no blur on this path at all, and setTextIn's own focus() leaves
+       the caret in the editor exactly where a release used to leave it. */
+    row.addEventListener('mousedown', (ev) => { ev.preventDefault(); selectEditorModule(name); });
     editorHierarchyPanel.appendChild(row);
   }
 }
@@ -4505,21 +4572,60 @@ function selectEditorModule(name) {
   renderEditorHierarchyList();
 }
 
-/* Called with a whole DOCUMENT in codeInput (a loaded example, an opened file),
-   which is then split across the two editors. Everything downstream reads
-   `editorFullSource`, so this is the one place a document becomes two views. */
-function resetEditorHierarchyState() {
-  editorFullSource = codeInput.value;
+/* Takes a whole DOCUMENT (a loaded example, an opened file, a cloud restore) and
+   splits it across the two editors. Everything downstream reads
+   `editorFullSource`, so this is the one place a document becomes two views.
+
+   THE DOCUMENT IS HANDED IN, and passing it rather than leaving it in codeInput
+   is what keeps the testbench out of the design editor's UNDO STACK. Every
+   seeding path used to write the document into codeInput with setEditorText and
+   then call this with no argument, so the design editor took two undoable edits
+   for one load - the whole file, then the design half - and Cmd-Z landed on the
+   first of them: one keystroke put the testbench back into the design editor,
+   below the design, in a document that then had the marker and its own testbench
+   in the design half. The next Run compiled two top-level modules, and the
+   Testbench card still showed the same text.
+   Reading codeInput is kept for a caller that has no document to hand (cloud-sync
+   falls back to it on an app with one editor), and it is exactly right there: with
+   no testbench region the design span IS the document, so the two writes collapse
+   into one - setTextIn returns early when the text has not changed, which is why
+   the bug was invisible in workbench/index.html and on a learn topic page.
+   It also restores the guard setTextIn documents: at load codeInput is empty, so
+   the one write is a plain assignment and the initial seed does not yank focus.
+
+   `keepUndo` is what a caller SEEDING a page turns off, and seedFullSource below is
+   the name for that. The two are different operations however alike they look: a
+   load, a restore or a Reset replaces work the reader could want back, so it is one
+   undoable edit; the document a page opens WITH replaces nothing of theirs, so
+   leaving it undoable puts a state they never made behind their first keystroke. */
+function resetEditorHierarchyState(doc, keepUndo = true) {
+  editorFullSource = doc === undefined ? codeInput.value : doc;
   editorSelectedModule = '(all)';
   editorModuleSpan = null;
   lastGoodModuleNames = []; // a new document: don't carry the old file's module list
   showEditorSyncWarning(null);
-  showTestbenchInEditor();
+  showTestbenchInEditor(keepUndo);
   // after the testbench half is on screen, show the design half in this one
   editorModuleSpan = designSpan(editorFullSource);
-  setEditorText(editorFullSource.slice(editorModuleSpan.start, editorModuleSpan.end));
+  const design = editorFullSource.slice(editorModuleSpan.start, editorModuleSpan.end);
+  if (keepUndo) setEditorText(design); else setEditorView(design);
   renderEditorHierarchyList();
 }
+
+/* THE PAGE'S FIRST DOCUMENT, and the whole of what makes it different is that there
+   is nothing behind it to undo TO. app.js is a verbatim copy of this script, so a
+   practice page and a learn topic page both load EXAMPLES' first entry on the way
+   past and then replace it with the exercise or the topic - and while that
+   replacement was an ordinary undoable edit, one Cmd-Z in a freshly opened page
+   handed the reader `module dff` out of the D flip-flop example: a design nobody
+   asked for, in place of the problem the sheet is describing, with the panels still
+   describing the problem. A plain assignment is what a browser treats as "no history
+   here", which is the truth at load.
+
+   NOT the same as Reset, which deliberately stays undoable: that one discards work
+   the reader really did, behind a confirmation, and Cmd-Z is the backstop this file
+   keeps everywhere else. */
+function seedFullSource(text) { resetEditorHierarchyState(text, false); }
 
 codeInput.addEventListener('blur', () => {
   spliceEditorChangesBack();
@@ -4658,6 +4764,12 @@ document.querySelectorAll('[data-collapse]').forEach(btn => {
   function apply(visible) {
     splitRow.classList.toggle('hierarchy-collapsed', !visible);
     btn.classList.toggle('active', visible);
+    /* The Module Hierarchy CARD is what this hides, and the four menu apps' tab strip has
+       one tab per card that is on the page - so the strip has to be rebuilt or the panel is
+       reachable with no tab, or worse, a tab points at a card that is not there. Guarded
+       because this script is also Baerilog/app.js and the workbench's slice, where there is
+       no strip (the practice pages build their own and refresh it themselves). */
+    if (window.TABSTRIP) window.TABSTRIP.refresh();
     // Showing/hiding the 220px panel changes the canvas's width, and it MUST
     // redraw. `canvas { width: 100% !important }` in the shared block beats the
     // inline width the renderer sets, so a stale drawing is not clipped - it is
@@ -5276,13 +5388,25 @@ function readModelStopAfter() {
    16-bit imem are held by exactly the three CPU-ish designs and nothing else. */
 function looksLikeCpu(bind) { return !!(bind.pc || bind.regPrefix || bind.imem); }
 
+/* THE ONE PLACE THIS SCRIPT HIDES OR SHOWS A CARD, and it exists so that the tab strip can
+   be told. The four menu apps carry a strip with one tab per card that is on the page
+   (tools/tabstrip.js), so a card appearing or vanishing has to rebuild it or the Scoreboard
+   is unreachable on the pages that keep it and a dead tab is left on the ones that do not.
+   Guarded, because Baerilog/app.js and workbench/index.html carry this same script and have
+   no strip of their own - the practice pages build theirs in shell.js and refresh it
+   themselves, off the same event. */
+function showModelCard(on) {
+  cardModelEl.style.display = on ? '' : 'none';
+  if (window.TABSTRIP) window.TABSTRIP.refresh();
+}
+
 function renderModelCard() {
   const bindEl = modelBindEl, verdictEl = modelVerdictEl, gridEl = modelGridEl, footEl = modelFootEl;
   if (!lastResult) {
     // Hide on EVIDENCE, never on the absence of it: with no run there is nothing
     // to bind against, so the card stays with its empty state rather than
     // vanishing and making the feature look broken after a Reset.
-    cardModelEl.style.display = '';
+    showModelCard(true);
     modelEmpty.style.display = 'block';
     bindEl.style.display = verdictEl.style.display = gridEl.style.display = 'none';
     footEl.style.display = 'none';
@@ -5295,10 +5419,10 @@ function renderModelCard() {
     // design at all. Note visibility depends only on the BINDING, never on the
     // verdict - a red verdict must not make the card disappear at the moment it
     // most wants reading.
-    cardModelEl.style.display = 'none';
+    showModelCard(false);
     return;
   }
-  cardModelEl.style.display = '';
+  showModelCard(true);
   modelEmpty.style.display = 'none';
   /* The bind listing is diagnostics - which signal it decided is `pc`, how many
      aliases agreed - and it is eleven lines of it. Useful when a binding goes wrong,
@@ -6483,6 +6607,10 @@ document.addEventListener('click', () => {
     ['Practice', 'practice.html', 'mind'],
     ['Simulator', 'simulator.html', 'pulse'],
     ['Synthesizer', 'synthesis.html', 'chip'],
+    /* AFTER the synthesizer, because that is the order the flow runs in: a netlist is what
+       this app places and routes. It is a row rather than a `known` entry that marks
+       nothing, which is what it was until it had a page worth linking to. */
+    ['Place & Route', 'pnr.html', 'route'],
     ['Compiler', 'compiler.html', 'code']
   ];
   var G = {
@@ -6528,7 +6656,26 @@ document.addEventListener('click', () => {
     mind: '<svg viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M5.3 15.3V12.9C5.3 12 1.4 11.2 1.4 7.3 1.4 3.8 4.3 1 7.9 1 10.9 1 12.9 3 13 5.3L14.8 7.8 13.1 8.6C13.1 10.2 12.2 11.2 10.9 11.4V15.3"/><path d="M3.7 3.9h6.2v6.2H3.7V3.9Zm1.2 1.2v3.8h3.8V5.1H4.9ZM2.5 5h1.2v1H2.5V5ZM2.5 8h1.2v1H2.5V8ZM9.9 5h1.2v1H9.9V5ZM9.9 8h1.2v1H9.9V8Z"/></svg>',
     pulse: '<svg viewBox="0 0 16 16"><path d="M6 2.5a.75.75 0 0 1 .7.48L9.3 10l1-2.5a.75.75 0 0 1 .7-.5h4v1.5h-3.5l-1.8 4.5a.75.75 0 0 1-1.4 0L5.7 5.5 4.7 8a.75.75 0 0 1-.7.5H0V7h3.5l1.8-4.02A.75.75 0 0 1 6 2.5Z"/></svg>',
     chip: '<svg viewBox="0 0 16 16"><path d="M5 1.5h1.5v1.5h3V1.5H11v1.5h1.5A1.5 1.5 0 0 1 14 4.5V6h1.5v1.5H14v1H15.5V10H14v1.5a1.5 1.5 0 0 1-1.5 1.5H11v1.5H9.5V13h-3v1.5H5V13H3.5A1.5 1.5 0 0 1 2 11.5V10H.5V8.5H2v-1H.5V6H2V4.5A1.5 1.5 0 0 1 3.5 3H5V1.5Zm-1.5 3v7h9v-7h-9Zm2 2h5v3h-5v-3Z"/></svg>',
-    code: '<svg viewBox="0 0 16 16"><path d="M5.7 4.3a.75.75 0 0 1 0 1.06L3.06 8l2.64 2.64a.75.75 0 1 1-1.06 1.06L1.47 8.53a.75.75 0 0 1 0-1.06L4.64 4.3a.75.75 0 0 1 1.06 0Zm4.6 0a.75.75 0 0 1 1.06 0l3.17 3.17a.75.75 0 0 1 0 1.06L11.36 11.7a.75.75 0 1 1-1.06-1.06L12.94 8l-2.64-2.64a.75.75 0 0 1 0-1.06Z"/></svg>'
+    code: '<svg viewBox="0 0 16 16"><path d="M5.7 4.3a.75.75 0 0 1 0 1.06L3.06 8l2.64 2.64a.75.75 0 1 1-1.06 1.06L1.47 8.53a.75.75 0 0 1 0-1.06L4.64 4.3a.75.75 0 0 1 1.06 0Zm4.6 0a.75.75 0 0 1 1.06 0l3.17 3.17a.75.75 0 0 1 0 1.06L11.36 11.7a.75.75 0 1 1-1.06-1.06L12.94 8l-2.64-2.64a.75.75 0 0 1 0-1.06Z"/></svg>',
+    /* PLACE & ROUTE: two placed blocks and one orthogonal wire between them - the two halves
+       of the app's own name, and the only thing it could be a picture of. Fill-only, like
+       every glyph here but `mind`.
+
+       EVERY coordinate is a whole unit, and that is the whole of what makes it legible at
+       16px rather than a matter of taste: the wire is one unit wide, so it lands on one
+       whole pixel at full strength, where the 0.75 the `cap` glyph's cord was first drawn at
+       spread across two at half strength and vanished. The blocks are 5x5 - ODD, so their
+       centres fall on a .5 and the wire's own centreline (x 3.5, y 11.5) meets them exactly;
+       an even block would put the arm half a unit off its block's middle, which reads as a
+       wire that misses its pin. Rasterised at 16px and magnified to check, the same way the
+       three details of `cap` above were settled: two solid blocks and one unbroken 1px wire,
+       and the whole drawing centred on (8, 8) rather than merely fitted inside the box.
+
+       All three subpaths are wound CLOCKWISE. The wire touches the upper block's bottom edge
+       and the lower block's left edge, so under the nonzero rule an opposed subpath would
+       punch a hole through the join and the wire would read as detached at both ends - the
+       same trap `cap`'s tassel records. */
+    route: '<svg viewBox="0 0 16 16"><path d="M1 2h5v5H1V2Zm9 7h5v5h-5V9ZM3 7h1v4h6v1H3V7Z"/></svg>'
   };
 
   function mk(tag, cls, id, text) {
@@ -6568,11 +6715,11 @@ document.addEventListener('click', () => {
     if (base()) return '';
     var file = (window.location && window.location.pathname || '').split('/').pop() || '';
     if (file === 'learn.html' || file.indexOf('learn-') === 0) return 'learn.html';
-    /* `pnr.html` is in this list without being a ROW, and that is the point: the fallback below
-       exists so a practice EXERCISE page marks Practice, and it catches every filename it has not
-       been told about - so an app with no row of its own was marking Practice too. Naming it here
-       returns a value no row matches, which marks nothing, exactly as the three apps above the
-       deployed root do. It gains a row when it is ready for one. */
+    /* `pnr.html` is named here for the same reason every other row is: the fallback below
+       catches every filename it has not been told about and answers `practice.html`, so an
+       app left out of this list marks Practice - which is what pnr.html did while it had no
+       row. Now that it has one, being in this list is what MARKS it, not what excludes it,
+       and dropping it would put the marker back on Practice rather than merely lose it. */
     var known = ['index.html', 'simulator.html', 'synthesis.html', 'compiler.html', 'pnr.html'];
     return known.indexOf(file) >= 0 ? file : 'practice.html';
   }
@@ -6630,14 +6777,96 @@ document.addEventListener('click', () => {
   panel.appendChild(list);
   /* The panel is a CHILD of the backdrop, as every dialog here is: that is what makes
      the ev.target guard below load-bearing rather than unfalsifiable - as siblings, a
-     click inside the panel could never reach the backdrop's handler. */
+     click inside the panel could never reach the backdrop's handler. The pair is put
+     into the document at the very END of this function, not here, so that the pinned
+     state can be applied to an element the browser has never styled - see there. */
   back.appendChild(panel);
-  document.body.appendChild(back);
 
   function isOpen() { return panel.classList.contains('open'); }
-  function open() {
+
+  /* PINNED, on a wide window: the same panel, staying put, with the page fully usable
+     beside it - so it is not a dialog while it is there, and four things follow. The
+     backdrop stops taking clicks and the scroll lock stops applying (both style.css,
+     keyed on `body.nav-pinned`), focus is NOT moved into the panel, and `aria-modal`
+     comes off it. That last one is the important one rather than the tidy one:
+     `aria-modal="true"` tells a screen reader the rest of the page is absent, which is
+     a lie the moment the reader can use it.
+
+     The breakpoint lives in style.css and this asks it through matchMedia with the same
+     number - two copies, which tools/check_theme.py compares, the arrangement this whole
+     builder already lives under. The query decides only whether pinning is AVAILABLE:
+     whether it is USED is remembered per reader, and CSS cannot read localStorage. */
+  var PIN_MQ = '(min-width: 1200px)';
+  function canPin() {
+    return !!(window.matchMedia && window.matchMedia(PIN_MQ).matches);
+  }
+  /* ONE key for the whole site, deliberately - the opposite of the netlist viewer's
+     per-app keys, and for the opposite reason: "keep the navigation open" is a single
+     preference about the site, not per-page state, so a reader who pins it on the
+     simulator wants it pinned on the next page too. Honoured in BOTH directions, so a
+     deliberate close is not undone by the next load, and defaulting to open is what
+     "keep it visible on a desktop" means. */
+  var PIN_KEY = 'navPinned';
+  function pinWanted() {
+    try { return localStorage.getItem(PIN_KEY) !== '0'; } catch (e) { return true; }
+  }
+  function rememberPin(on) {
+    try { localStorage.setItem(PIN_KEY, on ? '1' : '0'); } catch (e) { /* private mode */ }
+  }
+
+  /* The panel sits BELOW the bar while pinned, and the offset is measured rather than
+     written down: `.gh-header-inner` is `flex-wrap: wrap`, so the bar's height is not one
+     number. Measured here and on resize, which is the same hook the redraw below needs. */
+  function measureTop() {
+    var bar = document.querySelector('.gh-header');
+    var h = bar && bar.getBoundingClientRect ? bar.getBoundingClientRect().height : 0;
+    if (document.body.style) document.body.style.setProperty('--nav-top', (h || 0) + 'px');
+  }
+
+  /* Pinning and unpinning change the width of every card on the page, and this repo's
+     standing rule is that anything which does must let the renderers know - a stale
+     canvas is STRETCHED over an unchanged backing store rather than clipped, so every
+     click then lands at the wrong place. Rather than call into six apps, this dispatches
+     the event they all already listen to. Twice: once now, and once when the 220ms slide
+     has finished, because the first fires while the panel is still moving. */
+  function notifyResize() {
+    function fire() {
+      try {
+        window.dispatchEvent(new Event('resize'));
+      } catch (e) {
+        var ev = document.createEvent && document.createEvent('Event');
+        if (ev) { ev.initEvent('resize', true, true); window.dispatchEvent(ev); }
+      }
+    }
+    fire();
+    if (window.setTimeout) window.setTimeout(fire, 260);
+  }
+
+  /* TWO classes, and they are not two names for one thing. `nav-pinned` says the panel is
+     there; `nav-unpinned` says the reader has closed it, and its only job is to give back a
+     column the STYLESHEET reserved before this script ever ran - see style.css's flicker
+     note. So the common case (pinned) needs nothing from here to be laid out correctly, and
+     what this function does is keep the pair from ever both being true. */
+  function applyMode() {
+    var pinned = isOpen() && canPin();
+    document.body.classList[pinned ? 'add' : 'remove']('nav-pinned');
+    document.body.classList[!pinned && canPin() ? 'add' : 'remove']('nav-unpinned');
+    if (pinned) {
+      measureTop();
+      panel.setAttribute('role', 'navigation');
+      panel.removeAttribute('aria-modal');
+    } else {
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-modal', 'true');
+    }
+    return pinned;
+  }
+
+  function open(remember) {
     /* One drawer at a time: cloud-ui.js's account drawer comes in from the right and is
-       looked up at click time, so neither depends on loading before the other. */
+       looked up at click time, so neither depends on loading before the other. A PINNED
+       drawer is not one of the two, though - it is page furniture, and closing it because
+       the reader opened their account would fold it away and leave it folded. */
     var ab = document.getElementById('cloudDrawerBack');
     var ap = document.getElementById('cloudDrawer');
     if (ab) ab.classList.remove('open');
@@ -6646,21 +6875,86 @@ document.addEventListener('click', () => {
     back.classList.add('open');
     document.body.classList.add('nav-open');
     btn.setAttribute('aria-expanded', 'true');
-    var first = list.children[0];
-    if (first && first.focus) first.focus();
+    var pinned = applyMode();
+    if (remember !== false) rememberPin(true);
+    /* Focus belongs to the reader while pinned. The panel is open at load there, so
+       moving focus into it would take it out of whatever they were typing in - and there
+       is nothing to trap it in front of, since the page behind is not covered. */
+    if (!pinned) {
+      var first = list.children[0];
+      if (first && first.focus) first.focus();
+    }
   }
-  function shut() {
+  function shut(remember) {
     panel.classList.remove('open');
     back.classList.remove('open');
     document.body.classList.remove('nav-open');
+    /* applyMode is the ONE writer of the two body classes, here as at load: it reads
+       `isOpen()`, which is already false by this point, so it removes `nav-pinned` and
+       gives the reserved column back with `nav-unpinned`. Writing either of them here as
+       well is how a second copy of that rule would start disagreeing with this one - and
+       measured as a mutant, the duplicate was simply redundant. */
+    applyMode();
     btn.setAttribute('aria-expanded', 'false');
+    if (remember !== false) rememberPin(false);
     if (btn.focus) btn.focus();
   }
-  btn.addEventListener('click', function () { if (isOpen()) shut(); else open(); });
-  close.addEventListener('click', shut);
-  back.addEventListener('click', function (ev) { if (ev.target === back) shut(); });
-  document.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Escape' && isOpen()) shut();
+  btn.addEventListener('click', function () {
+    var was = document.body.classList.contains('nav-pinned');
+    if (isOpen()) shut(); else open();
+    /* Only a change of PIN state moves the page; opening a modal drawer over it does
+       not, so the modal case must not pay for a redraw of every canvas. */
+    if (was !== document.body.classList.contains('nav-pinned')) notifyResize();
   });
+  close.addEventListener('click', function () {
+    var was = document.body.classList.contains('nav-pinned');
+    shut();
+    if (was) notifyResize();
+  });
+  back.addEventListener('click', function (ev) {
+    /* A pinned drawer's backdrop takes no clicks at all (style.css), so this cannot fire
+       there - but the guard is written anyway, because `pointer-events` is one stylesheet
+       away and dismissing the furniture by clicking the page would be the worst of it. */
+    if (ev.target === back && !document.body.classList.contains('nav-pinned')) shut();
+  });
+  document.addEventListener('keydown', function (ev) {
+    /* Escape closes a dialog. A pinned drawer is not one, and Escape on these pages
+       already belongs to the exercise sheet and to the editors - so folding the
+       navigation away on a stray Escape while typing Verilog would be a surprise. */
+    if (ev.key === 'Escape' && isOpen() && !document.body.classList.contains('nav-pinned')) shut();
+  });
+
+  /* Crossing the breakpoint - a rotated tablet, a dragged window - changes which of the
+     two shapes this is. Widening back into pinnable territory re-opens it if that is
+     what the reader last asked for; narrowing turns the same panel into the modal it
+     would have been, without remembering that as a decision (`false`), or a phone visit
+     would clear a desktop preference. */
+  function onViewport() {
+    if (!canPin()) {
+      /* Both paths end in applyMode - shut() calls it - which is what drops `nav-unpinned`
+         below the breakpoint, where the stylesheet reserves nothing for it to describe. */
+      if (document.body.classList.contains('nav-pinned')) shut(false);
+      else applyMode();
+      return;
+    }
+    measureTop();
+    if (!isOpen() && pinWanted()) open(false);
+    else applyMode();
+  }
+  window.addEventListener('resize', onViewport);
+  /* And once more at `load`, because the bar is not finished when this runs: cloud-ui.js
+     appends the account control into it afterwards, which made it 2px taller than the
+     panel had been told - so the pinned panel overlapped the bottom of the bar by exactly
+     that. Measured in a browser rather than reasoned about; the resize hook above would
+     have corrected it at the reader's first window drag, which is not a fix. */
+  window.addEventListener('load', measureTop);
+
+  /* Open at load where it is wanted, and BEFORE the panel is in the document: an element
+     that has never been styled has nothing to transition from, so the drawer is simply
+     there on the first paint instead of sliding in on every page load. Nothing is
+     notified, because everything on the page measures itself after this runs. */
+  if (canPin() && pinWanted()) open(false);
+  else if (canPin()) document.body.classList.add('nav-unpinned');
+  document.body.appendChild(back);
 })();
 /* <<< NAV MENU */

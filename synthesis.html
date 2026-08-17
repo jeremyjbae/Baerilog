@@ -20,11 +20,15 @@
                         redefined under prefers-color-scheme: dark, so every
                         light surface follows the reader's OS.
 
-         panel tokens   (--panel-*) the SAME in both modes. The editors,
-                        consoles, listings, register grids and memory tables are
-                        dark either way - a dark code block on a light page, the
-                        way GitHub renders one - so they must not flip. They use
+         panel tokens   (--panel-*) DARK IN BOTH MODES. The editors, consoles,
+                        listings, register grids and memory tables are dark
+                        either way - a dark code block on a light page, the way
+                        GitHub renders one - so they must not flip. They use
                         GitHub's dark code colours rather than the page ones.
+                        The three SURFACES (--panel-bg, -bg-alt, -bg-hi) drop one
+                        Primer step under dark, because a panel whose body is the
+                        page's own colour is not a panel; the colours ON them do
+                        not move. See the note in the dark block.
 
        Anything app-specific belongs in that app's own additions section below
        this block, never here.
@@ -71,6 +75,15 @@
       --shadow-overlay: 0 8px 24px rgba(31, 35, 40, 0.2);
       --radius: 6px;
       --radius-lg: 12px;
+      /* The navigation drawer's width, and a SHAPE rather than a colour - so it is the
+         same in both modes, like the radii above it. It is a token because two rules need
+         to agree about it: the panel's own width, and the page indent the pinned layer
+         applies (see "THE DRAWER, PINNED"). --nav-top is where a pinned panel starts, i.e.
+         the height of the bar above it, and it is declared here only to have a default:
+         the builder MEASURES it onto `body`, because the bar wraps and so has no one
+         height. 0 is the right default - a page with no bar wants the panel at the top. */
+      --nav-w: 300px;
+      --nav-top: 0px;
 
       /* Dark panels, identical in both modes - GitHub's dark code colours. */
       --panel-bg: #0d1117;
@@ -118,6 +131,21 @@
         --header-bg: #010409;
         --header-fg: #e6edf3;
         --header-muted: #9198a1;
+        /* THE PANEL LADDER DROPS ONE RUNG, and only in dark mode. A panel is dark in both modes -
+           that part has not changed - but on a #0d1117 page the body of one was #0d1117 too, so the
+           editor stopped being a panel at all: it was exactly the canvas behind it, and the only
+           thing that read as an edge was the GUTTER, one step LIGHTER than both. Measured off a
+           screenshot: page #0d1117, code area #0d1117, gutter #161b22.
+           So all three shift down one Primer step, which keeps every relationship the light mode has
+           - body, one step up for gutters and alternate rows, two for a highlighted row - and moves
+           only how deep the whole thing sits. The panel is the darkest thing on the page in both
+           modes now, which is what it already was in light mode and what an editor recessed into a
+           page looks like anywhere else.
+           Every text colour on them is unchanged and every contrast improves, since each surface got
+           darker under the same foreground. */
+        --panel-bg: #010409;
+        --panel-bg-alt: #0d1117;
+        --panel-bg-hi: #161b22;
         --shadow-overlay: 0 8px 24px rgba(1, 4, 9, 0.85);
         --wave-palette: #79c0ff,#7ee787,#d29922,#ff7b72,#d2a8ff,#56d4dd,#ffa657,#8b949e;
       }
@@ -550,6 +578,71 @@
     .split-row > .card { min-width: 0; }
 
     /* =====================================================================
+       THE PAGE HEAD, which stays put while the cards scroll under it.
+
+       The breadcrumb, the sub-line and the tab strip are ONE band, and the band is
+       what sticks - the practice pages' shell.js and the four menu apps'
+       tools/tabstrip.js each move those three into this wrapper. Written twice,
+       once here and once as practice-only CSS, then promoted BYTE-IDENTICALLY, so
+       the pages it was verified on provably could not move: exactly how .gh-crumb
+       and the narrow-screen layer arrived here.
+       ===================================================================== */
+    /* ------------------------------------------------------- the page head, which stays put
+
+       The crumb, the sub-line and the tab strip are one band (shell.js moves the three into
+       this wrapper), docked under the bar while the cards scroll beneath it - so the heading
+       that says WHICH exercise this is, and the strip that switches between its panels, are
+       both reachable from anywhere down the page instead of only from the top.
+
+       `top: var(--nav-top)` is the bar's own measured height, set on `body` by the drawer's
+       builder because `.gh-header-inner` wraps and so the bar has no one height; 0 is the
+       declared default, which is right for a page with no bar. Reusing that token rather than
+       measuring a second time is what stops the band from overlapping the bar or floating a
+       few pixels under it - the same measurement the pinned drawer's panel already docks to.
+
+       An OPAQUE background is not decoration: the cards scroll through the space this band
+       occupies, and --canvas-default is the page's own colour, so the band reads as the page
+       holding still rather than as a panel laid over it. z-index because a sticky element is
+       painted in DOM order, so the grid below would otherwise scroll OVER it; 5 keeps it
+       under the bar (100) and under every dialog here. */
+    .gh-page-head {
+      position: sticky;
+      top: var(--nav-top);
+      z-index: 5;
+      background: var(--canvas-default);
+    }
+
+    /* ------------------------------------------------------- underline tab strip */
+    .gh-tabs {
+      max-width: 1280px;
+      margin: 12px auto 0;
+      padding: 0 24px;
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border-default);
+    }
+    .gh-tab {
+      appearance: none;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      color: var(--fg-default);
+      font: inherit;
+      font-size: 14px;
+      padding: 8px 12px 10px;
+      margin-bottom: -1px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: var(--radius) var(--radius) 0 0;
+    }
+    .gh-tab:hover { background: var(--canvas-subtle); }
+    .gh-tab.selected { border-bottom-color: #fd8c73; font-weight: 600; }
+    @media (prefers-color-scheme: dark) { .gh-tab.selected { border-bottom-color: #f78166; } }
+    .gh-tab svg { width: 16px; height: 16px; fill: var(--fg-muted); }
+
+    /* =====================================================================
        ONE narrow-screen layer for all six apps, at app.css's own breakpoint.
 
        760px is where every app already drops `.grid` to a single column, so this
@@ -590,6 +683,43 @@
        extra column.
        ===================================================================== */
     @media (max-width: 760px) {
+      /* 0. THE PAGE HEAD IS RELEASED, so on a phone the whole page scrolls as one - which is
+         what the shared block already does to the bar itself at this width, and for the same
+         arithmetic: the crumb, the sub-line and the strip stand ~115px tall, the bar another
+         ~55, and a third of a 375x667 screen spent on chrome is the problem this layer exists
+         to relieve rather than an improvement on it. A sticky strip is worth its room on a
+         window tall enough that the panel it switches to is still on screen under it. */
+      .gh-page-head { position: static; }
+
+      /* 1. The tab strip, which was the whole of the horizontal overflow left once the
+         cards could shrink: six tabs plus Reset need ~900px, and a flex row with no wrap
+         and no scroll simply made the DOCUMENT that wide (812px of it, measured). Since
+         .gh-header is only ever as wide as the viewport, the bar then rendered narrower
+         than the page it sits on. One swipeable row is what github.com's own repo tabs do
+         at this width.
+
+         Reset is pinned rather than left to scroll away, because it is the one
+         destructive control here and a tab strip that hides it is worse than one that
+         scrolls. `margin-left: auto` on its base rule does nothing in an overflowing
+         container (there is no free space for an auto margin to absorb), so it sits
+         after the last tab and sticks there; the opaque background is what stops the
+         tabs sliding visibly under it, and the base rule's :hover fill still wins.
+
+         overflow-y is pinned to hidden on purpose: .gh-tab carries margin-bottom: -1px
+         to sit ON the strip's bottom rule, and inside a scroll container that 1px
+         becomes vertical overflow. The cost is that the selected tab's 2px underline is
+         clipped to 1px above the strip's own rule, which is not a difference anyone can
+         see; the alternative was a 1px vertical jiggle on every strip. */
+      .gh-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .gh-tabs::-webkit-scrollbar { display: none; }
+      .gh-tab { flex: 0 0 auto; }
       /* One column, and gutters that match the 16px the page's other rows use.
          The single column is repeated in most apps' own blocks; stating it here is
          what gives it to `emulator/index.html`, which never had it. */
@@ -689,6 +819,19 @@
        there and there is no breakpoint to derive or to get wrong. */
     .gh-header-inner { max-width: none; }
 
+    /* THE MENU BUTTON'S SLOT IS RESERVED, so the wordmark does not shimmy on every page
+       load. The button is built by a script at the end of the body, so for the frame
+       before that runs the mark is the row's FIRST child and sits at the padding edge;
+       when the button arrives the mark shifts right by its width plus the row's gap. That
+       was visible beside the bigger jump the indent used to cause - 48px, then 68px.
+       So the row is padded to where the mark belongs (24 + 28 + 16 = 68) and the button
+       is pulled back out of it by exactly the width and gap it adds (28 + 16 = 44), which
+       lands it at the 24px padding edge it had before. The mark is then at 68 whether or
+       not the button exists, which is the whole point: one number decides the layout and
+       the two rules are its two halves. Baerilog/test.py checks the arithmetic. */
+    .gh-header-inner { padding-left: 68px; }
+    .gh-menu-btn { margin-left: -44px; }
+
     /* The same dim as the exercise sheet's backdrop, deliberately - one dialog idiom on
        the page rather than two - and the panel is a CHILD of it, as the sheet is, which is
        what makes shell.js's `ev.target === navBack` guard load-bearing instead of
@@ -712,7 +855,10 @@
       left: 0;
       bottom: 0;
       z-index: 2100;
-      width: min(300px, 84vw);
+      /* ONE definition of the panel's width, because the pinned layer below indents the
+         page by exactly it: two numbers here would let the gap and the panel disagree,
+         which is the single-source rule the netlist viewer's `nodeSize` follows. */
+      width: min(var(--nav-w), 84vw);
       display: flex;
       flex-direction: column;
       overflow-y: auto;
@@ -730,8 +876,138 @@
       .nav-drawer, .nav-backdrop { transition: none; }
     }
     /* Same reason the exercise sheet locks it: the page behind a modal panel scrolling
-       under the pointer makes the panel look as though it is drifting. */
-    body.nav-open { overflow: hidden; }
+       under the pointer makes the panel look as though it is drifting. The :not() is what
+       stops it applying to a PINNED drawer, which is not a modal and must leave the page
+       scrollable - see the pinned layer below. */
+    body.nav-open:not(.nav-pinned) { overflow: hidden; }
+
+    /* ---------------------------------------------------------------------
+       THE DRAWER, PINNED: the same panel, not a dialog.
+
+       On a wide window the drawer stays put and the page is fully usable beside it - an
+       app shell rather than a menu you dismiss. Two classes carry that, and which rule
+       takes which is about WHEN it has to be true:
+
+         (nothing)       the indent and the bar's pull-back are the DEFAULT at this width,
+                         so the first paint of every page already reserves the panel's
+                         column - see the flicker note on the rule.
+         .nav-unpinned   the builder's, for a reader who has CLOSED it: takes the column
+                         back. Remembered in localStorage, which only a script can read.
+         .nav-pinned     the builder's, for the panel that is actually there: its geometry
+                         and the three behaviours that stop it being a dialog.
+
+       The query decides only whether pinning is AVAILABLE, and the builder asks it through
+       matchMedia with the same number. tools/check_theme.py asserts the two copies of it
+       agree, the arrangement this whole block already lives under.
+
+       1200px is derived, not chosen: 240px of panel plus 960px of content. Below it the
+       drawer is exactly the modal above, and iPad landscape (1024) is deliberately on
+       that side of the line - pinning there would leave 784px of content while the
+       narrow-screen layer keys on the VIEWPORT, which still reads 1024, so the page
+       would hold its two-column grid inside a phone-width column.
+
+       The indent is on `body`, so `.grid`'s own `margin: 0 auto` re-centres the content
+       inside the padded box with no second rule, and `measureBleed()` in the simulator
+       already subtracts body padding - so the waveform's full-bleed expand stops at the
+       panel's edge instead of running under it, with nothing to change there. The BAR is
+       then pulled back out to the window with a negative margin, because it is the one row
+       that should not be indented; see the rule.
+
+       Four behaviours go with the layout, and they are the substance rather than the
+       indent: the backdrop stops taking clicks (so the content behind it is reachable -
+       and the panel, being its CHILD, has to take them back), the scroll lock is off
+       (above), focus is not moved into the panel, and `aria-modal` comes off the panel.
+       The last two are the builder's, and the ARIA one matters most: `aria-modal="true"`
+       tells a screen reader the rest of the page is absent, which is a lie the moment
+       the page is usable.
+       --------------------------------------------------------------------- */
+    @media (min-width: 1200px) {
+      /* THE COLUMN IS RESERVED BEFORE ANY SCRIPT RUNS, and that is what this `:not()` is
+         for. The pinned state is remembered in localStorage, which only the builder can
+         read - and the builder is at the END of the body, so for one or two frames every
+         page painted its un-indented self, then the drawer appeared and the whole page
+         jumped 240px sideways. On every navigation. Caught on video, frame by frame: the
+         new page's first paint had no panel, no menu button, and its content at x=0.
+         So the indent is now the DEFAULT at this width - `body` carries no class at first
+         paint, so it matches - and the builder only ever takes it AWAY, by adding
+         `nav-unpinned` for a reader who has closed the drawer. The common case therefore
+         needs no script to be laid out correctly, and the residual flash belongs to the
+         minority who closed it: an empty gutter that collapses, rather than the whole page
+         moving. The alternative was a second synced region in every page's <head>, which
+         is three sync tools and a second copy of the decision.
+
+         NARROWER than the modal panel, and that is about the pointer rather than the
+         screen: a drawer opened with a thumb wants a wide target and gets `min(300px,
+         84vw)`, while a sidebar that sits there and is pointed at with a mouse only has
+         to hold its longest row - `Place & Route` measures about 190px with its icon and
+         gaps, so 240 has room to spare and gives 60px of it back to the page. Redefining
+         the token rather than adding a second width is what keeps the panel and the
+         indent one number: the drawer is a descendant of `body`, so it inherits this. */
+      body { --nav-w: 240px; }
+      body:not(.nav-unpinned) {
+        padding-left: var(--nav-w);
+      }
+      /* THE BAR STILL SPANS THE WINDOW, which is the whole reason for the negative
+         margin: the indent above moves every block in the body, the bar included, so
+         without this it started at the panel's edge and left an empty 240px-wide corner
+         above the panel - and the button and the account control came off the window's
+         edges, which is the arrangement `.gh-header-inner { max-width: none }` above
+         exists to produce. Measured in a browser, which is where the corner showed up.
+         The width has to be restated because a block's own width comes from its
+         containing block, so a negative margin alone moves the left edge and leaves the
+         right one 240px short. Keyed on the same `:not()` as the indent, since the two are
+         one layout and a frame in which they disagree is a bar that starts off-screen. */
+      body:not(.nav-unpinned) .gh-header {
+        margin-left: calc(-1 * var(--nav-w));
+        width: calc(100% + var(--nav-w));
+      }
+      /* THE PANEL'S SHAPE HANGS OFF THE QUERY, NOT OFF `.nav-pinned`, and that is what stops
+         the close from flashing. At this width an open drawer is ALWAYS pinned - the builder
+         computes `isOpen() && canPin()` off this very number - so the panel is either the
+         pinned sidebar or off-screen, and its closed shape is never seen. Except for one
+         moment: `shut()` removes `.nav-pinned` in the same frame it starts a 220ms slide, so
+         with these rules keyed on the class the panel spent its whole exit wearing the modal
+         costume. Caught on video at ~31fps and measured off the frames: five frames with the
+         backdrop's dim over the entire page (#a0a4a4 fading through #dcdcdc to white, about
+         100ms of grey), the panel 60px wider, jumped up over the bar, wearing a shadow, and
+         its ✕ head popped in and pushed the rows down - all of it on a panel that was
+         leaving. Keyed on the query instead, nothing about the panel changes when the class
+         goes: it slides out as what it was. `.nav-pinned` keeps the PAGE's state, which is
+         what it is for - the indent above, the scroll lock, `aria-modal`, focus, and whether
+         a backdrop click or Escape closes it.
+
+         The `body` prefix is not decoration: `.nav-drawer-head`'s own rule sits BELOW this
+         block, so at equal specificity it would win on source order - the trap the
+         narrow-screen layer records at length. One prefix on all four keeps the block
+         order-independent rather than three of them relying on where they happen to sit.
+
+         The panel starts BELOW the bar, and its top is MEASURED (the builder sets --nav-top
+         from the header's own rect) rather than written here as a constant: `.gh-header-inner`
+         is `flex-wrap: wrap`, so the bar's height is not one number - and cloud-ui.js appends
+         the account control into it after the fact, which is 2px of it on its own. */
+      body .nav-drawer {
+        top: var(--nav-top);
+        width: var(--nav-w);
+        box-shadow: none;
+      }
+      /* Transparent and inert - not `display: none`, because the panel is its child and
+         would go with it, and not `visibility: hidden` for the same reason. `background-color`
+         rather than the `background` shorthand, so what is overridden is the one longhand the
+         base rule sets and nothing else about it is silently reset. */
+      body .nav-backdrop {
+        background-color: transparent;
+        pointer-events: none;
+      }
+      body .nav-drawer { pointer-events: auto; }
+      /* THE PANEL'S HEAD GOES, both halves of it, and the rows start under the bar.
+         Pinned, the bar is directly above the panel and already carries the wordmark, so
+         the head's cloned copy is the same mark twice, 55px apart - and the ✕ beside it is
+         a second collapse control next to the bar's own ☰, which is where a reader of an
+         app shell reaches for it. Hidden rather than not built, because this is one panel
+         in two shapes: narrow, the head is the only thing that says what the panel belongs
+         to and the only way out of it. */
+      body .nav-drawer-head { display: none; }
+    }
 
     .nav-drawer-head {
       display: flex;
@@ -794,7 +1070,7 @@
     }
     .nav-row-icon svg { width: 16px; height: 16px; fill: currentColor; }
 
-                                                    /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
     /* Expand: the netlist row breaks out of .grid's max-width to the full body content
        width, leaving every other card centred at 1100px. Same control, same geometry and
        the same reasoning as `simulator/index.html`'s waveform expand (`.wave-expanded`),
@@ -1194,6 +1470,377 @@
       <nav class="gh-nav"><a href="simulator.html">Simulator</a><a href="synthesis.html" class="here">Synthesizer</a><a href="compiler.html">Compiler</a><a href="practice.html">Practice</a></nav>
     </div>
   </header>
+<script>
+/* >>> NAV MENU (canonical copy in tools/navmenu.js - do not edit in place) */
+(function () {
+  var inner = document.querySelector('.gh-header-inner');
+  if (!inner || document.getElementById('navMenuBtn')) return;   // no bar, or already built
+
+  /* The rows, in order, and EVERY one is a bare filename because every one is a sibling -
+     Home included, now that index.html is a landing page in this directory. It used to be
+     the GitHub Pages site, which was a stand-in for a home that did not exist; with a real
+     one the drawer needs no network at all, which is the property every other page here is
+     built for. The three apps outside this directory (emulator,
+     verify, workbench) are deliberately absent: they live one level ABOVE the deployed
+     root, so a `../` row would resolve in the repo and 404 on the site. */
+  var ITEMS = [
+    ['Home', 'index.html', 'home'],
+    ['Learn', 'learn.html', 'cap'],
+    ['Practice', 'practice.html', 'mind'],
+    ['Simulator', 'simulator.html', 'pulse'],
+    ['Synthesizer', 'synthesis.html', 'chip'],
+    /* AFTER the synthesizer, because that is the order the flow runs in: a netlist is what
+       this app places and routes. It is a row rather than a `known` entry that marks
+       nothing, which is what it was until it had a page worth linking to. */
+    ['Place & Route', 'pnr.html', 'route'],
+    ['Compiler', 'compiler.html', 'code']
+  ];
+  var G = {
+    menu: '<svg viewBox="0 0 16 16"><path d="M1.5 3.25h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Z"/></svg>',
+    home: '<svg viewBox="0 0 16 16"><path d="M8 1.2 15 7l-.94 1.15-1.06-.88V14a1 1 0 0 1-1 1H9.5v-4.5h-3V15H4a1 1 0 0 1-1-1V7.27l-1.06.88L1 7 8 1.2Zm4 4.83L8 2.7 4 6.03V13.5h1V9h6v4.5h1V6.03Z"/></svg>',
+    /* LEARN: a mortarboard. Fill-only, like every glyph here except `mind` below - the cap is
+       a solid silhouette in the artwork it comes from, so it needs no stroke exception.
+
+       Four subpaths, and the three that could go wrong at 16px were each settled by rasterising
+       at that size and magnifying with nearest-neighbour rather than by looking at it large.
+       The BOARD is narrower than the artwork's (right tip at 14.6, not 15.2) so the tassel has a
+       pixel column clear of it; a wider board swallows the cord into its own right edge. The GAP
+       between board and body is 1.5 units, because at 0.7 it antialiases into a gray smear and
+       the cap reads as one blob. And the CORD is exactly 1 unit wide on integer x, so it lands
+       on one whole pixel - at 0.75 it spread across two at half strength and vanished.
+
+       Winding matters here: the cord overlaps the board and the tip overlaps the cord, so all
+       four subpaths are drawn CLOCKWISE. Under the nonzero rule an opposed subpath would punch a
+       hole through the overlap instead of merging, which reads as a nick in the tassel. The tip
+       also has to reach the cord - a 0.7 break between them is invisible large and reads as a
+       detached speck at 16px. */
+    cap: '<svg viewBox="0 0 16 16"><path d="M8 1.9 14.6 5.4 8 8.9 1.4 5.4Z M4.5 8.6v2.8C4.5 12.6 6 13.4 8 13.4s3.5-.8 3.5-2V8.6L8 10.4Z M13 5.4h1v5.9h-1Z M12.5 11.2h2l-1 2.1Z"/></svg>',
+    /* PRACTICE: a head in profile with a chip in it. Two things about it are deliberate, and
+       the first is the only STROKED glyph in this set.
+
+       The head is `fill="none" stroke="currentColor"` where every other glyph here is a
+       filled silhouette. A head outline as a filled ring means hand-offsetting the profile
+       curve inward, and the reason it is safe to stroke instead is that `.nav-row-icon` sets
+       `color` rather than `fill` - so one token drives both halves, which is exactly the fix
+       CLAUDE.md records for the hub's stroked combinational-gate glyph. The `fill="none"` is
+       a presentation attribute on the PATH, and it beats the stylesheet's `fill: currentColor`
+       on the parent `svg` because that value only reaches the path by inheritance, and any
+       declaration on an element - a presentation attribute included - wins over an inherited
+       one. Verified in a browser rather than reasoned about, since getting it wrong fills the
+       head in solid and the glyph becomes a blob.
+
+       The chip is two pins a side and no inner die, where the artwork it comes from has three
+       and a die. This box is a fixed 16x16 and never renders larger, and at 16px both of those
+       details antialias into a gray smear across the body - measured the same way as `cap`
+       above. Two pins on whole-pixel coordinates stay crisp, and a square body with a hole is
+       already this set's shorthand for a chip (see `chip` below). So the simplification is what
+       makes it legible at the one size it is used. */
+    mind: '<svg viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M5.3 15.3V12.9C5.3 12 1.4 11.2 1.4 7.3 1.4 3.8 4.3 1 7.9 1 10.9 1 12.9 3 13 5.3L14.8 7.8 13.1 8.6C13.1 10.2 12.2 11.2 10.9 11.4V15.3"/><path d="M3.7 3.9h6.2v6.2H3.7V3.9Zm1.2 1.2v3.8h3.8V5.1H4.9ZM2.5 5h1.2v1H2.5V5ZM2.5 8h1.2v1H2.5V8ZM9.9 5h1.2v1H9.9V5ZM9.9 8h1.2v1H9.9V8Z"/></svg>',
+    pulse: '<svg viewBox="0 0 16 16"><path d="M6 2.5a.75.75 0 0 1 .7.48L9.3 10l1-2.5a.75.75 0 0 1 .7-.5h4v1.5h-3.5l-1.8 4.5a.75.75 0 0 1-1.4 0L5.7 5.5 4.7 8a.75.75 0 0 1-.7.5H0V7h3.5l1.8-4.02A.75.75 0 0 1 6 2.5Z"/></svg>',
+    chip: '<svg viewBox="0 0 16 16"><path d="M5 1.5h1.5v1.5h3V1.5H11v1.5h1.5A1.5 1.5 0 0 1 14 4.5V6h1.5v1.5H14v1H15.5V10H14v1.5a1.5 1.5 0 0 1-1.5 1.5H11v1.5H9.5V13h-3v1.5H5V13H3.5A1.5 1.5 0 0 1 2 11.5V10H.5V8.5H2v-1H.5V6H2V4.5A1.5 1.5 0 0 1 3.5 3H5V1.5Zm-1.5 3v7h9v-7h-9Zm2 2h5v3h-5v-3Z"/></svg>',
+    code: '<svg viewBox="0 0 16 16"><path d="M5.7 4.3a.75.75 0 0 1 0 1.06L3.06 8l2.64 2.64a.75.75 0 1 1-1.06 1.06L1.47 8.53a.75.75 0 0 1 0-1.06L4.64 4.3a.75.75 0 0 1 1.06 0Zm4.6 0a.75.75 0 0 1 1.06 0l3.17 3.17a.75.75 0 0 1 0 1.06L11.36 11.7a.75.75 0 1 1-1.06-1.06L12.94 8l-2.64-2.64a.75.75 0 0 1 0-1.06Z"/></svg>',
+    /* PLACE & ROUTE: two placed blocks and one orthogonal wire between them - the two halves
+       of the app's own name, and the only thing it could be a picture of. Fill-only, like
+       every glyph here but `mind`.
+
+       EVERY coordinate is a whole unit, and that is the whole of what makes it legible at
+       16px rather than a matter of taste: the wire is one unit wide, so it lands on one
+       whole pixel at full strength, where the 0.75 the `cap` glyph's cord was first drawn at
+       spread across two at half strength and vanished. The blocks are 5x5 - ODD, so their
+       centres fall on a .5 and the wire's own centreline (x 3.5, y 11.5) meets them exactly;
+       an even block would put the arm half a unit off its block's middle, which reads as a
+       wire that misses its pin. Rasterised at 16px and magnified to check, the same way the
+       three details of `cap` above were settled: two solid blocks and one unbroken 1px wire,
+       and the whole drawing centred on (8, 8) rather than merely fitted inside the box.
+
+       All three subpaths are wound CLOCKWISE. The wire touches the upper block's bottom edge
+       and the lower block's left edge, so under the nonzero rule an opposed subpath would
+       punch a hole through the join and the wire would read as detached at both ends - the
+       same trap `cap`'s tassel records. */
+    route: '<svg viewBox="0 0 16 16"><path d="M1 2h5v5H1V2Zm9 7h5v5h-5V9ZM3 7h1v4h6v1H3V7Z"/></svg>'
+  };
+
+  function mk(tag, cls, id, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (id) e.id = id;
+    if (text !== undefined && text !== null) e.textContent = text;
+    return e;
+  }
+
+  /* THREE OF THE SIX APPS LIVE OUTSIDE Baerilog/ - emulator, verify and workbench - so
+     a bare filename does not resolve from them and this has to prefix. They are also
+     the three that are NOT in the menu, and each carried a single `&larr; Baerilog` link
+     back to the hub; the shared block hides `.gh-nav a`, so that link is gone and the
+     drawer's Practice row is what replaces it. Getting this wrong is not cosmetic: it
+     would leave those three with no way back at all. */
+  var OUTSIDE = ['emulator', 'verify', 'workbench'];
+  function base() {
+    var parts = (window.location && window.location.pathname || '').split('/');
+    var dir = parts[parts.length - 2] || '';
+    return OUTSIDE.indexOf(dir) >= 0 ? '../Baerilog/' : '';
+  }
+
+  /* Which row is current, from the page's own URL rather than a per-app variable: one
+     fewer thing for a copy to set wrong. A practice EXERCISE page is not index.html but
+     is still Practice, which is why the marker falls back to practice.html inside this
+     directory - and why it marks NOTHING from the three outside it, none of which is a row.
+     index.html is the LANDING page and its own row, so it is named rather than fallen into.
+
+     The LEARN pages need naming before that fallback, and this is not a special case so
+     much as the fallback's own limit: `learn.html` and every `learn-<slug>.html` topic page
+     are as much Learn as an exercise page is Practice, and without this they took the
+     Practice row - the drawer said Practice on a page of the learn site. The prefix is what
+     makes one test cover the hub and its topics together, exactly as the fallback covers
+     index.html and its twenty. */
+  function currentHref() {
+    if (base()) return '';
+    var file = (window.location && window.location.pathname || '').split('/').pop() || '';
+    if (file === 'learn.html' || file.indexOf('learn-') === 0) return 'learn.html';
+    /* `pnr.html` is named here for the same reason every other row is: the fallback below
+       catches every filename it has not been told about and answers `practice.html`, so an
+       app left out of this list marks Practice - which is what pnr.html did while it had no
+       row. Now that it has one, being in this list is what MARKS it, not what excludes it,
+       and dropping it would put the marker back on Practice rather than merely lose it. */
+    var known = ['index.html', 'simulator.html', 'synthesis.html', 'compiler.html', 'pnr.html'];
+    return known.indexOf(file) >= 0 ? file : 'practice.html';
+  }
+
+  var btn = mk('button', 'gh-menu-btn', 'navMenuBtn');
+  btn.setAttribute('type', 'button');
+  btn.setAttribute('aria-label', 'Open menu');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-controls', 'navDrawer');
+  btn.setAttribute('title', 'Menu');
+  btn.innerHTML = G.menu;
+  inner.insertBefore(btn, inner.firstChild);
+
+  var back = mk('div', 'nav-backdrop', 'navBackdrop');
+  var panel = mk('aside', 'nav-drawer', 'navDrawer');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  panel.setAttribute('aria-label', 'Site menu');
+
+  var head = mk('div', 'nav-drawer-head');
+  /* The wordmark is CLONED out of the header rather than pasted in as another copy of
+     those three paths: tools/logo.py rewrites every copy in the repo after a re-export,
+     and one it does not know about goes stale silently. Two simple selectors, not the
+     compound `.gh-mark svg`, because the stub DOM the harnesses use resolves one at a
+     time and the compound form returns null - the drawer would ship with no logo while
+     every test passed. On this light surface it drops the header's unconditional
+     invert (style.css does that) or it renders white on white. */
+  var wrap = document.querySelector('.gh-mark');
+  var src = wrap && wrap.querySelector('svg');
+  var mark = mk('span', 'nav-drawer-mark');
+  if (src && src.cloneNode) mark.appendChild(src.cloneNode(true));
+  head.appendChild(mark);
+  var close = mk('button', 'ex-close nav-drawer-close', 'navCloseBtn', '✕');
+  close.setAttribute('type', 'button');
+  close.setAttribute('title', 'Close');
+  close.setAttribute('aria-label', 'Close menu');
+  head.appendChild(close);
+  panel.appendChild(head);
+
+  var list = mk('nav', 'nav-drawer-list', 'navDrawerList');
+  var here = currentHref();
+  var pre = base();
+  for (var i = 0; i < ITEMS.length; i++) {
+    var row = mk('a', 'nav-row' + (ITEMS[i][1] === here ? ' current' : ''));
+    /* No row is absolute today, but the guard stays: it is what would keep an off-site
+       row from being turned into `../Baerilog/https://...`, and it costs one regex. */
+    row.setAttribute('href', /^https?:/.test(ITEMS[i][1]) ? ITEMS[i][1] : pre + ITEMS[i][1]);
+    var ic = mk('span', null, 'nav-row-icon');
+    ic.className = 'nav-row-icon';
+    ic.innerHTML = G[ITEMS[i][2]] || '';
+    row.appendChild(ic);
+    row.appendChild(mk('span', 'nav-row-label', null, ITEMS[i][0]));
+    list.appendChild(row);
+  }
+  panel.appendChild(list);
+  /* The panel is a CHILD of the backdrop, as every dialog here is: that is what makes
+     the ev.target guard below load-bearing rather than unfalsifiable - as siblings, a
+     click inside the panel could never reach the backdrop's handler. The pair is put
+     into the document at the very END of this function, not here, so that the pinned
+     state can be applied to an element the browser has never styled - see there. */
+  back.appendChild(panel);
+
+  function isOpen() { return panel.classList.contains('open'); }
+
+  /* PINNED, on a wide window: the same panel, staying put, with the page fully usable
+     beside it - so it is not a dialog while it is there, and four things follow. The
+     backdrop stops taking clicks and the scroll lock stops applying (both style.css,
+     keyed on `body.nav-pinned`), focus is NOT moved into the panel, and `aria-modal`
+     comes off it. That last one is the important one rather than the tidy one:
+     `aria-modal="true"` tells a screen reader the rest of the page is absent, which is
+     a lie the moment the reader can use it.
+
+     The breakpoint lives in style.css and this asks it through matchMedia with the same
+     number - two copies, which tools/check_theme.py compares, the arrangement this whole
+     builder already lives under. The query decides only whether pinning is AVAILABLE:
+     whether it is USED is remembered per reader, and CSS cannot read localStorage. */
+  var PIN_MQ = '(min-width: 1200px)';
+  function canPin() {
+    return !!(window.matchMedia && window.matchMedia(PIN_MQ).matches);
+  }
+  /* ONE key for the whole site, deliberately - the opposite of the netlist viewer's
+     per-app keys, and for the opposite reason: "keep the navigation open" is a single
+     preference about the site, not per-page state, so a reader who pins it on the
+     simulator wants it pinned on the next page too. Honoured in BOTH directions, so a
+     deliberate close is not undone by the next load, and defaulting to open is what
+     "keep it visible on a desktop" means. */
+  var PIN_KEY = 'navPinned';
+  function pinWanted() {
+    try { return localStorage.getItem(PIN_KEY) !== '0'; } catch (e) { return true; }
+  }
+  function rememberPin(on) {
+    try { localStorage.setItem(PIN_KEY, on ? '1' : '0'); } catch (e) { /* private mode */ }
+  }
+
+  /* The panel sits BELOW the bar while pinned, and the offset is measured rather than
+     written down: `.gh-header-inner` is `flex-wrap: wrap`, so the bar's height is not one
+     number. Measured here and on resize, which is the same hook the redraw below needs. */
+  function measureTop() {
+    var bar = document.querySelector('.gh-header');
+    var h = bar && bar.getBoundingClientRect ? bar.getBoundingClientRect().height : 0;
+    if (document.body.style) document.body.style.setProperty('--nav-top', (h || 0) + 'px');
+  }
+
+  /* Pinning and unpinning change the width of every card on the page, and this repo's
+     standing rule is that anything which does must let the renderers know - a stale
+     canvas is STRETCHED over an unchanged backing store rather than clipped, so every
+     click then lands at the wrong place. Rather than call into six apps, this dispatches
+     the event they all already listen to. Twice: once now, and once when the 220ms slide
+     has finished, because the first fires while the panel is still moving. */
+  function notifyResize() {
+    function fire() {
+      try {
+        window.dispatchEvent(new Event('resize'));
+      } catch (e) {
+        var ev = document.createEvent && document.createEvent('Event');
+        if (ev) { ev.initEvent('resize', true, true); window.dispatchEvent(ev); }
+      }
+    }
+    fire();
+    if (window.setTimeout) window.setTimeout(fire, 260);
+  }
+
+  /* TWO classes, and they are not two names for one thing. `nav-pinned` says the panel is
+     there; `nav-unpinned` says the reader has closed it, and its only job is to give back a
+     column the STYLESHEET reserved before this script ever ran - see style.css's flicker
+     note. So the common case (pinned) needs nothing from here to be laid out correctly, and
+     what this function does is keep the pair from ever both being true. */
+  function applyMode() {
+    var pinned = isOpen() && canPin();
+    document.body.classList[pinned ? 'add' : 'remove']('nav-pinned');
+    document.body.classList[!pinned && canPin() ? 'add' : 'remove']('nav-unpinned');
+    if (pinned) {
+      measureTop();
+      panel.setAttribute('role', 'navigation');
+      panel.removeAttribute('aria-modal');
+    } else {
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-modal', 'true');
+    }
+    return pinned;
+  }
+
+  function open(remember) {
+    /* One drawer at a time: cloud-ui.js's account drawer comes in from the right and is
+       looked up at click time, so neither depends on loading before the other. A PINNED
+       drawer is not one of the two, though - it is page furniture, and closing it because
+       the reader opened their account would fold it away and leave it folded. */
+    var ab = document.getElementById('cloudDrawerBack');
+    var ap = document.getElementById('cloudDrawer');
+    if (ab) ab.classList.remove('open');
+    if (ap) ap.classList.remove('open');
+    panel.classList.add('open');
+    back.classList.add('open');
+    document.body.classList.add('nav-open');
+    btn.setAttribute('aria-expanded', 'true');
+    var pinned = applyMode();
+    if (remember !== false) rememberPin(true);
+    /* Focus belongs to the reader while pinned. The panel is open at load there, so
+       moving focus into it would take it out of whatever they were typing in - and there
+       is nothing to trap it in front of, since the page behind is not covered. */
+    if (!pinned) {
+      var first = list.children[0];
+      if (first && first.focus) first.focus();
+    }
+  }
+  function shut(remember) {
+    panel.classList.remove('open');
+    back.classList.remove('open');
+    document.body.classList.remove('nav-open');
+    /* applyMode is the ONE writer of the two body classes, here as at load: it reads
+       `isOpen()`, which is already false by this point, so it removes `nav-pinned` and
+       gives the reserved column back with `nav-unpinned`. Writing either of them here as
+       well is how a second copy of that rule would start disagreeing with this one - and
+       measured as a mutant, the duplicate was simply redundant. */
+    applyMode();
+    btn.setAttribute('aria-expanded', 'false');
+    if (remember !== false) rememberPin(false);
+    if (btn.focus) btn.focus();
+  }
+  btn.addEventListener('click', function () {
+    var was = document.body.classList.contains('nav-pinned');
+    if (isOpen()) shut(); else open();
+    /* Only a change of PIN state moves the page; opening a modal drawer over it does
+       not, so the modal case must not pay for a redraw of every canvas. */
+    if (was !== document.body.classList.contains('nav-pinned')) notifyResize();
+  });
+  close.addEventListener('click', function () {
+    var was = document.body.classList.contains('nav-pinned');
+    shut();
+    if (was) notifyResize();
+  });
+  back.addEventListener('click', function (ev) {
+    /* A pinned drawer's backdrop takes no clicks at all (style.css), so this cannot fire
+       there - but the guard is written anyway, because `pointer-events` is one stylesheet
+       away and dismissing the furniture by clicking the page would be the worst of it. */
+    if (ev.target === back && !document.body.classList.contains('nav-pinned')) shut();
+  });
+  document.addEventListener('keydown', function (ev) {
+    /* Escape closes a dialog. A pinned drawer is not one, and Escape on these pages
+       already belongs to the exercise sheet and to the editors - so folding the
+       navigation away on a stray Escape while typing Verilog would be a surprise. */
+    if (ev.key === 'Escape' && isOpen() && !document.body.classList.contains('nav-pinned')) shut();
+  });
+
+  /* Crossing the breakpoint - a rotated tablet, a dragged window - changes which of the
+     two shapes this is. Widening back into pinnable territory re-opens it if that is
+     what the reader last asked for; narrowing turns the same panel into the modal it
+     would have been, without remembering that as a decision (`false`), or a phone visit
+     would clear a desktop preference. */
+  function onViewport() {
+    if (!canPin()) {
+      /* Both paths end in applyMode - shut() calls it - which is what drops `nav-unpinned`
+         below the breakpoint, where the stylesheet reserves nothing for it to describe. */
+      if (document.body.classList.contains('nav-pinned')) shut(false);
+      else applyMode();
+      return;
+    }
+    measureTop();
+    if (!isOpen() && pinWanted()) open(false);
+    else applyMode();
+  }
+  window.addEventListener('resize', onViewport);
+  /* And once more at `load`, because the bar is not finished when this runs: cloud-ui.js
+     appends the account control into it afterwards, which made it 2px taller than the
+     panel had been told - so the pinned panel overlapped the bottom of the bar by exactly
+     that. Measured in a browser rather than reasoned about; the resize hook above would
+     have corrected it at the reader's first window drag, which is not a fix. */
+  window.addEventListener('load', measureTop);
+
+  /* Open at load where it is wanted, and BEFORE the panel is in the document: an element
+     that has never been styled has nothing to transition from, so the drawer is simply
+     there on the first paint instead of sliding in on every page load. Nothing is
+     notified, because everything on the page measures itself after this runs. */
+  if (canPin() && pinWanted()) open(false);
+  else if (canPin()) document.body.classList.add('nav-unpinned');
+  document.body.appendChild(back);
+})();
+/* <<< NAV MENU */
+</script>
 
 <h1 class="gh-crumb"><a href="index.html">Baerilog</a><span class="sep">/</span><span class="here">Verilog Synthesizer</span></h1>
 <div class="gh-sub">gate-level synthesis of a behavioral Verilog subset, with an interactive netlist viewer</div>
@@ -1270,7 +1917,7 @@
     <div class="console-box" id="logBox"></div>
   </div>
 
-  <div class="card full">
+  <div class="card full" id="card-netlist">
     <h2><span class="card-collapse-btn" data-collapse>▾</span>Synthesized Gate-level Verilog Netlist (Read-only)
       <span class="help-wrap"><span class="help-icon">?</span><div class="help-popup"><div>&middot; top-level module instantiating primitive cells, followed by the behavioral definition of each cell used</div></div></span>
         <span class="header-controls">
@@ -1303,7 +1950,7 @@
       <div class="hierarchy-tree" id="hierarchyTree"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="card-netlist-view">
       <h2><span class="card-collapse-btn" data-collapse>▾</span>Netlist Viewer
         <span class="help-wrap"><span class="help-icon">?</span><div class="help-popup"><div>&middot; drag to pan, scroll/pinch to zoom, drag nodes to rearrange, double-click an instance block to drill into it — built with React Flow</div></div></span>
         <span class="header-controls">
@@ -5478,6 +6125,12 @@ document.addEventListener('click', () => {
   function apply(visible) {
     splitRow.classList.toggle('hierarchy-collapsed', !visible);
     btn.classList.toggle('active', visible);
+    /* The Module Hierarchy CARD is what this hides, and the four menu apps' tab strip has
+       one tab per card that is on the page - so the strip has to be rebuilt or the panel is
+       reachable with no tab, or worse, a tab points at a card that is not there. Guarded
+       because this script is also Baerilog/app.js and the workbench's slice, where there is
+       no strip (the practice pages build their own and refresh it themselves). */
+    if (window.TABSTRIP) window.TABSTRIP.refresh();
   }
   btn.addEventListener('click', () => {
     const visible = splitRow.classList.contains('hierarchy-collapsed');
@@ -5957,6 +6610,10 @@ root.render(html`<${FlowApp} />`);
     ['Practice', 'practice.html', 'mind'],
     ['Simulator', 'simulator.html', 'pulse'],
     ['Synthesizer', 'synthesis.html', 'chip'],
+    /* AFTER the synthesizer, because that is the order the flow runs in: a netlist is what
+       this app places and routes. It is a row rather than a `known` entry that marks
+       nothing, which is what it was until it had a page worth linking to. */
+    ['Place & Route', 'pnr.html', 'route'],
     ['Compiler', 'compiler.html', 'code']
   ];
   var G = {
@@ -6002,7 +6659,26 @@ root.render(html`<${FlowApp} />`);
     mind: '<svg viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M5.3 15.3V12.9C5.3 12 1.4 11.2 1.4 7.3 1.4 3.8 4.3 1 7.9 1 10.9 1 12.9 3 13 5.3L14.8 7.8 13.1 8.6C13.1 10.2 12.2 11.2 10.9 11.4V15.3"/><path d="M3.7 3.9h6.2v6.2H3.7V3.9Zm1.2 1.2v3.8h3.8V5.1H4.9ZM2.5 5h1.2v1H2.5V5ZM2.5 8h1.2v1H2.5V8ZM9.9 5h1.2v1H9.9V5ZM9.9 8h1.2v1H9.9V8Z"/></svg>',
     pulse: '<svg viewBox="0 0 16 16"><path d="M6 2.5a.75.75 0 0 1 .7.48L9.3 10l1-2.5a.75.75 0 0 1 .7-.5h4v1.5h-3.5l-1.8 4.5a.75.75 0 0 1-1.4 0L5.7 5.5 4.7 8a.75.75 0 0 1-.7.5H0V7h3.5l1.8-4.02A.75.75 0 0 1 6 2.5Z"/></svg>',
     chip: '<svg viewBox="0 0 16 16"><path d="M5 1.5h1.5v1.5h3V1.5H11v1.5h1.5A1.5 1.5 0 0 1 14 4.5V6h1.5v1.5H14v1H15.5V10H14v1.5a1.5 1.5 0 0 1-1.5 1.5H11v1.5H9.5V13h-3v1.5H5V13H3.5A1.5 1.5 0 0 1 2 11.5V10H.5V8.5H2v-1H.5V6H2V4.5A1.5 1.5 0 0 1 3.5 3H5V1.5Zm-1.5 3v7h9v-7h-9Zm2 2h5v3h-5v-3Z"/></svg>',
-    code: '<svg viewBox="0 0 16 16"><path d="M5.7 4.3a.75.75 0 0 1 0 1.06L3.06 8l2.64 2.64a.75.75 0 1 1-1.06 1.06L1.47 8.53a.75.75 0 0 1 0-1.06L4.64 4.3a.75.75 0 0 1 1.06 0Zm4.6 0a.75.75 0 0 1 1.06 0l3.17 3.17a.75.75 0 0 1 0 1.06L11.36 11.7a.75.75 0 1 1-1.06-1.06L12.94 8l-2.64-2.64a.75.75 0 0 1 0-1.06Z"/></svg>'
+    code: '<svg viewBox="0 0 16 16"><path d="M5.7 4.3a.75.75 0 0 1 0 1.06L3.06 8l2.64 2.64a.75.75 0 1 1-1.06 1.06L1.47 8.53a.75.75 0 0 1 0-1.06L4.64 4.3a.75.75 0 0 1 1.06 0Zm4.6 0a.75.75 0 0 1 1.06 0l3.17 3.17a.75.75 0 0 1 0 1.06L11.36 11.7a.75.75 0 1 1-1.06-1.06L12.94 8l-2.64-2.64a.75.75 0 0 1 0-1.06Z"/></svg>',
+    /* PLACE & ROUTE: two placed blocks and one orthogonal wire between them - the two halves
+       of the app's own name, and the only thing it could be a picture of. Fill-only, like
+       every glyph here but `mind`.
+
+       EVERY coordinate is a whole unit, and that is the whole of what makes it legible at
+       16px rather than a matter of taste: the wire is one unit wide, so it lands on one
+       whole pixel at full strength, where the 0.75 the `cap` glyph's cord was first drawn at
+       spread across two at half strength and vanished. The blocks are 5x5 - ODD, so their
+       centres fall on a .5 and the wire's own centreline (x 3.5, y 11.5) meets them exactly;
+       an even block would put the arm half a unit off its block's middle, which reads as a
+       wire that misses its pin. Rasterised at 16px and magnified to check, the same way the
+       three details of `cap` above were settled: two solid blocks and one unbroken 1px wire,
+       and the whole drawing centred on (8, 8) rather than merely fitted inside the box.
+
+       All three subpaths are wound CLOCKWISE. The wire touches the upper block's bottom edge
+       and the lower block's left edge, so under the nonzero rule an opposed subpath would
+       punch a hole through the join and the wire would read as detached at both ends - the
+       same trap `cap`'s tassel records. */
+    route: '<svg viewBox="0 0 16 16"><path d="M1 2h5v5H1V2Zm9 7h5v5h-5V9ZM3 7h1v4h6v1H3V7Z"/></svg>'
   };
 
   function mk(tag, cls, id, text) {
@@ -6042,11 +6718,11 @@ root.render(html`<${FlowApp} />`);
     if (base()) return '';
     var file = (window.location && window.location.pathname || '').split('/').pop() || '';
     if (file === 'learn.html' || file.indexOf('learn-') === 0) return 'learn.html';
-    /* `pnr.html` is in this list without being a ROW, and that is the point: the fallback below
-       exists so a practice EXERCISE page marks Practice, and it catches every filename it has not
-       been told about - so an app with no row of its own was marking Practice too. Naming it here
-       returns a value no row matches, which marks nothing, exactly as the three apps above the
-       deployed root do. It gains a row when it is ready for one. */
+    /* `pnr.html` is named here for the same reason every other row is: the fallback below
+       catches every filename it has not been told about and answers `practice.html`, so an
+       app left out of this list marks Practice - which is what pnr.html did while it had no
+       row. Now that it has one, being in this list is what MARKS it, not what excludes it,
+       and dropping it would put the marker back on Practice rather than merely lose it. */
     var known = ['index.html', 'simulator.html', 'synthesis.html', 'compiler.html', 'pnr.html'];
     return known.indexOf(file) >= 0 ? file : 'practice.html';
   }
@@ -6104,14 +6780,96 @@ root.render(html`<${FlowApp} />`);
   panel.appendChild(list);
   /* The panel is a CHILD of the backdrop, as every dialog here is: that is what makes
      the ev.target guard below load-bearing rather than unfalsifiable - as siblings, a
-     click inside the panel could never reach the backdrop's handler. */
+     click inside the panel could never reach the backdrop's handler. The pair is put
+     into the document at the very END of this function, not here, so that the pinned
+     state can be applied to an element the browser has never styled - see there. */
   back.appendChild(panel);
-  document.body.appendChild(back);
 
   function isOpen() { return panel.classList.contains('open'); }
-  function open() {
+
+  /* PINNED, on a wide window: the same panel, staying put, with the page fully usable
+     beside it - so it is not a dialog while it is there, and four things follow. The
+     backdrop stops taking clicks and the scroll lock stops applying (both style.css,
+     keyed on `body.nav-pinned`), focus is NOT moved into the panel, and `aria-modal`
+     comes off it. That last one is the important one rather than the tidy one:
+     `aria-modal="true"` tells a screen reader the rest of the page is absent, which is
+     a lie the moment the reader can use it.
+
+     The breakpoint lives in style.css and this asks it through matchMedia with the same
+     number - two copies, which tools/check_theme.py compares, the arrangement this whole
+     builder already lives under. The query decides only whether pinning is AVAILABLE:
+     whether it is USED is remembered per reader, and CSS cannot read localStorage. */
+  var PIN_MQ = '(min-width: 1200px)';
+  function canPin() {
+    return !!(window.matchMedia && window.matchMedia(PIN_MQ).matches);
+  }
+  /* ONE key for the whole site, deliberately - the opposite of the netlist viewer's
+     per-app keys, and for the opposite reason: "keep the navigation open" is a single
+     preference about the site, not per-page state, so a reader who pins it on the
+     simulator wants it pinned on the next page too. Honoured in BOTH directions, so a
+     deliberate close is not undone by the next load, and defaulting to open is what
+     "keep it visible on a desktop" means. */
+  var PIN_KEY = 'navPinned';
+  function pinWanted() {
+    try { return localStorage.getItem(PIN_KEY) !== '0'; } catch (e) { return true; }
+  }
+  function rememberPin(on) {
+    try { localStorage.setItem(PIN_KEY, on ? '1' : '0'); } catch (e) { /* private mode */ }
+  }
+
+  /* The panel sits BELOW the bar while pinned, and the offset is measured rather than
+     written down: `.gh-header-inner` is `flex-wrap: wrap`, so the bar's height is not one
+     number. Measured here and on resize, which is the same hook the redraw below needs. */
+  function measureTop() {
+    var bar = document.querySelector('.gh-header');
+    var h = bar && bar.getBoundingClientRect ? bar.getBoundingClientRect().height : 0;
+    if (document.body.style) document.body.style.setProperty('--nav-top', (h || 0) + 'px');
+  }
+
+  /* Pinning and unpinning change the width of every card on the page, and this repo's
+     standing rule is that anything which does must let the renderers know - a stale
+     canvas is STRETCHED over an unchanged backing store rather than clipped, so every
+     click then lands at the wrong place. Rather than call into six apps, this dispatches
+     the event they all already listen to. Twice: once now, and once when the 220ms slide
+     has finished, because the first fires while the panel is still moving. */
+  function notifyResize() {
+    function fire() {
+      try {
+        window.dispatchEvent(new Event('resize'));
+      } catch (e) {
+        var ev = document.createEvent && document.createEvent('Event');
+        if (ev) { ev.initEvent('resize', true, true); window.dispatchEvent(ev); }
+      }
+    }
+    fire();
+    if (window.setTimeout) window.setTimeout(fire, 260);
+  }
+
+  /* TWO classes, and they are not two names for one thing. `nav-pinned` says the panel is
+     there; `nav-unpinned` says the reader has closed it, and its only job is to give back a
+     column the STYLESHEET reserved before this script ever ran - see style.css's flicker
+     note. So the common case (pinned) needs nothing from here to be laid out correctly, and
+     what this function does is keep the pair from ever both being true. */
+  function applyMode() {
+    var pinned = isOpen() && canPin();
+    document.body.classList[pinned ? 'add' : 'remove']('nav-pinned');
+    document.body.classList[!pinned && canPin() ? 'add' : 'remove']('nav-unpinned');
+    if (pinned) {
+      measureTop();
+      panel.setAttribute('role', 'navigation');
+      panel.removeAttribute('aria-modal');
+    } else {
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-modal', 'true');
+    }
+    return pinned;
+  }
+
+  function open(remember) {
     /* One drawer at a time: cloud-ui.js's account drawer comes in from the right and is
-       looked up at click time, so neither depends on loading before the other. */
+       looked up at click time, so neither depends on loading before the other. A PINNED
+       drawer is not one of the two, though - it is page furniture, and closing it because
+       the reader opened their account would fold it away and leave it folded. */
     var ab = document.getElementById('cloudDrawerBack');
     var ap = document.getElementById('cloudDrawer');
     if (ab) ab.classList.remove('open');
@@ -6120,22 +6878,87 @@ root.render(html`<${FlowApp} />`);
     back.classList.add('open');
     document.body.classList.add('nav-open');
     btn.setAttribute('aria-expanded', 'true');
-    var first = list.children[0];
-    if (first && first.focus) first.focus();
+    var pinned = applyMode();
+    if (remember !== false) rememberPin(true);
+    /* Focus belongs to the reader while pinned. The panel is open at load there, so
+       moving focus into it would take it out of whatever they were typing in - and there
+       is nothing to trap it in front of, since the page behind is not covered. */
+    if (!pinned) {
+      var first = list.children[0];
+      if (first && first.focus) first.focus();
+    }
   }
-  function shut() {
+  function shut(remember) {
     panel.classList.remove('open');
     back.classList.remove('open');
     document.body.classList.remove('nav-open');
+    /* applyMode is the ONE writer of the two body classes, here as at load: it reads
+       `isOpen()`, which is already false by this point, so it removes `nav-pinned` and
+       gives the reserved column back with `nav-unpinned`. Writing either of them here as
+       well is how a second copy of that rule would start disagreeing with this one - and
+       measured as a mutant, the duplicate was simply redundant. */
+    applyMode();
     btn.setAttribute('aria-expanded', 'false');
+    if (remember !== false) rememberPin(false);
     if (btn.focus) btn.focus();
   }
-  btn.addEventListener('click', function () { if (isOpen()) shut(); else open(); });
-  close.addEventListener('click', shut);
-  back.addEventListener('click', function (ev) { if (ev.target === back) shut(); });
-  document.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Escape' && isOpen()) shut();
+  btn.addEventListener('click', function () {
+    var was = document.body.classList.contains('nav-pinned');
+    if (isOpen()) shut(); else open();
+    /* Only a change of PIN state moves the page; opening a modal drawer over it does
+       not, so the modal case must not pay for a redraw of every canvas. */
+    if (was !== document.body.classList.contains('nav-pinned')) notifyResize();
   });
+  close.addEventListener('click', function () {
+    var was = document.body.classList.contains('nav-pinned');
+    shut();
+    if (was) notifyResize();
+  });
+  back.addEventListener('click', function (ev) {
+    /* A pinned drawer's backdrop takes no clicks at all (style.css), so this cannot fire
+       there - but the guard is written anyway, because `pointer-events` is one stylesheet
+       away and dismissing the furniture by clicking the page would be the worst of it. */
+    if (ev.target === back && !document.body.classList.contains('nav-pinned')) shut();
+  });
+  document.addEventListener('keydown', function (ev) {
+    /* Escape closes a dialog. A pinned drawer is not one, and Escape on these pages
+       already belongs to the exercise sheet and to the editors - so folding the
+       navigation away on a stray Escape while typing Verilog would be a surprise. */
+    if (ev.key === 'Escape' && isOpen() && !document.body.classList.contains('nav-pinned')) shut();
+  });
+
+  /* Crossing the breakpoint - a rotated tablet, a dragged window - changes which of the
+     two shapes this is. Widening back into pinnable territory re-opens it if that is
+     what the reader last asked for; narrowing turns the same panel into the modal it
+     would have been, without remembering that as a decision (`false`), or a phone visit
+     would clear a desktop preference. */
+  function onViewport() {
+    if (!canPin()) {
+      /* Both paths end in applyMode - shut() calls it - which is what drops `nav-unpinned`
+         below the breakpoint, where the stylesheet reserves nothing for it to describe. */
+      if (document.body.classList.contains('nav-pinned')) shut(false);
+      else applyMode();
+      return;
+    }
+    measureTop();
+    if (!isOpen() && pinWanted()) open(false);
+    else applyMode();
+  }
+  window.addEventListener('resize', onViewport);
+  /* And once more at `load`, because the bar is not finished when this runs: cloud-ui.js
+     appends the account control into it afterwards, which made it 2px taller than the
+     panel had been told - so the pinned panel overlapped the bottom of the bar by exactly
+     that. Measured in a browser rather than reasoned about; the resize hook above would
+     have corrected it at the reader's first window drag, which is not a fix. */
+  window.addEventListener('load', measureTop);
+
+  /* Open at load where it is wanted, and BEFORE the panel is in the document: an element
+     that has never been styled has nothing to transition from, so the drawer is simply
+     there on the first paint instead of sliding in on every page load. Nothing is
+     notified, because everything on the page measures itself after this runs. */
+  if (canPin() && pinWanted()) open(false);
+  else if (canPin()) document.body.classList.add('nav-unpinned');
+  document.body.appendChild(back);
 })();
 /* <<< NAV MENU */
 
@@ -6153,5 +6976,169 @@ root.render(html`<${FlowApp} />`);
 <script src="cloud.js"></script>
 <script src="cloud-ui.js"></script>
 <script src="cloud-sync.js"></script>
+<script>
+/* >>> TAB STRIP (canonical copy in tools/tabstrip.js - do not edit in place) */
+(function () {
+  var crumb = document.querySelector('h1.gh-crumb');
+  var sub = document.querySelector('.gh-sub');
+  if (!crumb || !sub || document.getElementById('appTabs')) return;   // no heading, or built
+
+  /* Glyphs in the tab strip's own idiom, and they are Baerilog/shell.js's own six rather
+     than a second set - check_theme.py asserts any name these two files share is
+     byte-identical, so the practice strip and this one cannot come to draw `code`
+     differently. Cards legitimately share a glyph where the metaphor is the same thing
+     twice - a netlist, a netlist viewer, a placement and a die are all silicon, which is
+     also why `card-netlist` draws the chip rather than `code`: the netlist card holds
+     Verilog text, but what it MEANS is gates, and the strip names the thing rather than
+     the file format (its sibling viewer draws the same graph, and the compiler's Assembly
+     card keeps `code` because a listing really is source). An unmapped card gets `box`,
+     which is what makes a NEW card get a tab without editing this table. */
+  var ICON = {
+    book: '<svg viewBox="0 0 16 16"><path d="M2 2.5A1.5 1.5 0 0 1 3.5 1H13a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a2 2 0 0 0-2 2V2.5Zm2.5-.5a.5.5 0 0 0-.5.5v10.1c.3-.07.63-.1.5-.1h8V2H4.5Z"/></svg>',
+    code: '<svg viewBox="0 0 16 16"><path d="M5.7 4.3a.75.75 0 0 1 0 1.06L3.06 8l2.64 2.64a.75.75 0 1 1-1.06 1.06L1.47 8.53a.75.75 0 0 1 0-1.06L4.64 4.3a.75.75 0 0 1 1.06 0Zm4.6 0a.75.75 0 0 1 1.06 0l3.17 3.17a.75.75 0 0 1 0 1.06L11.36 11.7a.75.75 0 1 1-1.06-1.06L12.94 8l-2.64-2.64a.75.75 0 0 1 0-1.06Z"/></svg>',
+    term: '<svg viewBox="0 0 16 16"><path d="M1.5 2h13a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm.5 1.5v9h12v-9H2Zm2 2 2 2-2 2 .8.8L7.6 7.5 4.8 4.7 4 5.5Zm4.5 4h4v1h-4v-1Z"/></svg>',
+    pulse: '<svg viewBox="0 0 16 16"><path d="M6 2.5a.75.75 0 0 1 .7.48L9.3 10l1-2.5a.75.75 0 0 1 .7-.5h4v1.5h-3.5l-1.8 4.5a.75.75 0 0 1-1.4 0L5.7 5.5 4.7 8a.75.75 0 0 1-.7.5H0V7h3.5l1.8-4.02A.75.75 0 0 1 6 2.5Z"/></svg>',
+    db: '<svg viewBox="0 0 16 16"><path d="M8 1c3.3 0 6 .9 6 2v10c0 1.1-2.7 2-6 2s-6-.9-6-2V3c0-1.1 2.7-2 6-2Zm4.5 4.6C11.4 6.1 9.8 6.4 8 6.4s-3.4-.3-4.5-.8V8c.6.4 2.3.9 4.5.9s3.9-.5 4.5-.9V5.6ZM8 2.5c-2.5 0-4.5.4-4.5 1s2 1 4.5 1 4.5-.4 4.5-1-2-1-4.5-1Zm4.5 7.1c-1.1.5-2.7.8-4.5.8s-3.4-.3-4.5-.8V12c.6.4 2.3.9 4.5.9s3.9-.5 4.5-.9V9.6Z"/></svg>',
+    chip: '<svg viewBox="0 0 16 16"><path d="M5 1.5h1.5v1.5h3V1.5H11v1.5h1.5A1.5 1.5 0 0 1 14 4.5V6h1.5v1.5H14v1H15.5V10H14v1.5a1.5 1.5 0 0 1-1.5 1.5H11v1.5H9.5V13h-3v1.5H5V13H3.5A1.5 1.5 0 0 1 2 11.5V10H.5V8.5H2v-1H.5V6H2V4.5A1.5 1.5 0 0 1 3.5 3H5V1.5Zm-1.5 3v7h9v-7h-9Zm2 2h5v3h-5v-3Z"/></svg>',
+    box: '<svg viewBox="0 0 16 16"><path d="M2 2.5A1.5 1.5 0 0 1 3.5 1h9A1.5 1.5 0 0 1 14 2.5v11a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 13.5v-11Zm1.5-.5a.5.5 0 0 0-.5.5v11c0 .28.22.5.5.5h9a.5.5 0 0 0 .5-.5v-11a.5.5 0 0 0-.5-.5h-9Z"/></svg>'
+  };
+  var GLYPH = {
+    'card-editor': 'code', 'card-source': 'code', 'card-asm': 'code',
+    'card-testbench': 'book', 'card-report': 'book',
+    'card-console': 'term', 'card-log': 'term',
+    'card-wave': 'pulse',
+    'card-memory': 'db', 'card-data': 'db', 'card-stack': 'db', 'card-cells': 'db',
+    'card-model': 'chip', 'card-regs': 'chip', 'card-hierarchy': 'chip',
+    'card-netlist': 'chip', 'card-netlist-view': 'chip', 'card-place': 'chip', 'card-fab': 'chip'
+  };
+
+  /* ---- the band. The three are MOVED into it, since appendChild on a node already in
+     the document detaches it - so they keep their ids, classes, listeners and their own
+     centred 1280px boxes, and the wrapper is a full-width block contributing no geometry.
+     One wrapper rather than three sticky elements is the whole reason it exists: stacking
+     three would mean writing each one's `top` as the sum of the heights above it, and not
+     one of those heights is a constant - the crumb wraps at a long title, the sub-line at
+     a long blurb, and the bar itself wraps, which is why --nav-top is measured. */
+  var head = document.createElement('div');
+  head.className = 'gh-page-head';
+  crumb.parentElement.insertBefore(head, crumb);
+  head.appendChild(crumb);
+  head.appendChild(sub);
+  var strip = document.createElement('nav');
+  strip.className = 'gh-tabs';
+  strip.id = 'appTabs';
+  head.appendChild(strip);
+
+  /* ---- a tab's label is EXTRACTED from the card's own heading, not read off it. That
+     heading holds the collapse control, the (?) icon and its whole popover, so its
+     textContent reads `▾Waveform Viewer?The signals…`. Taken from a clone so the card on
+     screen is untouched, and the arrow characters are dropped by codepoint because the
+     collapse button is a `<button>` on some cards and a bare glyph on others. */
+  /* Two titles are sentences rather than names, and both are overridden here rather than
+     shortened by a rule that would have to guess. The synthesizer's netlist card is called
+     `Synthesized Gate-level Verilog Netlist (Read-only)`, which is 300px of a 1200px strip;
+     and the compiler's Assembly card carries the TARGET in its heading (`ATmega644 (reduced
+     AVR2) Assembly`), which changes when the target does - so a tab reading it would be
+     stale the moment someone switched, and would need a hook of its own to notice. Every
+     other card uses its own title, so a new card gets an honest tab with no table to edit. */
+  var LABEL = { 'card-netlist': 'Netlist', 'card-asm': 'Assembly' };
+
+  /* A third override, keyed by the TITLE rather than by the id, and the keying is the whole
+     of the reason it is a second table: `card-editor` is the id in TWO of the four apps -
+     the simulator's Verilog design editor and the compiler's C/Python Source Editor - so an
+     id-keyed entry would have relabelled that one `Design` as well, which is a claim about
+     a C program. This one is not a sentence and needs no shortening on its own account; it
+     is renamed because Baerilog/shell.js's strip already calls that very card `Design` on
+     the twenty practice pages, and one card cannot be two things in two strips that share a
+     stylesheet and a glyph set. The card's own heading is left alone: it sits beside
+     `Testbench Editor`, where the longer name is what says which of the two editors it is. */
+  var RENAME = { 'Verilog Source Editor': 'Design' };
+
+  function labelOf(card) {
+    if (LABEL[card.id]) return LABEL[card.id];
+    var h2 = card.querySelector('h2');
+    if (!h2) return '';
+    var c = h2.cloneNode(true);
+    var drop = c.querySelectorAll('button, select, input, label, .help-icon, .help-popup,'
+                                + ' .header-controls, .layout-toggle');
+    for (var i = 0; i < drop.length; i++) {
+      if (drop[i].parentElement) drop[i].parentElement.removeChild(drop[i]);
+    }
+    var t = (c.textContent || '').replace(/[▴▸▾◂]/g, '')
+                                 .replace(/\s*\([^)]*\)\s*$/, '')
+                                 .replace(/\s+/g, ' ').trim();
+    return RENAME[t] || t;
+  }
+
+  /* ---- `scrollIntoView({block:'start'})` aims at the top of the VIEWPORT, which is
+     behind the bar and this band - so without a correction a tab left the card it selected
+     with its own title hidden under the strip that selected it. The correction is measured
+     AFTER the scroll, which is what makes one rule serve both layouts: the band's bottom
+     edge IS the height of everything docked above the content (the bar sits above it, so
+     one rect covers both), and where the narrow layer has released the band it has
+     scrolled away with the page and its bottom is at or above 0. No copy of the 760px
+     breakpoint, and nothing to keep in step with two heights that both vary. */
+  function clearStickyOverlap() {
+    if (!head.getBoundingClientRect || !window.scrollBy) return;
+    var over = head.getBoundingClientRect().bottom;
+    if (over > 0) window.scrollBy(0, -over);
+  }
+
+  /* ---- one tab per card that is ON the page, rebuilt when that changes (renderModelCard
+     in the simulator, the Fabrication card in pnr) rather than watched for: a
+     MutationObserver over the grid is one line and fires throughout every render loop,
+     and the cards that come and go are known. A card with no id is skipped, and cannot
+     happen - check_theme.py asserts every card in these four apps carries one, which is
+     the difference between an honest rule and silent truncation. */
+  function build() {
+    var lit = null;
+    var was = strip.querySelectorAll('.gh-tab');
+    for (var i = 0; i < was.length; i++) {
+      if (was[i].classList.contains('selected')) lit = was[i].getAttribute('data-card');
+      was[i].remove();
+    }
+    var cards = document.querySelectorAll('.grid .card, .grid.card');
+    var made = [];
+    for (var k = 0; k < cards.length; k++) {
+      var card = cards[k];
+      /* getClientRects, not `card.style.display`: the Module Hierarchy card is hidden by a
+         CLASS on its parent (`.split-row.hierarchy-collapsed`), so an inline-style test gave
+         it a tab that scrolled nowhere - a dead control, which is the one thing a strip
+         built from the cards must not produce. Measured: it landed at top=0 behind the band
+         with the window unable to move, because scrollIntoView on a display:none element
+         does nothing at all. This test answers for a card hidden anywhere up its tree. */
+      if (!card.id || !card.getClientRects || !card.getClientRects().length) continue;
+      var label = labelOf(card);
+      if (!label) continue;
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'gh-tab';
+      b.setAttribute('data-card', card.id);
+      b.innerHTML = (ICON[GLYPH[card.id]] || ICON.box) + '<span>' + label + '</span>';
+      b.addEventListener('click', (function (target, btn) {
+        return function () {
+          var all = strip.querySelectorAll('.gh-tab');
+          for (var j = 0; j < all.length; j++) all[j].classList.remove('selected');
+          btn.classList.add('selected');
+          if (target.scrollIntoView) target.scrollIntoView({ block: 'start' });
+          clearStickyOverlap();
+        };
+      })(card, b));
+      strip.appendChild(b);
+      made.push(b);
+    }
+    for (var n = 0; n < made.length; n++) {
+      if (made[n].getAttribute('data-card') === lit) { made[n].classList.add('selected'); return; }
+    }
+    if (made.length) made[0].classList.add('selected');
+  }
+
+  /* Named on `window` because the two apps with cards that appear or vanish call it from
+     their own code, and because a harness driving one of these pages has to be able to. */
+  window.TABSTRIP = { refresh: build, band: head, strip: strip, label: labelOf };
+  build();
+})();
+/* <<< TAB STRIP */
+</script>
 </body>
 </html>

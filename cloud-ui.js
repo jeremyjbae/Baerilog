@@ -350,11 +350,21 @@
 
   function openDrawer() {
     /* One drawer at a time. shell.js's navigation drawer is queried at click time
-       rather than captured, so neither file has to load before the other. */
-    var nb = document.getElementById('navBackdrop'), nd = document.getElementById('navDrawer');
-    if (nb) nb.classList.remove('open');
-    if (nd) nd.classList.remove('open');
-    if (document.body.classList) document.body.classList.remove('nav-open');
+       rather than captured, so neither file has to load before the other.
+
+       A PINNED navigation drawer is not one of the two, and closing it here would be a
+       real bug rather than a cosmetic one: on a wide window that panel is page furniture
+       that the reader asked to keep, so opening an account drawer would fold it away -
+       and, since `shut()` there records the close, it would stay folded on every page
+       afterwards. Read from the body class rather than from a width, so this file needs
+       to know nothing about the breakpoint. */
+    var pinned = document.body.classList && document.body.classList.contains('nav-pinned');
+    if (!pinned) {
+      var nb = document.getElementById('navBackdrop'), nd = document.getElementById('navDrawer');
+      if (nb) nb.classList.remove('open');
+      if (nd) nd.classList.remove('open');
+      if (document.body.classList) document.body.classList.remove('nav-open');
+    }
     view = 'menu';
     renderBody();
     dBack.classList.add('open');
@@ -365,7 +375,14 @@
   function closeDrawer() {
     dBack.classList.remove('open');
     dPanel.classList.remove('open');
-    document.body.classList.remove('nav-open');
+    /* Both drawers raise `nav-open` (it is what locks the page's scroll), so this may
+       only lower it if the OTHER one is not still up - which, pinned, it usually is.
+       Without the guard the body ends up carrying `nav-pinned` and not `nav-open`, two
+       classes describing one state and disagreeing. */
+    var nd = document.getElementById('navDrawer');
+    if (!(nd && nd.classList.contains('open'))) {
+      document.body.classList.remove('nav-open');
+    }
     if (avatarBtn) {
       avatarBtn.setAttribute('aria-expanded', 'false');
       if (avatarBtn.focus) avatarBtn.focus();
@@ -489,6 +506,7 @@
     if (d.app === 'simulator') return 'simulator.html';
     if (d.app === 'synthesis') return 'synthesis.html';
     if (d.app === 'compiler') return 'compiler.html';
+    if (d.app === 'pnr') return 'pnr.html';
     return '';
   }
   function ago(t) {

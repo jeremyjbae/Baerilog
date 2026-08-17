@@ -32,7 +32,15 @@
 body.landing {
   background: var(--canvas-default);
   color: var(--fg-default);
-  padding: 0;
+  /* A LONGHAND, not `padding: 0`, and that is not tidiness: this file loads after app.css,
+     so at equal specificity it wins - and the shorthand also reset the `padding-left` that
+     `body.nav-pinned` sets to indent the page beside a pinned navigation drawer. The
+     symptom was not a misplaced panel but a MISSING MENU: the bar is pulled 300px left of
+     the indent it expects, so with no indent its own button and wordmark landed at x=-276,
+     off the screen entirely, while the hero sat under the panel. Measured, after being
+     reported as "index.html misses the menu". Only the shared 32px bottom padding is what
+     this page means to drop, so only that is written. */
+  padding-bottom: 0;
   min-height: 100vh;
   display: flex;
   flex-direction: column;

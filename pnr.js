@@ -1884,6 +1884,45 @@ const EXAMPLES = {
     'endmodule'
   ].join('\n'),
 
+  /* THE HIERARCHICAL ONE, and it is the shape a netlist actually arrives in: this is what
+     Baerilog/synthesis.html emits for `a + b` - a top module wiring one FUNC_add4, which
+     wires four fa_gate, each of which expands into two half adders and an OR. So the two
+     stages below the parser both run, and the four bits of every bus stay four nets. */
+  '4-bit adder (hierarchical)': [
+    'module adder4 (a, b, cin, sum, cout);',
+    '  input [3:0] a;',
+    '  input [3:0] b;',
+    '  input cin;',
+    '  output [3:0] sum;',
+    '  output cout;',
+    '',
+    '  FUNC_add4 add0 (.a(a), .b(b), .cin(cin), .cout(cout), .sum(sum));',
+    'endmodule',
+    '',
+    'module FUNC_add4 (a, b, cin, cout, sum);',
+    '  input [3:0] a;',
+    '  input [3:0] b;',
+    '  input cin;',
+    '  output cout;',
+    '  output [3:0] sum;',
+    '  wire w_fa0_cout, w_fa1_cout, w_fa2_cout;',
+    '',
+    '  fa_gate u_fa0 (.a(a[0]), .b(b[0]), .cin(cin), .sum(sum[0]), .cout(w_fa0_cout));',
+    '  fa_gate u_fa1 (.a(a[1]), .b(b[1]), .cin(w_fa0_cout), .sum(sum[1]), .cout(w_fa1_cout));',
+    '  fa_gate u_fa2 (.a(a[2]), .b(b[2]), .cin(w_fa1_cout), .sum(sum[2]), .cout(w_fa2_cout));',
+    '  fa_gate u_fa3 (.a(a[3]), .b(b[3]), .cin(w_fa2_cout), .sum(sum[3]), .cout(cout));',
+    'endmodule',
+    '',
+    '// A cell definition, carried under the design as the synthesizer writes it. fa_gate is',
+    '// a macro here, so this body is documentation: the flattener stops at it either way.',
+    'module fa_gate (input a, input b, input cin, output sum, output cout);',
+    '  wire a_xor_b;',
+    '  assign a_xor_b = a ^ b;',
+    '  assign sum = a_xor_b ^ cin;',
+    '  assign cout = ((a_xor_b) & cin) | (a & b);',
+    'endmodule'
+  ].join('\n'),
+
   'Every cell once': [
     'module all_cells (input a, input b, input sel, input clk, input rstn,',
     '                  output o1, output o2, output o3, output o4, output o5,',
@@ -1940,7 +1979,13 @@ function lexNetlist(src) {
   return out;
 }
 
-function parseNetlist(src) {
+/* EVERY module in the file, because a netlist is hierarchical: what the synthesizer
+   emits for `a + b` is a top module instantiating a FUNC_add4, which instantiates
+   fa_gate cells, followed by the behavioural definition of each cell it used. This
+   used to read the FIRST module and stop at its `endmodule`, so everything below was
+   silently dropped and the one instance left behind reported `no layout and no macro
+   for FUNC_add4` - the whole design, discarded with one line about a wrapper. */
+function parseNetlistFile(src) {
   const t = lexNetlist(src);
   let p = 0;
   const at = () => t[p];
@@ -1952,18 +1997,62 @@ function parseNetlist(src) {
   };
   const isKw = (w) => t[p].k === 'id' && t[p].v === w;
 
-  while (!isKw('module') && at().k !== 'eof') p++;
-  if (at().k === 'eof') throw new Error('no module found');
+  const modules = {};
+  const order = [];
+  const dupes = [];
+  while (at().k !== 'eof') {
+    while (!isKw('module') && at().k !== 'eof') p++;
+    if (at().k === 'eof') break;
+    const mod = parseModule();
+    /* A REPEATED DEFINITION IS THE FIRST ONE, NOTED - never an error. Refusing was written
+       first and broke a caller this engine has always had: a learn topic's placement figure is
+       handed the page's own Verilog, where a cell library is legitimately declared alongside a
+       synthesized netlist that defines the same cells, so `and_gate` really does appear twice.
+       The old reader stopped at the first `endmodule` and never noticed. There is nothing to
+       decide between two definitions of a cell whose LAYOUT this app takes from its own table,
+       so keeping the first and saying so is the whole of it. */
+    if (modules[mod.name]) {
+      dupes.push(mod.name);
+      continue;
+    }
+    modules[mod.name] = mod;
+    order.push(mod.name);
+  }
+  if (!order.length) throw new Error('no module found');
+  return { modules: modules, order: order,
+           dupeNote: dupes.length
+             ? dupes.length + ' module(s) declared more than once (' + dupes.join(', ')
+               + '); the first definition of each is the one read'
+             : null };
+
+  function parseModule() {
   eat('module');
   const name = eat('id').v;
 
   const ports = [];
+  /* Declared BIT RANGES, from either place a Verilog module may put them: the ANSI port list
+     (`module m (input [3:0] hi, output y)`) and the body (`input [16:0] a;`). Both forms are
+     in this app's own examples, and the range is what numbers a bus's bits - so a reader that
+     took only one of them would resolve a concatenation against a port whose width it did not
+     know, on half the netlists that exist. */
+  const ranges = {};
   if (at().v === '(') {
     eat('(');
+    let range = null;
     while (at().v !== ')') {
-      if (at().k === 'id' && ['input', 'output', 'inout', 'wire', 'reg'].indexOf(at().v) >= 0) { p++; continue; }
-      if (at().k === 'id') ports.push(eat('id').v);
-      else p++;
+      if (at().k === 'id' && ['input', 'output', 'inout', 'wire', 'reg'].indexOf(at().v) >= 0) {
+        p++;
+        range = null;               // a new direction: whatever range follows is its own
+        continue;
+      }
+      if (at().v === '[') { range = readRange(); continue; }
+      if (at().k === 'id') {
+        const port = eat('id').v;
+        ports.push(port);
+        if (range && !ranges[port]) ranges[port] = range;
+        continue;
+      }
+      p++;
     }
     eat(')');
   }
@@ -1971,18 +2060,45 @@ function parseNetlist(src) {
 
   const wires = [];
   const instances = [];
+  /* Statements that are not instances, COUNTED rather than refused, because a cell's own
+     definition is legitimately behavioural: the netlist a synthesizer emits carries
+     `module fa_gate ... assign sum = a ^ b ^ cin; endmodule` under the design, as
+     documentation of a cell that has a layout or a macro. A body like that is never
+     descended into, so its statements cost nothing - but a module the placer has to
+     FLATTEN cannot have any, and that is reported where the flattening happens rather
+     than here, where it is not yet known which kind this is. */
+  let behavioural = 0;
   while (!isKw('endmodule') && at().k !== 'eof') {
     if (isKw('input') || isKw('output') || isKw('inout') || isKw('wire') || isKw('reg')) {
       p++;
+      /* THE RANGE IS KEPT NOW, where it used to be skipped as noise, because a bus port
+         connected to a CONCATENATION can only be indexed if its declared bit numbering is
+         known: `.sum({s16, ..., s0})` on `output [16:0] sum` means sum[16] is s16, and it is
+         the `16:0` that says so. Applied to every name in the statement, which is where a
+         Verilog range belongs (`input [3:0] a, b;` declares two buses). */
+      let range = at().v === '[' ? readRange() : null;
       while (at().v !== ';' && at().k !== 'eof') {
-        if (at().k === 'id') { const w = eat('id').v; if (wires.indexOf(w) < 0) wires.push(w); }
-        else p++;
+        if (at().k === 'id') {
+          const w = eat('id').v;
+          if (wires.indexOf(w) < 0) wires.push(w);
+          if (range && !ranges[w]) ranges[w] = range;
+        } else p++;
       }
       eat(';');
       continue;
     }
     if (at().k === 'id') {
       const type = eat('id').v;
+      /* TWO IDS AND THEN A `(` is an instance; anything else is a statement this parser
+         does not read (`assign y = a ^ b;` reaches here as `assign` + `y` + `=`). Skipping
+         to the `;` is what lets a cell definition sit in the file at all - it used to
+         throw `expected ( but found =` and take the whole netlist with it. */
+      if (at().k !== 'id' || t[p + 1].v !== '(') {
+        while (at().v !== ';' && at().k !== 'eof') p++;
+        if (at().v === ';') eat(';');
+        behavioural++;
+        continue;
+      }
       const inst = eat('id').v;
       eat('(');
       const conn = {};
@@ -1992,12 +2108,10 @@ function parseNetlist(src) {
           eat('.');
           const pin = eat('id').v;
           eat('(');
-          let net = '';
-          if (at().v !== ')') net = at().k === 'id' || at().k === 'num' ? t[p++].v : t[p++].v;
+          conn[pin] = readNet();
           eat(')');
-          conn[pin] = net;
         } else if (at().k === 'id' || at().k === 'num') {
-          pos.push(t[p++].v);
+          pos.push(readNet());
         } else {
           p++;
         }
@@ -2009,7 +2123,288 @@ function parseNetlist(src) {
     }
     p++;
   }
-  return { name: name, ports: ports, wires: wires, instances: instances };
+  if (isKw('endmodule')) eat('endmodule');
+  return { name: name, ports: ports, wires: wires, ranges: ranges, instances: instances,
+           behavioural: behavioural };
+  }
+
+  /* A net as WRITTEN, bit-select included, because `a[0]` and `a[1]` are two nets and the
+     placer knows a net only by its name. This is what a bussed netlist needs and it is
+     what the old reader could not do at all: it took one token and left the `[`, so
+     `.a(a[0])` either threw `expected ) but found [` or, in the port list, quietly
+     collapsed every bit of a bus onto the bus's own name - four full adders reading one
+     net. A part-select is refused by name rather than guessed at: `a[3:0]` as one net
+     would be a fifth net that shares no bit with the four real ones. */
+  /* `[hi:lo]`, or null for anything this does not understand - a parameterised width, say,
+     which is not something a gate-level netlist carries. Null means "no range", which is the
+     same answer as a scalar and is handled everywhere the range is read. */
+  function readRange() {
+    eat('[');
+    const hi = at().k === 'num' ? Number(t[p++].v) : NaN;
+    let lo = NaN;
+    if (at().v === ':') { eat(':'); lo = at().k === 'num' ? Number(t[p++].v) : NaN; }
+    while (at().v !== ']' && at().k !== 'eof') p++;
+    eat(']');
+    return isFinite(hi) && isFinite(lo) ? [hi, lo] : null;
+  }
+
+  function readNet() {
+    if (at().v === ')') return '';
+    /* A CONCATENATION, which is how a synthesizer hands a bus to a port whose bits are
+       separate wires: `.sum({w_sum16, ..., w_sum0})`. It comes back as a LIST rather than a
+       name, MSB first as Verilog writes it, and the flattener is what resolves it against
+       the receiving port's declared range. Returning a string here (`{a,b}` as a net name)
+       would place and route perfectly while connecting seventeen bits to one invented net. */
+    if (at().v === '{') {
+      eat('{');
+      const parts = [];
+      while (at().v !== '}' && at().k !== 'eof') {
+        if (at().v === ',') { p++; continue; }
+        parts.push(readNet());
+      }
+      eat('}');
+      return parts;
+    }
+    let net = t[p++].v;
+    if (at().v === '[') {
+      let inner = '';
+      eat('[');
+      while (at().v !== ']' && at().k !== 'eof') inner += t[p++].v;
+      eat(']');
+      /* A PART-SELECT IS A LIST OF BITS, which is what it means: `x[3:0]` is
+         `{x[3], x[2], x[1], x[0]}`, and returning that is both the honest reading and the
+         one the flattener already knows how to resolve against a port's range. Refusing it
+         was written first and was wrong twice over - it is ordinary Verilog, and the old
+         reader silently took the base name for it, so a refusal turned quiet mis-wiring
+         into a dead app on any netlist that used one. */
+      if (inner.indexOf(':') >= 0) {
+        const ends = inner.split(':').map(Number);
+        if (!isFinite(ends[0]) || !isFinite(ends[1])) return net;
+        const list = [];
+        if (ends[0] >= ends[1]) for (let b = ends[0]; b >= ends[1]; b--) list.push(net + '[' + b + ']');
+        else for (let b = ends[0]; b <= ends[1]; b++) list.push(net + '[' + b + ']');
+        return list;
+      }
+      net += '[' + inner + ']';
+    }
+    return net;
+  }
+}
+
+/* The TOP module: the FIRST one nothing else instantiates, with a cell's own definition
+   never a candidate - which is what keeps a synthesizer's output working, since that file
+   carries a `module and_gate` for every cell it emitted and an unused one is instantiated by
+   nothing at all. Ambiguity is REPORTED rather than refused (`topNote`, printed by the run),
+   because this engine has three consumers and one of them - a learn topic's placement figure
+   - hands it the page's own Verilog, which is a design AND its library AND a testbench. */
+function topModuleOf(file) {
+  const instantiated = {};
+  for (const name of file.order) {
+    for (const inst of file.modules[name].instances) instantiated[inst.type] = true;
+  }
+  const free = file.order.filter((n) => !instantiated[n]);
+  const tops = free.filter((n) => !CELLS[n] && !MACROS[n]);
+  const pick = tops.length ? tops[0] : (free.length ? free[0] : file.order[0]);
+  file.topNote = tops.length > 1
+    ? tops.length + ' modules are instantiated by nothing (' + tops.join(', ') + '); '
+      + pick + ' is taken as the top'
+    : null;
+  return pick;
+}
+
+/* The whole file, with the top module's own fields hoisted onto the result - so every
+   existing caller (window.PNR.parse, which practice-pnr.js reads, and the run below)
+   keeps receiving what it always did, and `modules` is simply there for the flattener. */
+function parseNetlist(src) {
+  const file = parseNetlistFile(src);
+  const top = topModuleOf(file);
+  const mod = file.modules[top];
+  /* A NETLIST'S TOP INSTANTIATES SOMETHING. This reads as belt-and-braces and is not: the old
+     reader threw on the first `assign` it met, and a caller relies on that - practice-pnr.js
+     catches a parse error and draws "an empty box and a reason", while a figure handed a
+     library of behavioural cell definitions used to get exactly that. Skipping those
+     statements (so a cell definition may sit under a real design) turned the error into a
+     silent empty placement on three topic pages. So the error comes back, on the honest
+     question: is there anything here to place? */
+  if (!mod.instances.length && mod.behavioural) {
+    throw new Error('module ' + mod.name + ' has ' + mod.behavioural + ' statement(s) and no '
+                    + 'instances, so it is behavioural rather than a gate-level netlist');
+  }
+  return { name: mod.name, ports: mod.ports, wires: mod.wires, ranges: mod.ranges,
+           instances: mod.instances, behavioural: mod.behavioural,
+           modules: file.modules, order: file.order, topNote: file.topNote,
+           dupeNote: file.dupeNote };
+}
+
+/* ----------------------------------------------------------------- flatten
+   A hierarchy of modules becomes one list of cells, which is what a placer places.
+
+   The leaves are the CELL LIBRARY and the MACROS - a type with a layout, or one that
+   expands into layouts - so descending stops exactly where this app has something to
+   place, and a cell's behavioural definition further down the file is left alone. Names
+   are joined with `/`, which reads as the path it is and stays distinct from the `_` the
+   macro expander uses one level below: `add0/u_fa2` expands into `add0/u_fa2_ha0`. */
+function flattenNetlist(net) {
+  const modules = net.modules || {};
+  const out = [];
+  const notes = [];
+  const problems = [];
+
+  if (net.topNote) problems.push(net.topNote);
+  if (net.dupeNote) problems.push(net.dupeNote);
+  descend(net.name, '', {}, []);
+  return { instances: out, notes: notes, problems: problems };
+
+  function descend(name, prefix, portMap, stack) {
+    const mod = modules[name];
+    /* A DEPTH CAP AS WELL AS THE CYCLE CHECK, and it is not belt-and-braces: the check below
+       catches a module that instantiates itself, which is the reachable mistake, while this
+       catches whatever it does not - and the cost of missing one is not a wrong answer but a
+       tab that stops responding. Measured with the cycle check removed: node ran out of
+       HEAP (3.9 GB) rather than stack, i.e. a browser would have hung rather than thrown.
+       64 is far past any real netlist: the synthesizer's deepest output is three levels. */
+    if (stack.length > 64) {
+      problems.push('module ' + name + ' is nested deeper than 64 levels ('
+                    + stack.slice(0, 4).join(' -> ') + ' -> ...), so it cannot be flattened');
+      return;
+    }
+    if (stack.indexOf(name) >= 0) {
+      problems.push('module ' + name + ' instantiates itself (' + stack.concat(name).join(' -> ')
+                    + '), so it cannot be flattened');
+      return;
+    }
+    /* A module being flattened may hold nothing but instances. A cell definition is never
+       reached here (it is a leaf), so this only ever fires on a wrapper whose logic would
+       otherwise be dropped without a word - the silent-truncation failure this repo keeps
+       designing against. */
+    if (mod.behavioural) {
+      problems.push('module ' + name + ' has ' + mod.behavioural + ' statement(s) that are '
+                    + 'not instances, and the placer reads instances only');
+    }
+    for (const inst of mod.instances) {
+      const conn = {};
+      for (const pin in inst.conn) {
+        conn[pin] = mapNet(inst.conn[pin], portMap, prefix, mod);
+      }
+      const childMap = {};
+      const sub = modules[inst.type];
+      if (sub) {
+        /* The child's ports take the names the PARENT connected them to. Positional
+           connections map by index against the child's own port list, which is the only
+           place that order is known. */
+        const named = Object.keys(inst.conn).length > 0;
+        if (named) {
+          for (const pin in conn) childMap[pin] = conn[pin];
+        } else {
+          inst.pos.forEach((netName, i) => {
+            if (sub.ports[i] !== undefined) {
+              childMap[sub.ports[i]] = mapNet(netName, portMap, prefix, mod);
+            }
+          });
+        }
+      }
+      const path = prefix + inst.name;
+      if (CELLS[inst.type] || MACROS[inst.type] || !sub) {
+        /* A leaf, or a type this app has never heard of - which is left to the run's own
+           `no layout and no macro for X` report rather than swallowed here.
+           EVERY PIN OF A LEAF IS ONE BIT, so a list reaching one is a width mistake in the
+           netlist: named, and written back as the text it came from, because passing an
+           array into the placer would have it treated as one net whose name is `a,b`. */
+        for (const pin in conn) {
+          if (Array.isArray(conn[pin])) {
+            problems.push(path + '.' + pin + ' is connected to ' + conn[pin].length
+                          + ' nets, and a cell pin is one bit: {' + conn[pin].join(', ') + '}');
+            conn[pin] = '{' + conn[pin].join(',') + '}';
+          }
+        }
+        out.push({ type: inst.type, name: path, conn: conn,
+                   pos: inst.pos.map((n) => mapNet(n, portMap, prefix, mod)) });
+        continue;
+      }
+      const before = out.length;
+      descend(inst.type, path + '/', childMap, stack.concat(name));
+      notes.push(path + ' (' + inst.type + ' -> ' + (out.length - before) + ' instance(s))');
+    }
+  }
+
+  /* A child's net name in the PARENT's terms. The bit suffix is carried across rather than
+     resolved, because a bus port connected to a bus keeps its bit numbering: the child's
+     `a[0]` under `.a(x)` is `x[0]`, and under `.a(a)` is the top's own `a[0]`. A single bit
+     connected to a whole bus port is a width mismatch, and taking either side's numbering
+     would be a guess, so it is reported. */
+  function mapNet(name, portMap, prefix, mod) {
+    /* A LIST maps element by element, and each element is expanded to its BITS first, so a
+       concatenation of buses (`{w_hi, w_lo}` where each is 8 bits) is sixteen nets rather
+       than two - which is what the receiving port's bit numbering is counted against. */
+    if (Array.isArray(name)) {
+      const flatList = [];
+      for (const part of name) {
+        const one = mapNet(part, portMap, prefix, mod);
+        if (Array.isArray(one)) { flatList.push.apply(flatList, one); continue; }
+        const bits = bitsOf(part, mod);
+        if (bits) for (const b of bits) flatList.push(mapNet(b, portMap, prefix, mod));
+        else flatList.push(one);
+      }
+      return flatList;
+    }
+    if (!name || !/^[A-Za-z_\\]/.test(name)) return name;      // a constant, or nothing
+    const at = name.indexOf('[');
+    const base = at < 0 ? name : name.slice(0, at);
+    const suffix = at < 0 ? '' : name.slice(at);
+    if (Object.prototype.hasOwnProperty.call(portMap, base)) {
+      const outer = portMap[base];
+      if (Array.isArray(outer)) {
+        /* The port was given a concatenation. Which element a bit lands on is decided by the
+           port's OWN declared range, since that is what numbers its bits: on `[16:0] sum`,
+           sum[16] is the first element written and sum[0] the last. Without the range there
+           is nothing to count against, and guessing would wire the bus backwards - which
+           routes and places perfectly and is wrong in a way no picture would show. */
+        if (!suffix) return outer;
+        const range = (mod && mod.ranges && mod.ranges[base]) || null;
+        const bit = Number(suffix.slice(1, -1));
+        if (!range || !isFinite(bit)) {
+          problems.push(prefix.replace(/\/$/, '') + ': ' + base + suffix + ' is connected to '
+                        + outer.length + ' nets but ' + base + ' has no declared range to '
+                        + 'number its bits');
+          return outer.join(',');
+        }
+        const width = Math.abs(range[0] - range[1]) + 1;
+        if (width !== outer.length) {
+          problems.push(prefix.replace(/\/$/, '') + ': ' + base + '[' + range[0] + ':'
+                        + range[1] + '] is ' + width + ' bits but is connected to '
+                        + outer.length + ' nets');
+        }
+        const idx = range[0] >= range[1] ? range[0] - bit : bit - range[0];
+        if (idx < 0 || idx >= outer.length) {
+          problems.push(prefix.replace(/\/$/, '') + ': ' + base + suffix
+                        + ' is outside the ' + outer.length + ' nets connected to it');
+          return prefix + name;
+        }
+        return outer[idx];
+      }
+      if (!suffix) return outer;
+      if (outer.indexOf('[') >= 0) {
+        problems.push(prefix.replace(/\/$/, '') + ': ' + base + suffix + ' is a bit of a port '
+                      + 'connected to the single net ' + outer + ' - connect a bus to a bus');
+        return outer;
+      }
+      return outer + suffix;
+    }
+    return prefix + name;
+  }
+
+  /* The bits of a name declared as a bus IN THE MODULE THAT WROTE IT, MSB first - or null
+     for a scalar, a constant or a name already carrying a bit-select, each of which is one
+     entry in a concatenation exactly as written. */
+  function bitsOf(name, mod) {
+    if (typeof name !== 'string' || name.indexOf('[') >= 0) return null;
+    const range = mod && mod.ranges && mod.ranges[name];
+    if (!range) return null;
+    const out2 = [];
+    if (range[0] >= range[1]) for (let b = range[0]; b >= range[1]; b--) out2.push(name + '[' + b + ']');
+    else for (let b = range[0]; b <= range[1]; b++) out2.push(name + '[' + b + ']');
+    return out2;
+  }
 }
 
 /* --------------------------------------------------------------- expansion */
@@ -2403,6 +2798,50 @@ function placementSvg(plan, viewName) {
   parts.push('</g>');
   return { markup: parts.join('\n'), viewBox: '0 0 ' + plan.width + ' ' + plan.height,
            width: plan.width, height: plan.height };
+}
+
+/* THE SHAPE OF THE PLACEMENT, chosen rather than fallen into. A row count is picked by trying
+   each one and keeping whichever comes out closest to square - `place` already takes a row
+   count (`budgetForRows` binary-searches the width that fits them), so this is a search over
+   the one number that decides the shape.
+
+   WHY A SEARCH AND NOT ARITHMETIC. The closed form is `sqrt(sum(w) * pitch)`, the side of a
+   square with the placement's area, and it is right for a design and wrong for an example: a
+   row holds whole cells, so with a target of 129 lambda and cells of 48 a row takes two and
+   wastes a third of itself - measured, the Full adder came out 96 x 216 from the formula
+   where three cells in one row is 96 x 72. The search has no granularity to get wrong,
+   because it measures the placements themselves.
+
+   It costs one `place` per candidate row count. The synthesizer's 16-bit ALU is 334 cells, so
+   that is 334 placements of 334 cells - a few million comparisons, once, on a button press
+   that already walks every cell to route it.
+
+   FEWER ROWS WINS A TIE, which is what makes the answer stable: two shapes as square as each
+   other are the same picture rotated, and the wider one keeps the rows readable. */
+/* The width a design with nothing placeable in it gets, and what the Fabrication figure falls
+   back to before anything has been placed. It is the number ROW_LAMBDA below the marker was,
+   and it lives HERE because the engine region is sliced into Baerilog/pnr.js and must not
+   reach outside itself for a constant. */
+const ROW_LAMBDA_FALLBACK = 320;
+function squarestPlan(instances) {
+  let n = 0;
+  for (const inst of instances) if (CELLS[inst.type]) n++;
+  if (!n) return { plan: place(instances, ROW_LAMBDA_FALLBACK * 1000),
+                   budget: ROW_LAMBDA_FALLBACK * 1000 };
+  let best = null;
+  for (let rows = 1; rows <= n; rows++) {
+    const budget = budgetForRows(instances, rows);
+    if (!isFinite(budget)) continue;
+    const plan = place(instances, budget);
+    if (!plan.width || !plan.height) continue;
+    const ratio = Math.max(plan.width, plan.height) / Math.min(plan.width, plan.height);
+    if (!best || ratio < best.ratio - 1e-9) best = { plan: plan, budget: budget, ratio: ratio };
+    /* Once a row count has passed square, going narrower can only get taller: the widths
+       shrink monotonically with the row count, so the ratio is a valley and this is its floor. */
+    if (plan.height > plan.width && best && ratio > best.ratio) break;
+  }
+  return best || { plan: place(instances, ROW_LAMBDA_FALLBACK * 1000),
+                   budget: ROW_LAMBDA_FALLBACK * 1000 };
 }
 
 return {

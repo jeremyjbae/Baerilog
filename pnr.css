@@ -7,7 +7,7 @@
    SVG it returns, so every layer colour travels with the markup. That is what makes a
    placement figure look the same in a topic page as in the app without a second stylesheet
    having to agree with the first. */
-/* --- additions for pnr --- */
+                                                                                                                                                                                                                                                                                                                                            /* --- additions for pnr --- */
 /* The editor rules live in each app's OWN additions, never in the shared
    block -- so a new app that only inlines style.css gets an unstyled textarea
    and a gutter laid out as running text.  Keyed by STRUCTURE (.editor-wrap
@@ -25,11 +25,107 @@
   white-space: pre; overflow: auto; tab-size: 2;
 }
 .pnr-wrap { background: var(--canvas-subtle); border: 1px solid var(--border-default);
-            border-radius: 6px; overflow: auto; height: 460px; }
-.pnr-wrap svg { display: block; }
+            border-radius: 6px; overflow: auto; height: 460px;
+            /* A DRAG PANS, as it does in the netlist viewer, so the cursor says the drawing can be
+               moved before anyone tries. `grabbing` is set on the element while a drag is live. */
+            cursor: grab;
+            /* CENTRED, so a fitted layout sits in the middle of the box rather than in its top left
+               corner with the slack all on one side - which is what a fit that binds on height looks
+               like otherwise. */
+            display: flex; }
+/* `margin: auto` ON THE FLEX ITEM, not `justify-content`/`align-items` on the box: those centre by
+   distributing space, and when the child is LARGER than the box the overflow lands past its start edge
+   where a scroll container cannot reach it - the top and left of a zoomed-in layout become unreachable.
+   Auto margins resolve to zero once there is no free space, so the same rule centres a small drawing and
+   leaves a large one scrollable in both directions. */
+.pnr-wrap svg { display: block; margin: auto; }
 .pnr-inst-box { fill: none; stroke: var(--accent-fg); stroke-width: 300; stroke-opacity: 0; }
 .pnr-name { font-family: ui-monospace, monospace; font-size: 3000px;
             fill: var(--fg-muted); text-anchor: middle; }
+/* THE WIRES, HIDDEN AS A GROUP. `placementSvg` puts every routing shape in one `.pnr-routing`
+   group precisely so that showing and hiding them is this one rule rather than a redraw - the cells
+   are left alone, and the wires come back in the state they left. Toggled on the element that owns
+   the state: this app's `<svg>` (see `routingShown`), and the figure's wrapper on a learn page (see
+   `setRouting` in practice-pnr.js), so nothing can end up half-switched.
+
+   It lives HERE, after the additions marker, because `build.py` slices this region into pnr.css -
+   so the app and the twenty learn figures get one rule from one place. Put beside `.layout-btn` up
+   in the shared block, as this was first, it is invisible to the slice and pnr.css needs a second
+   hand-written copy of it: `--check` reported the file 10 lines longer than its source.
+
+   `pnr-*` classes are otherwise exempt from the every-class-has-a-rule scan, which is why the rest
+   of that markup needs no CSS - this one is a rule because it is doing something. */
+
+/* THE CROSS SECTION'S OWN CLASSES, which `practice-pnr.js` emits. They were in learn.css, which this
+   app does not load - and they belong with the drawing rather than with the page around it: this region
+   is sliced into pnr.css, which every topic that has a layout already loads, so one source now feeds
+   both this app's inline copy and the learn pages. What STAYED in learn.css is that site's framing -
+   `.learn-sec-head`, `.learn-sec-step`, `.learn-sec-body > .pnr-sec-svg` and the rest - because those
+   describe the box a learn page puts the drawing in, not the drawing.
+
+   The materials are LITERAL colours on purpose, in both colour modes: silicon, oxide and metal are the
+   product here rather than chrome, the same reason the emulator's TV palette is not themed. */
+/* ---- THE MATERIALS: silicon and oxide, which are not masks ----
+   These four are the only LITERAL colours in this file, and the reason is the one the emulator's TV
+   palette gives for not being themed: they are the product rather than chrome. Silicon is tan and
+   oxide is pale blue in both colour modes, because a wafer does not change colour when the reader's
+   OS does - the same statement the `--panel-*` set makes about editors and consoles. They are also
+   not in the legend, having no mask to tick, which is exactly why each one is LABELLED in the
+   drawing instead.
+
+   The mask colours are untouched: those come from the cell artwork through the drawer, so the
+   section, the layout and the badges beside them stay one palette. */
+.pnr-sec-sub { fill: #d4a574; stroke: #a87f52; stroke-width: 250; }
+.pnr-sec-fieldox { fill: #8fbfd4; }
+/* OPAQUE, and painted first of the above-surface shapes so the poly and the metal sit on it. It was
+   55% translucent, which looked right in light mode and came out grey-blue in dark: a translucent
+   material composites against the page behind it, and the page moves with the reader's OS. */
+.pnr-sec-ild { fill: #a8d5e5; }
+/* The sliver under a gate, the one shape whose whole job is to say the gate does not touch the
+   silicon. Darker than the oxide above it so it reads at 6px. */
+.pnr-sec-gox { fill: #5a8fa8; }
+.pnr-sec-surface { stroke: #8a6642; stroke-width: 250; }
+/* A mask shape. Rounded and lightly outlined, as the reference draws them - the outline is the
+   figure's own surface, so a shape reads as sitting on the page in either mode. */
+.pnr-sec-shape { fill-opacity: 0.9; stroke: var(--canvas-subtle); stroke-width: 150; }
+/* TEXT ON A MATERIAL IS A FIXED DARK, chosen against the fill rather than taken from the page -
+   this repo's rule wherever text lands on a coloured surface, and here the surface is fixed in both
+   modes so the text has to be too. */
+.pnr-sec-mat-tag {
+  fill: #5a4030;
+  font-family: var(--font-sans);
+  font-size: 2400px;
+  text-anchor: middle;
+}
+/* A tag on a mask shape (N+, P+, POLY, M1) carries that mask's class, so it goes when the layer does.
+   NO OUTLINE and no fill here: the colour is set per element by the drawer, measured against the fill
+   the tag sits on. A halo was how one white label was made to work on seven different colours, and it
+   reads as a sticker stuck to the shape rather than as a label on it. */
+.pnr-sec-tag {
+  font-family: var(--font-sans);
+  font-size: 2200px;
+  text-anchor: middle;
+}
+.pnr-sec-text {
+  fill: var(--fg-muted);
+  font-family: var(--font-sans);
+  font-size: 2600px;      /* user units: the section's viewBox is in milli-lambda like the layout's */
+  text-anchor: middle;
+}
+/* THE CUT MARKER on the layout. It needs a rule at all because an SVG line with no stroke is
+   INVISIBLE while still having a bounding box - so it measured 220px tall in a browser and drew
+   nothing, which is the one failure mode a DOM check cannot see. Dashed and in the accent colour,
+   the same treatment the abutment box and the waveform's cursor get: it is an annotation on the
+   artwork rather than part of it. The width is in the placement's own milli-lambda units, so it
+   scales with the drawing like every other shape in that SVG. */
+.pnr-cut-line {
+  stroke: var(--accent-fg);
+  stroke-width: 600;
+  stroke-dasharray: 2000 1400;
+}
+
+.pnr-no-routing .pnr-routing { display: none; }
+
 .pnr-row-rule { stroke: var(--border-default); stroke-width: 200; stroke-dasharray: 2000 1500; }
 .pnr-table { width: 100%; border-collapse: collapse;
              font-family: ui-monospace, monospace; font-size: 12px; }

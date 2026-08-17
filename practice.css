@@ -32,56 +32,53 @@
    ("2000"), and a field that clips its own value reads as a rendering fault. */
 #maxTimeInput { width: 76px; }
 
-/* ------------------------------------------------------- underline tab strip */
-.gh-tabs {
-  max-width: 1280px;
-  margin: 12px auto 0;
-  padding: 0 24px;
-  display: flex;
-  gap: 8px;
-  border-bottom: 1px solid var(--border-default);
-}
-.gh-tab {
-  appearance: none;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  color: var(--fg-default);
-  font: inherit;
-  font-size: 14px;
-  padding: 8px 12px 10px;
-  margin-bottom: -1px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border-radius: var(--radius) var(--radius) 0 0;
-}
-.gh-tab:hover { background: var(--canvas-subtle); }
-.gh-tab.selected { border-bottom-color: #fd8c73; font-weight: 600; }
-@media (prefers-color-scheme: dark) { .gh-tab.selected { border-bottom-color: #f78166; } }
-.gh-tab svg { width: 16px; height: 16px; fill: var(--fg-muted); }
+/* The page head and the tab strip live in `style.css` now, so the four menu apps carry
+   the same band and the same strip - see "THE PAGE HEAD" there. What stays here is what is
+   genuinely this site's: the Reset button pinned inside the strip, and the sheet below. */
 
-/* Reset, in the tab strip but deliberately NOT a tab - it navigates nowhere, so it is
-   a .btn and is therefore outside `.gh-tab` in every mechanism that collects them.
-   Three properties, each fixing something the strip would otherwise do to it:
-     margin-left: auto  pushes it to the right of the last tab. Note this is not what
+/* The tab strip's ACTIONS - Exercise, then Reset - as ONE flex group, and the group is the
+   whole point: the two properties that place them belong to the PAIR, so neither button
+   needs an offset measured off the other's width.
+     margin-left: auto  pushes the group to the right of the last tab. Note this is not what
        keeps it LAST - an auto margin absorbs the space before its own item and holds
-       nothing back after it, so practice-synth.js inserts its tabs before this button
+       nothing back after it, so practice-synth.js inserts its tabs before this group
        rather than appending them.
      align-self: center - `.gh-tabs` is a flex row with no align-items, so the default
-       `stretch` would pull a 32px button to the ~38px height of the tabs beside it.
+       `stretch` would pull 32px buttons to the ~38px height of the tabs beside them.
      no negative margin - `.gh-tab` carries margin-bottom: -1px to sit ON the strip's
        bottom rule; a button doing that straddles the line instead of resting above it.
-   Danger-coloured because it discards work, outline because the two green primaries on
-   this page are the actions a learner is meant to reach for. */
-.ex-reset {
+   8px gap, the strip's own, so the pair reads as part of the same row. */
+.ex-strip-actions {
   margin-left: auto;
   align-self: center;
-  color: var(--danger-fg);
-  border-color: var(--danger-fg);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-.ex-reset:hover { background: var(--danger-subtle); }
+/* `.btn` is not a flex box, so a glyph inside one needs this to sit on the label's line.
+   `fill: currentColor`, NOT `.gh-tab svg`'s --fg-muted: the icon has to follow whatever
+   colour its button is, which is accent for Exercise and danger for anything that ever
+   reuses this group. */
+.ex-strip-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+.ex-strip-actions .btn svg { width: 16px; height: 16px; fill: currentColor; }
+
+/* Exercise is left at STOCK `.btn.outline`, which app.css already paints in --accent-fg on
+   --canvas-default with an --accent-subtle hover, so there is deliberately no rule for it
+   here. A filled blue pill would need an --accent-emphasis this palette does not have - the
+   --fg-on-emphasis trap `.gh-chip.on` records below.
+
+   Reset is the danger twin, and THE SELECTOR IS THE SUBSTANCE OF THIS RULE. `.btn.outline`
+   is two classes, i.e. (0,2,0), and it sets `color` and the whole `border` shorthand; a bare
+   `.ex-reset` is (0,1,0) and therefore LOSES however late it is declared. That is what
+   shipped: the one destructive control on the page, and the confirm dialog's "Reset
+   exercise" beside it, both rendered in the same blue as a link, while this file said
+   danger and the only check on it read CSS text. `body` is what wins - and it has to be
+   `body`, not merely a second class, because 18 of the twenty pages load synth.css AFTER
+   this file and it carries its own copy of `.btn.outline`, so an equal-specificity fix
+   would lose there on source order. The :hover twin needs the prefix too, against
+   `.btn.outline:hover` at (0,3,0). */
+body .btn.ex-reset { color: var(--danger-fg); border-color: var(--danger-fg); }
+body .btn.ex-reset:hover { background: var(--danger-subtle); }
 
 /* The confirm dialog reuses the exercise sheet's backdrop and panel, so the page has
    one dialog idiom rather than two; only the width and the button row are its own. A
@@ -213,11 +210,19 @@ body.ex-sheet-open { overflow: hidden; }
 }
 .btn.ex-start { padding: 6px 16px; font-size: 14px; }
 
-/* ------------- the verdict, a Primer state Label in the Console box header ---- */
-/* "no checks reported" is the honest state for a design whose checker prints
-   neither - the CPU problems are judged by the CPU / Memory Model card. */
+/* ------------- the verdict, a Primer state Label in the editor card's run toolbar ---- */
+/* It sits beside Run, not in the Console header, because it is the answer to pressing Run
+   and the Console is two cards below - see practice.js. "no checks reported" is the honest
+   state for a design whose checker prints neither - the CPU problems are judged by the
+   CPU / Memory Model card.
+
+   8px each side ON TOP of the toolbar's own 8px gap, so the pill is set off by 16 from the
+   run-length field and from Clear while the row's controls stay 8 apart: it is a readout in
+   a row of controls, and the extra air is what says so. Deliberately NOT `margin-left: auto`,
+   which is what it carried in the header - in a flex toolbar that would absorb every pixel
+   of slack and throw the pill, Clear and Synthesize out to the right-hand edge. */
 .ex-verdict {
-  margin-left: auto;
+  margin-left: 8px;
   margin-right: 8px;
   background: var(--canvas-default);
   border: 1px solid var(--border-default);
@@ -481,40 +486,23 @@ body.ex-sheet-open { overflow: hidden; }
    colliding with those needs `body` to win on specificity rather than on order.
    --------------------------------------------------------------------------- */
 @media (max-width: 760px) {
-  /* 1. The tab strip, which was the whole of the horizontal overflow left once the
-     cards could shrink: six tabs plus Reset need ~900px, and a flex row with no wrap
-     and no scroll simply made the DOCUMENT that wide (812px of it, measured). Since
-     .gh-header is only ever as wide as the viewport, the bar then rendered narrower
-     than the page it sits on. One swipeable row is what github.com's own repo tabs do
-     at this width.
-
-     Reset is pinned rather than left to scroll away, because it is the one
-     destructive control here and a tab strip that hides it is worse than one that
-     scrolls. `margin-left: auto` on its base rule does nothing in an overflowing
-     container (there is no free space for an auto margin to absorb), so it sits
-     after the last tab and sticks there; the opaque background is what stops the
-     tabs sliding visibly under it, and the base rule's :hover fill still wins.
-
-     overflow-y is pinned to hidden on purpose: .gh-tab carries margin-bottom: -1px
-     to sit ON the strip's bottom rule, and inside a scroll container that 1px
-     becomes vertical overflow. The cost is that the selected tab's 2px underline is
-     clipped to 1px above the strip's own rule, which is not a difference anyone can
-     see; the alternative was a 1px vertical jiggle on every strip. */
-  .gh-tabs {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    overscroll-behavior-x: contain;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  .gh-tabs::-webkit-scrollbar { display: none; }
-  .gh-tab { flex: 0 0 auto; }
-  .ex-reset {
+  /* 1. Both actions are pinned inside the strip rather than left to scroll away with the
+     tabs: Reset is the one destructive control here and Exercise is the only way back to the
+     statement of the problem - the scrolling strip itself is the shared block's now, and so
+     is the band's release above it. Pinned as a GROUP, which is what removes the arithmetic:
+     sticking the two separately would mean giving Reset a `right:` offset measured off the
+     width of the word "Exercise" plus its icon and gap. `margin-left: auto` on the base rule
+     does nothing in an overflowing container (no free space for an auto margin to absorb),
+     so the group sits after the last tab and sticks there; the opaque background is what
+     stops the tabs sliding visibly under it, with 8px of it on the left so a tab never
+     appears to touch the Exercise button's border. The base rule's :hover fills still win -
+     they are `body`-prefixed and had to out-specify `.btn.outline:hover` already. */
+  .ex-strip-actions {
     position: sticky;
     right: 0;
     flex: 0 0 auto;
     background: var(--canvas-default);
+    padding-left: 8px;
   }
 
   /* 2. Two controls the shared block cannot size, for opposite reasons. The cloud

@@ -14,11 +14,15 @@
                         redefined under prefers-color-scheme: dark, so every
                         light surface follows the reader's OS.
 
-         panel tokens   (--panel-*) the SAME in both modes. The editors,
-                        consoles, listings, register grids and memory tables are
-                        dark either way - a dark code block on a light page, the
-                        way GitHub renders one - so they must not flip. They use
+         panel tokens   (--panel-*) DARK IN BOTH MODES. The editors, consoles,
+                        listings, register grids and memory tables are dark
+                        either way - a dark code block on a light page, the way
+                        GitHub renders one - so they must not flip. They use
                         GitHub's dark code colours rather than the page ones.
+                        The three SURFACES (--panel-bg, -bg-alt, -bg-hi) drop one
+                        Primer step under dark, because a panel whose body is the
+                        page's own colour is not a panel; the colours ON them do
+                        not move. See the note in the dark block.
 
        Anything app-specific belongs in that app's own additions section below
        this block, never here.
@@ -65,6 +69,15 @@
       --shadow-overlay: 0 8px 24px rgba(31, 35, 40, 0.2);
       --radius: 6px;
       --radius-lg: 12px;
+      /* The navigation drawer's width, and a SHAPE rather than a colour - so it is the
+         same in both modes, like the radii above it. It is a token because two rules need
+         to agree about it: the panel's own width, and the page indent the pinned layer
+         applies (see "THE DRAWER, PINNED"). --nav-top is where a pinned panel starts, i.e.
+         the height of the bar above it, and it is declared here only to have a default:
+         the builder MEASURES it onto `body`, because the bar wraps and so has no one
+         height. 0 is the right default - a page with no bar wants the panel at the top. */
+      --nav-w: 300px;
+      --nav-top: 0px;
 
       /* Dark panels, identical in both modes - GitHub's dark code colours. */
       --panel-bg: #0d1117;
@@ -112,6 +125,21 @@
         --header-bg: #010409;
         --header-fg: #e6edf3;
         --header-muted: #9198a1;
+        /* THE PANEL LADDER DROPS ONE RUNG, and only in dark mode. A panel is dark in both modes -
+           that part has not changed - but on a #0d1117 page the body of one was #0d1117 too, so the
+           editor stopped being a panel at all: it was exactly the canvas behind it, and the only
+           thing that read as an edge was the GUTTER, one step LIGHTER than both. Measured off a
+           screenshot: page #0d1117, code area #0d1117, gutter #161b22.
+           So all three shift down one Primer step, which keeps every relationship the light mode has
+           - body, one step up for gutters and alternate rows, two for a highlighted row - and moves
+           only how deep the whole thing sits. The panel is the darkest thing on the page in both
+           modes now, which is what it already was in light mode and what an editor recessed into a
+           page looks like anywhere else.
+           Every text colour on them is unchanged and every contrast improves, since each surface got
+           darker under the same foreground. */
+        --panel-bg: #010409;
+        --panel-bg-alt: #0d1117;
+        --panel-bg-hi: #161b22;
         --shadow-overlay: 0 8px 24px rgba(1, 4, 9, 0.85);
         --wave-palette: #79c0ff,#7ee787,#d29922,#ff7b72,#d2a8ff,#56d4dd,#ffa657,#8b949e;
       }
@@ -544,6 +572,71 @@
     .split-row > .card { min-width: 0; }
 
     /* =====================================================================
+       THE PAGE HEAD, which stays put while the cards scroll under it.
+
+       The breadcrumb, the sub-line and the tab strip are ONE band, and the band is
+       what sticks - the practice pages' shell.js and the four menu apps'
+       tools/tabstrip.js each move those three into this wrapper. Written twice,
+       once here and once as practice-only CSS, then promoted BYTE-IDENTICALLY, so
+       the pages it was verified on provably could not move: exactly how .gh-crumb
+       and the narrow-screen layer arrived here.
+       ===================================================================== */
+    /* ------------------------------------------------------- the page head, which stays put
+
+       The crumb, the sub-line and the tab strip are one band (shell.js moves the three into
+       this wrapper), docked under the bar while the cards scroll beneath it - so the heading
+       that says WHICH exercise this is, and the strip that switches between its panels, are
+       both reachable from anywhere down the page instead of only from the top.
+
+       `top: var(--nav-top)` is the bar's own measured height, set on `body` by the drawer's
+       builder because `.gh-header-inner` wraps and so the bar has no one height; 0 is the
+       declared default, which is right for a page with no bar. Reusing that token rather than
+       measuring a second time is what stops the band from overlapping the bar or floating a
+       few pixels under it - the same measurement the pinned drawer's panel already docks to.
+
+       An OPAQUE background is not decoration: the cards scroll through the space this band
+       occupies, and --canvas-default is the page's own colour, so the band reads as the page
+       holding still rather than as a panel laid over it. z-index because a sticky element is
+       painted in DOM order, so the grid below would otherwise scroll OVER it; 5 keeps it
+       under the bar (100) and under every dialog here. */
+    .gh-page-head {
+      position: sticky;
+      top: var(--nav-top);
+      z-index: 5;
+      background: var(--canvas-default);
+    }
+
+    /* ------------------------------------------------------- underline tab strip */
+    .gh-tabs {
+      max-width: 1280px;
+      margin: 12px auto 0;
+      padding: 0 24px;
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border-default);
+    }
+    .gh-tab {
+      appearance: none;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      color: var(--fg-default);
+      font: inherit;
+      font-size: 14px;
+      padding: 8px 12px 10px;
+      margin-bottom: -1px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: var(--radius) var(--radius) 0 0;
+    }
+    .gh-tab:hover { background: var(--canvas-subtle); }
+    .gh-tab.selected { border-bottom-color: #fd8c73; font-weight: 600; }
+    @media (prefers-color-scheme: dark) { .gh-tab.selected { border-bottom-color: #f78166; } }
+    .gh-tab svg { width: 16px; height: 16px; fill: var(--fg-muted); }
+
+    /* =====================================================================
        ONE narrow-screen layer for all six apps, at app.css's own breakpoint.
 
        760px is where every app already drops `.grid` to a single column, so this
@@ -584,6 +677,43 @@
        extra column.
        ===================================================================== */
     @media (max-width: 760px) {
+      /* 0. THE PAGE HEAD IS RELEASED, so on a phone the whole page scrolls as one - which is
+         what the shared block already does to the bar itself at this width, and for the same
+         arithmetic: the crumb, the sub-line and the strip stand ~115px tall, the bar another
+         ~55, and a third of a 375x667 screen spent on chrome is the problem this layer exists
+         to relieve rather than an improvement on it. A sticky strip is worth its room on a
+         window tall enough that the panel it switches to is still on screen under it. */
+      .gh-page-head { position: static; }
+
+      /* 1. The tab strip, which was the whole of the horizontal overflow left once the
+         cards could shrink: six tabs plus Reset need ~900px, and a flex row with no wrap
+         and no scroll simply made the DOCUMENT that wide (812px of it, measured). Since
+         .gh-header is only ever as wide as the viewport, the bar then rendered narrower
+         than the page it sits on. One swipeable row is what github.com's own repo tabs do
+         at this width.
+
+         Reset is pinned rather than left to scroll away, because it is the one
+         destructive control here and a tab strip that hides it is worse than one that
+         scrolls. `margin-left: auto` on its base rule does nothing in an overflowing
+         container (there is no free space for an auto margin to absorb), so it sits
+         after the last tab and sticks there; the opaque background is what stops the
+         tabs sliding visibly under it, and the base rule's :hover fill still wins.
+
+         overflow-y is pinned to hidden on purpose: .gh-tab carries margin-bottom: -1px
+         to sit ON the strip's bottom rule, and inside a scroll container that 1px
+         becomes vertical overflow. The cost is that the selected tab's 2px underline is
+         clipped to 1px above the strip's own rule, which is not a difference anyone can
+         see; the alternative was a 1px vertical jiggle on every strip. */
+      .gh-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .gh-tabs::-webkit-scrollbar { display: none; }
+      .gh-tab { flex: 0 0 auto; }
       /* One column, and gutters that match the 16px the page's other rows use.
          The single column is repeated in most apps' own blocks; stating it here is
          what gives it to `emulator/index.html`, which never had it. */
@@ -683,6 +813,19 @@
        there and there is no breakpoint to derive or to get wrong. */
     .gh-header-inner { max-width: none; }
 
+    /* THE MENU BUTTON'S SLOT IS RESERVED, so the wordmark does not shimmy on every page
+       load. The button is built by a script at the end of the body, so for the frame
+       before that runs the mark is the row's FIRST child and sits at the padding edge;
+       when the button arrives the mark shifts right by its width plus the row's gap. That
+       was visible beside the bigger jump the indent used to cause - 48px, then 68px.
+       So the row is padded to where the mark belongs (24 + 28 + 16 = 68) and the button
+       is pulled back out of it by exactly the width and gap it adds (28 + 16 = 44), which
+       lands it at the 24px padding edge it had before. The mark is then at 68 whether or
+       not the button exists, which is the whole point: one number decides the layout and
+       the two rules are its two halves. Baerilog/test.py checks the arithmetic. */
+    .gh-header-inner { padding-left: 68px; }
+    .gh-menu-btn { margin-left: -44px; }
+
     /* The same dim as the exercise sheet's backdrop, deliberately - one dialog idiom on
        the page rather than two - and the panel is a CHILD of it, as the sheet is, which is
        what makes shell.js's `ev.target === navBack` guard load-bearing instead of
@@ -706,7 +849,10 @@
       left: 0;
       bottom: 0;
       z-index: 2100;
-      width: min(300px, 84vw);
+      /* ONE definition of the panel's width, because the pinned layer below indents the
+         page by exactly it: two numbers here would let the gap and the panel disagree,
+         which is the single-source rule the netlist viewer's `nodeSize` follows. */
+      width: min(var(--nav-w), 84vw);
       display: flex;
       flex-direction: column;
       overflow-y: auto;
@@ -724,8 +870,138 @@
       .nav-drawer, .nav-backdrop { transition: none; }
     }
     /* Same reason the exercise sheet locks it: the page behind a modal panel scrolling
-       under the pointer makes the panel look as though it is drifting. */
-    body.nav-open { overflow: hidden; }
+       under the pointer makes the panel look as though it is drifting. The :not() is what
+       stops it applying to a PINNED drawer, which is not a modal and must leave the page
+       scrollable - see the pinned layer below. */
+    body.nav-open:not(.nav-pinned) { overflow: hidden; }
+
+    /* ---------------------------------------------------------------------
+       THE DRAWER, PINNED: the same panel, not a dialog.
+
+       On a wide window the drawer stays put and the page is fully usable beside it - an
+       app shell rather than a menu you dismiss. Two classes carry that, and which rule
+       takes which is about WHEN it has to be true:
+
+         (nothing)       the indent and the bar's pull-back are the DEFAULT at this width,
+                         so the first paint of every page already reserves the panel's
+                         column - see the flicker note on the rule.
+         .nav-unpinned   the builder's, for a reader who has CLOSED it: takes the column
+                         back. Remembered in localStorage, which only a script can read.
+         .nav-pinned     the builder's, for the panel that is actually there: its geometry
+                         and the three behaviours that stop it being a dialog.
+
+       The query decides only whether pinning is AVAILABLE, and the builder asks it through
+       matchMedia with the same number. tools/check_theme.py asserts the two copies of it
+       agree, the arrangement this whole block already lives under.
+
+       1200px is derived, not chosen: 240px of panel plus 960px of content. Below it the
+       drawer is exactly the modal above, and iPad landscape (1024) is deliberately on
+       that side of the line - pinning there would leave 784px of content while the
+       narrow-screen layer keys on the VIEWPORT, which still reads 1024, so the page
+       would hold its two-column grid inside a phone-width column.
+
+       The indent is on `body`, so `.grid`'s own `margin: 0 auto` re-centres the content
+       inside the padded box with no second rule, and `measureBleed()` in the simulator
+       already subtracts body padding - so the waveform's full-bleed expand stops at the
+       panel's edge instead of running under it, with nothing to change there. The BAR is
+       then pulled back out to the window with a negative margin, because it is the one row
+       that should not be indented; see the rule.
+
+       Four behaviours go with the layout, and they are the substance rather than the
+       indent: the backdrop stops taking clicks (so the content behind it is reachable -
+       and the panel, being its CHILD, has to take them back), the scroll lock is off
+       (above), focus is not moved into the panel, and `aria-modal` comes off the panel.
+       The last two are the builder's, and the ARIA one matters most: `aria-modal="true"`
+       tells a screen reader the rest of the page is absent, which is a lie the moment
+       the page is usable.
+       --------------------------------------------------------------------- */
+    @media (min-width: 1200px) {
+      /* THE COLUMN IS RESERVED BEFORE ANY SCRIPT RUNS, and that is what this `:not()` is
+         for. The pinned state is remembered in localStorage, which only the builder can
+         read - and the builder is at the END of the body, so for one or two frames every
+         page painted its un-indented self, then the drawer appeared and the whole page
+         jumped 240px sideways. On every navigation. Caught on video, frame by frame: the
+         new page's first paint had no panel, no menu button, and its content at x=0.
+         So the indent is now the DEFAULT at this width - `body` carries no class at first
+         paint, so it matches - and the builder only ever takes it AWAY, by adding
+         `nav-unpinned` for a reader who has closed the drawer. The common case therefore
+         needs no script to be laid out correctly, and the residual flash belongs to the
+         minority who closed it: an empty gutter that collapses, rather than the whole page
+         moving. The alternative was a second synced region in every page's <head>, which
+         is three sync tools and a second copy of the decision.
+
+         NARROWER than the modal panel, and that is about the pointer rather than the
+         screen: a drawer opened with a thumb wants a wide target and gets `min(300px,
+         84vw)`, while a sidebar that sits there and is pointed at with a mouse only has
+         to hold its longest row - `Place & Route` measures about 190px with its icon and
+         gaps, so 240 has room to spare and gives 60px of it back to the page. Redefining
+         the token rather than adding a second width is what keeps the panel and the
+         indent one number: the drawer is a descendant of `body`, so it inherits this. */
+      body { --nav-w: 240px; }
+      body:not(.nav-unpinned) {
+        padding-left: var(--nav-w);
+      }
+      /* THE BAR STILL SPANS THE WINDOW, which is the whole reason for the negative
+         margin: the indent above moves every block in the body, the bar included, so
+         without this it started at the panel's edge and left an empty 240px-wide corner
+         above the panel - and the button and the account control came off the window's
+         edges, which is the arrangement `.gh-header-inner { max-width: none }` above
+         exists to produce. Measured in a browser, which is where the corner showed up.
+         The width has to be restated because a block's own width comes from its
+         containing block, so a negative margin alone moves the left edge and leaves the
+         right one 240px short. Keyed on the same `:not()` as the indent, since the two are
+         one layout and a frame in which they disagree is a bar that starts off-screen. */
+      body:not(.nav-unpinned) .gh-header {
+        margin-left: calc(-1 * var(--nav-w));
+        width: calc(100% + var(--nav-w));
+      }
+      /* THE PANEL'S SHAPE HANGS OFF THE QUERY, NOT OFF `.nav-pinned`, and that is what stops
+         the close from flashing. At this width an open drawer is ALWAYS pinned - the builder
+         computes `isOpen() && canPin()` off this very number - so the panel is either the
+         pinned sidebar or off-screen, and its closed shape is never seen. Except for one
+         moment: `shut()` removes `.nav-pinned` in the same frame it starts a 220ms slide, so
+         with these rules keyed on the class the panel spent its whole exit wearing the modal
+         costume. Caught on video at ~31fps and measured off the frames: five frames with the
+         backdrop's dim over the entire page (#a0a4a4 fading through #dcdcdc to white, about
+         100ms of grey), the panel 60px wider, jumped up over the bar, wearing a shadow, and
+         its ✕ head popped in and pushed the rows down - all of it on a panel that was
+         leaving. Keyed on the query instead, nothing about the panel changes when the class
+         goes: it slides out as what it was. `.nav-pinned` keeps the PAGE's state, which is
+         what it is for - the indent above, the scroll lock, `aria-modal`, focus, and whether
+         a backdrop click or Escape closes it.
+
+         The `body` prefix is not decoration: `.nav-drawer-head`'s own rule sits BELOW this
+         block, so at equal specificity it would win on source order - the trap the
+         narrow-screen layer records at length. One prefix on all four keeps the block
+         order-independent rather than three of them relying on where they happen to sit.
+
+         The panel starts BELOW the bar, and its top is MEASURED (the builder sets --nav-top
+         from the header's own rect) rather than written here as a constant: `.gh-header-inner`
+         is `flex-wrap: wrap`, so the bar's height is not one number - and cloud-ui.js appends
+         the account control into it after the fact, which is 2px of it on its own. */
+      body .nav-drawer {
+        top: var(--nav-top);
+        width: var(--nav-w);
+        box-shadow: none;
+      }
+      /* Transparent and inert - not `display: none`, because the panel is its child and
+         would go with it, and not `visibility: hidden` for the same reason. `background-color`
+         rather than the `background` shorthand, so what is overridden is the one longhand the
+         base rule sets and nothing else about it is silently reset. */
+      body .nav-backdrop {
+        background-color: transparent;
+        pointer-events: none;
+      }
+      body .nav-drawer { pointer-events: auto; }
+      /* THE PANEL'S HEAD GOES, both halves of it, and the rows start under the bar.
+         Pinned, the bar is directly above the panel and already carries the wordmark, so
+         the head's cloned copy is the same mark twice, 55px apart - and the ✕ beside it is
+         a second collapse control next to the bar's own ☰, which is where a reader of an
+         app shell reaches for it. Hidden rather than not built, because this is one panel
+         in two shapes: narrow, the head is the only thing that says what the panel belongs
+         to and the only way out of it. */
+      body .nav-drawer-head { display: none; }
+    }
 
     .nav-drawer-head {
       display: flex;
@@ -788,7 +1064,7 @@
     }
     .nav-row-icon svg { width: 16px; height: 16px; fill: currentColor; }
 
-                                                    /* --- additions for editor / console / waveform, same visual language --- */
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                /* --- additions for editor / console / waveform, same visual language --- */
     /* Expand: the waveform row breaks out of .grid's max-width to the full body
        content width, leaving every other card centred at 1100px. This is an
        app-specific rule and stays out of style.css even though .split-row itself

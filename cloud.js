@@ -60,7 +60,7 @@ window.CLOUD = (function () {
      `learn` is here because a topic's quiz reports a verdict now; it was NOT, so cloud-sync's
      own learn branch stored nothing at all and the hub's badge could never appear. Kept in step
      with the CHECK constraint in tools/schema.sql, which test_cloud.py compares them for. */
-  var APPS = ['practice', 'learn', 'simulator', 'synthesis', 'compiler'];
+  var APPS = ['practice', 'learn', 'simulator', 'synthesis', 'compiler', 'pnr'];
 
   /* ---- storage -------------------------------------------------------- */
 
@@ -405,6 +405,51 @@ window.CLOUD = (function () {
      a feature that is meant to be invisible. */
   function load(app, item) { return localGet(app, item); }
 
+  /* Delete a record outright - the only destructive operation here, and the only one
+     that is not "write something new". A practice page's Reset calls it: that button
+     returns the exercise to the state a first visit finds, which means the hub must stop
+     badging it and the exercise sheet must greet the next load, and BOTH of those are
+     read off the existence of this row. Clearing the verdict alone leaves the row, which
+     is what `in progress` means - the right answer for the Console's Clear, and the wrong
+     one for a Reset.
+
+     A PENDING PUSH CANNOT RESURRECT THE ROW, and it is worth saying why rather than
+     guarding against it: `pushNow` re-reads the record when the debounce expires and
+     returns immediately if there is none. So deleting locally is what disarms the push,
+     and a `clearTimeout` here would be belt over braces - it was written, and a mutation
+     sweep correctly reported that removing it changed nothing observable. (Nothing can
+     help with a push already IN FLIGHT when this is called: that POST may land after the
+     DELETE. Local-first accepts that, as every other operation here does.)
+
+     Local first, as everywhere here: the row is gone before the request is made, so an
+     offline Reset still un-starts the exercise on this machine. A failed DELETE therefore
+     leaves a server row this browser no longer has - which the conflict rule already
+     handles as "only the remote moved", i.e. the next pull adopts it. That is the same
+     trade every other operation in this file makes, and the alternative (refusing to
+     forget while offline) would make Reset depend on the network. */
+  function forget(app, item) {
+    if (APPS.indexOf(app) < 0) return;                    // guards a typo'd caller
+    lsDel(docKey(app, item));
+    if (!configured() || !signedIn()) return;
+    inFlight++;
+    status('syncing');
+    token().then(function (tok) {
+      if (!tok) { inFlight--; settle(); return; }
+      /* Filtered on app and item only - the row's third key column is user_id, and RLS
+         (progress_delete_own in tools/schema.sql) is what confines this to the caller's
+         own rows. Naming user_id here as well would be belt and braces over a policy
+         that is the actual guarantee. */
+      return req('/rest/v1/progress?app=eq.' + encodeURIComponent(app)
+                 + '&item=eq.' + encodeURIComponent(item),
+                 { method: 'DELETE', token: tok }).then(function (r) {
+        inFlight--;
+        if (r.ok) lastError = null;
+        else if (!r.offline) lastError = r.error;
+        settle(r);
+      });
+    });
+  }
+
   /* ---- the document list, for "My Design" ------------------------------ */
 
   /* Every document this browser has stored, newest first. Enumerated out of
@@ -679,7 +724,7 @@ window.CLOUD = (function () {
   return {
     configured: configured, signedIn: signedIn, info: info, subscribe: subscribe,
     requestCode: requestCode, verifyCode: verifyCode, signOut: signOut,
-    save: save, load: load, pull: pull, flush: flush, resolve: resolve,
+    save: save, load: load, forget: forget, pull: pull, flush: flush, resolve: resolve,
     setName: setName, list: list, listAll: listAll,
     /* Exposed for the harnesses only - they assert the limit and the app list
        agree with schema.sql rather than restating either. */

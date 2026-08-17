@@ -18,6 +18,17 @@
 <script>var LEARN_SLUG = 'full-adder-1bit'; var CLOUD_APP = 'learn'; var CLOUD_ITEM = 'full-adder-1bit'; var CLOUD_NO_SOURCE = true;</script>
 <script src="learn-manifest.js"></script>
 <script src="topics/full-adder-1bit.js"></script>
+<!-- These two ahead of shell.js, where a practice page needs them: shell.js reads
+     CLOUD.load there to decide whether the exercise sheet is built OPEN - a page you have begun does not
+     get the brief unasked - and it reads that off CLOUD.load, so the record has to be
+     readable before the markup is built. Closing the sheet later instead would be a
+     FLASH of a full-page modal rather than an absence of one: app.js is a quarter of a
+     megabyte of blocking script between here and practice.js, and a browser paints
+     during that fetch. Safe to hoist because neither file touches the DOM or depends on
+     anything; cloud-ui.js and cloud-sync.js cannot move, needing the injected header
+     and the seeded editor respectively. -->
+<script src="cloud-config.js"></script>
+<script src="cloud.js"></script>
 <script src="shell.js"></script>
 <script src="app.js"></script>
 <script src="synth.js"></script>
@@ -25,14 +36,12 @@
 <script src="pnr.js"></script>
 <script src="practice-pnr.js"></script>
 <script src="learn.js"></script>
-<!-- Optional cloud progress, last so cloud-sync.js sees the design learn.js seeded
-     and restores saved work OVER it rather than under it. Every one of the
-     four is inert until cloud-config.js names a Supabase project, so a checkout
-     with none behaves exactly as it did before they existed. CLOUD_APP and
+<!-- The rest of the optional cloud progress, last so cloud-sync.js sees the design
+     learn.js seeded and restores saved work OVER it rather than under it.
+     Every one of the four is inert until cloud-config.js names a Supabase project, so a
+     checkout with none behaves exactly as it did before they existed. CLOUD_APP and
      CLOUD_ITEM are declared at the top: a topic is its own document in its own
      namespace, so learn progress and practice progress cannot collide. -->
-<script src="cloud-config.js"></script>
-<script src="cloud.js"></script>
 <script src="cloud-ui.js"></script>
 <script src="cloud-sync.js"></script>
 </body>

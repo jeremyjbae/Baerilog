@@ -250,6 +250,13 @@ var PRACTICE_MARKUP = String.raw`
 
 var PRACTICE_META = null;      // this page's manifest entry
 var PRACTICE_EX = null;        // this page's exercise data, or null if it is missing
+/* Has this exercise been begun before this load - read below from the cloud record, and
+   the only thing it decides is whether the exercise sheet is built open. A `var` at top
+   level so it is a real property of `window`, which is what lets practice.js and the
+   harness read it (a top-level `let` would not be - the rule this repo records for
+   currentFullSource). A SNAPSHOT, taken once: nothing recomputes it, because it exists to
+   explain one decision at one instant and must not be mistaken for live state. */
+var PRACTICE_STARTED = false;
 
 /* Small 16px glyphs for the tab strip, in Octicon's shape language but drawn here
  * rather than copied. practice.js uses these; index.html carries its own two, since
@@ -268,9 +275,16 @@ var ICON = {
   /* Two more for the navigation drawer below. `home` is new; every other row reuses
      one of the tab strip's glyphs above rather than starting a second icon language -
      the simulator IS the waveform app, the synthesizer emits gates, the compiler
-     emits code, and `book` is what the Exercise tab already means. */
+     emits code, and `book` is what the drawer's Learn row means. */
   home: '<svg viewBox="0 0 16 16"><path d="M8 1.2 15 7l-.94 1.15-1.06-.88V14a1 1 0 0 1-1 1H9.5v-4.5h-3V15H4a1 1 0 0 1-1-1V7.27l-1.06.88L1 7 8 1.2Zm4 4.83L8 2.7 4 6.03V13.5h1V9h6v4.5h1V6.03Z"/></svg>',
-  menu: '<svg viewBox="0 0 16 16"><path d="M1.5 3.25h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Z"/></svg>'
+  menu: '<svg viewBox="0 0 16 16"><path d="M1.5 3.25h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Z"/></svg>',
+  /* And one for the strip's Exercise BUTTON, which is not a tab: a ring, a dot and a
+     stem, i.e. the ⓘ everything else on the web uses to mean "what is this". It replaced
+     `book` when that control left the tab strip - a book says "reading material", and what
+     the button actually offers is the statement of the problem you are solving. Drawn as
+     one path so it inherits `currentColor` in one place; the outer ring is an even-odd
+     annulus rather than a stroked circle, keeping every glyph here fill-only. */
+  info: '<svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm0 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13ZM8 3.6a1.05 1.05 0 1 0 0 2.1 1.05 1.05 0 0 0 0-2.1ZM6.75 7.1h1.75a.75.75 0 0 1 .75.75v3.4h.75v1.25h-3.5V11.25h.75v-2.9h-.75V7.1Z"/></svg>'
 };
 
 /* The drawer's rows, in order. `href` is a bare filename because Baerilog/ is flat
@@ -374,8 +388,50 @@ var NAV_ITEMS = [
      current-app marker are every page's, and learn.js retitles both for a topic. */
   if (!window.PRACTICE_SLUG) return;
 
+  /* HAS THIS EXERCISE BEEN BEGUN, which is the only question the sheet below needs
+     answered and the reason cloud-config.js and cloud.js load ahead of this file.
+
+     It is read HERE rather than in practice.js because this file is what stamps `open`
+     onto the backdrop, and app.js sits between the two as a quarter of a megabyte of
+     blocking script - a browser paints during that fetch, so a sheet opened here and
+     closed there is a FLASH of a full-page modal rather than an absence of one.
+
+     The rule is progressBadge's in practice.html, read off the same record: no record
+     means no badge, and no record is the only state that gets the brief unasked. So a
+     PASSED exercise does not re-open it either, which is deliberate - re-stating a problem
+     you have solved reads as the page starting over, and the Exercise button is one click.
+     Reset is what puts both back, by deleting the row (CLOUD.forget).
+
+     CLOUD.load is local-only, so on a second machine a solved exercise shows its brief once,
+     until a pull lands. Deliberately not corrected afterwards: opening a dialog is a thing
+     that happens to a reader, and closing one under them is worse than one too many. */
+  PRACTICE_STARTED = !!(window.CLOUD && window.CLOUD.configured()
+    && window.CLOUD.load('practice', String(window.PRACTICE_SLUG || '')));
+
   var tabs = mk('nav', 'exTabs', 'gh-tabs');
-  h1.parentElement.insertBefore(tabs, sub.nextSibling);
+
+  /* THE CRUMB, THE SUB-LINE AND THE STRIP BECOME ONE BAND, which is what lets them stay
+     at the top while the cards scroll under them (`.gh-page-head` in practice.css, docked
+     under the bar at the measured --nav-top).
+
+     One wrapper rather than three sticky elements, and that is the whole reason it exists
+     in the markup at all: stacking three would mean writing each one's `top` as the sum of
+     the heights above it, and not one of those heights is a constant - the crumb wraps at
+     a long title, the sub-line wraps at a long blurb, and the bar itself wraps, which is
+     why --nav-top is measured onto `body` rather than written down. A band has ONE offset,
+     the measured one, so it cannot disagree with itself.
+
+     A MOVE, not a copy: appendChild on a node already in the document detaches it from
+     where it was, which is how learn.js relocates whole cards. So the three keep their
+     ids, their classes, their listeners and their own centred 1280px boxes - the wrapper
+     is a full-width block and contributes no geometry of its own. It is built here rather
+     than in the markup region because that region is sliced verbatim from
+     Baerilog/simulator.html, where there is no tab strip to put in it. */
+  var head = mk('div', null, 'gh-page-head');
+  h1.parentElement.insertBefore(head, h1);
+  head.appendChild(h1);
+  head.appendChild(sub);
+  head.appendChild(tabs);
 
   function levelText() {
     return [PRACTICE_META.category, PRACTICE_META.level ? 'Level ' + PRACTICE_META.level : '']
@@ -397,7 +453,7 @@ var NAV_ITEMS = [
      page is one of the twenty exercises - rather than on whether an exercise was found,
      because a practice page whose exercise file is missing SHOULD still show that
      sentence: there it is a diagnostic, and here it was the whole page. */
-  var backdrop = mk('div', 'exBackdrop', 'ex-backdrop open');
+  var backdrop = mk('div', 'exBackdrop', 'ex-backdrop' + (PRACTICE_STARTED ? '' : ' open'));
   var sheet = mk('div', 'exSheet', 'ex-sheet');
   sheet.setAttribute('role', 'dialog');
   sheet.setAttribute('aria-modal', 'true');
@@ -424,9 +480,11 @@ var NAV_ITEMS = [
   sheet.appendChild(sbody);
   sheet.appendChild(sfoot);
   backdrop.appendChild(sheet);
-  // Appended already carrying `open`, so the prompt covers the page from the
-  // moment it exists rather than after a repaint; practice.js re-opens it to lock
-  // body scroll and place focus, and owns every way out of it.
+  /* Appended already carrying `open` WHEN IT IS OPEN AT ALL, so the prompt covers the page
+     from the moment it exists rather than after a repaint - and, on an exercise already
+     begun, never carries it at any point, which is what makes the absence an absence rather
+     than a flash. practice.js ADOPTS that decision: where the class is set it re-opens the
+     sheet to lock body scroll and place focus, and it owns every way out of it. */
   document.body.appendChild(backdrop);
 
   /* ---- 4. the navigation drawer ----

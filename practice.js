@@ -106,6 +106,54 @@
      tab strip below would have built a Model tab pointing at it. */
   var modelCard = document.getElementById('card-model');
 
+  /* THE TESTBENCH IS THIS PAGE'S CHECKER, so here it is READ-ONLY where the simulator's own
+     copy is an editor. The exercise is marked by the PASS/FAIL lines that testbench prints,
+     and a learner who can edit it can make any design pass - including one that does nothing.
+     So the design is the writable half of the document and the checks are fixed.
+
+     READ-ONLY RATHER THAN `disabled`, which is the other way to stop a keystroke and would be
+     wrong: app.js already disables that textarea to mean something else (a document with no
+     testbench region at all - see showTestbenchInEditor), and a disabled control cannot be
+     selected or copied, which is most of what reading a testbench is for.
+
+     Nothing else had to change for the seeding to keep working, and the reason is worth
+     recording because it is not obvious. `setTextIn` prefers execCommand to preserve the undo
+     stack, and its own comment records the failure it guards: when a textarea refuses focus
+     the insert silently lands in whichever one was focused before. A read-only textarea does
+     NOT refuse focus, so that guard passes, execCommand declines the edit, and the plain
+     `.value` fallback under it is what writes the text - so the card still shows the
+     exercise's testbench, and the undo stack it wiped belongs to a box nobody can type in. */
+  var tbTextarea = document.getElementById('tbInput');
+  if (tbTextarea) tbTextarea.readOnly = true;
+  (function () {
+    /* And the heading SAYS so, in the same words practice-synth.js's netlist card uses. A
+       textarea that swallows a keystroke with no explanation reads as a broken page, and this
+       one looks exactly like the editor above it.
+
+       Inserted before the help icon rather than appended to the h2: `.header-controls` is
+       pushed to the far end of the header, so an appended span lands to the right of the
+       height and layout buttons instead of after the words it qualifies. And the card is
+       found by id and THEN searched, never as one `#card-testbench h2` - the stub DOM
+       resolves a single simple selector at a time and returns null for a compound one, which
+       is how a feature ships absent with every check passing.
+
+       The class carries NO rule and is a handle for the harness: the wording is part of the
+       heading, exactly as it is in the netlist card's own `(Read-only)` title, so styling it
+       differently would make one of the two look like the deliberate one. */
+    var card = document.getElementById('card-testbench');
+    var h2 = card && card.querySelector('h2');
+    var help = h2 && h2.querySelector('.help-wrap');
+    if (!h2 || !help) return;
+    var note = document.createElement('span');
+    note.className = 'tb-readonly';
+    /* A NON-BREAKING space, because `.card h2` is a flex row: text nodes become anonymous
+       flex items with their surrounding whitespace stripped, so an ordinary leading space
+       disappears and the heading reads `Testbench Editor(Read-only)`. Measured in Chrome,
+       not reasoned about - it looks correct in the markup either way. */
+    note.textContent = '\u00A0(Read-only)';
+    h2.insertBefore(note, help);
+  })();
+
   /* The two cards that have nothing to show until something has run are FOLDED rather
      than hidden: the Waveform Viewer and the Module Hierarchy beside it. Folded keeps
      their headers on the page, so the page reads as a tool waiting for input rather
@@ -115,6 +163,17 @@
      Unfolded by the first Run - and only the first, so a reader who folds the waveform
      back up afterwards is not overruled on the next one. */
   var FOLD_UNTIL_RUN = ['card-wave', 'card-hierarchy'];
+
+  /* The Testbench Editor is folded too, and it is deliberately NOT in that list: a Run must
+     not reveal it. The two lists are different claims - those two cards are folded because
+     they have nothing IN them yet, and this one because what is in it is the answer sheet's
+     other half, which the reader may open when they want it and which nothing should open on
+     their behalf. Folded rather than hidden for the same reason it is read-only rather than
+     disabled: the checks are worth reading, and on a page whose testbench is the spec of the
+     exercise, hiding them outright would make the sheet the only statement of what is being
+     asked. There is no Testbench tab in the strip below, so the header is the one control
+     that opens it and a fold cannot leave a dead one behind. */
+  var FOLD_ALWAYS = ['card-testbench'];
   function foldCard(id, folded) {
     var card = document.getElementById(id);
     if (!card) return;
@@ -141,8 +200,13 @@
      declared below and would be undefined at load. Both callers do that. */
   function showPreRunState() {
     hasRun = false;
+    /* And the next Run selects the DUT again, for the same reason the fold comes back: app.js's
+       Reset nulls lastTopModuleName, so that run is a FRESH design and its visibility resets to
+       top-only - leaving this flag set would hand back the testbench-only plot for good.
+       Assigned rather than declared here: `var dutShown` below is hoisted into this scope. */
+    dutShown = false;
     if (modelCard) modelCard.style.display = 'none';
-    FOLD_UNTIL_RUN.forEach(function (id) { foldCard(id, true); });
+    FOLD_UNTIL_RUN.concat(FOLD_ALWAYS).forEach(function (id) { foldCard(id, true); });
   }
   showPreRunState();
   /* The Module Hierarchy card is also the thing the waveform's hierarchy toggle reveals,
@@ -170,7 +234,16 @@
        tryApplyAutoFinishTime still overrides it whenever it CAN work the time out. */
     var maxInput = document.getElementById('maxTimeInput');
     if (maxInput) maxInput.value = String(ex.maxTime || 2000);
-    setEditorText(ex.starter);
+    /* The starter is handed to seedFullSource rather than written with setEditorText
+       first, and the two halves of that are separate bugs it fixes. Splitting it there
+       is what keeps the whole document out of the design editor's undo stack (one Cmd-Z
+       used to bring the testbench back into the design card); SEEDING rather than
+       loading is what keeps app.js's own example out of it - this page opens with the
+       D flip-flop in the editor for an instant, because app.js is a verbatim copy of
+       the simulator and loads EXAMPLES' first entry, and while the swap was an ordinary
+       undoable edit one Cmd-Z on a page nobody had typed in yet replaced the exercise
+       with `module dff`. There is nothing behind a page's first document to undo to.
+       Reset is deliberately NOT this: see doReset. */
     /* And so does the file name, for the same reason and from the same cause: app.js
        loaded an example on the way past, and loadExample sets `currentFileName` from the
        example's NAME. The first entry of EXAMPLES is the D flip-flop, so without this
@@ -187,7 +260,7 @@
        loadExample's example names do - build.py names each page `<slug>.html`, so a slug
        that was not filename-safe could not have a page in the first place. */
     currentFileName = PRACTICE_META.slug + '.v';
-    resetEditorHierarchyState();
+    seedFullSource(ex.starter);
     tryApplyAutoFinishTime(codeInput.value);
   }
 
@@ -201,27 +274,35 @@
   var verdict = document.createElement('span');
   verdict.className = 'ex-verdict';
   verdict.id = 'exVerdict';
-  var consoleCard = document.getElementById('card-console');
-  var consoleHead = consoleCard ? consoleCard.querySelector('h2') : null;
-  if (consoleHead) {
-    // Before the layout buttons, not after them: both want margin-left:auto, and
-    // whichever comes first takes the slack - so appending would put the pill out
-    // past the controls at the very edge.
-    var controls = consoleHead.querySelector('.header-controls');
-    if (controls) consoleHead.insertBefore(verdict, controls);
-    else consoleHead.appendChild(verdict);
-    /* Clear. A worded button rather than an icon, which makes it the only one in any card
-       header here - deliberate, because every icon in these headers ADJUSTS something
-       (height, a panel, a radix) and this one discards. `.btn.secondary`, not the green
-       primary: the card's primary action is not throwing its contents away. */
+  /* IT SITS BESIDE THE BUTTON THAT PRODUCES IT, in the editor card's run toolbar, not in
+     the Console card's header. The verdict is the answer to pressing Run, and the Console
+     is two cards further down the page - so on anything shorter than a desktop window the
+     result of a run was off-screen at the moment it arrived, and reading it meant scrolling
+     past the Testbench Editor to a header whose own box you then had to look away from. Run
+     and its verdict are one exchange, so they are in one row.
+     Clear comes with it, because it is the control that retires that verdict.
+
+     The anchor is `maxTimeInput`'s own toolbar, which is deliberately the same anchor
+     practice-synth.js uses for Synthesize - so the two files cannot disagree about which
+     row this is - and appending is what puts the pill BEFORE that button: practice-synth.js
+     is a later classic script, so its append lands to the right of these two. That is the
+     order the mock asks for (Run … time units, verdict, Clear, Synthesize) and it is the
+     one thing here that depends on load order, which is why it is written down. */
+  var maxInput = document.getElementById('maxTimeInput');
+  var runBar = maxInput ? maxInput.parentElement : null;
+  if (runBar) {
+    runBar.appendChild(verdict);
+    /* Clear. `.btn.secondary`, not the green primary: it discards, and the two primaries in
+       this row are the two things a learner asks the page to DO (see practice-synth.js on
+       why Synthesize is green beside Run). Worded rather than an icon for the same reason it
+       always was - every icon control on this page adjusts something and this one throws
+       something away - and in a toolbar of worded buttons that now needs no exception. */
     clearBtn = document.createElement('button');
     clearBtn.className = 'btn secondary';
     clearBtn.id = 'consoleClearBtn';
     clearBtn.type = 'button';
     clearBtn.textContent = 'Clear';
-    clearBtn.style.marginLeft = '10px';
-    if (controls) consoleHead.insertBefore(clearBtn, controls);
-    else consoleHead.appendChild(clearBtn);
+    runBar.appendChild(clearBtn);
   }
 
   /* Clear discards what the Console SHOWS and everything that speaks for it - the pill,
@@ -314,12 +395,88 @@
       if (typeof lastResult !== 'undefined' && lastResult) drawWaveform(lastResult);
     }
   }
+  /* ---- THE FIRST RUN SHOWS THE DUT'S OWN SIGNALS, because on a practice page the top
+     module is the TESTBENCH, and app.js's fresh-design default - show the top module's own
+     signals, hide every direct child instance - therefore opens the plot on the stimulus
+     rather than on the thing being written. Measured across the twenty: the testbench's own
+     rows are 2 to 10 of them, and `cpu-16bit`'s first Run plotted exactly two (`clk`,
+     `rst_n`) while its DUT has 25. That default is right in the standalone simulator, where
+     the top module IS the design; here it is one instance short.
+
+     It ADDS to what is shown rather than replacing it, and it does so by making exactly the
+     two writes the panel's own instance-row click makes (`shown` on the DUT, `hidden` on its
+     children, so the drill-down stays one level at a time). So this is not a second rule
+     about visibility - it is the click the reader would otherwise have had to find, done
+     once, and every subsequent toggle behaves as it always did. The testbench's rows stay:
+     nothing that was plotted disappears, at the cost of a port appearing twice under two
+     names (`clk` beside `u_dff.clk`), which is what showing both halves of a connection
+     looks like.
+
+     THE DUT IS THE SHALLOWEST INSTANCE WHOSE MODULE IS DECLARED IN THE DESIGN HALF, and
+     each half of that is load-bearing. `u_dut` is not a convention here - the twenty use
+     `u_dff`, `u_cnt`, `u_rf`, `u_tl` and thirteen more - so a name match would find nothing
+     on most pages. The design half is the document up to the `// ======== TESTBENCH ========`
+     marker, i.e. the same cut the two editors and the synthesizer already split on, so the
+     answer is the module the exercise asks for rather than a guess. Shallowest, because on
+     the three system-level pages the DUT is nested (`u_sys.u_cpu`, `u_sys.u_calc`) while the
+     modules it is built from - `alu`, `rf`, `pc` - are declared in that same half and would
+     otherwise be candidates too. Verified to resolve on all twenty.
+
+     It reads the tree by RE-PARSING, since app.js keeps it in renderHierarchyTree's closure
+     and nothing retains it - one parse of a document that has just parsed, once per page.
+     Reaching into app.js for a global instead would mean editing a verbatim slice of
+     `Baerilog/simulator.html`, which the next `build.py --sync` would take away. ---- */
+  var dutShown = false;
+  function showDutSignals() {
+    if (dutShown) return;
+    /* Guarded on a RESULT rather than on the click, so a first Run that failed to parse
+       does not consume the one chance to do this - the reader fixes the design, presses Run
+       again, and that is the run this belongs to. */
+    if (typeof lastResult === 'undefined' || !lastResult) return;
+    var src = typeof currentFullSource === 'function' ? currentFullSource() : editorFullSource;
+    var ast;
+    try { ast = parseVerilog(src); } catch (e) { return; }
+    if (!ast || !ast.tree) return;
+    var design = String(src).split('// ======== TESTBENCH ========')[0];
+    var mods = [];
+    design.replace(/(^|\n)\s*module\s+(\w+)/g, function (_, nl, name) { mods.push(name); return ''; });
+    if (!mods.length) return;
+    var best = null;
+    (function walk(node, depth) {
+      if (node.path && mods.indexOf(node.modType) !== -1 && (!best || depth < best.depth)) {
+        best = { node: node, depth: depth };
+      }
+      node.children.forEach(function (c) { walk(c, depth + 1); });
+    })(ast.tree, 0);
+    if (!best) return;
+    instanceVisibility.set(best.node.path, 'shown');
+    best.node.children.forEach(function (c) { instanceVisibility.set(c.path, 'hidden'); });
+    /* Every branch is folded on a fresh design, and the root's fold is what decides whether
+       its children are rendered at all - so without this the panel would report the change
+       by showing nothing, and on the nested pages the row now marked `shown` would be
+       inside a collapsed ancestor. Unfolding the path to it is the rest of the same click. */
+    var at = best.node.path, guard = 0;
+    while (guard++ < 64) {
+      var dot = at.lastIndexOf('.');
+      at = dot === -1 ? '' : at.slice(0, dot);
+      collapsedBranches.delete(at);
+      if (at === '') break;
+    }
+    renderHierarchyTree(ast.tree);
+    drawWaveform(lastResult);
+    dutShown = true;
+  }
+
   /* Registered after app.js's own handlers, and runSimulation is synchronous, so the
      console is already written by the time this fires. */
   (function () {
     var b = document.getElementById('runBtn');
     if (!b) return;
-    b.addEventListener('click', function () { noteRun('simulation'); });
+    /* Before noteRun, whose own first-Run block unfolds the Waveform Viewer and redraws -
+       so the selection is in place for that draw rather than needing a third one. This is
+       the behavioural Run deliberately: practice-synth.js's gate-level run also calls
+       noteRun, and its netlist has a different tree from the document in the editor. */
+    b.addEventListener('click', function () { showDutSignals(); noteRun('simulation'); });
   })();
   /* Registered here rather than where the button is built, so the Console's two handlers
      read together. cloud-sync adds its own to the same button, later in load order, which
@@ -356,12 +513,13 @@
      so the strip is REBUILT after each Run. The Model card is hidden until then, so
      without the rebuild its tab would never appear on the pages that do keep it.
      Rebuilding preserves which tab is lit, or pressing Run would silently move the
-     selection back to Exercise.
+     selection back to Design.
 
-     The Exercise tab keeps the id exReopenBtn - it IS the old header button, moved
-     into the strip, so everything already wired to that id keeps working. ---- */
+     EVERY ENTRY HERE SELECTS A CARD ON THIS PAGE, which is what a tab is. Exercise used
+     to sit at the front of this list and did not: it opened a dialog, and clicking it took
+     the lit marker off the card you were reading and put it on a control that navigates
+     nowhere. It is a button beside Reset now - see section 6. ---- */
   var TABS = [
-    { id: 'exReopenBtn', label: 'Exercise', icon: 'book', sheet: true },
     { id: 'tabDesign', label: 'Design', icon: 'code', card: 'card-editor' },
     { id: 'tabConsole', label: 'Console', icon: 'term', card: 'card-console' },
     { id: 'tabWave', label: 'Waveform', icon: 'pulse', card: 'card-wave' },
@@ -374,6 +532,24 @@
   function cardIsOnThePage(id) {
     var el = document.getElementById(id);
     return !!el && el.style.display !== 'none';
+  }
+
+  /* `scrollIntoView({block:'start'})` puts a card's top at the top of the VIEWPORT, which
+     is behind the bar and the sticky page head - so a tab press left the card it selected
+     with its own title hidden under the strip that selected it, i.e. looking headless and
+     cut off. This scrolls back by whatever is still covering the top afterwards.
+
+     MEASURED AFTER THE SCROLL, and that is what makes it one rule for both layouts: the
+     band's bottom edge IS the height of everything docked above the content (the bar sits
+     above it, so one rect covers both), and where the narrow layer has released the band
+     it has scrolled away with the page and its bottom is at or above 0, so there is
+     nothing to correct. No copy of the 760px breakpoint, and nothing to keep in step with
+     the two heights - both of which vary, since the bar and the crumb wrap. */
+  function clearStickyOverlap() {
+    var head = document.querySelector('.gh-page-head');
+    if (!head || !head.getBoundingClientRect || !window.scrollBy) return;
+    var over = head.getBoundingClientRect().bottom;
+    if (over > 0) window.scrollBy(0, -over);
   }
 
   function refreshTabs() {
@@ -399,9 +575,9 @@
         // two more once its cards exist, and a closure would leave two tabs lit at once.
         tabStrip.querySelectorAll('.gh-tab').forEach(function (o) { o.classList.remove('selected'); });
         b.classList.add('selected');
-        if (t.sheet) { openSheet(); return; }
         var card = document.getElementById(t.card);
         if (card && card.scrollIntoView) card.scrollIntoView({ block: 'start' });
+        clearStickyOverlap();
       });
       mine.push(b);
       tabButtons.push(b);
@@ -423,22 +599,46 @@
   }
   refreshTabs();
 
-  /* ---- 6. Reset, in the tab strip.
+  /* ---- 6. the strip's ACTIONS: Exercise, then Reset.
 
-     A BUTTON rather than a tab, and that is what keeps it out of three mechanisms it
-     would otherwise need an exception in: `PRACTICE_API.tabs()` collects `.gh-tab`, the
-     one-lit-at-a-time handler clears `.gh-tab`, and the harness requires every tab to
-     point at a card that exists and is visible. Reset navigates nowhere, so it is not a
-     tab; being a `.btn` it is simply not in that set.
+     NEITHER IS A TAB, and that is what keeps both out of three mechanisms they would
+     otherwise each need an exception in: `PRACTICE_API.tabs()` collects `.gh-tab`, the
+     one-lit-at-a-time handler clears `.gh-tab`, and the harness requires every tab to point
+     at a card that exists and is visible. One opens a dialog and one discards work; neither
+     navigates to a card, so neither is in that set.
 
-     `margin-left: auto` in practice.css pushes it right, but that is NOT what makes it
-     last: an auto margin absorbs the space BEFORE its item, and anything appended after
-     it still follows. practice-synth.js appends the two netlist tabs on every successful
-     synthesis, so it inserts them BEFORE this button instead - which is what makes DOM
+     Exercise was a tab until now, and being one cost something real: clicking it took the
+     lit marker off the card you were reading and put it on a control that goes nowhere.
+
+     ONE GROUP rather than two separately placed buttons, because the two properties that
+     place them are properties of the PAIR: `margin-left: auto`, and `position: sticky;
+     right: 0` in the narrow layer. Pinning them individually would mean giving the second
+     one a `right:` offset measured off the first one's width - the width of a word at 12px,
+     which is not a constant.
+
+     `margin-left: auto` pushes the group right, but that is NOT what makes it last: an auto
+     margin absorbs the space BEFORE its item and holds nothing back after it.
+     practice-synth.js appends two netlist tabs on every successful synthesis, so it inserts
+     them BEFORE this group instead (PRACTICE_API.stripActions) - which is what makes DOM
      order, keyboard order and visual order agree, and lets "rightmost" be checked from a
      booted page rather than asserted against CSS text. ---- */
-  var resetBtn = null;
+  var stripActions = null, exBtn = null, resetBtn = null;
   if (tabStrip) {
+    stripActions = document.createElement('div');
+    stripActions.id = 'exStripActions';
+    stripActions.className = 'ex-strip-actions';
+
+    /* Stock `.btn.outline`, which app.css already paints in --accent-fg with an
+       --accent-subtle hover - so "blue" needs no rule of its own here. The glyph is ⓘ
+       rather than the book it carried as a tab: a book says "reading material", and what
+       this offers is the statement of the problem you are solving. */
+    exBtn = document.createElement('button');
+    exBtn.id = 'exReopenBtn';          // the id everything already wired to it keeps
+    exBtn.className = 'btn outline';
+    exBtn.setAttribute('type', 'button');
+    exBtn.innerHTML = (ICON.info || '') + '<span>Exercise</span>';
+    exBtn.title = 'Read the exercise description again';
+
     resetBtn = document.createElement('button');
     resetBtn.id = 'exResetBtn';
     resetBtn.className = 'btn outline ex-reset';
@@ -446,7 +646,10 @@
     resetBtn.textContent = 'Reset';
     resetBtn.title = 'Discard your changes and start this exercise over';
     resetBtn.addEventListener('click', openResetConfirm);
-    tabStrip.appendChild(resetBtn);
+
+    stripActions.appendChild(exBtn);
+    stripActions.appendChild(resetBtn);
+    tabStrip.appendChild(stripActions);
   }
 
   /* The confirmation, built with createElement rather than one innerHTML string -
@@ -484,9 +687,13 @@
     var body = document.createElement('div');
     body.className = 'ex-sheet-body';
     var p = document.createElement('p');
-    /* Names what is lost, because that is the only thing the reader is deciding. */
-    p.textContent = 'Your changes to the Verilog source will be discarded and the '
-      + 'original exercise restored.';
+    /* Names what is lost, because that is the only thing the reader is deciding - and it
+       names the progress as well as the source now, since this deletes the saved record:
+       the hub stops badging the exercise and the brief greets the next visit. For a reader
+       signed in on two machines that is true of both, which is what "start over" means and
+       is why it is worth saying before rather than after. */
+    p.textContent = 'Your changes to the Verilog source will be discarded, the original '
+      + 'exercise restored, and your saved progress for it cleared.';
     body.appendChild(p);
     var row = document.createElement('div');
     row.className = 'ex-confirm-actions';
@@ -523,7 +730,7 @@
 
   /* Back to the page you opened. The three handlers on the hidden toolbar Reset do most
      of it, so this clicks that and then does only what a FIRST OPEN has that a Reset
-     does not - which is a four-item delta rather than a second copy of the whole load
+     does not - which is a five-item delta rather than a second copy of the whole load
      sequence, and each item stays owned by the file that owns that state.
      Deliberately NOT touched: the memory images, which are written into
      attachedMemFiles at load and never removed, so they are already right; and the
@@ -535,8 +742,10 @@
     if (ex && ex.starter) {
       var maxInput = document.getElementById('maxTimeInput');
       if (maxInput) maxInput.value = String(ex.maxTime || 2000);
-      setEditorText(ex.starter);
-      resetEditorHierarchyState();
+      /* resetEditorHierarchyState, NOT seedFullSource: this discards work the learner
+         really did (behind a confirmation), so it stays one undoable edit and Cmd-Z is
+         the backstop. The load path above is the opposite case - see it. */
+      resetEditorHierarchyState(ex.starter);
       tryApplyAutoFinishTime(codeInput.value);
     }
     // 2. the netlist, its cards and its console section.
@@ -545,14 +754,24 @@
     }
     // 3. the strip, since the cards it points at have just moved.
     refreshTabs();
-    // 4. the sheet, last, so it is what has focus when this returns.
+    /* 4. the RECORD, so the exercise is not merely un-run but un-BEGUN: the hub stops
+       badging it and the next load shows the brief again, both of which are read off
+       whether that row exists. cloud-sync.js owns the row and installs this hook, the way
+       it installs LEARN_ON_QUIZ, so nothing here has to know how progress is stored.
+
+       AFTER the source is back, and that ordering is the whole reason it is a hook rather
+       than a listener on the button clicked at the top of this function: re-seeding the
+       editor fires `input`, cloud-sync saves on `input`, and a delete wired to the button
+       would be undone microseconds later by that save. */
+    if (window.CLOUD_ON_RESET) window.CLOUD_ON_RESET();
+    // 5. the sheet, last, so it is what has focus when this returns.
     openSheet();
   }
 
   var reopenBtn = document.getElementById('exReopenBtn');
 
   /* ---- 6. the sheet. Four ways out (Get Started!, the ✕, Escape, the backdrop)
-     and one way back in (the Exercise tab). ---- */
+     and one way back in (the Exercise button). ---- */
   function openSheet() {
     backdrop.classList.add('open');
     document.body.classList.add('ex-sheet-open');
@@ -573,10 +792,14 @@
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && backdrop.classList.contains('open')) closeSheet();
   });
-  // shell.js builds the sheet already open, so it covers the page from the moment
-  // it exists rather than after a repaint. This is where body scroll gets locked
-  // and focus lands, which is why it is re-opened rather than assumed.
-  openSheet();
+  /* ADOPTED, NOT DECIDED. shell.js is what stamps `open` onto the backdrop, and it is the
+     only file here that runs before the browser can paint - app.js sits between the two as a
+     quarter of a megabyte of blocking script - so it is also what decides whether an
+     exercise already begun gets the brief at all. This re-opens what is open, because
+     openSheet is where body scroll gets locked and focus lands; where it is not, there is
+     nothing to unlock, and focus is deliberately left where the browser put it rather than
+     pulled into the editor, which on a phone would open the keyboard on arrival. */
+  if (backdrop.classList.contains('open')) openSheet();
 
   // Named for the harness, which drives these paths without a browser.
   window.PRACTICE_API = {
@@ -590,23 +813,46 @@
     closeSheet: closeSheet,
     isSheetOpen: function () { return backdrop.classList.contains('open'); },
     hasRun: function () { return hasRun; },
-    /* The Reset control and its dialog. `resetButton` is what practice-synth.js inserts
-       its tabs before, so the button stays DOM-last however often the netlist pair comes
-       and goes; the rest is for the harness, which has to be able to open the dialog and
-       take either branch without a native confirm(). */
+    /* The strip's two action buttons and the group holding them. `stripActions` is what
+       practice-synth.js inserts its tabs before, so the pair stays DOM-last however often
+       the netlist tabs come and go - it used to pin on `resetButton`, which is a CHILD of
+       the group now, so `parentElement === strip` would be false there and the netlist pair
+       would land to the right of Reset. The rest is for the harness, which has to be able to
+       open the dialog and take either branch without a native confirm(). */
     resetButton: function () { return resetBtn; },
+    exerciseButton: function () { return exBtn; },
+    stripActions: function () { return stripActions; },
     openResetConfirm: openResetConfirm,
     isResetConfirmOpen: function () {
       return !!resetBackdrop && resetBackdrop.classList.contains('open');
     },
     /* Every tab in the strip, not just this file's: practice-synth.js appends its
        own, and a harness asking "what can be clicked here" wants all of them. */
+    /* The correction a sticky page head needs after a scrollIntoView - see the function.
+       practice-synth.js's two tabs scroll to their cards exactly as this file's do, so they
+       take the same correction from here rather than measuring the band a second time. */
+    clearStickyOverlap: clearStickyOverlap,
     tabs: function () {
       var ids = [];
       if (tabStrip) {
         tabStrip.querySelectorAll('.gh-tab').forEach(function (b) { ids.push(b.id); });
       }
       return ids;
+    },
+    /* The whole strip in the order a reader tabs through it, with the actions group
+       FLATTENED - so "every tab, then Exercise, then Reset" is one assertion rather than
+       three separate readings of the DOM's shape. `children` is an HTMLCollection in a real
+       browser, with neither forEach nor filter, hence the slice - the trap refreshTabs
+       already records about querySelectorAll. */
+    stripOrder: function () {
+      var out = [];
+      if (!tabStrip) return out;
+      [].slice.call(tabStrip.children).forEach(function (c) {
+        if (stripActions && c === stripActions) {
+          [].slice.call(c.children).forEach(function (k) { out.push(k.id); });
+        } else out.push(c.id);
+      });
+      return out;
     }
   };
 })();
