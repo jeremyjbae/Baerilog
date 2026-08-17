@@ -212,11 +212,26 @@ function esc(s) {
     var rec = window.CLOUD.load('learn', slug);
     if (!rec) return '';
     var v = rec.verdict;
-    /* Edited but never run is worth saying: it is the state a learner leaves a
-       page in mid-answer, and it is what makes the hub a place to resume from. */
-    if (!v || !v.state || v.state === 'none') return '<span class="gh-prog">in progress</span>';
-    if (v.state === 'pass') return '<span class="gh-prog pass">' + v.pass + '/' + v.pass + ' passing</span>';
-    return '<span class="gh-prog fail">' + v.fail + ' failing</span>';
+    if (!v || !v.state) return '<span class="gh-prog">in progress</span>';
+    /* HOW FAR IN, not just that a page was started. A quiz reads `none` until EVERY question is
+       right - deliberately, so three of four cannot render as `3/3 passing` - but this used to print
+       a bare `in progress` for the whole of that range and throw the counts away, so a reader four
+       answers into five had no way to see it from the hub. `total` is in the record now for exactly
+       this; a record stored before it was falls back to the old wording rather than rendering
+       `4 of undefined`.
+       `in progress` survives for the one state it really describes: a page opened and left with
+       nothing answered. */
+    var n = v.total;
+    if (v.state === 'none') {
+      var done = (v.pass || 0) + (v.fail || 0);
+      if (!n || !done) return '<span class="gh-prog">in progress</span>';
+      return '<span class="gh-prog">' + v.pass + ' of ' + n + ' right</span>';
+    }
+    /* The denominator is `total` now. It used to be `pass` printed twice, which is only right at
+       full marks - the state this branch happens to be for, so it was never wrong, just unable to
+       say anything else. */
+    if (v.state === 'pass') return '<span class="gh-prog pass">' + v.pass + '/' + (n || v.pass) + ' passing</span>';
+    return '<span class="gh-prog fail">' + v.fail + ' wrong</span>';
   }
 
   function render() {

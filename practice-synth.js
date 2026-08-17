@@ -91,18 +91,62 @@
     xnor: { viewBox: '0 0 100 80', body: GATE_XSHIELD_D, extra: GATE_XCURVE_D, stubs: [[0, 16, 14, 16], [0, 64, 14, 64], [92, 40, 99, 40]], bubble: { cx: 86, cy: 40 } },
     not: { viewBox: '0 13 75 54', body: GATE_NOT_D, stubs: [[0, 40.5, 16, 40.5], [67, 40, 74, 40]], bubble: { cx: 61, cy: 40 } },
     buf: { viewBox: '0 13 75 54', body: GATE_NOT_D, stubs: [[0, 40.5, 16, 40.5], [67, 40, 74, 40]] },
-    mux2: { viewBox: '0 0 55 65', body: 'M 20 2.5 L 40 17.5 L 40 47.5 L 20 62.5 Z', stubs: [[0, 8.808153, 20.000004, 8.808153], [0, 32.808153, 20.000004, 32.808153], [0, 56.80815, 20.000004, 56.80815], [40, 32.5, 55, 32.5]] },
+    /* THE SELECT COMES IN FROM THE TOP, where the data inputs stay on the left. Three pins stacked
+       down one edge says nothing about which of them chooses and which are chosen; a mux drawn with
+       `sel` on the top edge is the convention every schematic uses, and it reads the way the sentence
+       does - two values in from the left, one control from above, one value out. `a` and `b` keep the
+       fractions they had, so nothing else about the symbol or its wires moves. The stub is vertical at
+       x=27.5, half the canvas width, and stops ON the slanted top edge (y = 2.5 + 0.75 * 7.5), so the
+       body's own fill covers the end of it the way the left-edge stubs are covered.
+       `a` and `b` are SYMMETRIC about the body's centre now, at 17.5 and 47.5 either side of
+       32.5 - which are also the heights of the output edge's two corners. They used to be two of
+       THREE evenly spaced stubs (8.808, 32.808, 56.808), symmetric only as a set of three, so with
+       sel gone one input sat on the centre line and the other near the bottom corner. Byte-identical to
+       synthesis.html's copy, which tools/check_theme.py asserts. */
+    mux2: { viewBox: '0 0 55 65', body: 'M 20 2.5 L 40 17.5 L 40 47.5 L 20 62.5 Z', stubs: [[27.5, 0, 27.5, 8.125], [0, 17.5, 20, 17.5], [0, 47.5, 20, 47.5], [40, 32.5, 55, 32.5]] },
     add: {
-      viewBox: '0 0 65 80',
+      viewBox: '0 0 65 95',
       body: 'M 20 0 L 50 15 L 50 60 L 20 80 L 20 50 L 30 40 L 20 30 Z',
-      stubs: [[0, 15, 20, 15], [0, 40, 20, 40], [0, 65, 20, 65], [50, 30, 65, 30], [50, 50, 65, 50]],
+      /* cin comes off the BOTTOM edge at its midpoint (35, 70) - the way a flip-flop's clock
+         does - and the canvas is 15 units taller than the body for exactly that stub's room: a
+         bottom pin's wire lands on the canvas edge, so a stub stopping short of it would start
+         the wire in mid-air. cout is the UPPER output now and sum the lower one, which is the
+         order the engine's own portOrder for an adder already uses. */
+      stubs: [[0, 15, 20, 15], [0, 65, 20, 65], [35, 70, 35, 95], [50, 30, 65, 30], [50, 50, 65, 50]],
       extra: 'M 40 35 L 40 45 M 45 40 L 35 40',
       scale: 2
     },
     sub: {
-      viewBox: '0 0 65 80',
+      viewBox: '0 0 65 95',
       body: 'M 20 0 L 50 15 L 50 60 L 20 80 L 20 50 L 30 40 L 20 30 Z',
-      stubs: [[0, 15, 20, 15], [0, 40, 20, 40], [0, 65, 20, 65], [50, 30, 65, 30], [50, 50, 65, 50]],
+      /* cin comes off the BOTTOM edge at its midpoint (35, 70) - the way a flip-flop's clock
+         does - and the canvas is 15 units taller than the body for exactly that stub's room: a
+         bottom pin's wire lands on the canvas edge, so a stub stopping short of it would start
+         the wire in mid-air. cout is the UPPER output now and sum the lower one, which is the
+         order the engine's own portOrder for an adder already uses. */
+      stubs: [[0, 15, 20, 15], [0, 65, 20, 65], [35, 70, 35, 95], [50, 30, 65, 30], [50, 50, 65, 50]],
+      extra: 'M 45 40 L 35 40',
+      scale: 2
+    },
+    /* The same two with NO CARRY IN, for an adder whose `cin` is tied to 0 - which is what
+       `assign s = a + b;` gives, a pin the design never named with a `1'b0` hanging off it. See the
+       engine's dropInertPins. The viewBox is deliberately UNCHANGED at 95 tall even though the body
+       ends at 80: every other pin is a fraction of that height, so shrinking the canvas to the body
+       would move a, b, cout and sum. Only the bottom stub goes. `subnc` is unreachable today - a
+       subtractor's carry in is tied to 1, the two's-complement increment, and stays drawn - and
+       exists so the renderer's key cannot resolve to nothing if one ever appears. Byte-identical to
+       synthesis.html's copies, which tools/check_theme.py asserts. */
+    addnc: {
+      viewBox: '0 0 65 95',
+      body: 'M 20 0 L 50 15 L 50 60 L 20 80 L 20 50 L 30 40 L 20 30 Z',
+      stubs: [[0, 15, 20, 15], [0, 65, 20, 65], [50, 30, 65, 30], [50, 50, 65, 50]],
+      extra: 'M 40 35 L 40 45 M 45 40 L 35 40',
+      scale: 2
+    },
+    subnc: {
+      viewBox: '0 0 65 95',
+      body: 'M 20 0 L 50 15 L 50 60 L 20 80 L 20 50 L 30 40 L 20 30 Z',
+      stubs: [[0, 15, 20, 15], [0, 65, 20, 65], [50, 30, 65, 30], [50, 50, 65, 50]],
       extra: 'M 45 40 L 35 40',
       scale: 2
     },
@@ -111,6 +155,19 @@
       body: 'M 24 10 L 70 10 L 70 80 L 24 80 Z',
       stubs: [[0, 30, 24, 30], [0, 60, 16, 60], [40, 80, 40, 90], [70, 30, 90, 30]],
       bubble: { cx: 20, cy: 60, r: 4 },
+      notch: 'M 34 80 L 40 70 L 46 80 Z',
+      label: { text: 'DFF', x: 47, y: 49 }
+    },
+    /* The same flip-flop with no reset, for one whose `rstn` is tied de-asserted - a synchronous
+       reset, or no reset at all. See the engine's dropTiedResets: the pin, its wire and the constant
+       that drove it come off together, and this is the symbol that goes with them. Same viewBox, same
+       body, same clock notch, and `d`, `clk` and `q` on the same three fractions - only the bubbled
+       stub and the bubble are gone, so swapping this in for `dff` cannot move a wire that is still
+       there. Byte-identical to synthesis.html's copy, which tools/check_theme.py asserts. */
+    dffnr: {
+      viewBox: '0 0 90 90',
+      body: 'M 24 10 L 70 10 L 70 80 L 24 80 Z',
+      stubs: [[0, 30, 24, 30], [40, 80, 40, 90], [70, 30, 90, 30]],
       notch: 'M 34 80 L 40 70 L 46 80 Z',
       label: { text: 'DFF', x: 47, y: 49 }
     }
@@ -152,8 +209,8 @@
     switch (n.type) {
       case 'port': return n.data.isBus ? { width: 104, height: 36 } : { width: 92, height: 32 };
       case 'gate': return GATE_DEFS[n.data.kind];
-      case 'dff': return GATE_DEFS.dff;
-      case 'fa': case 'adder': return GATE_DEFS[n.data.op === 'sub' ? 'sub' : 'add'];
+      case 'dff': return GATE_DEFS[n.data.noReset ? 'dffnr' : 'dff'];
+      case 'fa': case 'adder': return GATE_DEFS[(n.data.op === 'sub' ? 'sub' : 'add') + (n.data.noCarry ? 'nc' : '')];
       case 'mux2': return GATE_DEFS.mux2;
       case 'const': return { width: constWidth(n.data.label), height: 28 };
       case 'instance': {
@@ -176,15 +233,30 @@
         out.a = ['l', 0.2]; out.b = ['l', 0.8]; out.y = ['r', 0.5];
         return out;
       case 'dff':
-        out.d = ['l', 1 / 3]; out.rstn = ['l', 2 / 3];
+        /* No `rstn` handle on a flip-flop drawn without the pin: a handle with no stub under it is a
+           wire landing where nothing is drawn. The engine's dropTiedResets has already taken the edge
+           off, so nothing asks for it. */
+        out.d = ['l', 1 / 3];
+        if (!n.data.noReset) out.rstn = ['l', 2 / 3];
         out.clk = ['b', 0.4444]; out.q = ['r', 1 / 3];
         return out;
       case 'fa': case 'adder':
-        out.a = ['l', 0.1875]; out.cin = ['l', 0.5]; out.b = ['l', 0.8125];
-        out.sum = ['r', 0.375]; out.cout = ['r', 0.625];
+        /* Written as the symbol's own coordinates over its viewBox height rather than as
+           decimals, because that is where they come from - `synthesis/symbol/add.svg`'s five
+           red pin markers - and a fraction cannot then be updated without the drawing. cin is
+           the one on the BOTTOM edge, at 35 of 65 across; cout is the upper output and sum the
+           lower one, which is the order the engine's portOrder for an adder already uses. */
+        out.a = ['l', 15 / 95]; out.b = ['l', 65 / 95];
+        /* No `cin` handle on an adder drawn without the pin - see its symbol. The engine's
+           dropInertPins has already taken the edge off, so nothing asks for it. */
+        if (!n.data.noCarry) out.cin = ['b', 35 / 65];
+        out.cout = ['r', 30 / 95]; out.sum = ['r', 50 / 95];
         return out;
       case 'mux2':
-        out.sel = ['l', 0.1308]; out.a = ['l', 0.5]; out.b = ['l', 0.8692]; out.y = ['r', 0.5];
+        /* `sel` is on the TOP edge - see the note on its symbol. `['t', f]` is the fourth side the
+           handle table can name, and handlePoint had only three: a wire into one is led 22px ABOVE
+           the pin and comes straight down, the mirror of what a bottom pin already did. */
+        out.sel = ['t', 0.5]; out.a = ['l', 17.5 / 65]; out.b = ['l', 47.5 / 65]; out.y = ['r', 0.5];
         return out;
       case 'const': out.y = ['r', 0.5]; return out;
       case 'instance':
@@ -195,13 +267,17 @@
     }
   }
 
+  /* The SIDE comes back with the point, because the router needs it and nothing else has it: a
+     wire has to leave a pin the way the pin points, and only handleSpecs knows which edge that is.
+     Two extra characters per branch here save passing the side through both edge builders. */
   function handlePoint(n, id) {
     var spec = handleSpecs(n)[id];
     if (!spec) return null;
     var sz = nodeSize(n), p = n.position;
-    if (spec[0] === 'l') return { x: p.x, y: p.y + sz.height * spec[1] };
-    if (spec[0] === 'r') return { x: p.x + sz.width, y: p.y + sz.height * spec[1] };
-    return { x: p.x + sz.width * spec[1], y: p.y + sz.height };
+    if (spec[0] === 'l') return { x: p.x, y: p.y + sz.height * spec[1], side: 'l' };
+    if (spec[0] === 'r') return { x: p.x + sz.width, y: p.y + sz.height * spec[1], side: 'r' };
+    if (spec[0] === 't') return { x: p.x + sz.width * spec[1], y: p.y, side: 't' };
+    return { x: p.x + sz.width * spec[1], y: p.y + sz.height, side: 'b' };
   }
 
   /* =====================================================================
@@ -1194,23 +1270,38 @@
         e.classList.add('rf-node-dff');
         if (d.isBus) e.classList.add('is-bus');
         e.setAttribute('title', 'DFF');
-        e.innerHTML = gateSymbolHtml('dff') + rangeHtml(d);
+        e.innerHTML = gateSymbolHtml(d.noReset ? 'dffnr' : 'dff') + rangeHtml(d);
         break;
       case 'fa':
         e.classList.add('rf-node-fa');
         if (d.isBus) e.classList.add('is-bus');
         e.setAttribute('title', d.label + ' — double-click to view gate-level internals');
         e.style.cursor = 'pointer';
-        e.innerHTML = gateSymbolHtml(d.op === 'sub' ? 'sub' : 'add') + rangeHtml(d);
+        e.innerHTML = gateSymbolHtml((d.op === 'sub' ? 'sub' : 'add') + (d.noCarry ? 'nc' : '')) + rangeHtml(d);
         e.addEventListener('dblclick', function () { drillInto('FA_PRIMITIVE'); });
         break;
       case 'adder':
         e.classList.add('rf-node-fa');
-        e.setAttribute('title', d.modType + ' (' + d.width + '-bit) — double-click to view internals');
-        e.style.cursor = 'pointer';
-        e.innerHTML = gateSymbolHtml(d.op === 'sub' ? 'sub' : 'add')
-          + '<div class="rf-node-range">[' + (d.width - 1) + ':0]</div>';
-        e.addEventListener('dblclick', function () { drillInto(d.modType); });
+        /* A FIGURE'S ADDER IS A SYMBOL, and a synthesized one is a sized bus adder - so everything
+           below is guarded on `width`, which the synthesizer's node always carries and a topic's
+           `{kind: 'add'}` never does. Without the guard `ripple-carry-4bit`'s figure drew `[NaN:0]`
+           under all four of its blocks, titled each one `undefined (undefined-bit)` and offered a
+           double-click into `drillInto(undefined)` - a drill-down on a static picture that is not a
+           netlist and has nothing to drill into. Invisible to every headless check here, which
+           counts nodes and wires and cannot read a label; found in a browser. */
+        var aSized = typeof d.width === 'number';
+        e.setAttribute('title', aSized
+          ? d.modType + ' (' + d.width + '-bit) — double-click to view internals'
+          : (d.label || (d.op === 'sub' ? 'subtractor' : 'adder')));
+        /* THE BADGE IS THE MODULE NAME, ABOVE THE SYMBOL - see synth.css's `.rf-node-modname`
+           for why it is neither a width nor underneath. It says the same thing the listing card
+           and the breadcrumb say, so a reader can find this block in all three. */
+        e.innerHTML = gateSymbolHtml((d.op === 'sub' ? 'sub' : 'add') + (d.noCarry ? 'nc' : ''))
+          + (aSized ? '<div class="rf-node-modname">' + escapeHtml(d.modType) + '</div>' : '');
+        if (aSized) {
+          e.style.cursor = 'pointer';
+          e.addEventListener('dblclick', function () { drillInto(d.modType); });
+        }
         break;
       case 'mux2':
         e.classList.add('rf-node-mux2');
@@ -1297,7 +1388,34 @@
      feeding the mux in front of its own D is what every counter looks like - so it is
      routed out of the source, under both nodes and back in, rather than drawn through
      them. */
+  /* A WIRE LEAVES A PIN THE WAY THE PIN POINTS, and for the two edges this router was written for
+     that is free: a left or right pin's first move is horizontal, which is what an S-bend in x does
+     anyway. A pin on the BOTTOM edge is not - the route's last move was horizontal, so the wire
+     cornered exactly at the stub's tip and ran alongside it, which reads as a wire that has missed
+     the pin rather than one that ends on it.
+
+     So a bottom pin gets a LEADER: the route is computed to a point 22px below it and the pin is
+     added at the end (or the start, for a source on that edge, which nothing draws today but which
+     costs one branch to be right about). The leader is the same 22px the backward route already
+     steps out by, reused rather than a second constant, and it is long enough for `roundedPath`'s
+     8px corner to sit inside it. */
+  var PIN_LEAD = 22;
   function edgePoints(a, b) {
+    /* A pin on a horizontal edge is approached PERPENDICULARLY, or the wire arrives at the top or
+       bottom of a symbol running sideways along it. So the route is computed to a lead point 22px
+       clear of the pin and the pin itself is added on the end: below for a bottom pin (the adder's
+       carry in, the flip-flop's clock), above for a top one (the mux's select). */
+    var a2 = a.side === 'b' ? { x: a.x, y: a.y + PIN_LEAD }
+           : a.side === 't' ? { x: a.x, y: a.y - PIN_LEAD } : a;
+    var b2 = b.side === 'b' ? { x: b.x, y: b.y + PIN_LEAD }
+           : b.side === 't' ? { x: b.x, y: b.y - PIN_LEAD } : b;
+    var pts = routeBetween(a2, b2);
+    if (a2 !== a) pts.unshift(a);
+    if (b2 !== b) pts.push(b);
+    return pts;
+  }
+
+  function routeBetween(a, b) {
     if (b.x - a.x >= 30) {
       var mx = (a.x + b.x) / 2;
       if (Math.abs(a.y - b.y) < 0.5) return [a, b];
@@ -1879,8 +1997,22 @@
       var a = from && handlePoint(from, e.sourceHandle);
       var b = to && handlePoint(to, e.targetHandle);
       if (!a || !b) return;          // no such pin: the caller's edge count is what says so
+      var pts = edgePoints(a, b);
+      /* THE EXTENT IS WHAT IS DRAWN, NOT JUST THE NODES. A backward wire routes 22px out from
+         its source and 34px BELOW the lower of its two ends, so a wire into the bottom row leaves
+         the box the nodes alone would define - and `.pn-edges` is an SVG filling that box, so the
+         part below it is simply cut off. Reachable the moment a symbol grew a pin on its bottom
+         edge: the adder's carry in takes the wire under the block it feeds, and the last block's
+         hook lost its bottom 34px with nothing to say so.
+         Only the far side is taken in. A route can also run to negative x or y (a backward wire
+         into a target within 22px of the left edge), which would need the whole drawing shifted
+         rather than the box grown, and no figure here is laid out that way. */
+      pts.forEach(function (p) {
+        x1 = Math.max(x1, p.x);
+        y1 = Math.max(y1, p.y);
+      });
       edgeG.appendChild(svg('path', { class: 'pn-edge' + (e.bus ? ' bus' : ''),
-                                      d: roundedPath(edgePoints(a, b), 8) }));
+                                      d: roundedPath(pts, 8) }));
       out.edges++;
     });
     out.nodes = g.nodes.length;

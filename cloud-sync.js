@@ -56,6 +56,12 @@
      its own once it has something to report, and that row simply carries no `source`. */
   var storesSource = !window.CLOUD_NO_SOURCE;
 
+  /* AND A PAGE MAY HAVE NO EDITOR AT ALL. `lego-logic` is prose and illustrations, so learn.js
+     removes every card - the editor's included - before this file runs, and `codeInput` is not in
+     the document by the time it looks. Such a page stores no source either, so there is nothing
+     to read or write; every use of `editor` below is therefore guarded, and without that the
+     `input` listener alone threw and took the rest of this file with it - the pull, the conflict
+     dialog and the quiz hook. */
   var editor = document.getElementById('codeInput');
   if (!editor && storesSource) return;
 
@@ -77,7 +83,7 @@
        really are on `window` - see currentFullSource above. */
     if (typeof window.loadFullSource === 'function') { window.loadFullSource(text); return; }
     if (typeof window.setEditorText === 'function') window.setEditorText(text);
-    else editor.value = text;
+    else if (editor) editor.value = text;
   }
 
   /* The simulator keeps the authoritative full document in `editorFullSource`
@@ -98,7 +104,7 @@
     if (typeof window.spliceEditorChangesBack === 'function') {
       try { window.spliceEditorChangesBack(); } catch (e) { /* fall through to the textarea */ }
     }
-    return editor.value;
+    return editor ? editor.value : '';
   }
 
   /* A document saved before the design/testbench split has no marker, because at
@@ -173,7 +179,7 @@
     if (storesSource) window.CLOUD.save(app, item, { source: getText() });
   }
 
-  editor.addEventListener('input', saveSource);
+  if (editor) editor.addEventListener('input', saveSource);
 
   /* Choosing an example, or opening a file, replaces the document by assigning
      .value - which fires no `input` event, so without this the new text is not
@@ -265,6 +271,30 @@
     }
   }
 
+  /* ---- the verdict, on a learn topic ---------------------------------- */
+
+  /* A TOPIC HAS SOMETHING TO REPORT NOW, which is what the seam above was left open for. Its
+     quiz is the only thing on a page you read that produces a result, so learn.js hands the
+     count here and this is still the one file that writes a learner's record.
+   *
+   * A HOOK RATHER THAN A LISTENER, because there is no single element to bind to: the quiz is
+   * built by learn.js out of createElement, several script tags before this file, and the
+   * questions differ per topic. learn.js calls this at CLICK time and only if it exists, so a
+   * checkout with no project has the quiz working and nothing stored - the same shape
+   * CLOUD_ON_SIGNIN and CLOUD_ON_ADOPT already have, read from the other direction.
+   *
+   * `storesSource` is false on a topic page (CLOUD_NO_SOURCE), so the row carries a verdict and
+   * no source, exactly as the note above describes. Nothing here clears it: a quiz cannot be
+   * un-answered, where a practice page's Reset and Clear really do discard the run the badge
+   * was reporting. */
+  if (app === 'learn') {
+    window.LEARN_ON_QUIZ = function (verdict) {
+      if (!verdict) return;
+      window.CLOUD.save(app, item, storesSource
+        ? { source: getText(), verdict: verdict } : { verdict: verdict });
+    };
+  }
+
   /* ---- seeding at load ------------------------------------------------ */
 
   /* What is on screen right now is a default nobody chose - the exercise skeleton
@@ -285,7 +315,7 @@
      moment the repair stops being a no-op. A mutation test correctly reports it as
      equivalent; that is a fact about the repair, not a reason to drop the guard. */
   var seeded = (typeof window.currentFullSource === 'function')
-    ? window.currentFullSource() : editor.value;
+    ? window.currentFullSource() : (editor ? editor.value : '');
   var rec = window.CLOUD.load(app, item);
   if (rec && typeof rec.source === 'string' && rec.source !== seeded) restore(rec.source);
 

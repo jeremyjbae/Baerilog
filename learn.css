@@ -20,6 +20,12 @@
   margin: 0 auto;
   padding: 0 16px;
 }
+/* THE SAME GAP `.gh-sub + .grid` GIVES A PAGE OF CARDS, because an article is what sits there
+   instead. It only shows on a topic whose first block is running text: a topic opening on an h2
+   has 28px of its own, and margins collapse, so `logic-gates` does not move by a pixel -
+   measured, not assumed. Without it a paragraph starts hard against the blurb under the crumb
+   and the two read as one wrapped line. */
+.gh-sub + .learn-article { margin-top: 24px; }
 /* THE MEASURE IS ON THE TEXT, NOT ON THE BLOCK, and the difference is the whole of this
    rule. Capping `.learn-prose` capped its HEADINGS too, so an h2's bottom rule stopped at
    the measure and read as a line someone had cut short - with the cards below it running
@@ -125,7 +131,7 @@
    not be the one thing on it that looks like it is. */
 .learn-fig-label {
   position: absolute;
-  font: 11px var(--font-mono);
+  font: 11px var(--font-sans);
   color: var(--fg-muted);
   text-align: center;
   pointer-events: none;
@@ -141,11 +147,16 @@
 
    `align-items: flex-start` keeps the palette at the TOP of the box rather than centred against the
    drawing's height, so it reads as a list of layers and not as a caption. */
+/* THE COLUMNS STRETCH, so the placement's column is as tall as the box and has room to fit into - with
+   `flex-start` every column was its own content's height and the layout had nothing to fill. The
+   palette keeps its own alignment: a column of badges stretched to the box would push `Unselect All` to
+   the bottom, away from the list it belongs to. */
 .learn-fig-box {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 14px;
 }
+.learn-fig-layers { align-self: flex-start; }
 .learn-fig-layers {
   display: flex;
   flex-direction: column;
@@ -165,7 +176,7 @@
    What this rule owns is the SHAPE - a small pill, monospace like the other layer names on the page,
    and wide enough that N-WELL and CONTACT read at the same width. */
 .learn-fig-layers .learn-layer-btn {
-  font: 11px var(--font-mono);
+  font: 11px var(--font-sans);
   line-height: 18px;
   padding: 0 8px;
   border: 1px solid transparent;
@@ -184,7 +195,7 @@
    rather than two, and deliberately NEUTRAL - a colour on these would claim to be a layer. They are
    actions, so nothing here has an on state to paint. */
 .learn-fig-layers .learn-layer-all {
-  font: 11px var(--font-mono);
+  font: 11px var(--font-sans);
   line-height: 18px;
   padding: 0 8px;
   border: 1px solid var(--border-default);
@@ -211,9 +222,17 @@
   gap: 8px 16px;
   margin-top: 6px;
 }
+/* BOXED AND UNDER THE DRAWING, which is what makes it read as that placement's caption rather than as
+   a note about the whole figure - it sat at the bottom-left of a three-column box before, as far from
+   the thing it measures as the layout allows. */
 .learn-fig-stats {
-  font: 11px var(--font-mono);
+  font: 11px var(--font-sans);
   color: var(--fg-muted);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  padding: 3px 10px;
+  background: var(--canvas-default);
+  white-space: nowrap;
 }
 
 /* The credit for the cell artwork, bottom right of the figure it belongs to. Right-aligned rather
@@ -234,6 +253,345 @@
   text-align: center;
 }
 
+/* ---- The cross section, beside the layout ----
+   A THIRD flex child of the box, so the wafer sits next to the cell it is a cut through and the
+   layer palette keeps its reserved column. Both drawing panels are `1 1 0` rather than `1 1 auto`,
+   which is what makes them share the room EVENLY: with `auto` the basis is the content's own width
+   and a 144-lambda dff_gate would take four fifths of the box from a section that wants half.
+   `min-width: 0` for the automatic-minimum trap `.card` carries a floor for. */
+.learn-fig-sec {
+  flex: 1 1 0;
+  min-width: 0;
+  border-left: 1px solid var(--border-default);
+  padding-left: 12px;
+}
+/* The middle column: the drawing, then the line that measures it. `align-items: center` is what
+   centres the boxed caption under a drawing narrower than the column. */
+.learn-fig-mid {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;      /* the drawing sits in the middle of the room it is given */
+  gap: 8px;
+}
+.learn-fig-draw { flex: 0 0 auto; align-self: stretch; }
+/* WHAT THE CUT IS, above the drawing: `cut at 10λ — through both gates`. Mono, because it is a
+   coordinate and a fixed phrase rather than prose, and the same 11px as the measured line under the
+   figure - the two are the same kind of statement about what is on screen. */
+/* The header is two things on one line: WHICH drawing this is, and either the invitation to cut the
+   cell or the confirmation that this is it. `space-between` rather than two centred lines, because
+   the second is an aside and should not compete with the first. */
+.learn-sec-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font: 11px var(--font-sans);
+  color: var(--fg-muted);
+  margin-bottom: 6px;
+}
+.learn-sec-what { color: var(--fg-default); }
+/* THE MODE CONTROL, top left of the section: `Ideal Pair`, which is a button while a cut is shown and
+   a label while the ideal pair already is. Both wear the same pill so the header does not change shape
+   between the two states - only what it does. */
+.learn-sec-mode {
+  font: 11px var(--font-sans);
+  line-height: 20px;
+  padding: 0 10px;
+  border: 1px solid var(--accent-fg);
+  border-radius: var(--radius);
+  color: var(--accent-fg);
+  background: var(--canvas-default);
+  white-space: nowrap;
+}
+button.learn-sec-mode { cursor: pointer; }
+button.learn-sec-mode:hover { background: var(--accent-subtle); }
+/* The label form is the CURRENT state, so it is filled - the same "on" treatment the layer badges and
+   the section switch use, rather than a second idiom for the same idea. */
+span.learn-sec-mode { background: var(--accent-subtle); }
+/* THE INVITATION, which is the mode control's own text on the ideal pair: `Click the layout to see the
+   cut`. Not a button - the thing to press is the layout - so it wears the pill without the pointer, and
+   it is muted rather than accent, since it is telling the reader what to do rather than offering to do
+   it. That replaced a separate hint at the other end of the header, which said the same thing twice. */
+.learn-sec-mode.learn-sec-invite {
+  border-style: dashed;
+  border-color: var(--border-default);
+  color: var(--fg-muted);
+  background: transparent;
+}
+
+/* ---- THE FIGURE SPEAKS IN THE PAGE'S VOICE ----
+   Every piece of text in this figure is the page's sans now, not mono: the badges, the player, the
+   measured line, the section's header and the labels inside the drawing. Mono in this repo means an
+   EDITOR or a PANEL - the code block, the console, the log, the truth table - and a diagram's labels
+   are none of those, so a figure written in it read as a different kind of object from the prose
+   around it. The four mono rules left in this file are exactly those: inline code, the code block,
+   the truth table and the log. */
+
+/* The region captions, as ordinary page text above the drawing. Absolutely positioned at a percentage
+   of the width, which is the drawing's own x expressed in the one unit that survives being scaled, and
+   the SAME 11px mono as every other line in the figure - inside the SVG they were sized in user units
+   and so came out at whatever the current scale made them. */
+.learn-sec-regions {
+  position: relative;
+  height: 16px;
+  font: 11px var(--font-sans);
+  color: var(--fg-muted);
+}
+.learn-sec-region {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+/* ---- The step panel, under the drawing ----
+   The reference puts the step's title and a sentence about it beside the picture; here it goes under
+   it, because the figure is already a row of three and a fourth column would leave nothing readable.
+   `min-height` holds the room for two lines, so the figure does not jump as the animation steps
+   through descriptions of different lengths. */
+/* THREE LINES RESERVED, not two. Measured across the nine steps at a 553px panel: seven descriptions
+   wrap to two lines and two - the gate oxide and the N-DIFF implant - to three, so the box grew 13px
+   on exactly those and the drawings above it moved as the reader stepped. The cost is about 17px of
+   whitespace under the short steps, which is the last thing in the column and so costs nothing to
+   read; the benefit is that one more line can be added to any description without anything shifting. */
+.learn-sec-step { margin-top: 8px; min-height: 6.4em; }
+.learn-sec-step-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-default);
+  margin-bottom: 3px;
+}
+.learn-sec-step-desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg-muted);
+}
+
+/* The progress bar: a second encoding of the `3 / 8` beside it, which is the rule anything here
+   carrying meaning in colour is held to. It takes the rest of the control row and has a floor, so it
+   is still a bar when the row wraps on a phone. */
+/* CAPPED, or it eats every pixel the row has left: the reference's bar sits in a ~300px side panel
+   and reads as a gauge, where one stretched across 1200px reads as a rule under the controls. */
+/* THE BAR IS THE STEPPER NOW, so it is a control rather than a readout: it takes a pointer, it takes
+   focus, and it is tall enough to hit. 6px was a gauge; 10px with 4px of invisible padding either side
+   is a target a finger can find without the row growing. */
+/* WIDER, AND SEGMENTED. It was capped at 200px on the grounds that a bar stretched across the row
+   reads as a rule under the controls - true of a continuous fill, and not of this: nine cells with gaps
+   read as steps at any width, and at 200px they were 19px each, which is neither a target nor a
+   picture. So it takes the room the row has left, with a floor that keeps it a bar when the row wraps
+   on a phone. `background: none` because the segments carry the colour now - a track behind them would
+   show through the gaps as a line joining what the gaps exist to separate. */
+.learn-prog {
+  flex: 1 1 320px;
+  min-width: 120px;
+  height: 12px;
+  padding: 0;
+  background: none;
+  display: flex;
+  gap: 3px;
+  cursor: pointer;
+  align-self: center;
+}
+.learn-prog-seg {
+  flex: 1 1 0;
+  border-radius: 2px;
+  background: var(--border-muted);
+  transition: background 0.2s ease;
+}
+.learn-prog-seg.on { background: var(--accent-fg); }
+.learn-prog:hover .learn-prog-seg { background: var(--border-default); }
+.learn-prog:hover .learn-prog-seg.on { background: var(--accent-fg); }
+@media (prefers-reduced-motion: reduce) {
+  .learn-prog-seg { transition: none; }
+}
+/* Focus is VISIBLE, because this is the only way to the steps without a pointer since Prev and Next
+   were removed - an invisible focus ring on the one keyboard control would be worse than no keys. */
+.learn-prog:focus-visible {
+  outline: 2px solid var(--accent-fg);
+  outline-offset: 2px;
+}
+
+/* A player button that cannot do anything says so, as the reference's do at the ends. */
+.learn-fig-ctl button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Where a click would cut, while the pointer is over the layout. Fainter and thinner than the cut
+   itself, since both are on screen at once and only one of them is a decision. */
+.pnr-hover-line {
+  stroke: var(--fg-muted);
+  stroke-width: 400;
+  stroke-dasharray: 900 900;
+  opacity: 0.7;
+  pointer-events: none;
+}
+.learn-sec-body > .pnr-sec-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+/* ---- THE MATERIALS: silicon and oxide, which are not masks ----
+   These four are the only LITERAL colours in this file, and the reason is the one the emulator's TV
+   palette gives for not being themed: they are the product rather than chrome. Silicon is tan and
+   oxide is pale blue in both colour modes, because a wafer does not change colour when the reader's
+   OS does - the same statement the `--panel-*` set makes about editors and consoles. They are also
+   not in the legend, having no mask to tick, which is exactly why each one is LABELLED in the
+   drawing instead.
+
+   The mask colours are untouched: those come from the cell artwork through the drawer, so the
+   section, the layout and the badges beside them stay one palette. */
+.pnr-sec-sub { fill: #d4a574; stroke: #a87f52; stroke-width: 250; }
+.pnr-sec-fieldox { fill: #8fbfd4; }
+/* `.pnr-mat-*` carry no styling: they exist ONLY so the process animation can hide a material it has
+   not made yet, the way a layer class lets it hide a mask. The look comes from the `.pnr-sec-*` class
+   on the same element, so these two concerns stay apart - one says what a shape IS, the other what
+   turns it off. */
+
+/* OPAQUE, and painted first of the above-surface shapes so the poly and the metal sit on it. It was
+   55% translucent, which looked right in light mode and came out grey-blue in dark: a translucent
+   material composites against the page behind it, and the page moves with the reader's OS. */
+.pnr-sec-ild { fill: #a8d5e5; }
+/* The sliver under a gate, the one shape whose whole job is to say the gate does not touch the
+   silicon. Darker than the oxide above it so it reads at 6px. */
+.pnr-sec-gox { fill: #5a8fa8; }
+.pnr-sec-surface { stroke: #8a6642; stroke-width: 250; }
+/* A mask shape. Rounded and lightly outlined, as the reference draws them - the outline is the
+   figure's own surface, so a shape reads as sitting on the page in either mode. */
+.pnr-sec-shape { fill-opacity: 0.9; stroke: var(--canvas-subtle); stroke-width: 150; }
+/* TEXT ON A MATERIAL IS A FIXED DARK, chosen against the fill rather than taken from the page -
+   this repo's rule wherever text lands on a coloured surface, and here the surface is fixed in both
+   modes so the text has to be too. */
+.pnr-sec-mat-tag {
+  fill: #5a4030;
+  font-family: var(--font-sans);
+  font-size: 2400px;
+  text-anchor: middle;
+}
+/* A tag on a mask shape (N+, P+, POLY, M1) carries that mask's class, so it goes when the layer does.
+   NO OUTLINE and no fill here: the colour is set per element by the drawer, measured against the fill
+   the tag sits on. A halo was how one white label was made to work on seven different colours, and it
+   reads as a sticker stuck to the shape rather than as a label on it. */
+.pnr-sec-tag {
+  font-family: var(--font-sans);
+  font-size: 2200px;
+  text-anchor: middle;
+}
+
+.pnr-sec-text {
+  fill: var(--fg-muted);
+  font-family: var(--font-sans);
+  font-size: 2600px;      /* user units: the section's viewBox is in milli-lambda like the layout's */
+  text-anchor: middle;
+}
+
+/* THE CUT MARKER on the layout. It needs a rule at all because an SVG line with no stroke is
+   INVISIBLE while still having a bounding box - so it measured 220px tall in a browser and drew
+   nothing, which is the one failure mode a DOM check cannot see. Dashed and in the accent colour,
+   the same treatment the abutment box and the waveform's cursor get: it is an annotation on the
+   artwork rather than part of it. The width is in the placement's own milli-lambda units, so it
+   scales with the drawing like every other shape in that SVG. */
+.pnr-cut-line {
+  stroke: var(--accent-fg);
+  stroke-width: 600;
+  stroke-dasharray: 2000 1400;
+}
+/* The layout only advertises the drag while there is a section for it to move, which is also the
+   only time the handler does anything - a resize cursor over a figure that cannot be dragged is a
+   control that does not exist. */
+.learn-fig-cutting .learn-fig-draw svg { cursor: ew-resize; }
+
+/* The effects canvas, exactly over the drawing it decorates. `pointer-events: none` because the SVG
+   under it takes the clicks that choose a cut - a canvas on top would swallow them - and it is the one
+   thing in this figure with no meaning of its own, so nothing may depend on hitting it. */
+.learn-sec-body { position: relative; }
+.learn-sec-body > canvas.pnr-fx {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+/* WHICH PHYSICAL PROCESS THIS STEP IS, under its description: the shapes say what a step leaves
+   behind and this says what it does. A quiet pill rather than a coloured one - it names the step, and
+   the step's own colours are in the drawing above it. */
+.learn-fx-badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  font-size: 11px;
+  color: var(--fg-muted);
+  background: var(--canvas-default);
+}
+
+/* ---- The figure's controls: the two switches, the cut stepper, the player ----
+   One row under the box, which is where the process animation this was built from puts its own
+   controls. `wrap` so a phone drops the player below the section switch rather than squeezing both,
+   and `baseline` so the step counter sits on the same line as the buttons naming it. */
+.learn-fig-ctl {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-top: 8px;
+}
+/* THE PLAYER'S BUTTONS ARE OUTLINED ACCENT PILLS, all one size, which is the refinement asked for:
+   they were the palette's neutral `Select All` pill, so the row read as a strip of small grey labels
+   rather than as controls. `min-width` is what makes Prev, Play, Next and Reset the same width
+   whatever their text, so the row does not jump as `▶ Play` becomes `⏸ Pause`. */
+.learn-fig-ctl .learn-layer-all {
+  border-color: var(--accent-fg);
+  color: var(--accent-fg);
+  background: var(--canvas-default);
+  border-radius: var(--radius);
+  line-height: 26px;
+  padding: 0 14px;
+  min-width: 92px;
+}
+.learn-fig-ctl .learn-layer-all:hover { background: var(--accent-subtle); }
+.learn-fig-ctl .learn-layer-all:disabled { border-color: var(--border-default); color: var(--fg-muted); }
+.learn-fig-ctl .learn-layer-all:disabled:hover { background: var(--canvas-default); }
+/* The switch wears the same pill as the actions beside it and differs only by STATE - filled when on,
+   which is the site's existing active idiom (`.layout-btn.active`, `.hierarchy-node-row.active`, the
+   hub's chips). It is not `.layout-btn`, which is a fixed 24x20 icon button that wrapped the label
+   onto two lines. */
+.learn-fig-ctl .learn-fig-switch {
+  border-color: var(--accent-fg);
+  color: var(--accent-fg);
+  line-height: 26px;
+  padding: 0 14px;
+  min-width: 92px;
+  border-radius: var(--radius);
+}
+.learn-fig-ctl .learn-fig-switch.on {
+  border-color: var(--accent-fg);
+  color: var(--accent-fg);
+  background: var(--accent-subtle);
+}
+.learn-anim-step {
+  font: 11px var(--font-sans);
+  color: var(--fg-muted);
+  margin-left: 4px;
+}
+
+/* On a phone the box is a column, so the section goes UNDER the layout rather than beside it - and
+   its left border becomes a top one, or the divider would run along the wrong edge of a stacked
+   pair. 760px is the breakpoint every app here already uses. */
+@media (max-width: 760px) {
+  .learn-fig-box { flex-direction: column; }
+  .learn-fig-layers { flex-direction: row; flex-wrap: wrap; }
+  .learn-fig-sec {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--border-default);
+    padding-top: 12px;
+    width: 100%;
+  }
+}
+
 /* ---- Synthesize, inside the netlist viewer ----
    learn.js moves the button into this row and puts the legend in it too. The button takes the
    left; the legend is a centred flex row of its own, so giving it `flex: 1` lets it keep that
@@ -248,6 +606,229 @@
   margin-top: 12px;
 }
 .learn-synth-foot > .legend-row { flex: 1 1 auto; margin-top: 0; }
+
+/* ---- prose components: a two-column split, an illustration, an aside ----
+   These three are the learn site's own layout vocabulary for a topic that ARGUES something
+   rather than running it - `lego-logic` is the first of them - and they are deliberately named
+   for what they do rather than for that topic, since any later one wants the same three.
+
+   They live here and not in a topic's own markup for the reason `.truth-wrap` does: a topic
+   file carries prose, and prose that has to restate a border and a background every time it
+   wants a figure is a second stylesheet written in HTML. */
+
+/* Text beside a picture. `align-items: center` so a short paragraph sits against the middle of
+   the illustration rather than at its top, and 1fr/1fr because the two halves are peers - the
+   picture is the argument as much as the sentence is. It stacks at 760px, which is the one
+   breakpoint every app here uses. */
+.learn-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 24px;
+  align-items: center;
+  margin: 0 0 18px;
+}
+/* `min-width: 0` for the automatic-minimum trap `.card` carries a floor for: `1fr` is
+   `minmax(auto, 1fr)` and a grid item refuses to go below its own min-content width, so one
+   unshrinkable descendant - a wide table, a drawing - would set the width of the whole page and
+   the symptom would be the header bar reading narrower than the document. Measured here at 500px
+   with nothing overflowing; the floor is what keeps that true of a narrower one. */
+.learn-split > * { min-width: 0; }
+/* The last paragraph in a column keeps no trailing gap: with the columns centred against each
+   other, a 12px margin under the final line reads as the column sitting high. */
+.learn-split > div > p:last-child,
+.learn-split > div > .truth-wrap:last-child { margin-bottom: 0; }
+
+/* A hand-drawn illustration, on the same surface a netlist figure gets (`.learn-fig-box`) so
+   the two kinds of picture on this site read as one kind of thing. A COLUMN rather than that
+   file's flex row, because there is no layer palette to reserve room for and nothing to sit
+   beside: the drawing is centred and its caption goes under it.
+
+   `min-height` is what keeps two illustrations side by side from being wildly different
+   heights when one holds a single brick and the other a tower. */
+.learn-illus {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 18px 14px;
+  min-height: 180px;
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+}
+/* Width from the markup, height derived - so a wide drawing shrinks to the column on a phone
+   instead of overflowing it, and never grows past its own size on a desktop. */
+.learn-illus svg { display: block; max-width: 100%; height: auto; }
+.learn-illus-cap {
+  font-size: 12px;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+/* An aside: the question the paragraph above it just raised, set apart so it reads as the
+   turn in the argument rather than as one more paragraph. The accent bar and fill are the
+   site's existing "this one is marked" idiom (`.layout-btn.active`, `.hierarchy-node-row.active`,
+   the hub's chips) rather than a colour of its own, and the radius is square on the barred
+   edge so the bar reads as an edge and not as a stripe inside a box. */
+.learn-note {
+  border-left: 3px solid var(--accent-fg);
+  background: var(--accent-subtle);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 12px 16px;
+  margin: 0 0 18px;
+  line-height: 1.65;
+}
+.learn-note b, .learn-note strong { font-weight: 600; }
+
+/* ---- LEGO bricks ----
+   The artwork for the `lego-logic` topic: two shapes defined once in that topic's first block
+   and placed with `<use>`. Everything here is a TOKEN, and that is the whole reason the shapes
+   carry classes instead of fills - LEGO's own red, blue, yellow and green are four literal
+   colours this file has no budget for (its own harness pins the count, and the only literals
+   it allows are the four cross-section materials, which are the product rather than chrome).
+   Painted from tokens the bricks follow the reader's colour mode like everything else here.
+
+   `currentColor` is what makes one definition four bricks: the colour is set on the `<use>`
+   element by one of the four classes below and inherits into the referenced shapes, so there
+   is no copy of the geometry per colour. */
+.lego-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.lego-body,
+.lego-stud {
+  fill: currentColor;
+  /* The outline is the PANEL's own colour, so two bricks that touch read as two bricks - the
+     same trick the cross section's mask shapes use against the same surface. */
+  stroke: var(--canvas-subtle);
+  stroke-width: 1.2;
+}
+/* The lit strip inside the body's top edge, which is what makes a rounded rectangle read as a
+   brick rather than as a label. `--fg-on-emphasis` because it is the one token that is #ffffff
+   in BOTH modes - it is defined for text on a coloured fill, which is exactly the surface this
+   sits on. `--canvas-default` is the trap here: white in light mode too, so it looks identical
+   until dark mode turns the highlight into a near-black groove. */
+.lego-top { fill: var(--fg-on-emphasis); opacity: 0.24; }
+.lego-red { color: var(--danger-fg); }
+.lego-blue { color: var(--accent-fg); }
+.lego-yellow { color: var(--attention-fg); }
+.lego-green { color: var(--success-fg); }
+
+/* A tower of 1x1s wobbles, because the sentence beside it says it does. `transform-box:
+   fill-box` is load-bearing: without it `transform-origin: bottom center` resolves against the
+   SVG's viewport rather than the group's own box, so the tower swings about a point off to one
+   side. And a page that moves for a reader who asked it not to is what the query below is for -
+   the tower simply stands still, which costs the illustration nothing. */
+@keyframes lego-sway {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(2.4deg); }
+  75% { transform: rotate(-2.4deg); }
+}
+.lego-tower {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  animation: lego-sway 2.6s infinite ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lego-tower { animation: none; }
+}
+
+/* ---- the quiz ----
+   The one interactive thing on a page you read, and the only one that produces a result - the
+   Learn hub's badge for this topic is its score. It is a PANEL on the same surface a figure and
+   an illustration get, so the three read as one kind of object; what is added is the question
+   rows, the options and the two verdict states.
+
+   Everything is a token, and the two states are the site's existing success/danger pair rather
+   than a green and a red of their own. */
+.learn-quiz {
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin: 0 0 24px;
+}
+/* One question, and the gap between two of them is what separates them - a rule per question
+   would make each read as a section of the page. */
+.learn-quiz-q + .learn-quiz-q { margin-top: 22px; }
+.learn-quiz-ask { line-height: 1.6; margin-bottom: 10px; }
+.learn-quiz-ask b { font-weight: 600; }
+/* A question may quote a signal or an expression, and it wears the prose's own inline chip - the
+   quiz is running text with buttons under it, not a panel with a language of its own. */
+.learn-quiz-text code {
+  font: 12px var(--font-mono);
+  background: var(--canvas-default);
+  border: 1px solid var(--border-muted);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+/* The options wrap rather than scroll: they are sentences of very different lengths (`0` beside
+   `Every possible logic function can be built from just that gate`), so a row that refused to
+   wrap would either clip the long one or force the page wider - the automatic-minimum trap this
+   file already carries a floor for. */
+.learn-quiz-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* An option is a BUTTON on the page's own surface, sized like the prose it follows rather than
+   like a toolbar control: this is something to read and choose, not a tool. `text-align: left`
+   because a long option wraps to two lines and centred text then reads as a label. */
+.learn-quiz-opt {
+  font: 14px var(--font-sans);
+  line-height: 1.45;
+  text-align: left;
+  padding: 8px 14px;
+  color: var(--fg-default);
+  background: var(--canvas-default);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.learn-quiz-opt:hover { border-color: var(--accent-fg); }
+/* THE TWO STATES. Right is the success pair, wrong the danger pair - and the border carries the
+   colour as well as the fill, so the state survives a fill that is nearly the page in dark mode.
+   A right answer LOCKS its question, so its button stops offering a hover and a pointer. */
+.learn-quiz-opt.right {
+  background: var(--success-subtle);
+  border-color: var(--success-fg);
+  color: var(--fg-default);
+  cursor: default;
+}
+.learn-quiz-opt.right:hover { border-color: var(--success-fg); }
+.learn-quiz-opt.wrong {
+  background: var(--danger-subtle);
+  border-color: var(--danger-fg);
+}
+/* The line under the options. `min-height` holds its room from the start, so answering does not
+   push the next question down the page - the same reason the process player's step panel reserves
+   its lines. The glyph is part of the text, which is what makes the state readable without the
+   colour. */
+.learn-quiz-verdict {
+  min-height: 1.5em;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.learn-quiz-verdict.right { color: var(--success-fg); font-weight: 600; }
+.learn-quiz-verdict.wrong { color: var(--danger-fg); }
+/* THE WAY BACK TO THE SECTION, inside the line that says the answer was wrong. `color: inherit`
+   rather than the site's link blue: the line is one sentence and a blue phrase in the middle of a
+   red one reads as two messages, so the underline is what says it is a link and the hover moves it
+   to the accent colour like every other link here. */
+.learn-quiz-verdict a {
+  color: inherit;
+  text-decoration: underline;
+}
+.learn-quiz-verdict a:hover { color: var(--accent-fg); }
+/* The score, which is also what the hub is told. Ruled off, because it is a statement about the
+   panel above it rather than one more question. */
+.learn-quiz-score {
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-muted);
+  font: 12px var(--font-sans);
+  color: var(--fg-muted);
+}
+.learn-quiz-score.all { color: var(--success-fg); font-weight: 600; }
 
 /* ---- the truth table ----
    A dark panel, like every other read-only output here, because that is what it is: the
@@ -270,10 +851,27 @@ table.truth-table {
   font: 12px/1.7 var(--font-mono);
   color: var(--panel-fg);
   margin: 0 auto;
+  /* THE SIZE IS A TOPIC'S TO SET, from `truthTable.scale` in topics/<slug>.js - learn.js puts it
+     on the article as `--truth-scale` and every table under it follows, the card's and the
+     prose's alike. The declaration sits AFTER the shorthand because the shorthand would
+     otherwise reset it, and only font-size is restated so the weight, the style and the family
+     it resets stay reset. `1.7` is unitless, so the line-height scales with the text on its own.
+
+     THE FALLBACK IS THE SITE DEFAULT, and it is 1.2 rather than 1: a truth table is the thing
+     these pages are asking the reader to read, and at the panel's 12px - a size chosen for a
+     console and a listing - it was too small for that. So the default is 120% of it, 14.4px, and
+     a topic's `scale` is stated against the same 12px base: 1 is what every table was before this
+     existed, 1.2 is what it is now, and anything up to 2.5 is a topic saying its tables want more
+     room than that. One number in one place, so "the default size" is this fallback and nothing
+     else needs to know it. */
+  font-size: calc(12px * var(--truth-scale, 1.2));
 }
 table.truth-table th,
 table.truth-table td {
-  padding: 2px 10px;
+  /* The cells breathe with the type rather than staying at a fixed 2px/10px, or a table asked to
+     be half again as big comes out cramped instead of bigger. `min-width` is already in `ch`, so
+     it follows the font size with no arithmetic. */
+  padding: calc(2px * var(--truth-scale, 1.2)) calc(10px * var(--truth-scale, 1.2));
   text-align: center;
   min-width: 3ch;
 }
@@ -281,7 +879,7 @@ table.truth-table thead th {
   color: var(--panel-dim);
   font-weight: 600;
   border-bottom: 1px solid var(--panel-line);
-  padding-bottom: 5px;
+  padding-bottom: calc(5px * var(--truth-scale, 1.2));
 }
 /* The inputs are the question and the outputs are the answer, so the two halves are told
    apart rather than run together: the inputs are dimmer, and one empty column rules
@@ -333,4 +931,8 @@ table.truth-table td.zero { color: var(--panel-dim); }
   /* Nothing to relax: the prose is uncapped at every width now, and the article's own
      padding is what narrows it here. */
   .learn-article { padding: 0 12px; }
+  /* One column, and the ORDER is the markup's - which is why a split puts the illustration
+     first in some places and second in others: stacked, each picture ends up where the prose
+     around it reads best rather than always above or always below. */
+  .learn-split { grid-template-columns: 1fr; }
 }

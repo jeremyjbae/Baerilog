@@ -78,6 +78,14 @@
 
 </main>
 
+<!-- The signed-in view. EMPTY and `hidden` in the markup, filled by home.js: a reader who
+     is not signed in - and every reader on a checkout with no Supabase project - gets the
+     hero above and this element is never touched. Being markup rather than something
+     home.js creates is what makes the switch `hidden` on two elements, so flipping back
+     and forth cannot lose anything, and the page has no dashboard-shaped hole in it when
+     the cloud files are absent. -->
+<main class="dash" id="dash" hidden></main>
+
 <!-- The same footer every other page carries, byte-for-byte with practice.html's and with
      the one in shell.js's markup slice, so the landing page ends the way the pages it links
      to do. It was `<footer class="lp-foot">&copy; baerilog.com. All rights reserved.</footer>`,
@@ -306,5 +314,12 @@
 <script src="cloud.js"></script>
 <script src="cloud-ui.js"></script>
 <script src="cloud-sync.js"></script>
+<!-- The two catalogues the dashboard names its rows from, and the dashboard itself. AFTER
+     the cloud block, because home.js subscribes to CLOUD at load; the manifests are plain
+     `var` declarations with no dependencies of their own. Both are classic script tags, so
+     this page keeps working over file:// - Baerilog/tools/build.py greps for exactly that. -->
+<script src="manifest.js"></script>
+<script src="learn-manifest.js"></script>
+<script src="home.js"></script>
 </body>
 </html>

@@ -55,7 +55,12 @@ window.CLOUD = (function () {
 
   var SOURCE_LIMIT = 262144;   // must match schema.sql's check constraint
   var NET_TIMEOUT_MS = 12000;
-  var APPS = ['practice', 'simulator', 'synthesis', 'compiler'];
+  /* Every app that may own a row, and `save` refuses anything else - which is what makes a
+     typo'd caller a returned null rather than a row that is written and never read back.
+     `learn` is here because a topic's quiz reports a verdict now; it was NOT, so cloud-sync's
+     own learn branch stored nothing at all and the hub's badge could never appear. Kept in step
+     with the CHECK constraint in tools/schema.sql, which test_cloud.py compares them for. */
+  var APPS = ['practice', 'learn', 'simulator', 'synthesis', 'compiler'];
 
   /* ---- storage -------------------------------------------------------- */
 

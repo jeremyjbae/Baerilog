@@ -344,6 +344,28 @@
       transform: none;
       bottom: auto;
     }
+    /* A GENERATED ADDER IS LABELLED ABOVE ITSELF, WITH ITS MODULE NAME, and both halves of that
+       are corrections. The adder is the only cell in this library with a pin on its BOTTOM edge -
+       the carry in - so a badge under it is the nearest text to that pin and reads as an
+       annotation on it; and the badge used to be the block's width in bus-range notation
+       (`[7:0]`), which next to a one-bit pin reads as that pin being eight bits wide. It is the
+       module NAME now, which is what the netlist listing and the viewer's breadcrumb both call
+       the block, so the three agree; the width is still on hover. `bottom: 100%` rather than a
+       negative `top` puts it above the box without depending on the badge's own height, which is
+       what keeps it inside the 24px the column packer leaves between rows. */
+    .rf-node-modname {
+      position: absolute;
+      left: 50%;
+      bottom: 100%;
+      margin-bottom: 2px;
+      transform: translateX(-50%);
+      font-size: 9px;
+      font-weight: 600;
+      line-height: 1.2;
+      color: var(--fg-muted);
+      white-space: nowrap;
+      pointer-events: none;
+    }
     .rf-node-port.is-bus { width: 104px; height: 36px; }
     .rf-node-instance {
       width: 130px;

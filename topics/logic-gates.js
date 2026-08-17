@@ -31,9 +31,12 @@ window.LEARN_TOPICS['logic-gates'] = {
 
   blocks: [
     { html: String.raw`
-<h2>What a gate is</h2>
+<h2 data-sec="gate">What a gate is</h2>
 <p>A logic gate is a circuit whose output depends only on its inputs: change an input and the output follows as fast as the transistors
-allow. Because the output is a function of the inputs alone, you can write down everything
+allow. It has no memory of what the inputs were a moment ago, and nothing has to tell it when to
+look - which is what the word <b>combinational</b> means. You will meet it on every page here, and
+that is all it is saying: the output is a function of the inputs, right now.</p>
+<p>Because the output is a function of the inputs alone, you can write down everything
 a gate does in a small table called Truth Table - one row per combination of inputs.</p>
 <p>Eight of them account for almost all combinational logic. Six take two inputs, so four rows
 are the whole of what each one does - one column per gate, side by side:</p>
@@ -111,7 +114,7 @@ a waveform, to cells on silicon. Start with AND: two inputs, one output, four ro
 ` },
 
     { html: String.raw`
-<h2>An AND gate in Verilog</h2>
+<h2 data-sec="verilog">An AND gate in Verilog</h2>
 <p>Here it is, in the editor below: nine lines, of which one builds anything. This is what each
 part of it says.</p>
 
@@ -148,24 +151,30 @@ part of it says.</p>
 </ol>
 <p>Instantiation is not a call and nothing here executes: it says a gate of that kind exists and
 is wired that way, for all time.</p>
-<p>On clicking <strong>Run Simulation</strong> four combination of the input will input to the <code>dut</code> and update the results in the <strong>Truth Table</strong> and <strong>Waveform</strong> below.</b>
+<p>On clicking <strong>Run Simulation</strong> four combination of the input will input to the <code>dut</code> and update the results in the <strong>Truth Table</strong> and <strong>Waveform</strong> below.</p>
+<div class="learn-note">
+  <b>What is Verilog?</b> Much like Python is used to write software, <strong>Verilog</strong> is used to design hardware. As a Hardware Description Language (HDL), it describes digital logic and circuit structures that standard programming languages cannot.</a>
+</div>
+
 ` },
 
     { slot: 'editor' },
 
     { html: String.raw`
-<h2>Reading it as a table</h2>
+<h2 data-sec="table">Reading it as a table</h2>
 <p>There is additional Verilog code to generate the test pattern as part of the simulation: changing input <code>a</code> and <code>b</code> every 10 time unit to test the behavior of <code>dut</code>. The results on <code>y</code> is shown as table below.</p>
-<p>Try it: change <code>and_gate</code> to <code>or_gate</code> in the editor and run again - the
+<div class="learn-note">
+Try it: change <code>and_gate</code> to <code>or_gate</code> in the editor and run again - the
 output will become an OR, three 1s and one 0. Change it to <code>xor_gate</code> and you get XOR, 1
-where the inputs differ.</p>
+where the inputs differ.
+</div>
 ` },
 
     { slot: 'truth-table' },
 
     { html: String.raw`
-<h2>...and as a waveform</h2>
-<p>The same resutls, this time against time. A table is the better way to check a
+<h2 data-sec="waveform">...and as a waveform</h2>
+<p>The same results, this time against time. A table is the better way to check a
 combinational function; a waveform is the better way to see WHEN things change. Here <code>y</code> moves at the instant
 an input does, because nothing in this design remembers anything.</p>
 <p>Drag right on the plot to zoom into a range, drag left to zoom back out, and click to put
@@ -175,7 +184,7 @@ the cursor somewhere - the value column beside each name reads that instant.</p>
     { slot: 'waveform' },
 
     { html: String.raw`
-<h2>What it becomes as hardware</h2>
+<h2 data-sec="netlist">What it becomes as hardware</h2>
 <p>Press <b>Synthesize</b> and the design is turned into a netlist: a list of standard
 cells and the wires between them. This example has only one logic gate but it is very helpful to see the connection between many logic gate this way.</p>
 ` },
@@ -184,14 +193,110 @@ cells and the wires between them. This example has only one logic gate but it is
     { slot: 'netlist-view' },
 
     { html: String.raw`
-<h2>...and as silicon</h2>
+<h2 data-sec="silicon">...and as silicon</h2>
 <p>The netlist above says which cells and how they connect. This is one of those cells as it is
-actually drawn on the wafer using mask layers. You can visualize how the semiconductor process is working by clicking 'Unselect All' then showing the layers one by one from bottom to top. (Well, Diffusion, polysilicon and metal ...)</p>
-<p>Actual process requires tens of layers (over 100 for most advanced process). The world's most complicated chips are designed base on these tiny cells although it uses more variations to optimize the speed and power.</p>
+actually drawn on the wafer using mask layers. You can visualize how the semiconductor process is working by clicking 'Unselect All' then showing the layers one by one from bottom to top &mdash; or press <b>Play</b> and watch it happen (Well, Diffusion, polysilicon and metal ...). Beside the layout is a <b>cross section</b> at the dashed line: the same masks seen edge-on, so the well is a tub, the diffusions are pockets inside it and the metal sits above on its contacts. Drag the line, or step it with the arrows, to cut the cell somewhere else &mdash; it opens through both transistor gates, which is the one place you see the whole stack at once.</p>
+<div class="learn-note">
+Modern manufacturing requires tens to over 100 process layers. The world’s most advanced chips are still designed using these tiny cells, leveraging multiple cell variations to optimize for speed and power consumption.
+</div>
 ` },
 
     { layout: 'the-cell' },
+
+    { html: String.raw`
+<div class="learn-note">
+  <b>The whole process, start to finish.</b> What the figure above steps through is four layers of
+  one cell. A real fab runs the same idea &mdash; grow, mask, expose, etch, deposit &mdash; a hundred
+  times over across a whole wafer, and it is worth watching somebody walk through it:
+  <a href="https://www.youtube.com/watch?v=c9arR8T0Qts" rel="noreferrer">The Semiconductor Production
+  Process Explained Clearly</a> (video, off-site).
+</div>
+` },
+    { html: String.raw`
+<h2>Check yourself</h2>
+<p>Six questions, one for each section above. A wrong answer says so and links back to the
+section it came from, so nothing here has to be got right first time; the score at the foot of
+the panel is what the Learn hub shows beside this topic.</p>
+` },
+
+    { quiz: 'check-yourself' },
   ],
+
+  /* THE QUIZ, one question per section, and `sec` is what ties the two together: it names the
+   * `data-sec` on a heading above, and a WRONG answer then links back to that section with the
+   * heading's own words as the link. Only when wrong - offered up front it would say where to look
+   * before the reader has thought - and learn.js takes the label from the page rather than from
+   * here, so the quiz cannot end up naming a section by a title the page no longer uses.
+   *
+   * Every section on this page is named by exactly one question, which is the reason there are six
+   * rather than four: a section with no question is a part of the article the panel never sends
+   * anyone back to.
+   *
+   * The distractors are the misreadings this page is written against - that a gate might remember
+   * something, that `u0` is the gate's type rather than this particular gate, that synthesis
+   * produces a layout - not filler. */
+  quizzes: {
+    'check-yourself': {
+      questions: [
+        {
+          sec: 'gate',
+          q: 'Four rows are enough to say everything a two-input gate does because...',
+          options: [
+            'its output depends only on its inputs, so there is nothing else to write down',
+            'the fourth row always repeats the first',
+            'a gate only ever sees four of the sixteen possible inputs'
+          ],
+          answer: 0
+        },
+        {
+          sec: 'verilog',
+          q: 'In <code>and_gate u0(.a(a), .b(b), .y(y));</code>, what is <code>u0</code>?',
+          options: [
+            'The kind of gate being built',
+            'The instance name - this particular gate',
+            'A signal inside dut'
+          ],
+          answer: 1
+        },
+        {
+          sec: 'table',
+          q: 'Change <code>and_gate</code> to <code>or_gate</code> and run again. The <code>y</code> column becomes...',
+          options: ['one 1 and three 0s', 'unchanged', 'three 1s and one 0'],
+          answer: 2
+        },
+        {
+          sec: 'waveform',
+          q: 'On the waveform, <code>y</code> moves at the instant an input does. Why?',
+          options: [
+            'Nothing in this design remembers anything',
+            'The clock is fast enough to keep up',
+            'The waveform is drawn after the run, so everything lines up'
+          ],
+          answer: 0
+        },
+        {
+          sec: 'netlist',
+          q: 'What does <b>Synthesize</b> produce?',
+          options: [
+            'A faster version of the same Verilog',
+            'The transistors, drawn on the wafer',
+            'A netlist: standard cells, and the wires between them'
+          ],
+          answer: 2
+        },
+        {
+          sec: 'silicon',
+          q: 'In the layout figure, what is the cross section beside the cell?',
+          options: [
+            'The same masks seen edge-on, at the dashed line',
+            'The cell from above with the metal hidden',
+            'A second cell, abutted to the first'
+          ],
+          answer: 0
+        }
+      ]
+    }
+  },
 
   /* Figures: hand-authored diagrams drawn by the netlist viewer's own node and wire code
      (see learn.js's note above figureGraph), so they are the same shapes and the same tokens
@@ -215,7 +320,15 @@ actually drawn on the wafer using mask layers. You can visualize how the semicon
     'the-cell': {
       from: 'synthesis',
       view: 'all',
-      rowPx: 220
+      rowPx: 220,
+      /* THE TWO SWITCHES, opt-in per figure. `crossSection` opens SHOWN, because a page about how
+         the process works is the one that asked for it and the switch is there to put it away;
+         `animate` opens STOPPED, because a figure that starts moving on load is what
+         `prefers-reduced-motion` is about. The cut opens at the centre of the first transistor gate,
+         derived rather than written here - which is the one cut that gives the textbook picture, and
+         on an inverter it is 1 of 31 positions. */
+      crossSection: true,
+      animate: true
     }
   },
 
@@ -255,7 +368,12 @@ actually drawn on the wafer using mask layers. You can visualize how the semicon
 
      Names are resolved as the waveform resolves them: an unqualified one is the top module's
      own, a nested one would be written u_and.y. So the headings are the names the reader is
-     looking at in the source above. */
+     looking at in the source above.
+
+     `scale` may be added here as well - a multiplier on the 12px learn.css sets, reaching every
+     truth table on the page at once, the card's and any the prose writes out. It is deliberately
+     absent on this page, which is what keeps it at the 12px it has always been; `lego-logic`
+     carries one and its own comment explains the knob. learn.js clamps it to 0.6 - 2.5. */
   truthTable: {
     inputs: ['a', 'b'],
     outputs: ['y'],

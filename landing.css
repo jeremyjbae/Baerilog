@@ -12,14 +12,26 @@
  * both.
  */
 
-/* This page is dark in both colour modes, deliberately, and it is the only page here that
-   is. It is a poster rather than a surface you work on, and the mock it is built from is
-   dark - so it uses the PANEL tokens, which are the same in both modes by design, exactly
-   as the editors and consoles do. `--canvas-default` would have made it follow the reader's
-   OS and turned the gradient headline unreadable in light mode. */
+/* THIS PAGE FOLLOWS THE READER'S OS, like every other page here. It was built the other way -
+   panel tokens throughout, on the grounds that a poster is not a surface you work on - and that is
+   reversed: a reader in light mode got a black page in the middle of a white site, which reads as a
+   bug however deliberate it was.
+
+   The swap is not just the background, and that is the part worth knowing. Three of the panel
+   tokens are unreadable on white, so changing the background alone would have been worse than
+   leaving it: `--panel-fg` is 1.18:1 there, `--panel-blue` 1.95:1, and `--panel-dim` 3.08:1, under
+   the 4.5 body text needs. Every one of them moves to its page counterpart, each legible in both
+   modes by construction:
+
+       --panel-bg      -> --canvas-default     --panel-fg   -> --fg-default   (15.8 / 16.02)
+       --panel-bg-alt  -> --canvas-subtle      --panel-dim  -> --fg-muted    (6.11 / 6.5)
+       --panel-line    -> --border-default     --panel-blue -> --accent-fg   (5.19 / 6.11)
+
+   The two GRADIENTS stay literal, because they are brand rather than theme: the headline's one
+   word and the call to action look the same in either mode. */
 body.landing {
-  background: var(--panel-bg);
-  color: var(--panel-fg);
+  background: var(--canvas-default);
+  color: var(--fg-default);
   padding: 0;
   min-height: 100vh;
   display: flex;
@@ -41,9 +53,12 @@ body.landing {
   display: inline-block;
   font-size: 13px;
   font-weight: 700;
-  color: var(--panel-blue);
-  background: rgba(121, 192, 255, 0.10);
-  border: 1px solid rgba(121, 192, 255, 0.28);
+  color: var(--accent-fg);
+  /* Tokens, not a hand-mixed rgba. These were 10% and 28% of #79c0ff - a tint chosen against a
+     black page, and nearly invisible on a white one. This pair is what the hub's own lit chips
+     use, and both values are defined in both modes. */
+  background: var(--accent-subtle);
+  border: 1px solid var(--accent-fg);
   border-radius: 2em;
   padding: 7px 18px;
 }
@@ -66,7 +81,7 @@ body.landing {
    background show through the glyphs, and it is why this needs a fallback colour FIRST -
    a browser that ignores background-clip would otherwise paint invisible text. */
 .lp-grad {
-  color: var(--panel-blue);
+  color: var(--accent-fg);
   background: linear-gradient(90deg, #4493f8 0%, #a371f7 100%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -76,18 +91,18 @@ body.landing {
 .lp-sub {
   font-size: 18px;
   line-height: 1.6;
-  color: var(--panel-dim);
+  color: var(--fg-muted);
   margin: 26px auto 0;
   max-width: 42em;
 }
-/* Emphasis on this page is "brighten to the full foreground", not "bolden hard": both the
-   hero's sub-line and the band's paragraph are `--panel-dim`, so a browser-default
+/* Emphasis on this page is "go to the full foreground", not "bolden hard": both the
+   hero's sub-line and the band's paragraph are `--fg-muted`, so a browser-default
    `<strong>` would come out heavier and still dim - the wrong axis, and visibly different
    from the hero one section up. One declaration for both, so the two cannot drift; `b` and
    `strong` are both listed because the hero was written with the short tag and the band
    with the semantic one. */
 .lp-sub b, .lp-sub strong,
-.lp-band p b, .lp-band p strong { color: var(--panel-fg); font-weight: 600; }
+.lp-band p b, .lp-band p strong { color: var(--fg-default); font-weight: 600; }
 
 /* ---- the call to action ----
    NOT `.btn`. The primary button in this repo is Primer's green, and it means "the one
@@ -103,7 +118,12 @@ body.landing {
   font-weight: 700;
   text-decoration: none;
   color: #ffffff;
-  background: linear-gradient(90deg, #2f9bf6 0%, #8957e5 100%);
+  /* DARKENED at the blue end, and the reason is measured rather than aesthetic: white text at 17px
+     bold needs 4.5:1, and the old #2f9bf6 gave 2.94 - so the label was under AA across the left
+     half of the button, in both colour modes, since a gradient does not care what is behind it.
+     Sampling the whole span at 1% steps, #0969da -> #8250df never drops below 5.05. The hue is the
+     same pair of brand colours; they are simply the shades that can carry white text. */
+  background: linear-gradient(90deg, #0969da 0%, #8250df 100%);
   transition: filter 0.15s ease, transform 0.15s ease;
 }
 .lp-cta:hover { filter: brightness(1.08); }
@@ -127,21 +147,21 @@ body.landing {
   text-align: left;
 }
 .lp-card {
-  background: var(--panel-bg-alt);
-  border: 1px solid var(--panel-line);
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   padding: 28px 26px;
 }
 .lp-card h2 {
   font-size: 19px;
   font-weight: 700;
-  color: var(--panel-blue);
+  color: var(--accent-fg);
   margin: 0 0 14px;
 }
 .lp-card p {
   font-size: 15px;
   line-height: 1.65;
-  color: var(--panel-dim);
+  color: var(--fg-muted);
   margin: 0;
 }
 
@@ -156,7 +176,7 @@ body.landing {
 .lp-band {
   margin: 96px auto 0;
   padding: 56px 0 0;
-  border-top: 1px solid var(--panel-line);
+  border-top: 1px solid var(--border-default);
   max-width: 46em;
 }
 .lp-band h2 {
@@ -168,36 +188,125 @@ body.landing {
 .lp-band p {
   font-size: 17px;
   line-height: 1.7;
-  color: var(--panel-dim);
+  color: var(--fg-muted);
   margin: 0;
 }
 
 /* ---- the footer ----
    The MARKUP is the shared `.footer` div every other page carries, so the wording and the
    link cannot drift from them; app.css already gives it `text-align: center` and its size.
-   Two things are overridden and only two, each because this page is genuinely different:
+   ONLY THE SPACING IS OVERRIDDEN NOW, and only because this page is genuinely different: it
+   follows a full-bleed band where every other footer follows a Box, so it takes the same 96px
+   rhythm the band and the cards use rather than app.css's 24px.
 
-   The RULE and the space above it. Everywhere else the footer follows a Box and 24px is
-   right; here it follows a full-bleed band, so it takes the same 96px rhythm the band and
-   the cards do, with a hairline to separate it - which is what `.lp-foot` was for.
-
-   The COLOUR, because this page is dark in BOTH colour modes (see the note at the top of
-   this file) while `.footer` is painted in `--fg-muted` with an `--accent-fg` link hover,
-   both of which follow the reader's OS. In light mode that is #656d76 text and a #0969da
-   link on a #0d1117 background - about 3.4:1 and 2.7:1. The panel tokens are the same in
-   both modes by design, so they are the set this page has to use, exactly as its headline
-   and its band already do. */
+   The COLOUR override that used to sit here is gone. It existed solely because this page was dark
+   in both modes while `.footer`'s own `--fg-muted` and `--accent-fg` follow the reader's OS - so
+   with the page following the OS too, the shared rule is simply right, and keeping the override
+   would be the thing that broke it. */
 body.landing .footer {
   margin-top: 96px;
   padding: 26px 24px;
-  border-top: 1px solid var(--panel-line);
-  color: var(--panel-dim);
+  border-top: 1px solid var(--border-default);
 }
-body.landing .footer a { color: var(--panel-dim); }
-body.landing .footer a:hover { color: var(--panel-blue); }
+
+/* --------------------------------------------------- the signed-in dashboard */
+/* Shown by home.js in place of the hero above. PAGE tokens throughout, for the reason
+   the footer note below already gives: this page is dark in BOTH colour modes, so the
+   page tokens - which follow the reader's OS - are the wrong set here. The row shape is
+   this page's own rather than practice.css's .gh-row, because index.html does not load
+   practice.css and importing a whole stylesheet for one idiom would drag the hub listing
+   and the filter chips onto a page that has neither. */
+.dash {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 56px 24px 0;
+}
+.dash-head { margin-bottom: 40px; }
+.dash-hello {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--fg-default);
+  margin: 0 0 8px;
+}
+.dash-sub { font-size: 15px; color: var(--fg-muted); margin: 0; }
+
+.dash-sec { margin-bottom: 36px; }
+.dash-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+  margin: 0 0 12px;
+}
+/* The count is the section's own, so "In Progress 7" needs no second line to say it. */
+.dash-sec-count {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--accent-subtle);
+  color: var(--fg-default);
+}
+
+/* A row is a LINK, so the whole strip is the hit target rather than the title alone. */
+.dash-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  background: var(--canvas-subtle);
+  text-decoration: none;
+}
+.dash-row:hover { border-color: var(--accent-fg); }
+.dash-row-main { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.dash-row-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg-default);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dash-row-meta { font-size: 12px; color: var(--fg-muted); white-space: nowrap; }
+/* Last in the flex row and allowed to shrink last, so a long title clips before the
+   status does - the status is the part that changes and therefore the part being read. */
+.dash-row-note { font-size: 12px; color: var(--fg-muted); white-space: nowrap; flex-shrink: 0; }
+
+.dash-empty {
+  padding: 14px 16px;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+/* The cap says what it is hiding, rather than truncating silently. */
+.dash-more {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--accent-fg);
+  text-decoration: none;
+}
+.dash-more:hover { text-decoration: underline; }
 
 @media (max-width: 760px) {
   .lp { padding: 48px 18px 0; }
+  .dash { padding: 40px 18px 0; }
+  .dash-hello { font-size: 24px; }
+  /* Stacked, because a title, its category and its status cannot share one line at 320px
+     without the status being pushed off the end - the same reason the practice tab strip
+     scrolls rather than compressing. */
+  .dash-row { flex-direction: column; align-items: flex-start; gap: 4px; }
   .lp-cards { margin-top: 56px; }
   .lp-band { margin-top: 56px; padding-top: 40px; }
   body.landing .footer { margin-top: 56px; }

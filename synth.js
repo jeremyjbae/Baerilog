@@ -2615,9 +2615,18 @@ function layoutGraph(graph) {
       if (y > maxYUsed) maxYUsed = y;
     });
   }
+  /* THE CLOCK SITS ONE COLUMN LEFT OF WHAT IT DRIVES, not under it. Its own row beneath the diagram
+     is right - a clock crossing the middle of a schematic is what nobody draws - but aligning it with
+     the column it feeds put its OUTPUT pin (the port's right edge, 92px in) to the right of the
+     flip-flop's clock pin (26px in), so every clock wire was a BACKWARD wire: out of the port, down
+     under both nodes, back left and up into the pin, which is a long rounded detour around a diagram
+     whose two ends are 66px apart. One column left makes the same wire a run and a turn up the stub.
+     It stays the bottom node of whichever column it lands in, so practice-synth's packColumns still
+     leaves it there. Clamped at 0 for a clock that drives nothing - unreachable through the front end,
+     since a cell a port drives ranks at least 1. */
   for (const clkNode of clkNodes) {
     const drivenRanks = graph.edges.filter(e => e.from === clkNode.id).map(e => rank[e.to]);
-    const col = drivenRanks.length ? Math.min(...drivenRanks) : 0;
+    const col = drivenRanks.length ? Math.max(0, Math.min(...drivenRanks) - 1) : 0;
     positions[clkNode.id] = { x: col * COL, y: maxYUsed + ROW };
   }
   return { rank, positions };
@@ -3136,8 +3145,8 @@ function toFlowElements(graph, layout) {
     if (n.kind === 'port-in') { type = 'port'; data = { label: n.label, dir: 'in', isBus: !!n.isBus, width: n.width }; }
     else if (n.kind === 'port-out') { type = 'port'; data = { label: n.label, dir: 'out', isBus: !!n.isBus, width: n.width }; }
     else if (n.kind === 'const') { type = 'const'; data = { label: n.cell.aggregateLabel || (n.cell.value ? "1'b1" : "1'b0") }; }
-    else if (n.kind === 'dff') { type = 'dff'; data = { label: 'DFF', isBus: !!n.isBus, range: n.range, width: n.width }; }
-    else if (n.kind === 'fa') { const op = n.op || (n.cell && n.cell.op) || 'add'; type = 'fa'; data = { label: op === 'sub' ? 'SUB' : 'ADD', op, isBus: !!n.isBus, range: n.range, width: n.width }; }
+    else if (n.kind === 'dff') { type = 'dff'; data = { label: 'DFF', isBus: !!n.isBus, range: n.range, width: n.width, noReset: !!n.noReset }; }
+    else if (n.kind === 'fa') { const op = n.op || (n.cell && n.cell.op) || 'add'; type = 'fa'; data = { label: op === 'sub' ? 'SUB' : 'ADD', op, isBus: !!n.isBus, range: n.range, width: n.width, noCarry: !!n.noCarry }; }
     else if (n.kind === 'mux2') { type = 'mux2'; data = { label: 'MUX', isBus: !!n.isBus, range: n.range, width: n.width }; }
     else if (n.kind === 'instance' && n.cell.isAdder) {
       // every FUNC_addN/FUNC_subN instance always renders as the compact 3-pin chevron
@@ -3146,7 +3155,7 @@ function toFlowElements(graph, layout) {
       // present as a single base-name handle, splitting into multiple thick bus edges at
       // that same pin when destinations differ (e.g. `{carry, sum} <= a + b`).
       type = 'adder';
-      data = { op: n.cell.isSub ? 'sub' : 'add', modType: n.cell.modType, instName: n.cell.id, width: n.cell.portWidths.a, drillable: true };
+      data = { op: n.cell.isSub ? 'sub' : 'add', modType: n.cell.modType, instName: n.cell.id, width: n.cell.portWidths.a, drillable: true, noCarry: !!n.noCarry };
     }
     else if (n.kind === 'instance') {
       type = 'instance';
@@ -3216,12 +3225,83 @@ function synthesizeAll(src, topName) {
   return { modules, top, results, log: allLog };
 }
 
+/* A CONTROL PIN TIED TO ITS INERT VALUE IS NOT A PIN WORTH DRAWING, and this is what takes it off
+   the diagram - the pin, the wire into it, the constant that drove it, and the symbol with them.
+
+   Two pins qualify, and they are the same idea twice:
+
+     dff.rstn tied to 1   an active-low reset held OFF. `dff_gate`'s reset is ASYNCHRONOUS, so a
+                          design that resets INSIDE its clocked block cannot use the pin at all -
+                          _synthFFStmt builds a mux in front of d and ties rstn high - and a design
+                          with no reset does the same.
+     adder.cin tied to 0   no carry in. `assign s = a + b;` gives exactly this, and this file's own
+                          notes have called it out for as long as it has existed: a symbol with a
+                          pin the design has no name for, and a 1'b0 the source never mentioned.
+
+   THE OTHER VALUE IS MEANINGFUL IN BOTH CASES and stays drawn. A reset tied to 0 is a flop held
+   permanently in reset, which is a fault worth seeing; a carry in tied to 1 is the two's-complement
+   increment every subtraction needs (`a - b` produces exactly that) or a deliberate +1. Measured:
+   `count + 1` keeps its `1'b1` - that is the increment, on the b input - and loses only the `1'b0`
+   on the carry.
+
+   ALL FOUR PARTS MOVE TOGETHER, and they have to. Dropping the pin while leaving the edge makes the
+   viewer discard a wire whose handle does not exist (it counts those and reports `could not be
+   drawn`), and leaving the constant behind draws a box that drives nothing. The symbols are `dffnr`,
+   `addnc` and `subnc`, each identical to its full form but for the one stub, with every other pin on
+   the same fraction - so swapping one in cannot move a wire that is still there.
+
+   RUN AFTER bundling and pin merging, deliberately. Those passes group cells by the nets they share
+   and a reset or a carry is one of the scalars they broadcast, so removing it earlier would change
+   how a register BUNDLES rather than only how it is drawn. Running it here also means layoutGraph
+   never places the constant, so nothing leaves a hole where a box used to be. */
+const INERT_PIN = { dff: { rstn: 1 }, fa: { cin: 0 }, adder: { cin: 0 } };
+
+function dropInertPins(graph) {
+  const byId = {};
+  for (const n of graph.nodes) byId[n.id] = n;
+  /* An `fa` is a cell of that kind; a generated FUNC_addN is an INSTANCE the viewer draws as the
+     same symbol, so both answer to `adder` here the way toFlowElements decides its type. */
+  const kindOf = n => n && (n.kind === 'instance' ? (n.cell && n.cell.isAdder ? 'adder' : null)
+                                                 : n.kind);
+  const inertAt = n => (INERT_PIN[kindOf(n)] || {});
+  const constVal = n => (n && n.kind === 'const' && n.cell && !n.cell.aggregateLabel)
+                        ? n.cell.value : null;
+  const dropped = new Set();
+  for (const e of graph.edges) {
+    const want = inertAt(byId[e.to])[e.toPort];
+    if (want !== undefined && constVal(byId[e.from]) === want) dropped.add(e.id);
+  }
+  let nodes = graph.nodes, edges = graph.edges;
+  if (dropped.size) {
+    /* Only a constant that fed one of the removed pins may disappear, and only if it is left driving
+       nothing at all: a `1` shared with some other pin is still on the diagram, and a const that was
+       already driving nothing was drawn before this and is not this pass's business. */
+    const orphanable = new Set(edges.filter(e => dropped.has(e.id)).map(e => e.from));
+    edges = edges.filter(e => !dropped.has(e.id));
+    const drives = new Set(edges.map(e => e.from));
+    nodes = nodes.filter(n => !(orphanable.has(n.id) && !drives.has(n.id)));
+  }
+  /* Read back off the SURVIVING edges rather than from the set above, so a node that arrived with no
+     edge on that pin at all is drawn the same way as one whose edge was just taken off it. */
+  const wired = new Set(edges.map(e => e.to + '' + e.toPort));
+  nodes = nodes.map(n => {
+    const pins = Object.keys(inertAt(n));
+    if (!pins.length) return n;
+    const bare = pins.filter(p => !wired.has(n.id + '' + p));
+    if (!bare.length) return n;
+    return { ...n, ...(bare.includes('rstn') ? { noReset: true } : {}),
+                   ...(bare.includes('cin') ? { noCarry: true } : {}) };
+  });
+  return { ...graph, nodes, edges };
+}
+
 function synthesizeModuleView(all, moduleName) {
   const result = moduleName === 'FA_PRIMITIVE' ? getFaPrimitiveResult() : all.results[moduleName];
   // when drilling into an auto-generated FUNC_addN/FUNC_subN, show the real per-bit fa
   // chain (not re-collapsed into one composite node) — that's the whole point of drilling in
   const skipCellKinds = result.isAdderModule ? new Set(['fa']) : null;
-  const graph = mergeInstancePins(collapseBuses(buildGraph(result), result.sig, skipCellKinds, bundleMultibitLogic));
+  const graph = dropInertPins(
+    mergeInstancePins(collapseBuses(buildGraph(result), result.sig, skipCellKinds, bundleMultibitLogic)));
   const layout = layoutGraph(graph);
   return { result, graph, layout };
 }

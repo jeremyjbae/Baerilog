@@ -833,5 +833,9 @@
   }
 
   /* The two things a host page needs from this file, and nothing more. */
-  window.CLOUD_UI = { open: openDialog, close: closeDialog, askConflict: askConflict };
+  /* `ago` is exported for Baerilog/home.js's dashboard, which lists the same documents
+     the drawer's My Progress view does - one relative-time format, so the two cannot
+     describe the same instant differently. */
+  window.CLOUD_UI = { open: openDialog, close: closeDialog, askConflict: askConflict,
+                      ago: ago };
 })();
