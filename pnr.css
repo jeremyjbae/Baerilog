@@ -7,7 +7,24 @@
    SVG it returns, so every layer colour travels with the markup. That is what makes a
    placement figure look the same in a topic page as in the app without a second stylesheet
    having to agree with the first. */
-                                                                                                                                                                                                                                                                                                                                            /* --- additions for pnr --- */
+                                                                                                                                                                                                                                                                                                                                                                    /* --- additions for pnr --- */
+/* THE TOOLBAR'S TEXT BUTTONS, as a CLASS and in the additions region - which is to say in pnr.css,
+   where code2silicon.html can reach it. `.layout-btn` in the shared block is a fixed 24 x 20 box for
+   a 13px glyph, so a toggle carrying WORDS prints them across itself: `Abstract` and `Detail` did
+   exactly that since they were written, and the Fabrication figure's three did before that row was
+   removed. Only the width and the padding are overridden, so the border, radius, colours and
+   `.active` accent still come from the shared control.
+
+   It was `#viewAbstract, #viewDetail` down in this file's second <style>, which the slicer cannot
+   see - so the rule reached this page and nothing else, and code2silicon's own Abstract/Detail pair
+   would have needed a second copy of it. A class in one place is what stops the two from being
+   edited apart; the ids stay what the script wires. */
+.layout-btn.wide {
+  width: auto;
+  padding: 0 8px;
+  font: 11px var(--font-sans);
+  line-height: 18px;
+}
 /* The editor rules live in each app's OWN additions, never in the shared
    block -- so a new app that only inlines style.css gets an unstyled textarea
    and a gutter laid out as running text.  Keyed by STRUCTURE (.editor-wrap
@@ -118,10 +135,51 @@
    the same treatment the abutment box and the waveform's cursor get: it is an annotation on the
    artwork rather than part of it. The width is in the placement's own milli-lambda units, so it
    scales with the drawing like every other shape in that SVG. */
+/* THE CUT IS AN ANNOTATION OVER THE ARTWORK, and it has to survive a drawing made of eleven saturated
+   mask colours - one of which, ALU1's #3b6fd4, is a shade of the very accent this line used to be drawn
+   in. It was also a HAIRLINE: `stroke-width: 600` is in PLACEMENT units, and a fitted 232000-lambda
+   block is about 500px wide, so 600 units came out at 1.3px - a dark blue thread over blue metal, which
+   is the reported "almost invisible".
+
+   SO IT IS A HEAVY LINE IN A CASING, which is the drafting convention for a section line and the only
+   thing that reads over a drawing this colourful. The casing is the page's own BACKGROUND and the line
+   its own FOREGROUND, so the pair inverts with the colour mode and cannot lose contrast in either -
+   where any single hue is one mask away from vanishing. It gives up the accent, which used to say
+   "chosen"; the head says that in words (`cut at N µm, rows …`) and nothing else on this drawing is
+   drawn in the page's text colour, so the marker is still unambiguous.
+
+   AND THE STROKE DOES NOT SCALE, because a marker is a constant weight on the screen rather than a
+   feature of the layout: this card zooms to 4x, where a scaled 2.5px line would be 10px of chrome lying
+   across the cells. `vector-effect` is what makes the widths here read as pixels. */
+.pnr-cut-casing {
+  stroke: var(--canvas-default);
+  stroke-width: 5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
 .pnr-cut-line {
-  stroke: var(--accent-fg);
-  stroke-width: 600;
-  stroke-dasharray: 2000 1400;
+  stroke: var(--fg-default);
+  stroke-width: 2.5;
+  stroke-dasharray: 10 7;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+/* WHERE A CLICK WOULD CUT, while the pointer is over the layout - fainter and thinner than the cut
+   itself, since both are on screen at once and only one of them is a decision.
+
+   HERE RATHER THAN IN learn.css, WHICH IS WHERE IT WAS AND WHERE IT REACHED ONE OF THE FOUR PAGES THAT
+   DRAW IT. `drawHoverLine` is the shared renderer's, so `pnr.html`, `code2silicon.html` and the twenty
+   topic pages all emit this element - and only a topic page loaded a rule for it, so on the two apps the
+   hover marker has been an unstyled `<line>` all along, i.e. `stroke: none`, i.e. nothing. A topic page
+   loads `learn.css` BEFORE `pnr.css`, so this supersedes the copy there and that one is removed. */
+.pnr-hover-line {
+  stroke: var(--fg-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 5;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.8;
+  pointer-events: none;
 }
 
 .pnr-no-routing .pnr-routing { display: none; }
@@ -146,3 +204,344 @@
 }
 .footer a { color: var(--fg-muted); text-decoration: none; }
 .footer a:hover { color: var(--accent-fg); }
+
+/* ================= THE FABRICATION FIGURE =================
+   IN THIS BLOCK, i.e. in pnr.css, because the figure is SHARED now: `attachFabrication` builds it
+   for this page and for code2silicon.html, and only what is above the first closing style tag is
+   sliced into pnr.css for other pages to load. These rules sat in the second block, which exists to keep
+   this app's `select` and `.btn` chrome out of that file - a real reason that does not apply to
+   them, since no other page defines a `.fab-*` anything.
+
+   AND THIS COMMENT MUST NOT SPELL THAT TAG, which the block below has warned about since a rule
+   was once pasted inside it and silently died: `css_additions` slices from the additions marker to
+   the first literal occurrence, so writing it here truncated the slice at this very comment and
+   shipped a pnr.css with the note in it and none of the rules.
+
+   Leaving them there is what shipped a card with the right markup and none of its styling: the
+   palette lost its column, the layout drew at natural size and overflowed, and the whole figure
+   stacked. Nothing headless can see that - the suites were 736/0 across both pages while it was
+   on screen - which is why tools/check_theme.py now asserts the rules are where the markup is. */
+/* ---- THE FIGURE: palette | layout | section, which is learn.css's `.learn-fig-box` ----
+   The columns STRETCH, so the layout's column is as tall as the box and has room to fit into; with
+   `flex-start` every column was its own content's height and the drawing had nothing to fill. The
+   palette keeps its own alignment, or `Unselect All` is pushed to the bottom of the box, away from the
+   list it belongs to. */
+.fab-fig { display: flex; align-items: stretch; gap: 14px; }
+
+.fab-layers {
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+/* BOTH DRAWING PANELS ARE `1 1 0`, not `1 1 auto`: with `auto` the basis is the content's own width
+   and a wide placement takes four fifths of the box from a section that wants half. `min-width: 0` for
+   the automatic-minimum trap `.card` carries a floor for. */
+.fab-mid {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.fab-draw { flex: 0 0 auto; align-self: stretch; min-width: 0; }
+
+/* The layout is clickable, and the cursor is what says so in place while the head says it in words. */
+/* AND IT MAY NOT EXCEED ITS COLUMN. `fabDrawLayout` fits the drawing to the host's measured box, so
+   in the ordinary case this changes nothing - it is a BOUND, not a size, and a fitted drawing never
+   reaches it. What it stops is the case where the fit computes against a box that is not laid out
+   yet, or is wider than the column it ends up in: `.fab-draw` is `flex: 0 0 auto` and so sizes to
+   its content, and nothing here clips, so an oversized svg spills straight across the section panel
+   beside it instead of being contained. Seen on code2silicon.html, where the figure is built into a
+   card rather than into markup that has already been laid out. `.fab-body svg` has carried
+   `width: 100%` from the beginning for the same reason; this is the layout half catching up. */
+.fab-draw svg { cursor: ew-resize; max-width: 100%; max-height: 100%; }
+
+.fab-tally { font: 11px var(--font-mono); color: var(--fg-muted); }
+
+.fab-sec {
+  flex: 1 1 0;
+  min-width: 0;
+  border-left: 1px solid var(--border-default);
+  padding-left: 12px;
+}
+
+.fab-sec-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+  font: 11px var(--font-sans);
+  color: var(--fg-muted);
+}
+
+.fab-cut-label { color: var(--fg-default); }
+
+/* THE INVITATION IS NOT A BUTTON and the way back is: the thing to click is the layout, so the words
+   that say so must not look pressable, where `Show Ideal Pair` is a real action. Same pill geometry
+   either way, so the head does not change shape between the two states. */
+.fab-mode {
+  font: 11px var(--font-sans);
+  line-height: 18px;
+  padding: 0 8px;
+  border: 1px dashed var(--border-default);
+  border-radius: 2em;
+  background: transparent;
+  color: var(--fg-muted);
+}
+
+button.fab-mode { border-style: solid; cursor: pointer; }
+
+button.fab-mode:hover { border-color: var(--accent-fg); color: var(--accent-fg); }
+
+/* A MASK PILL IN THE LAYER'S OWN COLOUR, so the button and the shapes it switches are the same thing
+   to look at. Deliberately NOT `.layout-btn`: that control is a neutral fixed-size toggle, and one
+   whose background is overridden is no longer that control - it only looks like one until someone
+   changes the shared rule. The colours are inline, per layer, from the artwork's own stylesheet. */
+.fab-layer-btn {
+  font: 11px var(--font-sans);
+  line-height: 18px;
+  padding: 0 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 2em;
+  background: transparent;
+  cursor: pointer;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+/* An OFF pill is an outline and an ON one is filled - two encodings of the same bit, so a greyscale
+   screenshot still tells them apart. The colours themselves are written by the painter. */
+.fab-layer-btn:not(.on) { background: transparent; }
+
+/* SELECT ALL / UNSELECT ALL: the same pill geometry, deliberately NEUTRAL - a colour on these would
+   claim to be a layer. They are actions, so neither has an on state to paint. */
+.fab-layer-all {
+  font: 11px var(--font-sans);
+  line-height: 18px;
+  padding: 0 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 2em;
+  cursor: pointer;
+  text-align: center;
+  letter-spacing: 0.02em;
+  background: transparent;
+  color: var(--fg-muted);
+}
+
+.fab-layer-all:hover { border-color: var(--accent-fg); color: var(--accent-fg); }
+
+.fab-body { background: var(--canvas-subtle); border: 1px solid var(--border-default);
+            border-radius: 6px; padding: 8px; overflow: hidden;
+            /* A FIXED HEIGHT, SO THIS CARD IS ONE HEIGHT. The svg was `width: 100%; height: auto`, so
+               the panel's height was the DRAWING's aspect - and the drawing's width is the placement's
+               depth along the cut, which is one row for the ideal pair and up to four for a windowed
+               cut. Measured, that is a 4x difference in aspect and so a 4x difference in this panel's
+               height: the card grew and shrank as a reader switched between the ideal pair and a cut,
+               and again as they changed `max rows`. Pinning the height is what makes it stand still.
+
+               300px is `fabDrawLayout`'s own fallback for the layout pane beside it, so the two panes
+               are one nominal height rather than two numbers that happen to look similar.
+
+               `overflow: hidden`, not `auto`: the svg below fits inside rather than exceeding this, so
+               a scrollbar could only ever appear for a rounding pixel. */
+            height: 300px;
+            /* THE CONTAINING BLOCK FOR THE EFFECTS CANVAS, which practice-pnr.js appends here beside
+               the SVG. Exactly what `.learn-sec-body` does on a topic page, and the canvas rule below
+               is that page's rule with this box's padding in it. */
+            position: relative; }
+
+/* THE DRAWING FILLS THE PANEL AND LETTERBOXES INSIDE IT. `height: 100%` with the svg's own
+   `xMidYMid meet` is what centres and scales it, and it is why the svg element still covers the whole
+   panel: the effects canvas is positioned on the PANEL (`inset: 8px`), so a smaller svg would leave the
+   two boxes disagreeing. `makeEffects`'s `geom` accounts for the slack instead - see its own note. */
+.fab-body svg { display: block; width: 100%; height: 100%; }
+
+/* THE EFFECTS FIELD, over the drawing rather than in it: the beams and sparks fly through the space
+   above the wafer, so they are painted on a canvas laid over the SVG. `inset: 8px` and not `0`,
+   because this box has 8px of padding where learn.css's host has none - an absolutely positioned
+   child sizes against the PADDING box, so `inset: 0` puts the canvas 8px out of register with the
+   drawing in both axes, and the renderer's own sizing (it reads the SVG's rect for the backing
+   store) would then be stretched over the wrong rectangle. `pointer-events: none` because the
+   canvas has no meaning of its own and must not take a click. */
+.fab-body > canvas.pnr-fx {
+  position: absolute;
+  inset: 8px;
+  pointer-events: none;
+}
+
+.fab-layers { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+
+/* The region captions, laid out by percentage over their own line - `relative` on the strip is what
+   the absolute spans inside it position against, and `height` is what reserves the line, since every
+   child is out of flow and the strip would otherwise collapse to nothing. */
+.fab-regions {
+  position: relative;
+  height: 16px;
+  font: 11px var(--font-sans);
+  color: var(--fg-muted);
+}
+
+.fab-region { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+
+/* ---- THE PLAYER'S ROW, which is learn.css's `.learn-fig-ctl` in this card's own names ----
+   `baseline` so the step counter sits on the line of the buttons that name it, and `wrap` so a phone
+   drops the bar under them rather than squeezing both. */
+.fab-ctl {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-top: 8px;
+}
+
+.fab-step-num { font: 11px var(--font-sans); color: var(--fg-muted); margin-left: 4px; }
+
+/* THE SPEED CONTROL, beside the transport it governs. A `label` wrapping the input, so the caption
+   and the number are part of the control's hit area rather than text next to it.
+   `flex: 0 0 auto` because the bar beside it is the thing that should take the slack - this is a
+   fixed 84px of slider and two short words, and letting it grow would shrink the stepper.
+   `accent-color` is what themes a native range in both modes; the shared block's
+   `color-scheme: light dark` already handles the track, which is the part CSS cannot reach. */
+.fab-speed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+.fab-speed-cap { font: 11px var(--font-sans); color: var(--fg-muted); }
+.fab-speed input[type="range"] {
+  width: 84px;
+  margin: 0;
+  accent-color: var(--accent-fg);
+  cursor: pointer;
+}
+/* A FIXED WIDTH ON THE READOUT, in `ch`, so the row does not shuffle sideways as the number goes
+   from `25%` to `100%` - the same reason the step counter beside it is not left to size itself. */
+.fab-speed-val {
+  font: 11px var(--font-sans);
+  color: var(--fg-default);
+  width: 4ch;
+  text-align: right;
+}
+
+/* HOW MANY ROWS THE SECTION SHOWS, laid out as the speed control is - a `label` wrapping its input so
+   the caption is part of the hit area, and `flex: 0 0 auto` so the progress bar beside it takes the
+   slack rather than this being stretched.
+   THE WIDTH IS ITS OWN, because `.num-input` is sized for a four-digit run length (64px here, 84 on a
+   practice page) and this field holds one digit between 1 and 4. Two classes, so it out-specifies both
+   of those single-class rules wherever the stylesheets land in the cascade - `pnr.css` loads after
+   `practice.css` on code2silicon, and this block sits before the second `<style>` here.
+   The stepper arrows are left alone: they are the affordance saying the field is a small range, which
+   is exactly what it is. */
+.fab-rows {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+.fab-rows-cap { font: 11px var(--font-sans); color: var(--fg-muted); }
+.fab-rows .num-input {
+  width: 52px;
+  text-align: center;
+  cursor: text;
+}
+
+/* ONE SEGMENT PER STEP with a gap between them, not a continuous fill: the bar is a stepper, so it
+   should look like steps - and it makes the click mapping honest, since a segment IS a step where a
+   continuous bar needs a rule about which position means which. `background: none` on the track
+   because the segments carry the colour; a track behind them would show through the gaps as a line
+   joining the very things the gaps exist to separate. */
+.fab-prog {
+  flex: 1 1 320px;
+  min-width: 120px;
+  height: 12px;
+  padding: 0;
+  background: none;
+  display: flex;
+  gap: 3px;
+  cursor: pointer;
+  align-self: center;
+}
+
+.fab-prog-seg {
+  flex: 1 1 0;
+  border-radius: 2px;
+  background: var(--border-muted);
+  transition: background 0.2s ease;
+}
+
+.fab-prog-seg.on { background: var(--accent-fg); }
+
+.fab-prog:hover .fab-prog-seg { background: var(--border-default); }
+
+.fab-prog:hover .fab-prog-seg.on { background: var(--accent-fg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .fab-prog-seg { transition: none; }
+}
+
+/* Focus is VISIBLE, because the bar is the only route to a step without a pointer - Prev and Next
+   are what it replaced, so an invisible ring here takes stepping away from a keyboard entirely. */
+.fab-prog:focus-visible { outline: 2px solid var(--accent-fg); outline-offset: 2px; }
+
+@media (max-width: 760px) {
+  .fab-fig { flex-direction: column; }
+  .fab-layers { align-self: stretch; flex-direction: row; flex-wrap: wrap; }
+  .fab-sec {
+    border-left: 0;
+    border-top: 1px solid var(--border-default);
+    padding-left: 0;
+    padding-top: 12px;
+  }
+}
+
+.fab-step { margin-top: 8px; }
+
+.fab-step-title { font-size: 12px; font-weight: 600; color: var(--fg-default); }
+
+/* THREE LINES, ALWAYS, so the card does not change height as the process steps. The descriptions run
+   from 80 to 292 characters, which is one line to about five at this panel's width, and the whole card -
+   the layout beside it included - grew and shrank on every tick of the animation. That is the reader's
+   eye being dragged by a caption while they are watching a wafer being built.
+
+   BOTH BOUNDS, not just `min-height`: a floor alone still lets a long description push the card taller,
+   which is the same jump in the other direction. The height is `3 x line-height` exactly, written as the
+   arithmetic rather than as 54px so the two cannot come apart, and `line-height` is pinned here for the
+   same reason `.btn` pins its own - it is otherwise inherited from `body` and a change there would move
+   this silently.
+
+   The cost is stated because it is real: a description longer than three lines SCROLLS rather than being
+   clipped, so nothing is lost and a few steps get a scrollbar. Clipping would hide words the step is
+   explaining, and letting the box grow is what this replaces. */
+.fab-step-desc {
+  font-size: 12px;
+  color: var(--fg-muted);
+  line-height: 18px;
+  height: calc(18px * 3);
+  overflow-y: auto;
+}
+
+/* WHICH PHYSICAL PROCESS THIS STEP IS, under its description: the shapes say what a step leaves
+   behind and this says what it does to get there. A quiet pill rather than a coloured one - the
+   step's own colours are in the drawing above it. */
+.fab-fx-badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  font-size: 11px;
+  color: var(--fg-muted);
+  background: var(--canvas-default);
+}

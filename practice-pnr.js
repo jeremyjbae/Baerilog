@@ -75,6 +75,27 @@ window.PRACTICE_PNR_API = (function () {
       .map(function (ty) { return { type: ty, count: n[ty] }; });
   }
 
+  /* WHAT WAS PLACED AND HOW BIG IT IS, as one line of text, and it lives here because two pages write it
+     under their Layout drawing and a caption stated twice is a caption that comes to disagree. It was the
+     FABRICATION figure's, appended inside it beside the cut's own little layout - which put a fact about
+     the ARRANGEMENT under a drawing of the process, and made it appear only once Fabricate had been
+     pressed. It belongs under the layout it describes, and it now arrives with the placement.
+
+     TAKES THE PLACED LIST AND THE EXTENT, not a `drawStatic` result, because the two callers hold
+     different things: `code2silicon.js` has that result and `pnr.html` has a raw plan from `place`. Both
+     have cells with a type and a width and a height in milli-lambda, which is all this needs.
+
+     The order is `tally`'s - commonest first, ties by name - so the string is byte-for-byte what the
+     figure used to print. */
+  function tallyLine(placed, widthMilli, heightMilli) {
+    var types = (placed || []).map(function (p) {
+      return p.type || (p.inst && p.inst.type) || '?';
+    });
+    if (!types.length) return '';
+    return tally(types).map(function (t) { return t.count + ' × ' + t.type; }).join(', ')
+      + ' — ' + um(widthMilli) + ' × ' + um(heightMilli) + ' µm';
+  }
+
   /* The pipeline, in one place: text -> instances -> rows -> markup. `expand` is what turns a
      compound cell into the primitives that have layouts, and it reports what it expanded, which is
      returned rather than logged - a figure has no console, and a caller that wants to say
@@ -94,21 +115,80 @@ window.PRACTICE_PNR_API = (function () {
       return { error: (e && e.message) || String(e), plan: { placed: [], unplaceable: [] },
                expanded: [], unplaceable: [] };
     }
-    var ex = P.expand(parsed.instances);
+    /* FLATTENED BEFORE IT IS EXPANDED, and the two are different steps: `parse` reads every
+       module and hands back the TOP's own instances plus the module map, `flatten` walks that
+       hierarchy down to the cell library and the macros, and `expand` turns a macro into the
+       primitives that have layouts. Without the middle one a sub-module instance goes straight
+       to the placer, which has no layout for it, so it is dropped into `unplaceable` and simply
+       missing from the picture - measured on the counter-4bit netlist as 19 cells synthesized
+       and 13 drawn, with the synthesizer's generated `FUNC_add4` absent and nothing on the page
+       saying so. It is guarded because a page may be carrying an older slice, where the honest
+       fallback is the top level rather than no figure at all.
+
+       `flatten` also REPORTS: a wrapper whose statements are not instances, a pin wired to
+       several nets, a module that instantiates itself. Those are returned so a caller with a
+       console can say them - `problems` rather than thrown, since a partial figure plus a
+       reason beats an exception that takes the rest of the page's load with it. */
+    var flat = P.flatten ? P.flatten(parsed) : { instances: parsed.instances, problems: [] };
+    var ex = P.expand(flat.instances);
     /* A ROW COUNT WINS OVER A WIDTH, because it is the more specific request: a figure that says
        `rows: 4` has decided its shape, and a width left beside it in the topic file would be a
        second answer to the same question. The width path is what every figure used before and is
-       untouched where no count is given. */
-    var plan = rows > 0 ? P.place(ex.instances, { rows: rows })
-                        : P.place(ex.instances, (rowWidthLambda || 0) * 1000 || Infinity);
+       untouched where no count is given.
+
+       AND `shape: 'squarest'` IS A THIRD, OPT-IN ANSWER, which is the app's: `P.squarest` runs one
+       placement per candidate row count and keeps the one closest to square. It is opt-in rather
+       than the default for the honest reason that a figure in an article column WANTS one wide row
+       - a topic saying `rows: 1` and a topic saying nothing mean the same thing there - where a
+       full-width card wants the whole design to read at once, which is what one row of 25 cells
+       does not do. `Baerilog/code2silicon.html` is the only caller today. Guarded, so an older
+       slice costs the shape and not the figure. */
+    var budget = (rowWidthLambda || 0) * 1000 || Infinity;
+    var plan;
+    if (rows > 0) {
+      plan = P.place(ex.instances, { rows: rows });
+    } else if (opts.shape === 'squarest' && P.squarest) {
+      var shaped = P.squarest(ex.instances);
+      plan = shaped.plan;
+      budget = shaped.budget;
+    } else {
+      plan = P.place(ex.instances, budget);
+    }
     /* AND ROUTED, unless a figure says otherwise. A placement with no wires is a floorplan, which is
        a fair thing to draw and not what these figures are for - the netlist says which cells connect
        to which, and a picture that leaves that out asks the reader to take it on trust. `route: false`
        is there for a figure that wants the bare arrangement; nothing uses it yet. `P.route` is guarded
        because a page may be carrying an older slice, where a missing router should cost the wires and
-       not the whole figure. */
-    if (opts.route !== false && P.route) P.route(plan);
+       not the whole figure.
+
+       `opts.ring` IS PASSED THROUGH AND IS OFF BY DEFAULT, which is what keeps the twenty topic figures
+       exactly as they are: a power ring gives the block a margin on each side, so it changes the
+       drawing's width, its aspect and the fit that sizes it - measured, switching it on for everything
+       moved four topics' quoted µm widths (`decoder-2to4` 239.2 to 312), stopped three figures filling
+       their columns, and put a CALU1 badge on pages with no page colour for one. The apps ask; a figure
+       in an article column does not. */
+    if (opts.route !== false && P.route) P.route(plan, { ring: !!opts.ring });
+    /* A PIN THE LAYOUT DOES NOT HAVE is reported here rather than by each caller, so the two apps
+       cannot word it differently or one of them forget: a net wired to a pin no cell provides is a
+       wire the router cannot make, which is not a detail. */
+    var pinProblems = [];
+    (plan.placed || []).forEach(function (p) {
+      Object.keys(p.inst.conn || {}).forEach(function (pin) {
+        if (!p.cell.pins[pin]) {
+          pinProblems.push(p.inst.name + ' (' + p.inst.type + ') has no pin "' + pin
+                           + '" in its layout');
+        }
+      });
+    });
     return { plan: plan, expanded: ex.expanded || [], module: parsed.name,
+             problems: (flat.problems || []).concat(flat.notes || []),
+             pinProblems: pinProblems,
+             /* The budget this plan was placed at, in whole LAMBDA, which is what `rowWidth` takes -
+                so a second drawing of the same design can be asked for the same arrangement. Where
+                the shape was searched for, this is the only way to know what it chose. */
+             rowLambda: isFinite(budget) ? Math.round(budget / 1000) : 0,
+             topInstances: parsed.instances.length,
+             flatInstances: flat.instances.length,
              unplaceable: plan.unplaceable || [] };
   }
 
@@ -160,7 +240,13 @@ window.PRACTICE_PNR_API = (function () {
     svg.innerHTML = art.markup;
     inner.appendChild(svg);
 
-    out.cells = built.plan.placed.length;
+    /* THE DESIGN'S CELLS, NOT EVERY CELL ON THE WAFER, and that is what every caller of this means: the
+       report line compares it against the flattened netlist, and a topic figure asserts "every cell
+       placed" against the number the design instantiates. `place` now also inserts FILLER to carry the
+       rails across the gap at the end of each row, so the two counts differ - `fillers` is the other
+       one, reported beside it rather than folded in. */
+    out.cells = built.plan.cells === undefined ? built.plan.placed.length : built.plan.cells;
+    out.fillers = built.plan.fillers || 0;
     /* WHICH cells, not just how many: a figure that follows the design has to be checkable against
        what the design says, and "one cell" is true of an AND and of a NOR alike. */
     out.types = built.plan.placed.map(function (p) { return p.inst.type; });
@@ -175,6 +261,26 @@ window.PRACTICE_PNR_API = (function () {
     out.rows = rows;
     out.expanded = built.expanded;
     out.unplaceable = built.unplaceable;
+    /* Carried out to the caller for the same reason `unplaceable` is: a figure has no console,
+       and a page that has one (code2silicon's Report) should be able to say what the flattener
+       found rather than leaving it to be inferred from a drawing that is short of cells. */
+    out.problems = built.problems || [];
+    out.pinProblems = built.pinProblems || [];
+    /* THE BUDGET THIS DRAWING WAS PLACED AT, so a second drawing of the same design can ask for
+       the same arrangement (`rowWidth: rowLambda`). Where `shape: 'squarest'` searched for it,
+       this is the only way to know what it chose - and two drawings of one design that disagree
+       about its shape is the whole hazard. */
+    out.rowLambda = built.rowLambda || 0;
+    /* THE BLOCK'S FULL EXTENT IN PLACEMENT UNITS, which is not the cells' extent once there is a power
+       ring: `route` gives the block a margin on each side and the svg's viewBox spans the whole of it, so
+       anything converting a pointer position into a placement coordinate has to measure against this and
+       not against the rightmost cell. `out.width` beside it is a PIXEL width for the box - two fields one
+       letter apart in meaning, which is why this one is named after the plan it comes from. */
+    out.planWidth = built.plan.width;
+    out.planHeight = built.plan.height;
+    out.ring = (built.plan.routes && built.plan.routes.power) || null;
+    out.topInstances = built.topInstances || 0;
+    out.flatInstances = built.flatInstances || 0;
     out.width = w;
     out.height = h;
     out.view = view;
@@ -607,15 +713,72 @@ window.PRACTICE_PNR_API = (function () {
     ((res && res.placed) || []).forEach(function (p) { t = Math.max(t, p.y + p.h); });
     return t;
   }
-  function sectionAt(res, cutX) {
-    var hits = cellsAtCut(res, cutX);
+
+  /* ===================== HOW MANY ROWS A SECTION SHOWS =====================
+     A CUT THROUGH SEVENTEEN ROWS IS SEVENTEEN ROWS A FEW PIXELS TALL, which is the problem this
+     answers. The section's axis is the placement's whole height, so the taller the floorplan the
+     less of it a reader can make out - the region captions were already suppressed past two rows
+     for exactly that reason, and suppressing the words does nothing about the shapes. So a cut is
+     now a POSITION rather than only an x: which rows to show, and where.
+
+     THE ROW INDEX IS ARITHMETIC, NOT A SEARCH. `pnr.js`'s `place` lays every row at `i * CELL_H`,
+     so a placement y names its row exactly - and the pitch is read from the ENGINE's own constant
+     rather than restated here, or the two would be free to disagree about it. Row 0 is the TOP row
+     of the drawing, which is the sense `y` already has in the placement's coordinates. */
+  function rowPitch() { var P = window.PNR; return (P && P.rowHeight) || 72000; }
+  function rowsIn(res) { return Math.max(1, Math.round(cutSpan(res) / rowPitch())); }
+
+  /* WHICH ROWS, as ONE function, because four things read the answer and none of them may differ:
+     the section's own frame, the cut marker on the layout, the hover marker, and the stops a drag
+     snaps to. `maxRows` is a CAP and `row` is the row the reader pointed at; the window is CENTRED
+     on that row and clamped to the placement, so the chosen row is always inside what is drawn.
+
+     NULL MEANS THE WHOLE PLACEMENT, and that is the load-bearing half: a cap of four on a four-row
+     design produces no window at all rather than a window that happens to cover everything, so
+     every existing caller and every learn figure - one and three rows - takes the identical path it
+     always did. Byte-identity by construction, not by arithmetic that happens to agree.
+
+     WITH AN EVEN CAP THERE IS NO MIDDLE ROW to centre on, so the extra row goes BELOW the pointer
+     (`floor((n-1)/2)` rows above it). That is a choice rather than a rounding, and it is why the
+     clamp at both ends is stated: near the top or the bottom of the placement the pointer's row is
+     still in the window but no longer in the middle of it, which is what a clamp means. */
+  function cutWindow(res, maxRows, row) {
+    var total = rowsIn(res);
+    var n = Math.floor(maxRows) > 0 ? Math.min(total, Math.floor(maxRows)) : total;
+    if (n >= total) return null;
+    var r = Math.max(0, Math.min(total - 1, Math.floor(row) || 0));
+    return { first: Math.max(0, Math.min(total - n, r - Math.floor((n - 1) / 2))), count: n };
+  }
+  /* THE WINDOW IN PLACEMENT COORDINATES - the y of its top edge and of its bottom edge. This is the
+     one conversion from rows to the units everything else here is in: the section measures its frame
+     from `y2`, and the marker on the layout is drawn between the two. Clamped to the placement, so a
+     window reaching past the last row describes silicon rather than empty page. */
+  function windowY(res, win) {
+    var span = cutSpan(res);
+    if (!win) return { y1: 0, y2: span };
+    var p = rowPitch();
+    return { y1: Math.max(0, Math.min(span, win.first * p)),
+             y2: Math.max(0, Math.min(span, (win.first + win.count) * p)) };
+  }
+
+  /* `win` is optional and absent means the whole placement, which is what every caller written
+     before the row window passes and what keeps their drawings identical. */
+  function sectionAt(res, cutX, win) {
+    var ys = windowY(res, win);
+    /* A CELL IS IN THE WINDOW IF ITS ROW IS, tested on the row's own two edges rather than on its
+       centre - so a cell is wholly in or wholly out and no row can be drawn half-height. */
+    var hits = cellsAtCut(res, cutX).filter(function (p) {
+      return p.y >= ys.y1 && p.y + p.h <= ys.y2;
+    });
     if (!hits.length) return null;
-    var TOTAL = cutSpan(res);
+    /* THE FRAME IS THE WINDOW'S, and `ys.y2` is what every conversion below subtracts from. With no
+       window that is the placement's own height and the whole derivation is unchanged. */
+    var TOTAL = ys.y2 - ys.y1;
     var by = {}, rows = [];
     /* Bottom of the placement first, so the drawing reads in the same direction as the axis and a
        report of the rows is in the order they appear on it. */
     hits.slice().sort(function (a, b) { return (b.y + b.h) - (a.y + a.h); }).forEach(function (cell) {
-      var base = TOTAL - (cell.y + cell.h);       // where this row's own frame starts along the cut
+      var base = ys.y2 - (cell.y + cell.h);       // where this row's own frame starts along the cut
       var local = cutX - cell.x;
       var geom = geomOf(cell.type);
       rows.push({ type: cell.type, name: cell.name, base: base, h: cell.h,
@@ -638,14 +801,20 @@ window.PRACTICE_PNR_API = (function () {
 
        A cut is a vertical line, so a METAL2 column AT that x reads as a tall band and a METAL3 span
        CROSSING it reads as a short segment at its own track. That asymmetry is the picture being
-       honest about which layer runs which way. */
+       honest about which layer runs which way.
+
+       A WIRE OUTSIDE THE WINDOW IS CLIPPED BY THE SAME TEST that already dropped one off the
+       placement: a route wholly above the window converts to `lo >= TOTAL`, one wholly below to
+       `hi <= 0`, and either way `hi <= lo` throws it out. Clipping rather than a second rule,
+       because a wire running over the rows the reader is not looking at is genuinely not at any
+       depth in this frame. */
     var routes = (res && res.routes && res.routes.shapes) || [];
     routes.forEach(function (r) {
       if (cutX < r.x || cutX > r.x + r.w) return;
       var mask = ROUTE_MASK[r.layer];
       if (!mask) return;
-      var lo = Math.max(0, TOTAL - (r.y + r.h)), hi = Math.min(TOTAL, TOTAL - r.y);
-      if (hi <= lo) return;                       // entirely off the placement
+      var lo = Math.max(0, ys.y2 - (r.y + r.h)), hi = Math.min(TOTAL, ys.y2 - r.y);
+      if (hi <= lo) return;                       // entirely off the placement, or outside the window
       if (!by[mask]) by[mask] = { cls: 'layer-' + r.layer + '_ALL', intervals: [] };
       by[mask].intervals.push([lo, hi]);
     });
@@ -673,8 +842,13 @@ window.PRACTICE_PNR_API = (function () {
        where in the cell it was taken - dropping it silently made that read `undefined` while every
        interval was still right, which is the shape of regression a geometry check cannot see. With
        several rows it is the bottom-most row's, the same cell `cell` names. */
+    /* `win` is carried out because the CAPTION and the MARKER both have to name the rows this drawing
+       is of, and neither may work that out a second time: a window computed twice is two windows. It
+       is null on a whole-placement section, which is what says there is nothing to name. */
     return { cell: rows[0].cell, cells: rows, cut: cutX, local: rows[0].local,
-             height: TOTAL, masks: by, stackTop: top };
+             height: TOTAL, masks: by, stackTop: top,
+             win: win ? { first: win.first, count: win.count } : null,
+             rowsTotal: rowsIn(res) };
   }
 
   function crosses(sec, mask) { return !!(sec && sec.masks[mask]); }
@@ -711,14 +885,19 @@ window.PRACTICE_PNR_API = (function () {
 
   /* THE CUTS WORTH STOPPING AT. Snapping to these rather than to every lambda is what makes
      dragging step between sections that genuinely differ: consecutive x with the same set of
-     intervals draw the same picture, so only the first of a run is kept. */
-  function cutStops(res) {
+     intervals draw the same picture, so only the first of a run is kept.
+
+     THE WINDOW HAS TO BE THE ONE BEING DRAWN, or a drag snaps against a section the reader is not
+     looking at: with four of seventeen rows shown, most of the x at which the whole placement
+     changes are changes in rows this drawing does not contain, so the stops would be a picture of
+     the wrong thing. `x` still sweeps the full width - it is the rows that narrow, not the axis. */
+  function cutStops(res, win) {
     var out = [], last = null;
     var placed = (res && res.placed) || [];
     if (!placed.length) return out;
     var x2 = placed[placed.length - 1].x + placed[placed.length - 1].w;
     for (var x = placed[0].x; x <= x2; x += 500) {
-      var sec = sectionAt(res, x);
+      var sec = sectionAt(res, x, win);
       var sig = sec ? Object.keys(sec.masks).sort().map(function (k) {
         return k + sec.masks[k].intervals.join('|');
       }).join(';') : '';
@@ -736,14 +915,18 @@ window.PRACTICE_PNR_API = (function () {
      NULL when there is nothing placed, which is not pedantry: it used to return 0, a caller stored
      that as the reader's cut, and 0 is a legal x inside the first cell - so the "is the stored cut
      still on the cells" guard kept it and the figure opened on `through metal only` at the cell's
-     left edge. An absent answer has to be absent. */
-  function defaultCut(res) {
+     left edge. An absent answer has to be absent.
+
+     THE WINDOW NARROWS WHERE IT LOOKS, for `cutStops`' reason: a gate in a row this section does not
+     show is not a place worth opening on. The fallback is the first cell's middle either way, which
+     is on the top row and so is in every window that contains row 0. */
+  function defaultCut(res, win) {
     var placed = (res && res.placed) || [];
     if (!placed.length) return null;
 
     var x2 = placed[placed.length - 1].x + placed[placed.length - 1].w, run = [];
     for (var x = placed[0].x; x <= x2; x += 500) {
-      var sec = sectionAt(res, x);
+      var sec = sectionAt(res, x, win);
       var both = sec && gateAt(sec, 'N-DIFF') && gateAt(sec, 'P-DIFF');
       if (both) run.push(x);
       else if (run.length) break;
@@ -802,9 +985,9 @@ window.PRACTICE_PNR_API = (function () {
   ];
   /* Every mask the ideal pair draws, so the panel's default view gets the full eight steps the
      reference has - derived from the drawing rather than listed twice. */
-  function idealMasks() {
+  function idealMasks(full) {
     var seen = [];
-    idealShapes().shapes.forEach(function (s) {
+    idealShapes(full).shapes.forEach(function (s) {
       if (s.mask && seen.indexOf(s.mask) < 0) seen.push(s.mask);
     });
     return seen;
@@ -980,7 +1163,14 @@ window.PRACTICE_PNR_API = (function () {
    * header says so, and it is the one drawing here that is authored rather than measured.
    */
   var IDEAL_W = 72000;
-  function idealShapes() {
+  /* `full` ASKS FOR THE WHOLE BACK END OF THE LINE - the two via levels, the two upper metals and the
+     three dielectrics over them - and it is OPT-IN for the reason the power ring is. The badge column on
+     a LEARN TOPIC is built from its placement's own layers, and a topic figure that routes nothing has no
+     METAL2 or METAL3 among them: drawing them in the ideal pair there would paint shapes no badge can
+     hide and no stylesheet on that page need colour, which is the black-fill failure `test_learn.py`
+     already guards against. The Fabrication card asks, because there a routed cut is the thing the ideal
+     pair is being compared with; a topic's own figure does not. */
+  function idealShapes(full) {
     var S = STRATA, G = SEC, out = [];
     var nAct = [6000, 30000], pAct = [42000, 66000];
     var well = [36000, IDEAL_W];
@@ -996,6 +1186,15 @@ window.PRACTICE_PNR_API = (function () {
        a label over a contact reads as naming the contact. */
     add(null, 'ild', 0, IDEAL_W, G.oxideTop, G.surface, MATERIAL_LABEL.ild,
         (nAct[1] + pAct[0]) / 2);
+    /* AND THE DIELECTRIC OVER EACH METAL, level by level, with a passivation sealing the top - the same
+       bands `cutShapes` builds from its `ILD_OVER` table, and what gives this drawing the ILD2, ILD3 and
+       ILD4 steps. Painted HERE, before every mask, because a band that covers a metal level has to sit
+       behind that metal's own shapes - the rule the derived section records at length. */
+    if (full) {
+      add(null, 'ild2', 0, IDEAL_W, S.METAL2.bottom, S.METAL1.bottom, null);
+      add(null, 'ild3', 0, IDEAL_W, S.METAL3.bottom, S.METAL2.bottom, null);
+      add(null, 'ild4', 0, IDEAL_W, S.METAL3.top - 3000, S.METAL3.bottom, null);
+    }
     add('N-WELL', 'band', well[0], well[1] - well[0], S['N-WELL'].top, S['N-WELL'].bottom, 'N-WELL');
     /* Field oxide between and beside the active areas - thicker than a gate oxide, which is the
        whole point of it: it is what stops one transistor's channel reaching the next. */
@@ -1025,6 +1224,31 @@ window.PRACTICE_PNR_API = (function () {
       add('METAL1', 'band', a[0], 8000, S.METAL1.top, S.METAL1.bottom, 'M1');
       add('METAL1', 'band', a[1] - 8000, 8000, S.METAL1.top, S.METAL1.bottom, null);
       add('METAL1', 'band', (a[0] + a[1]) / 2 - 4000, 8000, S.METAL1.top, S.METAL1.bottom, null);
+    });
+    /* AND THE ROUTING STACK ON TOP, so this drawing is the SAME PROCESS the derived section is. It used
+       to stop at METAL1 and therefore described a process that ends halfway: the step list read
+       `10/10 METAL1 interconnect` where a real cut reads `17/17 Passivation`, and the headroom `SEC.top`
+       reserves for the metal stack was left empty above the M1 blocks. Seven steps were missing - two
+       via levels, two metals and the three dielectrics above - and they are the back end of the line,
+       which is most of what a modern process spends its masks on.
+
+       ONE COLUMN PER METAL1 BAND, straight up: a via centred on the band below it and the next metal on
+       the same x. An ideal pair is a REFERENCE drawing, so regular is right - and stacking them is what
+       makes the three metals read as connected rather than as three floating stripes, which is the same
+       thing the derived section achieves by taking a via's band from the gap between two metals exactly.
+
+       The mask list and the `plug-on-metal` / `band` split are `cutShapes`' own, so the two drawings
+       cannot come to draw a via two ways; `M2` and `M3` are labelled once per region, as `M1` is. */
+    if (full) [nAct, pAct].forEach(function (a) {
+      var cols = [a[0], (a[0] + a[1]) / 2 - 4000, a[1] - 8000];
+      [['VIA1', null], ['METAL2', 'M2'], ['VIA2', null], ['METAL3', 'M3']].forEach(function (pair) {
+        var mask = pair[0], via = mask.indexOf('VIA') === 0;
+        cols.forEach(function (x, i) {
+          add(mask, via ? 'plug-on-metal' : 'band',
+              via ? x + 2500 : x, via ? 3000 : 8000,
+              S[mask].top, S[mask].bottom, (!via && i === 0) ? pair[1] : null);
+        });
+      });
     });
     return { width: IDEAL_W, shapes: out, wellAt: (well[0] + well[1]) / 2,
              /* SHORT, because a caption is clipped by the viewBox rather than wrapped: `PMOS region
@@ -1362,7 +1586,7 @@ window.PRACTICE_PNR_API = (function () {
 
   /* Draw the section for `cutX` into `el`. Returns what it drew, which is what a caption states and
      a harness reads: no assertion about this picture should have to go through the DOM. */
-  function drawSection(el, res, cutX) {
+  function drawSection(el, res, cutX, win) {
     /* `rects` is the drawing AS DATA - one record per shape, with the depth band it was given -
        because a picture cannot be questioned any other way: the plug that stops at the poly, the
        implant that sits inside the well and the ordering of the whole stack are all geometry, and a
@@ -1370,11 +1594,16 @@ window.PRACTICE_PNR_API = (function () {
     var out = { cut: cutX, label: '', masks: [], shapes: 0, rects: [] };
     if (!el) return out;
     el.innerHTML = '';
-    var sec = sectionAt(res, cutX);
+    var sec = sectionAt(res, cutX, win);
     out.label = cutLabel(sec);
     if (!sec) return out;
     out.masks = Object.keys(sec.masks).sort();
     out.cell = sec.cell.type;
+    /* WHICH ROWS THIS IS OF, reported from the section rather than from the window the caller passed:
+       the window is clamped inside `cutWindow`, so what was asked for and what was drawn can differ
+       and only one of the two is a fact about the picture. */
+    out.win = sec.win;
+    out.rowsTotal = sec.rowsTotal;
     var plan = cutShapes(sec);
     var r = renderShapes(el, plan, coloursOf());
     out.rects = plan.shapes.filter(function (s) { return !!s.mask || s.kind === 'gate-oxide'; })
@@ -1411,10 +1640,10 @@ window.PRACTICE_PNR_API = (function () {
   /* The ideal pair, into the same element and the same coordinate space. Its `masks` is every mask it
      draws, so the animation gets its full eight steps here and the layer badges govern it exactly as
      they govern a real cut. */
-  function drawIdeal(el) {
+  function drawIdeal(el, full) {
     var out = { cut: null, label: 'ideal CMOS pair', masks: [], shapes: 0, rects: [], ideal: true };
     if (!el) return out;
-    var plan = idealShapes();
+    var plan = idealShapes(full);
     var r = renderShapes(el, plan, coloursOf());
     out.masks = [];
     plan.shapes.forEach(function (s) {
@@ -1435,30 +1664,47 @@ window.PRACTICE_PNR_API = (function () {
 
   /* The cut's own marker, drawn INTO the layout's SVG so it scales and lands with the artwork
      rather than being positioned against the box. It carries no layer class, so no button can hide
-     the one thing that says where the section comes from. */
-  function drawCutLine(res, cutX) {
+     the one thing that says where the section comes from.
+
+     IT IS A SEGMENT, NOT A FULL-HEIGHT LINE, once a window is in play, and that is the whole of the
+     feedback for choosing a row: a line down the entire placement says at which x the section was
+     taken and nothing about which rows, so a reader clicking at a different height would see the
+     drawing change with no mark moving to explain it. With no window the segment spans the whole
+     placement, which is the line this always drew. */
+  function drawCutLine(res, cutX, win) {
     var svg = res && res.svg;
     if (!svg) return null;
     var g = svg.querySelector('.pnr-cut');
     if (!g) {
       g = svgEl('g', { class: 'pnr-cut' });
       svg.appendChild(g);
-      g.appendChild(svgEl('line', { class: 'pnr-cut-line', y1: 0, y2: res.plan_h || 0 }));
+      /* TWO LINES, THE CASING FIRST: the marker is drawn over artwork of eleven saturated mask colours,
+         and a single stroke of any one hue is one mask away from disappearing into it. A wide line in the
+         page's background colour under a narrower one in its foreground reads on all of them - the
+         drafting convention for a section line, and why the casing is a sibling rather than a filter. */
+      g.appendChild(svgEl('line', { class: 'pnr-cut-casing' }));
+      g.appendChild(svgEl('line', { class: 'pnr-cut-line' }));
     }
-    var line = g.querySelector('.pnr-cut-line');
-    var h = 0;
-    (res.placed || []).forEach(function (p) { h = Math.max(h, p.y + p.h); });
-    line.setAttribute('x1', String(cutX));
-    line.setAttribute('x2', String(cutX));
-    line.setAttribute('y1', '0');
-    line.setAttribute('y2', String(h));
+    var ys = windowY(res, win);
+    /* BOTH LINES TAKE THE SAME GEOMETRY, from one place, or the casing sits off the line it is casing. */
+    ['.pnr-cut-casing', '.pnr-cut-line'].forEach(function (sel) {
+      var line = g.querySelector(sel);
+      if (!line) return;
+      line.setAttribute('x1', String(cutX));
+      line.setAttribute('x2', String(cutX));
+      line.setAttribute('y1', String(ys.y1));
+      line.setAttribute('y2', String(ys.y2));
+    });
     return g;
   }
 
   /* THE HOVER MARKER: where a click would cut, drawn faintly so it cannot be mistaken for the cut
      itself. Its own element rather than a class on the cut line, because both are on screen at once
-     while the pointer is over the layout - and `null` removes it, which is what pointerleave sends. */
-  function drawHoverLine(res, x) {
+     while the pointer is over the layout - and `null` removes it, which is what pointerleave sends.
+
+     IT SHOWS THE WINDOW A CLICK WOULD PRODUCE, rows included, which is what makes the row choice
+     discoverable at all: the pointer's height moves the segment before anything is committed. */
+  function drawHoverLine(res, x, win) {
     var svg = res && res.svg;
     if (!svg) return null;
     var g = svg.querySelector('.pnr-hover');
@@ -1471,12 +1717,12 @@ window.PRACTICE_PNR_API = (function () {
       svg.appendChild(g);
       g.appendChild(svgEl('line', { class: 'pnr-hover-line', x1: 0, y1: 0, x2: 0, y2: 0 }));
     }
-    var line = g.querySelector('.pnr-hover-line'), h = 0;
-    (res.placed || []).forEach(function (p) { h = Math.max(h, p.y + p.h); });
+    var line = g.querySelector('.pnr-hover-line');
+    var ys = windowY(res, win);
     line.setAttribute('x1', String(x));
     line.setAttribute('x2', String(x));
-    line.setAttribute('y1', '0');
-    line.setAttribute('y2', String(h));
+    line.setAttribute('y1', String(ys.y1));
+    line.setAttribute('y2', String(ys.y2));
     return g;
   }
 
@@ -1488,13 +1734,51 @@ window.PRACTICE_PNR_API = (function () {
     if (!svg || !svg.getBoundingClientRect) return null;
     var b = svg.getBoundingClientRect();
     if (!b.width) return null;
-    var total = 0;
-    (res.placed || []).forEach(function (p) { total = Math.max(total, p.x + p.w); });
+    /* THE DRAWING'S OWN EXTENT, NOT THE CELLS', and that distinction arrived with the power ring: the
+       block is a margin wider than its cell area on each side, the svg's viewBox spans the whole of it,
+       and a pointer fraction has to be measured against the same thing the box is. Derived from the
+       cells, the right-hand margin was simply missing from the mapping - every click landed short of
+       where it was aimed, by the ratio of the two widths. `planWidth` is what `drawStatic` reports;
+       the cell extent is the fallback for a result that predates it, where the two are equal anyway. */
+    var total = res.planWidth || 0;
+    if (!total) {
+      (res.placed || []).forEach(function (p) { total = Math.max(total, p.x + p.w); });
+    }
     return (clientX - b.left) / b.width * total;
   }
 
-  function snapCut(res, x) {
-    var stops = cutStops(res);
+  /* AND WHICH ROW a pointer y is over, which is the other half of choosing where to cut. Measured off
+     the SVG's own box for `cutFromClientX`'s reason - `preserveAspectRatio` may letterbox the drawing
+     inside its wrapper, so the wrapper's rect is not the artwork's.
+     Clamped to a row that exists rather than returned as null off the ends: a pointer a pixel above
+     the top row means the top row, where an absent answer would make the drag drop out at the edges.
+
+     NULL FOR AN EVENT THAT CARRIES NO Y, and that is not defensive padding: a synthesized
+     `pointerdown` may have only a `clientX` - the harness's own `pickAt` does - and the arithmetic
+     then yields NaN, which `cutWindow` would fold to row 0 while `fabPick` stored the NaN as the
+     chosen row. An event that says nothing about the row has to be answered with nothing, so the
+     caller keeps the row it had.
+
+     ONE GUARD, NOT TWO. A `typeof clientY !== 'number'` test in front of this was written and
+     REMOVED on a measurement: its mutant survived the sweep, because every input that reaches it
+     non-numeric - `undefined` above all - arrives here as NaN anyway and is caught by this line. The
+     one case it added was a `clientY` of exactly `null`, which coerces to 0 and no event produces.
+     Kept as reassurance it would have been a line no test could fail, which is the rule this repo
+     applies to `__divmod16`'s unreachable branch. */
+  function cutRowFromClientY(res, clientY) {
+    var svg = res && res.svg;
+    if (!svg || !svg.getBoundingClientRect) return null;
+    var b = svg.getBoundingClientRect();
+    if (!b.height) return null;
+    var span = cutSpan(res);
+    if (!span) return null;
+    var y = (clientY - b.top) / b.height * span;
+    if (!isFinite(y)) return null;
+    return Math.max(0, Math.min(rowsIn(res) - 1, Math.floor(y / rowPitch())));
+  }
+
+  function snapCut(res, x, win) {
+    var stops = cutStops(res, win);
     if (!stops.length) return x;
     var best = stops[0];
     stops.forEach(function (s) { if (Math.abs(s - x) < Math.abs(best - x)) best = s; });
@@ -1607,11 +1891,29 @@ window.PRACTICE_PNR_API = (function () {
     }
     function geom() {
       /* The mapping from the drawing's units to canvas pixels, read from the SVG that is on screen -
-         so it follows the panel's width with no number repeated here. */
+         so it follows the panel's width with no number repeated here.
+
+         AND IT ACCOUNTS FOR THE LETTERBOXING, which it did not have to while `.fab-body` had no height:
+         the svg was `width: 100%; height: auto`, so its box's aspect was the viewBox's exactly and
+         `xMidYMid meet` fitted with nothing left over. Now the panel is a FIXED height - so the two
+         views of this card are the same height - and the drawing is scaled uniformly and CENTRED inside
+         a box that is wider or taller than it. Mapping viewBox units onto the element's whole rect then
+         puts every particle off the shape it is meant to be landing on, by half the slack on one axis.
+
+         `pw`/`ph` are therefore the DRAWING's pixel size and `ox`/`oy` the margin around it - which is
+         what `xMidYMid meet` means, written out. With no slack both offsets are zero and this is the
+         mapping it always was. */
       var vb = (svg && svg.getAttribute('viewBox') || '0 0 1 1').split(/\s+/).map(Number);
       var r = svg && svg.getBoundingClientRect ? svg.getBoundingClientRect() : { width: 0, height: 0 };
-      return { x0: vb[0], y0: vb[1], w: vb[2] || 1, h: vb[3] || 1,
-               pw: r.width || 0, ph: r.height || 0 };
+      var w = vb[2] || 1, h = vb[3] || 1;
+      var rw = r.width || 0, rh = r.height || 0;
+      var s = (rw && rh) ? Math.min(rw / w, rh / h) : 0;
+      var pw = s ? w * s : rw, ph = s ? h * s : rh;
+      return { x0: vb[0], y0: vb[1], w: w, h: h,
+               pw: pw, ph: ph,
+               /* The canvas covers the whole rect, so the drawing's offset within it is the slack. */
+               ox: Math.max(0, (rw - pw) / 2), oy: Math.max(0, (rh - ph) / 2),
+               rw: rw, rh: rh };
     }
     function attach(hostEl, svgEl_) {
       host = hostEl; svg = svgEl_;
@@ -1623,12 +1925,17 @@ window.PRACTICE_PNR_API = (function () {
         host.appendChild(cv);
       }
       var g = geom();
-      cv.width = Math.max(1, Math.round(g.pw));
-      cv.height = Math.max(1, Math.round(g.ph));
+      /* THE BITMAP IS THE ELEMENT'S BOX, not the drawing's: the canvas is positioned on the panel
+         (`inset: 8px`), so its pixels have to cover that - and `toPx` shifts the drawing into place
+         inside it. Sized to the drawing instead, the bitmap would be stretched to the panel by CSS and
+         every coordinate scaled by the letterbox twice over. */
+      cv.width = Math.max(1, Math.round(g.rw || g.pw));
+      cv.height = Math.max(1, Math.round(g.rh || g.ph));
       ctx = cv.getContext && cv.getContext('2d');
     }
     function toPx(g, ux, uy) {
-      return { x: (ux - g.x0) / g.w * g.pw, y: (uy - g.y0) / g.h * g.ph };
+      return { x: g.ox + (ux - g.x0) / g.w * g.pw,
+               y: g.oy + (uy - g.y0) / g.h * g.ph };
     }
     function spawn() {
       if (!plan || plan.kind === 'idle' || !plan.zones.length) return;
@@ -1809,15 +2116,886 @@ window.PRACTICE_PNR_API = (function () {
   }
   var effects = makeEffects();
 
+  /* ---- ONE PAN AND ZOOM, FOR EVERY BOX THAT SHOWS A PLACEMENT ----
+     Lifted out of Baerilog/pnr.html, which had the only copy, so the app, code2silicon and any
+     figure that asks share one gesture set rather than two that agree until one is edited. The
+     constants come with it, because the FLOOR carries a measurement: it was 0.05 and the
+     synthesizer's 16-bit ALU needs 0.0073 (0.037 even with square rows), so Fit returned the clamp
+     and left a 3,000px drawing in a 460px box - which reads as "Fit is broken" rather than as a
+     clamp. ZOOM_FLOOR is only a guard against a zero or NaN scale from a box that has not been laid
+     out; the real floor is the one the zoom writer applies, `Math.min(fitScale(), scale)`.
+
+     IT IS OPT-IN, and that is the whole reason it is a function rather than something `drawStatic`
+     does. This renderer's sizing story is ROW_PX - "the app scales by a zoom factor over the raw
+     lambda units; a figure cannot, because it has no zoom" - and twenty learn figures plus the
+     heights test_learn.py measures depend on it. A caller that wants gestures asks for them; every
+     figure that does not is untouched, which is what makes that assertable.
+
+     THE MODEL IS SCROLL OFFSETS, NOT A TRANSFORM: the box is a scroll container, the drawing is
+     sized in CSS pixels, and panning moves the scroll offsets so it composes with the scrollbars
+     and the wheel instead of being a second idea of where the view is. So a caller supplies two
+     functions and nothing else - `size()`, the drawing's UNSCALED px extent, and `resize(k)`, which
+     redraws or re-sizes it at that scale. pnr.html's `resize` is its existing
+     `scale = k; renderPlacement(lastPlan)`, whose only use of the scale is the svg's width and
+     height - which is what makes moving this provably neutral there.
+
+     The 8 is the pair of 1px borders plus room for a scrollbar that should then not be needed. */
+  var ZOOM_STEP = 1.3, ZOOM_MAX = 4, ZOOM_FLOOR = 0.0005, FIT_PAD = 8, PAN_SLOP = 4;
+
+  function attachView(wrap, opts) {
+    if (!wrap || !opts || typeof opts.size !== 'function' || typeof opts.resize !== 'function') return null;
+    var scale = 1;
+    function box() { return { w: wrap.clientWidth || 900, h: wrap.clientHeight || 460 }; }
+    /* FIT MEANS THE WHOLE LAYOUT IS IN THE BOX, WHICH IS BOTH DIMENSIONS. It fitted the WIDTH
+       alone once, so a wide single row was scaled until it filled the box across and then ran off
+       the bottom of it - clipped by the card's 460px, with a reader seeing the vdd rail and half a
+       cell. A row is 72 lambda tall against a placement that may be hundreds wide, so which of the
+       two binds depends entirely on the design: one row of ten cells is width-bound, four rows of
+       two are height-bound. Both are computed and the SMALLER wins.
+
+       `fitScale` is factored out because the fit and the zoom floor are the same number, and two
+       guesses at one number is how they come apart. */
+    function fitScale() {
+      var s = opts.size() || { w: 0, h: 0 };
+      var b = box(), fits = [];
+      if (s.w > 0) fits.push((b.w - FIT_PAD) / s.w);
+      if (s.h > 0) fits.push((b.h - FIT_PAD) / s.h);
+      return Math.max(ZOOM_FLOOR, fits.length ? Math.min.apply(null, fits) : 1);
+    }
+    function apply(k) { scale = k; opts.resize(k); }
+    function fit() {
+      apply(fitScale());
+      /* AND BACK TO THE TOP LEFT, because a fit that leaves the box scrolled shows a fitted drawing
+         with part of it out of view - the one thing Fit exists to rule out. */
+      wrap.scrollLeft = 0;
+      wrap.scrollTop = 0;
+    }
+    /* ONE ZOOM WRITER, anchored on a point: the wheel passes the pointer and a button passes the
+       box's centre, since a press has no pointer and centring is what stops repeated clicks walking
+       the drawing out of frame. Being a ratio, in-then-out returns to the scale it started from.
+       The anchor is kept by arithmetic on the scroll offsets - the content coordinate under the
+       pointer is `(scroll + p) / scale` - read BEFORE the redraw, since the redraw is what changes
+       the scrollable extent. */
+    function zoomAbout(px, py, factor) {
+      var floor = Math.min(fitScale(), scale);
+      var k = Math.max(floor, Math.min(ZOOM_MAX, scale * factor));
+      if (k === scale) return;
+      var ux = (wrap.scrollLeft + px) / scale, uy = (wrap.scrollTop + py) / scale;
+      apply(k);
+      wrap.scrollLeft = ux * k - px;
+      wrap.scrollTop = uy * k - py;
+    }
+    function zoomBy(factor) { var b = box(); zoomAbout(b.w / 2, b.h / 2, factor); }
+
+    /* A DRAG PANS THE DRAWING. `mousemove`/`mouseup` are on the DOCUMENT, as the netlist viewer's
+       are, or a drag that leaves the box strands the cursor in `grabbing` and the drawing mid-pan. */
+    var drag = null, moved = 0;
+    wrap.addEventListener('mousedown', function (ev) {
+      drag = { x: ev.clientX, y: ev.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop };
+      moved = 0;
+      wrap.style.cursor = 'grabbing';
+      /* Or the pointer selects the SVG's text nodes - the cell names - while it drags. */
+      if (ev.preventDefault) ev.preventDefault();
+    });
+    document.addEventListener('mousemove', function (ev) {
+      if (!drag) return;
+      moved = Math.max(moved, Math.abs(ev.clientX - drag.x), Math.abs(ev.clientY - drag.y));
+      wrap.scrollLeft = drag.sl - (ev.clientX - drag.x);
+      wrap.scrollTop = drag.st - (ev.clientY - drag.y);
+    });
+    document.addEventListener('mouseup', function () {
+      if (!drag) return;
+      drag = null;
+      wrap.style.cursor = '';
+    });
+    /* THE WHEEL ZOOMS ABOUT THE POINTER, and takes the whole gesture: otherwise it scrolls the box
+       on one axis and the reader has no zoom without reaching for a button. */
+    wrap.addEventListener('wheel', function (ev) {
+      if (ev.preventDefault) ev.preventDefault();
+      var r = wrap.getBoundingClientRect ? wrap.getBoundingClientRect() : { left: 0, top: 0 };
+      zoomAbout(ev.clientX - r.left, ev.clientY - r.top, Math.exp(-(ev.deltaY || 0) * 0.0015));
+    });
+
+    /* WAS THAT A PAN OR A CLICK? A drag ends with a `click` on the box, so a caller that also
+       does something with a click - code2silicon's layout sets the cross-section's cut - has to
+       be able to tell the two apart. The threshold is the netlist viewer's rule: a gesture that
+       moved more than a few pixels was a pan. Read rather than enforced here, because what to do
+       about it belongs to whoever owns the click. */
+    return { fit: fit, fitScale: fitScale, zoomAbout: zoomAbout, zoomBy: zoomBy,
+             scale: function () { return scale; },
+             panned: function () { return moved > PAN_SLOP; } };
+  }
+
+
+  /* ================= THE FABRICATION FIGURE AND ITS PLAYER =================
+     THE CARD pnr.html AND code2silicon.html BOTH SHOW, built here so there is ONE of it. It was 445
+     lines and eleven module variables inside pnr.html's own script, and code2silicon had a
+     cross-section viewer with none of the player - so the two pages disagreed about what
+     "Fabrication" is, and code2silicon's own (?) promised steps it could not run.
+
+     IT OWNS ITS MARKUP, which is what makes one copy possible at all: pnr.html had the figure as
+     HTML and code2silicon builds its cards in JS, so sharing the code while each page supplied the
+     tree would leave two things to keep in step. The classes are pnr.css's `fab-*` - both pages
+     already load it - and the ids are stamped because `test_pnr.py` drives 133 fab assertions by id.
+
+     THE HOST SUPPLIES THREE THINGS and keeps its own flow: which placement to cut, the row budget
+     it was placed at (so this drawing and the card above it are the same arrangement), and the
+     netlist text. Revealing the card, scrolling to it and deciding when to play are the host's -
+     the same opt-in split `attachView` above draws. */
+  function attachFabrication(host, opts) {
+    if (!host) return null;
+    opts = opts || {};
+    var SELF = window.PRACTICE_PNR_API;   /* set once the IIFE returns; every use is inside a handler */
+
+    /* THE ELEVEN STATE VARIABLES, now per instance rather than per page. */
+    var fabSteps = [], fabStep = -1, fabTimer = null, fabDrawn = null, fabLayerBtns = [], fabOff = {};
+    var fabBarDrag = false;
+    var fabFig = null, fabView = 'all', fabRouting = true, fabPicked = false, fabCutX = null;
+    var fabIdleTimer = null;
+    /* A CUT IS AN X AND A ROW, and the row is the half this card used to have no notion of: the
+       section was the whole placement's height however tall the floorplan, so a seventeen-row design
+       drew seventeen rows a few pixels each. `fabMaxRows` is how many rows to show and `fabCutRow`
+       which one the reader pointed at; `SELF.cutWindow` turns the pair into the window everything
+       draws from, so neither number is interpreted twice.
+
+       FOUR IS THE DEFAULT because it is the top of the control's range, so the card behaves exactly
+       as it always did on every placement of four rows or fewer - which is every learn figure and
+       every small example - and only starts limiting where the drawing was illegible anyway. */
+    var FAB_MAX_ROWS_CAP = 4;
+    var fabMaxRows = FAB_MAX_ROWS_CAP, fabCutRow = 0;
+    /* THE WINDOW, from one place. Every draw, every marker and the caption ask this rather than
+       computing it, which is what stops the picture and the words about it from disagreeing. */
+    function fabWin() {
+      return fabFig && SELF.cutWindow ? SELF.cutWindow(fabFig, fabMaxRows, fabCutRow) : null;
+    }
+    /* pnr.html's own three, moved with the code that reads them. */
+    var FAB_MS = 900, FAB_IDLE_MS = 5000, FAB_MARGIN = 10, CELL_H = 72000;
+    /* HOW FAST THE PROCESS PLAYS, as a multiplier on FAB_MS rather than a second duration - so
+       100% IS the 900ms this has always used and nothing about the default moves. A PERCENTAGE
+       because that is what the reader is choosing: 25% is quarter speed, i.e. four times longer
+       per step, which is why the interval DIVIDES by it. Read at each tick, not captured when Play
+       was pressed, so a change takes effect on the next step instead of after a replay. */
+    var FAB_SPEEDS = [25, 50, 100, 150];
+    var fabSpeed = 100;
+    function stepMs() { return Math.round(FAB_MS * 100 / fabSpeed); }
+
+    function mkEl(tag, cls, id) {
+      var e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (id) e.id = id;
+      return e;
+    }
+    /* THE TREE, in pnr.html's own order: the palette down the left, the layout and its tally in the
+       middle, the section with its head, region captions, drawing and step text on the right, and
+       the player under all of it. */
+    var elFig = mkEl('div', 'fab-fig', 'fabFig');
+    var elLayers = mkEl('div', 'fab-layers', 'fabLayers');
+    var elMid = mkEl('div', 'fab-mid');
+    var elDraw = mkEl('div', 'fab-draw', 'fabDraw');
+    /* NO TALLY HERE. What was placed and how big it is describes the ARRANGEMENT, so it belongs under
+       the Layout drawing on each page - `tallyLine` above is the one formatter both of them use. Inside
+       this figure it sat under a small second copy of the layout, captioning the wrong drawing, and it
+       only appeared once Fabricate had been pressed. */
+    elMid.appendChild(elDraw);
+    var elSec = mkEl('div', 'fab-sec');
+    var elHead = mkEl('div', 'fab-sec-head', 'fabHead');
+    var elRegions = mkEl('div', 'fab-regions', 'fabRegions');
+    var elBody = mkEl('div', 'fab-body', 'fabBody');
+    var elStep = mkEl('div', 'fab-step', 'fabStep');
+    elSec.appendChild(elHead); elSec.appendChild(elRegions);
+    elSec.appendChild(elBody); elSec.appendChild(elStep);
+    elFig.appendChild(elLayers); elFig.appendChild(elMid); elFig.appendChild(elSec);
+    var elCtl = mkEl('div', 'fab-ctl');
+    var elPlay = mkEl('button', 'btn secondary', 'fabPlay');
+    elPlay.setAttribute('type', 'button');
+    elPlay.innerHTML = '&#9654; Play';
+    var elReset = mkEl('button', 'btn secondary', 'fabReset');
+    elReset.setAttribute('type', 'button');
+    elReset.textContent = 'Reset';
+    var elStepNum = mkEl('span', 'fab-step-num', 'fabStepNum');
+    var elProg = mkEl('div', 'fab-prog', 'fabProg');
+    elProg.setAttribute('tabindex', '0');
+    elProg.setAttribute('role', 'slider');
+    elProg.setAttribute('aria-label', 'process step');
+    /* THE SPEED, beside the transport it governs. A `range` with four stops rather than a
+       `select`, because the choice is ORDERED - a reader wants "slower" and "faster", not a
+       menu - and because dragging it while the process plays is the natural way to use it.
+       `step="1"` over the INDEX, not over the percentages, since 25/50/100/150 are not evenly
+       spaced and a slider whose stops are unevenly spaced reads as broken.
+       The number beside it is the second encoding, and it is what makes the control legible at
+       a glance without moving the thumb. */
+    var elSpeedWrap = mkEl('label', 'fab-speed', 'fabSpeedWrap');
+    var elSpeedLab = mkEl('span', 'fab-speed-cap');
+    elSpeedLab.textContent = 'speed';
+    var elSpeed = mkEl('input', null, 'fabSpeed');
+    elSpeed.setAttribute('type', 'range');
+    elSpeed.type = 'range';
+    elSpeed.setAttribute('min', '0');
+    elSpeed.setAttribute('max', String(FAB_SPEEDS.length - 1));
+    elSpeed.setAttribute('step', '1');
+    elSpeed.setAttribute('value', String(FAB_SPEEDS.indexOf(fabSpeed)));
+    elSpeed.value = String(FAB_SPEEDS.indexOf(fabSpeed));
+    elSpeed.setAttribute('aria-label', 'animation speed');
+    var elSpeedVal = mkEl('span', 'fab-speed-val', 'fabSpeedVal');
+    elSpeedVal.textContent = fabSpeed + '%';
+    function applySpeed() {
+      var i = Math.max(0, Math.min(FAB_SPEEDS.length - 1, Number(elSpeed.value) || 0));
+      fabSpeed = FAB_SPEEDS[i];
+      elSpeedVal.textContent = fabSpeed + '%';
+      elSpeed.setAttribute('aria-valuetext', fabSpeed + '%');
+      /* NOT RESTARTED. A timer already waiting keeps its old interval and the NEXT one takes the
+         new speed, so the change costs at most one step - where clearing and re-arming would
+         jump the process forward or stall it for a full period, depending on which way the
+         slider moved. */
+    }
+    elSpeed.addEventListener('input', applySpeed);
+    elSpeed.addEventListener('change', applySpeed);
+    elSpeedWrap.appendChild(elSpeedLab);
+    elSpeedWrap.appendChild(elSpeed);
+    elSpeedWrap.appendChild(elSpeedVal);
+
+    /* HOW MANY ROWS THE SECTION SHOWS, beside the transport for the speed control's reason - it
+       governs this drawing, not the placement, so it belongs to the figure rather than to the Layout
+       card above.
+
+       A NUMBER FIELD AND NOT A SLIDER, which is the opposite call from `speed` and for a stated
+       reason: four stops is a range a reader wants to name (`2 rows`) rather than to feel for, and
+       unlike a percentage the number IS the answer - there is no second encoding to show beside it.
+       `.num-input` is styled by the shared block, so this needs no CSS beyond its own width.
+
+       CLAMPED AND WRITTEN BACK, which is this repo's standing rule against honouring a number other
+       than the one on screen: a field reading 9 while the drawing shows 4 is the silent cap every
+       other input here is written to avoid. Done on `change` rather than on `input` so a reader
+       mid-typing is not fighting the field. */
+    var elRowsWrap = mkEl('label', 'fab-rows', 'fabRowsWrap');
+    var elRowsLab = mkEl('span', 'fab-rows-cap');
+    elRowsLab.textContent = 'max rows';
+    var elRows = mkEl('input', 'num-input', 'fabMaxRows');
+    elRows.setAttribute('type', 'number');
+    elRows.type = 'number';
+    elRows.setAttribute('min', '1');
+    elRows.setAttribute('max', String(FAB_MAX_ROWS_CAP));
+    elRows.setAttribute('step', '1');
+    elRows.setAttribute('value', String(fabMaxRows));
+    elRows.value = String(fabMaxRows);
+    elRows.setAttribute('aria-label', 'how many rows the cross-section shows');
+    function applyMaxRows() {
+      var n = Math.max(1, Math.min(FAB_MAX_ROWS_CAP, Math.floor(Number(elRows.value) || 0) || 1));
+      elRows.value = String(n);
+      if (n === fabMaxRows) return;
+      fabMaxRows = n;
+      /* THE LAYOUT IS NOT RE-PLACED. Only the section's frame moved, and `fabDrawSection` redraws the
+         marker on the existing drawing - where `fabDraw` would place the design again for nothing.
+         Stopped first, for `fabPick`'s reason: the next tick would step a process on a drawing that
+         has just been replaced. */
+      fabStop();
+      fabDrawSection();
+    }
+    elRows.addEventListener('change', applyMaxRows);
+    elRowsWrap.appendChild(elRowsLab);
+    elRowsWrap.appendChild(elRows);
+
+    elCtl.appendChild(elPlay); elCtl.appendChild(elReset);
+    elCtl.appendChild(elSpeedWrap);
+    elCtl.appendChild(elRowsWrap);
+    elCtl.appendChild(elStepNum); elCtl.appendChild(elProg);
+    host.appendChild(elFig);
+    host.appendChild(elCtl);
+  /* The figure element itself, which `setLayerVisible` is handed so one pill press
+     governs the layout AND the section - the whole reason the palette lives inside it. */
+    function fabBox() { return elFig; }
+
+  /* THE LAYOUT HALF. `drawStatic` places the editor's netlist at the row width the app is set to, so
+     this arrangement and the Layout card's agree by construction rather than by being copied - and it
+     reports `layers`, `placed`, `svg` and the two switches, which is everything the palette, the cut and
+     the view buttons need.
+
+     IT DRAWS INTO THE VISIBLE PANEL, which is the point of the figure: the same call used to render into
+     a detached scratch div nobody could see, so `drawCutLine` was writing its marker into an SVG that
+     was not on the page. ROUTING IS PASSED THROUGH rather than left to default: drawStatic routes unless
+     told not to, and a section showing wires before the reader has pressed Route would be this card
+     contradicting the button above it. */
+  function fabDrawLayout() {
+    var api = SELF;
+    const host = elDraw;
+    if (!api || !host) return null;
+    if (!opts.plan()) { host.innerHTML = ''; fabFig = null; return null; }
+    /* FITTED TO THE COLUMN IT SITS IN, with a margin. `drawStatic` sizes a placement by ROW HEIGHT in
+       pixels and defaults to 150, which is right for a figure in an article column and left this one as a
+       postage stamp in the middle of half a full-width card - measured in a screenshot, since the drawing
+       was perfectly correct and simply small.
+
+       Both axes are considered and the smaller wins, which is the same thing `fitView` does for the
+       Layout card above and for the same reason: a wide row is width-bound and a tall stack of short rows
+       is height-bound. A placement's aspect is fixed, so this is arithmetic and not a second draw.
+
+       FAB_MARGIN keeps the drawing off the panel's edges and off the section's divider; without it a
+       fitted layout touches both and reads as clipped even when it is whole. The fallbacks are for a
+       panel that has not been laid out (the stub, and a card still `display:none`), where a measured zero
+       would otherwise collapse the drawing to nothing.
+
+       THE ROW COUNT IS READ, NOT DERIVED FROM A HEIGHT, and that is the whole of a bug this shipped
+       with. It was `Math.round(plan.height / CELL_H)`, which assumes `height` is in milli-lambda -
+       true of pnr.html's `lastPlan`, a raw plan from `place()`, and false of code2silicon's, which
+       hands over a `drawStatic` RESULT whose height is in PIXELS. One field name, two units: 750 /
+       72000 rounds to 1, so a five-row counter was fitted as though it were one row and drew five
+       times too big - 2595 x 2539 inside a 497px column, straight across the section beside it.
+
+       Both shapes carry `rows` outright, so asking for it is exact for either and cannot be wrong
+       about a unit it never sees. The height fallback keeps the old arithmetic for a caller that
+       somehow has neither. */
+    const plan0 = opts.plan();
+    const rows = Math.max(1, plan0.rows && plan0.rows.length !== undefined
+                             ? plan0.rows.length
+                             : (plan0.rows || Math.round(plan0.height / CELL_H)));
+    const availW = (host.clientWidth || 420) - FAB_MARGIN * 2;
+    const availH = (host.clientHeight || 300) - FAB_MARGIN * 2;
+    const byW = availW * (opts.plan().height / opts.plan().width);
+    const rowPx = Math.max(24, Math.min(byW, availH) / rows);
+    const res = api.drawStatic(host, {
+      netlist: opts.netlist(),
+      rowWidth: opts.rowLambda(),
+      route: !!opts.plan().routes,
+      view: fabView,
+      routing: fabRouting,
+      rowPx: rowPx,
+      /* THE RING, because this figure is of a BLOCK: both pages that show this card have placed and
+         routed a real design, and the drawing has to be the same arrangement as the Layout card above
+         it - which asks for one too. A figure in an article column is the case that does not. */
+      ring: true
+    });
+    fabFig = res && res.placed && res.placed.length ? res : null;
+    /* BOUND PER DRAW, because the <svg> is replaced by every one: the listeners go with the element they
+       were on, so they cannot accumulate and cannot be left pointing at a stale result. */
+    if (fabFig) fabWireCut(fabFig);
+    return fabFig;
+  }
+
+  /* CLICKING AND DRAGGING THE LAYOUT is how a cut is chosen, which is where a reader will reach for it.
+     Pointer events rather than mouse ones, so a touch drag needs no second path, and the cut is snapped
+     to the renderer's own stops so a drag steps between sections that differ rather than sliding through
+     near-duplicates.
+
+     THE POINTER'S Y IS READ AS WELL AS ITS X, which is how the reader says WHERE on the layout to take
+     the section from rather than only at which x. A drag therefore moves the window through the rows as
+     well as along the placement, which is the gesture a reader already has their hand on. */
+  function fabWireCut(res) {
+    var api = SELF;
+    const svg = res && res.svg;
+    if (!svg || !svg.addEventListener) return;
+    let down = false;
+    const move = (ev) => {
+      const x = api.cutFromClientX(res, ev.clientX);
+      if (x === null) return;
+      fabPick(x, api.cutRowFromClientY ? api.cutRowFromClientY(res, ev.clientY) : null);
+    };
+    /* HOVER SHOWS WHERE A CLICK WOULD CUT and nothing more: a faint marker following the pointer,
+       snapped to the same stops the real cut is. It is what tells the reader the layout is clickable at
+       all - the head says so in words, and this says it in place.
+
+       IT SHOWS THE ROWS TOO, so the segment shortens and moves with the pointer's height: without that
+       the row choice is invisible until it is committed, and a reader would have no way to discover it
+       exists. The window is the one a click WOULD produce, i.e. built from the hovered row rather than
+       from the chosen one. */
+    svg.addEventListener('pointermove', (ev) => {
+      if (down) return;
+      const hx = api.cutFromClientX(res, ev.clientX);
+      if (hx === null) return;
+      const hr = api.cutRowFromClientY ? api.cutRowFromClientY(res, ev.clientY) : null;
+      const hw = api.cutWindow ? api.cutWindow(res, fabMaxRows, hr === null ? fabCutRow : hr) : null;
+      api.drawHoverLine(res, api.snapCut(res, hx, hw), hw);
+    });
+    svg.addEventListener('pointerleave', () => { api.drawHoverLine(res, null); });
+    svg.addEventListener('pointerdown', (ev) => {
+      down = true;
+      if (svg.setPointerCapture && ev.pointerId !== undefined) {
+        try { svg.setPointerCapture(ev.pointerId); } catch (e) { /* not fatal: the move still fires */ }
+      }
+      if (ev.preventDefault) ev.preventDefault();
+      move(ev);
+    });
+    svg.addEventListener('pointermove', (ev) => { if (down) move(ev); });
+    svg.addEventListener('pointerup', () => { down = false; });
+    svg.addEventListener('pointercancel', () => { down = false; });
+  }
+
+  /* THE READER CHOSE THIS CUT. One writer, because four paths reach it - a press on the layout, a drag,
+     the picker and Route - and the flag it sets is the panel's whole mode. A press stops the player: the
+     next tick would step the process on a drawing that has just been replaced.
+
+     `row` IS OPTIONAL and null keeps the row already chosen, which is what the callers that only know an
+     x pass. The window is built from the row being picked rather than from `fabCutRow`, since that is not
+     written until the pick is accepted - snapping against the old window would snap to the wrong stops. */
+  function fabPick(x, row) {
+    var api = SELF;
+    if (!api || !fabFig) return;
+    const wantRow = row === null || row === undefined ? fabCutRow : row;
+    const win = api.cutWindow ? api.cutWindow(fabFig, fabMaxRows, wantRow) : null;
+    const snapped = api.snapCut(fabFig, x, win);
+    if (fabPicked && snapped === fabCutX && wantRow === fabCutRow) return;
+    /* NOTHING TO DRAW THERE, SO NOTHING IS CLAIMED - and the test is on the WINDOWED section, because
+       that is the drawing this press would produce: a row whose cells stop short of this x has nothing
+       at it even where the placement does. Refused whole, so a press into empty space leaves the cut
+       that was there rather than replacing it with a blank. */
+    if (!api.sectionAt(fabFig, snapped, win)) return;
+    fabStop();
+    fabCutX = snapped;
+    fabCutRow = wantRow;
+    fabPicked = true;
+    fabDrawSection();
+  }
+  /* AND THE WAY BACK, which is the head's own button: the ideal pair is a drawing of the process rather
+     than of this design, so the marker comes off the layout with it. */
+  function fabIdeal() {
+    fabStop();
+    fabPicked = false;
+    fabCutX = null;
+    fabDrawSection();
+  }
+
+  /* THE SECTION HALF, and everything that describes it: the head, the region captions, the step list and
+     the palette all follow the drawing, so they are rebuilt here rather than by each caller. */
+  function fabDrawSection() {
+    var api = SELF;
+    const body = elBody;
+    if (!api || !body) return null;
+    /* ONE WINDOW FOR THE DRAWING AND ITS MARKER, read once here: asking twice is how the section and
+       the line saying where it came from would come to describe different rows. */
+    const win = fabWin();
+    const real = fabPicked && fabFig && fabCutX !== null && api.sectionAt(fabFig, fabCutX, win);
+    /* THE IDEAL PAIR IS DRAWN FULL-STACK HERE, so the panel a reader opens on describes the same
+       seventeen-step process a routed cut does rather than one that ends at METAL1. This card is where
+       the two are compared - `Show Ideal Pair` is a way BACK from a cut - and its badge column falls
+       back to the section's own legend, so the upper metals have badges to be governed by. */
+    fabDrawn = real ? api.drawSection(body, fabFig, fabCutX, win) : api.drawIdeal(body, true);
+    /* THE MARKER BELONGS TO A REAL CUT, so the ideal view takes it off the layout rather than leaving a
+       line pointing at a drawing that is not of this placement. */
+    if (fabFig && fabFig.svg) {
+      if (real) api.drawCutLine(fabFig, fabCutX, win);
+      else {
+        const stale = fabFig.svg.querySelector('.pnr-cut');
+        if (stale && stale.remove) stale.remove();
+      }
+    }
+    fabSteps = api.processSteps(real ? fabFig : null,
+                               fabDrawn.ideal ? api.idealMasks(true) : null, fabDrawn.materials);
+    fabBuildLayers();
+    fabPaintRegions();
+    fabHead();
+    fabShow(fabSteps.length - 1);          // built, not bare: the animation is a way to REBUILD it
+    return fabDrawn;
+  }
+
+  /* WHICH DRAWING THIS IS, above it - and on the ideal pair, what to do to get the other, since nothing
+     else on the figure advertises that the layout is clickable. A real cut states its position in
+     MICRONS, not lambda: lambda is a scalable design rule rather than a size, and the tally under the
+     layout is already in microns, so quoting both would be two units for one drawing. */
+  function fabHead() {
+    var api = SELF;
+    const head = elHead;
+    if (!head) return;
+    head.innerHTML = '';
+    if (!fabDrawn || fabDrawn.ideal) {
+      const lab = document.createElement('span');
+      lab.className = 'fab-mode';
+      lab.textContent = fabFig ? 'Click the layout to see the cut'
+                               : 'Ideal pair — place a design to cut one';
+      head.appendChild(lab);
+      return;
+    }
+    const back = document.createElement('button');
+    back.className = 'fab-mode';
+    back.setAttribute('type', 'button');
+    back.textContent = 'Show Ideal Pair';
+    back.addEventListener('click', fabIdeal);
+    head.appendChild(back);
+    const what = document.createElement('span');
+    what.className = 'fab-cut-label';
+    /* WHICH ROWS, ONLY WHERE IT IS A CHOICE. A section of the whole placement says nothing about rows,
+       because there is nothing to have chosen; a windowed one has to, or the drawing silently omits
+       most of the design. Read off the DRAWING's own report rather than from `fabMaxRows`, since the
+       window is clamped and the field's number is a request.
+
+       ONE-BASED FOR THE READER while the index is zero-based throughout the code, which is stated
+       because mixing the two is a hazard this repo has paid for: nowhere else on the page does a
+       reader see a row number, so `rows 2-4 of 17` is the only place the convention shows, and the
+       alternative - offering a `row 0` - reads as a bug. */
+    var rowText = '';
+    var w = fabDrawn.win;
+    if (w) {
+      rowText = ', row' + (w.count > 1 ? 's ' : ' ') + (w.first + 1)
+              + (w.count > 1 ? '-' + (w.first + w.count) : '')
+              + ' of ' + fabDrawn.rowsTotal;
+    }
+    what.textContent = 'cut at ' + api.um(fabCutX) + ' µm' + rowText + ' — ' + fabDrawn.label;
+    head.appendChild(what);
+  }
+
+  /* ONE PILL PER LAYER IN THE DRAWING, in stack order and in the layer's own colour, so the button and
+     the shapes it switches are the same thing to look at.
+
+     THE SOURCE IS THE LAYOUT when there is one and the SECTION'S OWN LEGEND when there is not: with
+     nothing placed this card still draws the ideal pair, and a palette built only from `res.layers`
+     would leave that drawing with no mask buttons at all. Both lists come from the same renderer helper,
+     so the two cannot disagree about METAL1's name, its colour or where it sits in the stack. */
+  function fabBuildLayers() {
+    var api = SELF;
+    const col = elLayers;
+    if (!api || !col) return;
+    const layers = (fabFig && fabFig.layers && fabFig.layers.length)
+      ? fabFig.layers
+      : ((fabDrawn && fabDrawn.legend) || []);
+    col.innerHTML = '';
+    fabLayerBtns = [];
+    if (!layers.length) return;
+    const box = fabBox();
+    layers.forEach((L) => {
+      const b = document.createElement('button');
+      b.className = 'fab-layer-btn';
+      b.setAttribute('type', 'button');
+      b.textContent = L.label;
+      /* The artwork's own name in the tooltip, because METAL1 is what a reader needs and ALU1_ALL is
+         what they will find in the .ap file if they go looking. */
+      b.setAttribute('title', L.cls.replace(/^layer-/, ''));
+      const on = !fabOff[L.cls];
+      fabPaintLayerBtn(b, L, on);
+      api.setLayerVisible(box, L.cls, on);
+      b.addEventListener('click', () => {
+        /* A MANUAL PRESS STOPS THE ANIMATION rather than fighting it: the next tick would undo the
+           press, so the two would take turns writing the same layer and the click would read as having
+           been ignored. */
+        fabStop();
+        const showing = !fabOff[L.cls];
+        fabOff[L.cls] = showing;             // was showing, so this hides it
+        fabPaintLayerBtn(b, L, !showing);
+        api.setLayerVisible(box, L.cls, !showing);
+      });
+      fabLayerBtns.push({ L: L, btn: b });
+    });
+    /* SELECT ALL AT THE TOP, UNSELECT ALL AT THE BOTTOM, with the stack between them - so the two ends
+       of the column are the two ends of the range they cover, and neither reads as one more layer. Both
+       go through the SAME three writes a single pill's click does (the stored state, the pill, the
+       shapes) rather than clearing `fabOff` wholesale, because that state is what survives a redraw. */
+    const setAll = (on) => {
+      fabStop();
+      fabLayerBtns.forEach((m) => {
+        fabOff[m.L.cls] = !on;
+        fabPaintLayerBtn(m.btn, m.L, on);
+        api.setLayerVisible(fabBox(), m.L.cls, on);
+      });
+    };
+    const allBtn = (text, on) => {
+      const b = document.createElement('button');
+      b.className = 'fab-layer-all';
+      b.setAttribute('type', 'button');
+      b.textContent = text;
+      b.addEventListener('click', () => setAll(on));
+      return b;
+    };
+    col.appendChild(allBtn('Select All', true));
+    fabLayerBtns.forEach((m) => col.appendChild(m.btn));
+    col.appendChild(allBtn('Unselect All', false));
+  }
+  /* THE OUTLINE AND THE LABEL USE `onPage`, not the artwork's own colour: an off pill is a coloured
+     outline with coloured text ON THE PAGE, and CONTACT's near-black on a dark page is a black outline
+     with black text - the pill would simply not be there. The ON state keeps the true colour, because
+     then the pill IS the fill and its text is measured against it. */
+  function fabPaintLayerBtn(btn, L, on) {
+    btn.classList.toggle('on', !!on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.style.borderColor = (on ? L.colour : L.onPage) || L.colour || '';
+    btn.style.background = on ? (L.colour || '') : 'transparent';
+    btn.style.color = on ? (L.textOn || '') : (L.onPage || L.colour || '');
+  }
+
+  /* ONE DRAW OF THE WHOLE FIGURE: the layout, then everything that describes the section through it. The
+     order matters - the section reads the layout's result, and the palette reads both - so this is the
+     one entry point every caller uses rather than each of them doing part of it. */
+  function fabDraw() {
+    var api = SELF;
+    if (!api) return null;
+    fabDrawLayout();
+    /* A CHOSEN CUT THAT IS NO LONGER ON THE CELLS gives up its chosen-ness as well as its value, or the
+       next draw would keep asking to re-derive a cut it had already been told to forget.
+       Tested against the WINDOW being drawn, which is also what re-places a stale row: `cutWindow`
+       clamps the row into the new placement, so a design that shrank cannot leave the window pointing
+       past the last row - what can still fail is the x, and that is what this drops. */
+    if (fabPicked && (!fabFig || fabCutX === null || !api.sectionAt(fabFig, fabCutX, fabWin()))) {
+      fabPicked = false;
+      fabCutX = null;
+    }
+    return fabDrawSection();
+  }
+
+  /* WHICH SIDE IS WHICH, from the drawing's own report rather than from the cut: `regions` is collected
+     while the shapes are rendered, so a caption cannot end up over a region the picture does not have.
+     Refilled on every draw, since a cut through a different cell has different regions - and cleared
+     first, or the ideal pair's two captions would survive onto a partial stack that has one. */
+  function fabPaintRegions() {
+    const strip = elRegions;
+    if (!strip) return;
+    strip.innerHTML = '';
+    ((fabDrawn && fabDrawn.regions) || []).forEach((r) => {
+      const s = document.createElement('span');
+      s.className = 'fab-region';
+      s.style.left = r.pct + '%';
+      s.textContent = r.text;
+      strip.appendChild(s);
+    });
+  }
+
+
+  /* STEP k MEANS "everything up to and including k", which is what makes this a process and not a
+     slideshow: each step adds its masks to what the ones before it left. The badges are repainted from
+     the same decision, so the column always says what the drawing shows.
+
+     FIVE THINGS SAY WHERE THE PROCESS IS and they are written together here, which is learn.js's rule
+     for the same panel: the shapes, the mask badges, the step caption, the counter and the bar. Written
+     apart they will disagree, and a reader has no way to tell which of the five is lying. */
+  function fabShow(k) {
+    var api = SELF;
+    const body = elBody;
+    if (!api || !body || !fabSteps.length) return;
+    fabStep = Math.max(0, Math.min(k, fabSteps.length - 1));
+    const upto = {};
+    fabSteps.slice(0, fabStep + 1).forEach((s) => s.classes.forEach((c) => { upto[c] = true; }));
+    /* THE PALETTE IS REPAINTED FROM THE SAME DECISION, and applied to the whole FIGURE - so stepping the
+       process builds up the layout beside the section rather than only the wafer. That is the payoff of
+       the two drawings sharing one set of layer classes: the animation needed no notion of visibility of
+       its own, and one call covers both panels. */
+    fabLayerBtns.forEach((m) => {
+      const on = !!upto[m.L.cls];
+      fabOff[m.L.cls] = !on;
+      fabPaintLayerBtn(m.btn, m.L, on);
+      api.setLayerVisible(fabBox(), m.L.cls, on);
+    });
+    /* THE MATERIALS TOO, and they have no pill - which is why they are easy to forget and why forgetting
+       them was visible on a topic page: step one drew the oxides over a bare wafer, because a shape
+       nothing can hide is a shape that is always there. */
+    const matsOn = {};
+    fabSteps.slice(0, fabStep + 1).forEach((s) => (s.materials || []).forEach((c) => { matsOn[c] = true; }));
+    api.materialClasses().forEach((c) => api.setLayerVisible(body, c, !!matsOn[c]));
+    const s = fabSteps[fabStep];
+    /* THE EFFECT FOLLOWS THE STEP, and it is named as well as drawn: the shapes say what a step leaves
+       behind, `Ion implant · n-type` says what it does. Asked for on every step change rather than only
+       while playing, because a step is a process that takes time whether the reader arrived by the
+       timer or by dragging the bar - `run(true)` keeps it firing, and what stops the field is a step
+       with nothing to fire at (the bare wafer has no zones) or putting the card away. Reduced motion
+       never spawns at all, inside the renderer, so nothing here has to ask. */
+    const fx = api.stepEffect(s, fabDrawn);
+    if (fabDrawn && fabDrawn.svg) {
+      api.effects.show(body, fabDrawn.svg, fx);
+      api.effects.run(true);
+    }
+    const panel = elStep;
+    if (panel) {
+      panel.innerHTML = '';
+      const title = document.createElement('div');
+      title.className = 'fab-step-title';
+      title.textContent = (fabStep + 1) + '/' + fabSteps.length + '  ' + (s.title || s.label || '');
+      const desc = document.createElement('div');
+      desc.className = 'fab-step-desc';
+      desc.textContent = s.desc || '';
+      panel.appendChild(title);
+      panel.appendChild(desc);
+      const badge = document.createElement('div');
+      badge.className = 'fab-fx-badge';
+      badge.textContent = '✦ ' + fx.name;
+      panel.appendChild(badge);
+    }
+    fabPaintProg(s);
+    fabQuietLater();
+  }
+
+  /* THE FINISHED WAFER GOES QUIET. Armed on arriving at the last step and cancelled by leaving it, so
+     stepping back and forth cannot leave two of these running - the clear is at the top for that reason
+     rather than as a formality.
+
+     IT STOPS THE SPAWNING, NOT THE FIELD: `run(false)` lets what is in flight finish its own flight, which
+     is the same distinction Pause makes and keeps the last beams from being snapped out of existence
+     mid-air. The player's timer is untouched, since by here there is none - `fabTick` stops at the last
+     step, which is what makes this the only thing still moving. */
+  function fabQuietLater() {
+    var api = SELF;
+    if (fabIdleTimer) { clearTimeout(fabIdleTimer); fabIdleTimer = null; }
+    if (!fabSteps.length || fabStep !== fabSteps.length - 1) return;
+    fabIdleTimer = setTimeout(() => {
+      fabIdleTimer = null;
+      /* Guarded because a figure may have been redrawn or the page torn down in between, and a decoration
+         must never cost anything more than itself. */
+      try { api.effects.run(false); } catch (e) { /* nothing to quieten */ }
+    }, FAB_IDLE_MS);
+  }
+
+  /* THE COUNTER AND THE BAR, which are one fact said twice: a bar says roughly and `4 / 14` says
+     exactly, which is the two-encodings rule this repo holds anything meaning-in-colour to.
+
+     THE SEGMENTS ARE BUILT HERE rather than with the row, because the step count is only settled once
+     a drawing has reported its materials - and it changes when the reader moves between the ideal pair
+     and a cut whose cell has fewer masks. Rebuilt only when the COUNT differs, so stepping does not
+     churn the DOM once a second. */
+  function fabPaintProg(s) {
+    const num = elStepNum;
+    if (num) num.textContent = (fabStep + 1) + ' / ' + fabSteps.length;
+    const bar = elProg;
+    if (!bar) return;
+    if (bar.children.length !== fabSteps.length) {
+      bar.innerHTML = '';
+      for (let i = 0; i < fabSteps.length; i++) {
+        const seg = document.createElement('div');
+        seg.className = 'fab-prog-seg';
+        /* Hidden from assistive tech: the bar's own ARIA says where it is, and fourteen unlabelled
+           divs would be nothing but noise. */
+        seg.setAttribute('aria-hidden', 'true');
+        bar.appendChild(seg);
+      }
+    }
+    /* CUMULATIVE, because the drawing beside it is: at step 5 the wafer really does carry everything
+       the first five steps did. */
+    [].forEach.call(bar.children, (seg, i) => seg.classList.toggle('on', i <= fabStep));
+    bar.setAttribute('aria-valuemin', '1');
+    bar.setAttribute('aria-valuemax', String(fabSteps.length));
+    bar.setAttribute('aria-valuenow', String(fabStep + 1));
+    bar.setAttribute('aria-valuetext', (fabStep + 1) + ' / ' + fabSteps.length + ': '
+                                      + ((s && (s.title || s.label)) || ''));
+  }
+
+  /* WHERE A POINTER MEANS: N equal cells, so `floor(f * N)` clamped at the top - what the eye expects
+     of a segmented bar, where a continuous one would need rounding and a rule about which half of a
+     gap belongs to which step. Null when the bar has not been laid out, which is what the stub DOM
+     reports and what a display:none card would. */
+  function fabStepAt(clientX) {
+    const bar = elProg;
+    const b = bar && bar.getBoundingClientRect ? bar.getBoundingClientRect() : null;
+    if (!b || !b.width || !fabSteps.length) return null;
+    const f = Math.max(0, Math.min(1, (clientX - b.left) / b.width));
+    return Math.max(0, Math.min(fabSteps.length - 1, Math.floor(f * fabSteps.length)));
+  }
+  /* ONE WRITER for every way of arriving at a step, so a click, a drag and the arrow keys cannot
+     disagree about what a position means - and each STOPS the player rather than fighting it, since
+     the next tick would otherwise undo the press. */
+  function fabGoTo(k) {
+    if (k === null || k === fabStep) return;
+    fabStop();
+    fabShow(k);
+  }
+
+  /* Play from the BEGINNING when the last run finished, so a press at the end replays rather than
+     sitting on a built cell doing nothing - and the label, the pressed flag and the timer are one
+     state written three ways. */
+  function fabPlay() {
+    if (fabTimer) { fabStop(); return; }
+    const btn = elPlay;
+    if (btn) { btn.innerHTML = '&#9208; Pause'; btn.setAttribute('aria-pressed', 'true'); }
+    fabShow(fabStep >= fabSteps.length - 1 ? 0 : fabStep);
+    fabTimer = setTimeout(fabTick, stepMs());
+  }
+  function fabTick() {
+    if (fabStep >= fabSteps.length - 1) { fabStop(); return; }
+    fabShow(fabStep + 1);
+    fabTimer = setTimeout(fabTick, stepMs());
+  }
+  function fabStop() {
+    if (fabTimer) { clearTimeout(fabTimer); fabTimer = null; }
+    const btn = elPlay;
+    if (btn) { btn.innerHTML = '&#9654; Play'; btn.setAttribute('aria-pressed', 'false'); }
+  }
+
+
+    /* THE PLAYER'S OWN CONTROLS, wired here rather than by the host: the builder made these three
+       elements, so nothing outside needs to know their ids to make them work. pnr.html wired them
+       from its setup and code2silicon would have had to wire them again. */
+    elPlay.addEventListener('click', function () { fabPlay(); });
+    /* RESET GOES TO THE BARE WAFER, deliberately, where a Play at the end replays from the
+       beginning: step 1 is a fact about the process (this is what you start with) and is worth
+       being able to ask for. It stops the player first, or the next tick would walk straight off
+       it. */
+    elReset.addEventListener('click', function () { fabStop(); fabShow(0); });
+    /* THE BAR IS THE STEPPER: a click jumps, a drag scrubs, and the arrow keys walk it once it has
+       focus - which is what replaces the keyboard access Prev/Next would have given. All four go
+       through `fabGoTo`, so none of them can mean a different step from the others. */
+    elProg.addEventListener('click', function (ev) { fabGoTo(fabStepAt(ev.clientX)); });
+    elProg.addEventListener('pointerdown', function (ev) {
+      fabBarDrag = true;
+      fabGoTo(fabStepAt(ev.clientX));
+      if (ev.preventDefault) ev.preventDefault();
+    });
+    elProg.addEventListener('pointermove', function (ev) {
+      if (fabBarDrag) fabGoTo(fabStepAt(ev.clientX));
+    });
+    elProg.addEventListener('pointerup', function () { fabBarDrag = false; });
+    elProg.addEventListener('keydown', function (ev) {
+      var k = ev.key;
+      if (k === 'ArrowLeft' || k === 'ArrowDown') fabGoTo(Math.max(0, fabStep - 1));
+      else if (k === 'ArrowRight' || k === 'ArrowUp') fabGoTo(Math.min(fabSteps.length - 1, fabStep + 1));
+      else if (k === 'Home') fabGoTo(0);
+      else if (k === 'End') fabGoTo(fabSteps.length - 1);
+      else return;
+      if (ev.preventDefault) ev.preventDefault();
+    });
+
+    /* WHAT THE HOST GETS. `openOn` is pnr.html's own arrival, minus the parts that are its page's:
+       revealing the card, refreshing the tab strip and scrolling are the caller's, because they are
+       about the PAGE and differ between the two. */
+    return {
+      el: elFig,
+      draw: fabDraw,
+      drawLayout: fabDrawLayout,
+      stop: fabStop,
+      play: fabPlay,
+      show: fabShow,
+      steps: function () { return fabSteps.length; },
+      at: function () { return fabStep; },
+      drawn: function () { return fabDrawn; },
+      fig: function () { return fabFig; },
+      cut: function () { return fabCutX; },
+      /* OPEN ON A CUT THROUGH THE FIRST CELL, which is what makes the figure say something the
+         moment it appears rather than opening on the ideal pair with the design beside it.
+         THE ROW COMES FROM THAT SAME CELL, so the window is centred where the cut is rather than on
+         whatever row was left over from a previous design. */
+      openOn: function () {
+        fabStop();
+        fabDrawLayout();
+        if (!fabPicked && fabFig) {
+          var first = fabFig.placed[0];
+          var mid = first.x + first.w / 2;
+          fabCutRow = SELF.rowPitch ? Math.floor(first.y / SELF.rowPitch()) : 0;
+          var win = SELF.cutWindow ? SELF.cutWindow(fabFig, fabMaxRows, fabCutRow) : null;
+          var at = SELF.snapCut ? SELF.snapCut(fabFig, mid, win) : mid;
+          if (SELF.sectionAt(fabFig, at, win)) { fabPicked = true; fabCutX = at; }
+        }
+        fabDraw();
+      },
+      /* THE ROW WINDOW, for a host that wants to drive it and for a harness that has to read it back:
+         the cap as the reader set it, the row they chose, and the window those two resolve to. */
+      maxRows: function (n) {
+        if (n === undefined) return fabMaxRows;
+        elRows.value = String(n);
+        applyMaxRows();
+        return fabMaxRows;
+      },
+      row: function () { return fabCutRow; },
+      win: fabWin
+    };
+  }
+
   return { drawStatic: drawStatic, placeableCells: placeableCells, rowPx: ROW_PX,
            lambdaUm: LAMBDA_UM, source: SOURCE, setLayerVisible: setLayerVisible,
            /* The lambda-to-micron conversion, exported because the cut label needs it too - and one
               formatter means the cut and the measured line under the layout cannot round differently. */
            um: um,
+           /* the placement's caption, as one line - both pages write it under their Layout drawing */
+           tallyLine: tallyLine,
            /* the cross section: derive, draw, and the three questions a caller asks about a cut */
            sectionAt: sectionAt, drawSection: drawSection, drawCutLine: drawCutLine,
            defaultCut: defaultCut, cutStops: cutStops, cutLabel: cutLabel,
            cutFromClientX: cutFromClientX, snapCut: snapCut, processSteps: processSteps,
+           /* HOW MANY ROWS A SECTION SHOWS AND WHICH ONES. `cutWindow` is the single writer of that
+              decision and the reason it is exported rather than kept private: the figure, its markers
+              and its caption all have to describe one window, and a second caller working it out for
+              itself is how they would come to describe two. */
+           cutWindow: cutWindow, windowY: windowY, rowsIn: rowsIn, rowPitch: rowPitch,
+           cutRowFromClientY: cutRowFromClientY,
            strata: STRATA, secGeom: SEC,
            /* the ideal pair, and the words for each step of the process */
            drawIdeal: drawIdeal, idealMasks: idealMasks, stepText: STEP_TEXT,
@@ -1825,5 +3003,11 @@ window.PRACTICE_PNR_API = (function () {
            /* the process effects: the plan for a step, and the field that draws it */
            stepEffect: stepEffect, effects: effects,
            materialClasses: materialClasses,
-           drawHoverLine: drawHoverLine };
+           drawHoverLine: drawHoverLine,
+           /* the pan and zoom every box that shows a placement shares, and its constants - a
+              caller that wants the gestures calls attachView, a figure simply does not */
+           attachView: attachView, zoomStep: ZOOM_STEP, zoomMax: ZOOM_MAX, zoomFloor: ZOOM_FLOOR,
+           /* the Fabrication figure and its player, built and owned here so the two pages that
+              show it cannot drift into two cards */
+           attachFabrication: attachFabrication };
 })();

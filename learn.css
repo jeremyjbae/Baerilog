@@ -511,15 +511,11 @@ span.learn-sec-mode { background: var(--accent-subtle); }
 /* A player button that cannot do anything says so, as the reference's do at the ends. */
 .learn-fig-ctl button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* Where a click would cut, while the pointer is over the layout. Fainter and thinner than the cut
-   itself, since both are on screen at once and only one of them is a decision. */
-.pnr-hover-line {
-  stroke: var(--fg-muted);
-  stroke-width: 400;
-  stroke-dasharray: 900 900;
-  opacity: 0.7;
-  pointer-events: none;
-}
+/* THE HOVER MARKER'S RULE MOVED TO pnr.css, because it reached one of the four pages that draw it.
+   `drawHoverLine` is the shared renderer's, so both apps and the twenty topic figures emit the element -
+   and only a topic page loaded a rule for it, so on `pnr.html` and `code2silicon.html` it was an
+   unstyled `<line>`, i.e. invisible. `pnr.css` loads after this file on a topic page, so one rule there
+   serves all four; a copy left here would be dead. */
 .learn-sec-body > .pnr-sec-svg {
   display: block;
   width: 100%;
