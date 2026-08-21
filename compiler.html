@@ -40,6 +40,19 @@
 
       --canvas-default: #ffffff;
       --canvas-subtle: #f6f8fa;
+      /* The netlist viewer's node surface — the gate/port shapes' fill and the const and
+         instance boxes' background, which are one surface in two notations (an SVG `fill`
+         and a `background`) and so must be one token. It is NOT --canvas-default, and only
+         dark mode says why: the diagram's own canvas is --canvas-subtle (#161b22 there), so
+         a node painted #0d1117 is DARKER than the board it sits on and reads as a hole
+         rather than as a raised block. #24272d is one step lighter than that canvas, which
+         is the relationship light mode already has (#ffffff on #f6f8fa) — hence the light
+         value is white and every light rendering is byte-identical to what it was.
+         --fg-default on it measures 12.5:1 in dark and 15.8:1 in light.
+         Named -bg and not -fill, which is not taste: a declaration `--node-fill: #ffffff`
+         reads as `fill: #ffffff` to tools/check_theme.py's white-fill scan, and that scan
+         is right to be suspicious - the name moved rather than the check. */
+      --node-bg: #ffffff;
       --border-default: #d1d9e0;
       --border-muted: #d8dee4;
       --fg-default: #1f2328;
@@ -52,6 +65,41 @@
       --danger-fg: #cf222e;
       --danger-subtle: #ffebe9;
       --attention-fg: #9a6700;
+      /* AN OUTPUT PORT IS ITS OWN HUE, where it used to share --attention-fg with the mux. Those
+         are the two things in the diagram a reader most often wants to find - "what does this
+         module produce" and "where does the selecting happen" - and one colour for both made the
+         legend say `output port, mux`, i.e. named the collision rather than resolving it. Cyan
+         because the port pair then reads as a pair (green in, cyan out) while staying clear of
+         --accent-fg's blue at 211deg and --success-fg's green at 137deg: 186deg sits ~49deg from
+         each, which is the most separable place left in this palette. Dark is GitHub's own cyan;
+         light is the same hue taken down to 4.64:1 on --canvas-subtle, beside --accent-fg's 4.88
+         and --attention-fg's 4.57, since a bright cyan on a white board is not a line. */
+      --port-out-fg: #0f7c86;
+      /* A SUB-MODULE BOX'S OUTLINE in the netlist viewer, and a grey rather than a hue for the
+         reason the diagram's other colours are hues: every one of them means a KIND of block -
+         green an input port, cyan an output port, amber a mux, red an adder, accent a gate - and
+         a sub-module is not one kind among those, it is a BOX WITH MORE INSIDE IT. It was accent,
+         which said "gate" twice: the legend's own row read `gate, dff, sub-module`, i.e. it named
+         the collision rather than resolving it, which is exactly what --port-out-fg was added to
+         stop one row further up.
+
+         ITS OWN TOKEN RATHER THAN --fg-muted, which is the whole reason there is a new name here:
+         that one is already the CONSTANT's colour, so reusing it would trade a gate collision for
+         a constant one. Two Primer neutrals, measured against the two surfaces an outline sits on
+         and against the constant's grey - light 8.99 on the node fill and 8.44 on the board, dark
+         7.62 and 8.81, and 1.47 / 1.48 against --fg-muted, which is a step a reader can see. Both
+         are HIGHER contrast than the blue they replace (5.19 light, 4.83 dark), so the box reads
+         more strongly rather than less. */
+      --node-sub-fg: #424a53;
+      /* THE INPUT SIDE OF A SYMBOL SELECTION in the netlist viewer, and a hue of its own rather
+         than a reused one: every other colour in that diagram already means a KIND of block
+         (green an input port, cyan an output port, amber a mux, red an adder, accent a gate), so
+         a wire lit in any of them says two things at once. Primer's pink (`sponsors`), which is in neither the
+         symbol palette nor the wave palette. The output side of a selection stays --accent-fg,
+         which is also what a selected NET is, so one hue means "the wire you asked about" and
+         this one means "and it arrives here". 4.66:1 on --canvas-subtle in light, 5.64:1 in
+         dark - a graphic well past the 3:1 floor, and legible as the readout's own text too. */
+      --net-in-fg: #bf3989;
       --btn-primary-bg: #1f883d;
       --btn-primary-hover: #1a7f37;
       --btn-busy-bg: #9a6700;
@@ -84,6 +132,29 @@
       --nav-w: 300px;
       --nav-top: 0px;
 
+      /* THE STACKING LADDER, and it is tokens rather than literals because the layers are
+         set in THREE files that have to agree: this block (the drawer), Baerilog/practice.css
+         (the exercise sheet) and Baerilog/cloud-ui.js (the account drawer and the sign-in,
+         conflict and sign-out dialogs, injected at runtime). They disagreed, and the symptom
+         was the exercise sheet reading as `XERCISE` with its left edge behind the panel: the
+         sheet sat at 2000 and the pinned drawer at 2100.
+
+             5, 10   sticky bits inside a card         (literals, local to their rule)
+             100     the header bar
+             1000    popovers - help, radix
+             2050    a DRAWER's backdrop  ) page furniture: the navigation drawer and the
+             2100    a DRAWER's panel     ) account drawer are peers at this layer
+             3000    a DIALOG's backdrop - above BOTH drawers, because a drawer is furniture
+                     and a dialog is modal. Its panel needs no z-index of its own: every
+                     dialog here is a CHILD of its backdrop.
+
+         The ordering is what tools/check_theme.py asserts, across all three files, since no
+         headless harness can see a paint order. Latent until the drawer began staying open:
+         before that it was never on screen at the same time as the sheet. */
+      --z-drawer: 2050;
+      --z-drawer-panel: 2100;
+      --z-dialog: 3000;
+
       /* Dark panels, identical in both modes - GitHub's dark code colours. */
       --panel-bg: #0d1117;
       --panel-bg-alt: #161b22;
@@ -112,6 +183,7 @@
       :root {
         --canvas-default: #0d1117;
         --canvas-subtle: #161b22;
+        --node-bg: #24272d;
         --border-default: #3d444d;
         --border-muted: #2f353d;
         --fg-default: #e6edf3;
@@ -123,6 +195,9 @@
         --danger-fg: #f85149;
         --danger-subtle: #2d1214;
         --attention-fg: #d29922;
+        --port-out-fg: #39c5cf;
+        --node-sub-fg: #b1bac4;
+        --net-in-fg: #db61a2;
         --btn-primary-bg: #238636;
         --btn-primary-hover: #2ea043;
         --btn-busy-bg: #9e6a03;
@@ -620,6 +695,31 @@
       gap: 8px;
       border-bottom: 1px solid var(--border-default);
     }
+    /* ---- the FLOW STRIP: the same row, holding stages instead of tabs ----
+       Baerilog/code2silicon.html and the twenty exercise pages replace their tabs with a row of
+       stage buttons in the order the work happens; the builder is Baerilog/flowstrip.js. It is
+       here rather than in either page's own CSS because two page kinds share it and this is
+       where `.gh-tabs` itself lives - the same reason the band's rules are here.
+
+       KEYED ON `.gh-tabs.flow`, which flowstrip.js puts on the row it fills, so the four menu
+       apps' tab strips keep their own geometry: they share the container's class and none of
+       this is theirs. What is added is only what a row of BUTTONS needs that a row of tabs did
+       not - they must not be squeezed by their neighbours, and the row has to centre them
+       against the separators.
+
+       The colours are `.btn`'s own - green for a stage that can be run, `.btn:disabled`'s grey
+       for one that cannot yet - so nothing here states a colour. That is the point: "green when
+       it is available" is the primary-button rule already in this block, applied to a flow. */
+    .gh-tabs.flow { align-items: center; padding-bottom: 8px; }
+    .flow-stage { flex-shrink: 0; }
+    /* The separator says the row is a SEQUENCE rather than a set of peers. Punctuation, so it
+       is muted and hidden from a screen reader, which reads the buttons in order anyway. */
+    .flow-stage-sep {
+      color: var(--fg-muted);
+      font-size: 12px;
+      flex-shrink: 0;
+      user-select: none;
+    }
     .gh-tab {
       appearance: none;
       background: none;
@@ -719,6 +819,8 @@
       }
       .gh-tabs::-webkit-scrollbar { display: none; }
       .gh-tab { flex: 0 0 auto; }
+      .flow-stage { flex: 0 0 auto; }
+      .gh-tabs.flow { padding-bottom: 6px; }
       /* One column, and gutters that match the 16px the page's other rows use.
          The single column is repeated in most apps' own blocks; stating it here is
          what gives it to `emulator/index.html`, which never had it. */
@@ -841,7 +943,7 @@
     .nav-backdrop {
       position: fixed;
       inset: 0;
-      z-index: 2050;
+      z-index: var(--z-drawer);
       background: rgba(31, 35, 40, 0.5);
       opacity: 0;
       visibility: hidden;
@@ -853,7 +955,7 @@
       top: 0;
       left: 0;
       bottom: 0;
-      z-index: 2100;
+      z-index: var(--z-drawer-panel);
       /* ONE definition of the panel's width, because the pinned layer below indents the
          page by exactly it: two numbers here would let the gap and the panel disagree,
          which is the single-source rule the netlist viewer's `nodeSize` follows. */
@@ -1069,7 +1171,7 @@
     }
     .nav-row-icon svg { width: 16px; height: 16px; fill: currentColor; }
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                /* --- additions for editor / console / assembly listing / register & memory panel, same visual language --- */
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          /* --- additions for editor / console / assembly listing / register & memory panel, same visual language --- */
     /* The frontend radios, in the editor card's own header. Each label is a pill
        so the pair reads as one control rather than as two stray form controls,
        and the whole label is the hit target so the word "Python" is clickable
@@ -1144,7 +1246,15 @@
     .btn:hover { background: var(--btn-primary-hover); }
     .btn.secondary { background: var(--canvas-subtle); color: var(--fg-default); }
     .btn.secondary:hover { background: var(--border-default); }
-    .btn:disabled { background: var(--border-muted); cursor: default; }
+    /* A DISABLED BUTTON KEEPS ITS LABEL READABLE, which it did not: `.btn` sets
+       `--fg-on-emphasis` (white) for its green fill, and greying only the BACKGROUND left white
+       on `--border-muted` - #ffffff on #d8dee4, 1.6:1, a label you cannot read in light mode.
+       Latent while a disabled button was a rare thing off to one side; code2silicon's flow strip
+       puts two on screen at first paint and NAMES the stages you cannot reach yet, and the
+       Synthesis Results card disables Copy on its Diagram view, so the text is the point of them.
+       `--fg-muted` on that fill is 4.4:1 light and 5.9:1 dark. Six copies, because `.btn` is in
+       each app's own additions rather than in the shared block. */
+    .btn:disabled { background: var(--border-muted); color: var(--fg-muted); cursor: default; }
     .time-label { font-size: 12px; color: var(--fg-muted); margin-right: -2px; }
 
     .editor-wrap {
@@ -1501,18 +1611,28 @@
      one the drawer needs no network at all, which is the property every other page here is
      built for. The three apps outside this directory (emulator,
      verify, workbench) are deliberately absent: they live one level ABOVE the deployed
-     root, so a `../` row would resolve in the repo and 404 on the site. */
+     root, so a `../` row would resolve in the repo and 404 on the site.
+
+     FOUR DESTINATIONS, NOT SEVEN: the single-stage apps - Simulator, Synthesizer, Place &
+     Route, Compiler - are off the menu and reached by URL. They are still pages, still
+     built, still checked; what went is their rows. So this list is what a reader is offered,
+     which is a different question from what exists, and `currentHref`'s `known` list above is
+     what keeps those four marking nothing rather than marking Practice. Their glyphs are left
+     in `G` below, unused, so restoring a row is one line rather than redrawing an icon. */
   var ITEMS = [
     ['Home', 'index.html', 'home'],
     ['Learn', 'learn.html', 'cap'],
-    ['Practice', 'practice.html', 'mind'],
-    ['Simulator', 'simulator.html', 'pulse'],
-    ['Synthesizer', 'synthesis.html', 'chip'],
-    /* AFTER the synthesizer, because that is the order the flow runs in: a netlist is what
-       this app places and routes. It is a row rather than a `known` entry that marks
-       nothing, which is what it was until it had a page worth linking to. */
-    ['Place & Route', 'pnr.html', 'route'],
-    ['Compiler', 'compiler.html', 'code']
+    ['Practice', 'practice.html', 'codeslash'],
+    /* DIRECTLY BELOW PRACTICE, because it is the same thing one step further on: practice is
+       one stage of the flow per page, and this is every stage of it on one. It is also the
+       only tool row left, and the one the three retired rows fed into: the simulator, the
+       synthesizer and the placer are all stages of it. */
+    ['Code2Silicon', 'code2silicon.html', 'flow'],
+    /* LAST, and that is a statement about what the row IS rather than a place left over. The
+       four above are DESTINATIONS - things to read, things to solve, a tool to work in - and
+       this one is the reader's own work in those tools. It belongs after the thing that
+       produces it, the way a file listing sits below the editor rather than above it. */
+    ['My Projects', 'projects.html', 'folder']
   ];
   var G = {
     menu: '<svg viewBox="0 0 16 16"><path d="M1.5 3.25h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Z"/></svg>',
@@ -1576,7 +1696,70 @@
        and the lower block's left edge, so under the nonzero rule an opposed subpath would
        punch a hole through the join and the wire would read as detached at both ends - the
        same trap `cap`'s tassel records. */
-    route: '<svg viewBox="0 0 16 16"><path d="M1 2h5v5H1V2Zm9 7h5v5h-5V9ZM3 7h1v4h6v1H3V7Z"/></svg>'
+    route: '<svg viewBox="0 0 16 16"><path d="M1 2h5v5H1V2Zm9 7h5v5h-5V9ZM3 7h1v4h6v1H3V7Z"/></svg>',
+    /* CODE2SILICON: a packaged die with code brackets inside it and eight pin leads - the
+       page's own two halves, source going into silicon, which is a THING where the funnel this
+       replaced was a shape. Kept on the artwork's own 24-unit viewBox rather than redrawn onto
+       this set's 16-unit grid, so it is the drawing as supplied; the box is square and the CSS
+       box is square, so the scale is uniform and nothing is letterboxed.
+
+       THE PAINT ATTRIBUTES ARE ON A `<g>`, NOT ON THE `<svg>`, and that is not tidiness: the
+       stylesheet says `.nav-row-icon svg { fill: currentColor }`, so a `fill="none"` on the svg
+       element is a presentation attribute LOSING to a declaration on the same element - the die
+       and both chevrons would fill solid and the glyph would be a blob. On a `<g>` the attribute
+       is the only declaration that element has, and the children inherit `none` from it. This is
+       the rule `mind` above records from the other direction (it puts them on the path), and the
+       hoist-onto-a-g idiom `tools/logo.py`'s cleaned output already uses.
+
+       It is the SECOND stroked glyph in this set, and the lighter of the two: 2 units on a 24 box
+       is 1.33px at 16, against `mind`'s 1.6 on a 16 box. It also carries more detail than any
+       other glyph here - a 2-unit bracket excursion is 1.33px and a 3-unit pin lead 2px - which
+       is the smear `cap`'s tassel and `mind`'s chip were both simplified to avoid, so this one is
+       measured in a browser rather than reasoned about. */
+    /* PRACTICE: a pair of chevrons with a slash between them - what writing code looks like,
+       which is what an exercise page asks you to do, where `mind` (still in `G`, unused, so it is
+       one line to restore) drew the reader instead. On the artwork's own 24-unit viewBox and
+       stroked, like `flow` below it, so the two 24-box glyphs are consistent with each other; the
+       paint attributes are on a `<g>` for the reason that one records at length - on the `<svg>`
+       they lose to `.nav-row-icon svg { fill: currentColor }` and the strokes fill solid.
+
+       WORTH KNOWING: this is chevrons and `flow` is chevrons inside a die, and the two rows are
+       adjacent. They are told apart by the die outline and its eight pins rather than by the
+       brackets, which is the weaker of the two readings - if they ever need more separation it is
+       this one to change, since `flow`'s brackets are what say "source" inside the package. */
+    codeslash: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" '
+          + 'stroke-linecap="round" stroke-linejoin="round">'
+          + '<polyline points="16 18 22 12 16 6"/>'
+          + '<polyline points="8 6 2 12 8 18"/>'
+          + '<line x1="14" y1="4" x2="10" y2="20"/>'
+          + '</g></svg>',
+    flow: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" '
+          + 'stroke-linecap="round" stroke-linejoin="round">'
+          + '<rect x="5" y="5" width="14" height="14" rx="2.5"/>'
+          + '<path d="M9 10l-2 2 2 2"/><path d="M15 10l2 2-2 2"/>'
+          + '<path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>'
+          + '</g></svg>',
+    /* MY PROJECTS: a folder, outlined. Back on this set's 16-unit grid and fill-only, like
+       every glyph here but the two 24-box strokes above - it is drawn here rather than
+       supplied, so there is no artwork to stay faithful to and the set's own rules decide it.
+
+       EVERY coordinate is a whole unit and every wall is exactly ONE, which is the whole of
+       what makes it legible at 16px: a 1-unit wall lands on one whole pixel at full strength,
+       where `cap`'s cord at 0.75 spread across two at half and vanished. Left 1-2, right 14-15,
+       bottom 12-13, body top 5-6, tab top 3-4, tab right 5-6 - measure any of them and they
+       are the same.
+
+       OUTLINED, NOT SOLID, and that is what tells it from `chip`: a filled folder at this size
+       is a rounded blob with a nick in one corner, and the nick is the only thing carrying the
+       meaning. With the hole, the tab reads as a tab. The hole is the SECOND subpath and is
+       wound AGAINST the outline - the outline anticlockwise, the hole clockwise - and under the
+       nonzero rule it is that opposition, in either direction, that punches it out rather than
+       filling it in. Same winding rule `cap` and `route` record from the other side: there the
+       subpaths AGREE, so they merge instead of nicking each other. Verified by rasterising at
+       16px rather than by reading: 44 pixels of wall, 78 punched out, every wall one pixel at
+       full strength, and the tab step 5px against the body's 11. Centred on the box too - three
+       empty rows above and below, one column each side - rather than merely fitted inside it. */
+    folder: '<svg viewBox="0 0 16 16"><path d="M1 3h5v2h9v8H1Z M2 4v8h12V6H5V4Z"/></svg>',
   };
 
   function mk(tag, cls, id, text) {
@@ -1616,12 +1799,15 @@
     if (base()) return '';
     var file = (window.location && window.location.pathname || '').split('/').pop() || '';
     if (file === 'learn.html' || file.indexOf('learn-') === 0) return 'learn.html';
-    /* `pnr.html` is named here for the same reason every other row is: the fallback below
-       catches every filename it has not been told about and answers `practice.html`, so an
-       app left out of this list marks Practice - which is what pnr.html did while it had no
-       row. Now that it has one, being in this list is what MARKS it, not what excludes it,
-       and dropping it would put the marker back on Practice rather than merely lose it. */
-    var known = ['index.html', 'simulator.html', 'synthesis.html', 'compiler.html', 'pnr.html'];
+    /* THE FOUR APPS ARE NAMED HERE WITHOUT HAVING A ROW, and that is the whole point of the
+       list rather than an oversight in it. The fallback below catches every filename it has
+       not been told about and answers `practice.html`, so an app left out marks Practice -
+       which is what pnr.html did while it had no row. The apps are off the menu now, so what
+       being in this list buys is that they mark NOTHING: naming a page is how you say "not
+       Practice", and marking a row is a separate question the row list answers. Drop a name
+       and that page's drawer lights Practice, which is worse than lighting nothing. */
+    var known = ['index.html', 'simulator.html', 'synthesis.html', 'compiler.html', 'pnr.html',
+                 'code2silicon.html', 'projects.html'];
     return known.indexOf(file) >= 0 ? file : 'practice.html';
   }
 
@@ -11299,18 +11485,28 @@ document.addEventListener('click', () => {
      one the drawer needs no network at all, which is the property every other page here is
      built for. The three apps outside this directory (emulator,
      verify, workbench) are deliberately absent: they live one level ABOVE the deployed
-     root, so a `../` row would resolve in the repo and 404 on the site. */
+     root, so a `../` row would resolve in the repo and 404 on the site.
+
+     FOUR DESTINATIONS, NOT SEVEN: the single-stage apps - Simulator, Synthesizer, Place &
+     Route, Compiler - are off the menu and reached by URL. They are still pages, still
+     built, still checked; what went is their rows. So this list is what a reader is offered,
+     which is a different question from what exists, and `currentHref`'s `known` list above is
+     what keeps those four marking nothing rather than marking Practice. Their glyphs are left
+     in `G` below, unused, so restoring a row is one line rather than redrawing an icon. */
   var ITEMS = [
     ['Home', 'index.html', 'home'],
     ['Learn', 'learn.html', 'cap'],
-    ['Practice', 'practice.html', 'mind'],
-    ['Simulator', 'simulator.html', 'pulse'],
-    ['Synthesizer', 'synthesis.html', 'chip'],
-    /* AFTER the synthesizer, because that is the order the flow runs in: a netlist is what
-       this app places and routes. It is a row rather than a `known` entry that marks
-       nothing, which is what it was until it had a page worth linking to. */
-    ['Place & Route', 'pnr.html', 'route'],
-    ['Compiler', 'compiler.html', 'code']
+    ['Practice', 'practice.html', 'codeslash'],
+    /* DIRECTLY BELOW PRACTICE, because it is the same thing one step further on: practice is
+       one stage of the flow per page, and this is every stage of it on one. It is also the
+       only tool row left, and the one the three retired rows fed into: the simulator, the
+       synthesizer and the placer are all stages of it. */
+    ['Code2Silicon', 'code2silicon.html', 'flow'],
+    /* LAST, and that is a statement about what the row IS rather than a place left over. The
+       four above are DESTINATIONS - things to read, things to solve, a tool to work in - and
+       this one is the reader's own work in those tools. It belongs after the thing that
+       produces it, the way a file listing sits below the editor rather than above it. */
+    ['My Projects', 'projects.html', 'folder']
   ];
   var G = {
     menu: '<svg viewBox="0 0 16 16"><path d="M1.5 3.25h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Z"/></svg>',
@@ -11374,7 +11570,70 @@ document.addEventListener('click', () => {
        and the lower block's left edge, so under the nonzero rule an opposed subpath would
        punch a hole through the join and the wire would read as detached at both ends - the
        same trap `cap`'s tassel records. */
-    route: '<svg viewBox="0 0 16 16"><path d="M1 2h5v5H1V2Zm9 7h5v5h-5V9ZM3 7h1v4h6v1H3V7Z"/></svg>'
+    route: '<svg viewBox="0 0 16 16"><path d="M1 2h5v5H1V2Zm9 7h5v5h-5V9ZM3 7h1v4h6v1H3V7Z"/></svg>',
+    /* CODE2SILICON: a packaged die with code brackets inside it and eight pin leads - the
+       page's own two halves, source going into silicon, which is a THING where the funnel this
+       replaced was a shape. Kept on the artwork's own 24-unit viewBox rather than redrawn onto
+       this set's 16-unit grid, so it is the drawing as supplied; the box is square and the CSS
+       box is square, so the scale is uniform and nothing is letterboxed.
+
+       THE PAINT ATTRIBUTES ARE ON A `<g>`, NOT ON THE `<svg>`, and that is not tidiness: the
+       stylesheet says `.nav-row-icon svg { fill: currentColor }`, so a `fill="none"` on the svg
+       element is a presentation attribute LOSING to a declaration on the same element - the die
+       and both chevrons would fill solid and the glyph would be a blob. On a `<g>` the attribute
+       is the only declaration that element has, and the children inherit `none` from it. This is
+       the rule `mind` above records from the other direction (it puts them on the path), and the
+       hoist-onto-a-g idiom `tools/logo.py`'s cleaned output already uses.
+
+       It is the SECOND stroked glyph in this set, and the lighter of the two: 2 units on a 24 box
+       is 1.33px at 16, against `mind`'s 1.6 on a 16 box. It also carries more detail than any
+       other glyph here - a 2-unit bracket excursion is 1.33px and a 3-unit pin lead 2px - which
+       is the smear `cap`'s tassel and `mind`'s chip were both simplified to avoid, so this one is
+       measured in a browser rather than reasoned about. */
+    /* PRACTICE: a pair of chevrons with a slash between them - what writing code looks like,
+       which is what an exercise page asks you to do, where `mind` (still in `G`, unused, so it is
+       one line to restore) drew the reader instead. On the artwork's own 24-unit viewBox and
+       stroked, like `flow` below it, so the two 24-box glyphs are consistent with each other; the
+       paint attributes are on a `<g>` for the reason that one records at length - on the `<svg>`
+       they lose to `.nav-row-icon svg { fill: currentColor }` and the strokes fill solid.
+
+       WORTH KNOWING: this is chevrons and `flow` is chevrons inside a die, and the two rows are
+       adjacent. They are told apart by the die outline and its eight pins rather than by the
+       brackets, which is the weaker of the two readings - if they ever need more separation it is
+       this one to change, since `flow`'s brackets are what say "source" inside the package. */
+    codeslash: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" '
+          + 'stroke-linecap="round" stroke-linejoin="round">'
+          + '<polyline points="16 18 22 12 16 6"/>'
+          + '<polyline points="8 6 2 12 8 18"/>'
+          + '<line x1="14" y1="4" x2="10" y2="20"/>'
+          + '</g></svg>',
+    flow: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" '
+          + 'stroke-linecap="round" stroke-linejoin="round">'
+          + '<rect x="5" y="5" width="14" height="14" rx="2.5"/>'
+          + '<path d="M9 10l-2 2 2 2"/><path d="M15 10l2 2-2 2"/>'
+          + '<path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>'
+          + '</g></svg>',
+    /* MY PROJECTS: a folder, outlined. Back on this set's 16-unit grid and fill-only, like
+       every glyph here but the two 24-box strokes above - it is drawn here rather than
+       supplied, so there is no artwork to stay faithful to and the set's own rules decide it.
+
+       EVERY coordinate is a whole unit and every wall is exactly ONE, which is the whole of
+       what makes it legible at 16px: a 1-unit wall lands on one whole pixel at full strength,
+       where `cap`'s cord at 0.75 spread across two at half and vanished. Left 1-2, right 14-15,
+       bottom 12-13, body top 5-6, tab top 3-4, tab right 5-6 - measure any of them and they
+       are the same.
+
+       OUTLINED, NOT SOLID, and that is what tells it from `chip`: a filled folder at this size
+       is a rounded blob with a nick in one corner, and the nick is the only thing carrying the
+       meaning. With the hole, the tab reads as a tab. The hole is the SECOND subpath and is
+       wound AGAINST the outline - the outline anticlockwise, the hole clockwise - and under the
+       nonzero rule it is that opposition, in either direction, that punches it out rather than
+       filling it in. Same winding rule `cap` and `route` record from the other side: there the
+       subpaths AGREE, so they merge instead of nicking each other. Verified by rasterising at
+       16px rather than by reading: 44 pixels of wall, 78 punched out, every wall one pixel at
+       full strength, and the tab step 5px against the body's 11. Centred on the box too - three
+       empty rows above and below, one column each side - rather than merely fitted inside it. */
+    folder: '<svg viewBox="0 0 16 16"><path d="M1 3h5v2h9v8H1Z M2 4v8h12V6H5V4Z"/></svg>',
   };
 
   function mk(tag, cls, id, text) {
@@ -11414,12 +11673,15 @@ document.addEventListener('click', () => {
     if (base()) return '';
     var file = (window.location && window.location.pathname || '').split('/').pop() || '';
     if (file === 'learn.html' || file.indexOf('learn-') === 0) return 'learn.html';
-    /* `pnr.html` is named here for the same reason every other row is: the fallback below
-       catches every filename it has not been told about and answers `practice.html`, so an
-       app left out of this list marks Practice - which is what pnr.html did while it had no
-       row. Now that it has one, being in this list is what MARKS it, not what excludes it,
-       and dropping it would put the marker back on Practice rather than merely lose it. */
-    var known = ['index.html', 'simulator.html', 'synthesis.html', 'compiler.html', 'pnr.html'];
+    /* THE FOUR APPS ARE NAMED HERE WITHOUT HAVING A ROW, and that is the whole point of the
+       list rather than an oversight in it. The fallback below catches every filename it has
+       not been told about and answers `practice.html`, so an app left out marks Practice -
+       which is what pnr.html did while it had no row. The apps are off the menu now, so what
+       being in this list buys is that they mark NOTHING: naming a page is how you say "not
+       Practice", and marking a row is a separate question the row list answers. Drop a name
+       and that page's drawer lights Practice, which is worse than lighting nothing. */
+    var known = ['index.html', 'simulator.html', 'synthesis.html', 'compiler.html', 'pnr.html',
+                 'code2silicon.html', 'projects.html'];
     return known.indexOf(file) >= 0 ? file : 'practice.html';
   }
 
@@ -11729,14 +11991,19 @@ document.addEventListener('click', () => {
      textContent reads `▾Waveform Viewer?The signals…`. Taken from a clone so the card on
      screen is untouched, and the arrow characters are dropped by codepoint because the
      collapse button is a `<button>` on some cards and a bare glyph on others. */
-  /* Two titles are sentences rather than names, and both are overridden here rather than
-     shortened by a rule that would have to guess. The synthesizer's netlist card is called
-     `Synthesized Gate-level Verilog Netlist (Read-only)`, which is 300px of a 1200px strip;
-     and the compiler's Assembly card carries the TARGET in its heading (`ATmega644 (reduced
-     AVR2) Assembly`), which changes when the target does - so a tab reading it would be
-     stale the moment someone switched, and would need a hook of its own to notice. Every
-     other card uses its own title, so a new card gets an honest tab with no table to edit. */
-  var LABEL = { 'card-netlist': 'Netlist', 'card-asm': 'Assembly' };
+  /* ONE title is a sentence rather than a name, and it is overridden here rather than
+     shortened by a rule that would have to guess: the compiler's Assembly card carries the
+     TARGET in its heading (`ATmega644 (reduced AVR2) Assembly`), which changes when the target
+     does - so a tab reading it would be stale the moment someone switched, and would need a
+     hook of its own to notice. Every other card uses its own title, so a new card gets an
+     honest tab with no table to edit.
+
+     `card-netlist` is NOT here, and the reason it must not be is the same trap this file
+     records for `card-editor` below: that id belongs to THREE different cards - the
+     synthesizer's netlist, `Baerilog/pnr.html`'s, and the one `practice-synth.js` builds - so
+     an id-keyed entry would rename all three. The synthesizer's long title is shortened by
+     TITLE instead, in RENAME. */
+  var LABEL = { 'card-asm': 'Assembly' };
 
   /* A third override, keyed by the TITLE rather than by the id, and the keying is the whole
      of the reason it is a second table: `card-editor` is the id in TWO of the four apps -
@@ -11746,8 +12013,23 @@ document.addEventListener('click', () => {
      is renamed because Baerilog/shell.js's strip already calls that very card `Design` on
      the twenty practice pages, and one card cannot be two things in two strips that share a
      stylesheet and a glyph set. The card's own heading is left alone: it sits beside
-     `Testbench Editor`, where the longer name is what says which of the two editors it is. */
-  var RENAME = { 'Verilog Source Editor': 'Design' };
+     `Testbench Editor`, where the longer name is what says which of the two editors it is.
+
+     The second entry is a SHORTENING, and the only one keyed this way for that reason. The
+     synthesizer titles its netlist card `Synthesized Gate-level Verilog Netlist (Read-only)`,
+     which is honest on the card and ~300px of a 1200px strip as a tab. It is keyed by title
+     rather than by `card-netlist` because that id names three different cards (above), and
+     the other two are already short.
+
+     ITS KEY IS THE EXTRACTED TITLE, NOT THE HEADING. `labelOf` drops a trailing parenthetical
+     before it consults this table, so the card headed `Synthesized Gate-level Verilog Netlist
+     (Read-only)` arrives here as `Synthesized Gate-level Verilog Netlist` - keying on the full
+     heading matches nothing and the tab silently keeps all 300px of it, with every check still
+     passing. Verified by running the extractor rather than by reading it. */
+  var RENAME = {
+    'Verilog Source Editor': 'Design',
+    'Synthesized Gate-level Verilog Netlist': 'Netlist'
+  };
 
   function labelOf(card) {
     if (LABEL[card.id]) return LABEL[card.id];

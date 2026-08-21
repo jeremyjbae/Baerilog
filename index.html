@@ -43,18 +43,28 @@
      one the drawer needs no network at all, which is the property every other page here is
      built for. The three apps outside this directory (emulator,
      verify, workbench) are deliberately absent: they live one level ABOVE the deployed
-     root, so a `../` row would resolve in the repo and 404 on the site. */
+     root, so a `../` row would resolve in the repo and 404 on the site.
+
+     FOUR DESTINATIONS, NOT SEVEN: the single-stage apps - Simulator, Synthesizer, Place &
+     Route, Compiler - are off the menu and reached by URL. They are still pages, still
+     built, still checked; what went is their rows. So this list is what a reader is offered,
+     which is a different question from what exists, and `currentHref`'s `known` list above is
+     what keeps those four marking nothing rather than marking Practice. Their glyphs are left
+     in `G` below, unused, so restoring a row is one line rather than redrawing an icon. */
   var ITEMS = [
     ['Home', 'index.html', 'home'],
     ['Learn', 'learn.html', 'cap'],
-    ['Practice', 'practice.html', 'mind'],
-    ['Simulator', 'simulator.html', 'pulse'],
-    ['Synthesizer', 'synthesis.html', 'chip'],
-    /* AFTER the synthesizer, because that is the order the flow runs in: a netlist is what
-       this app places and routes. It is a row rather than a `known` entry that marks
-       nothing, which is what it was until it had a page worth linking to. */
-    ['Place & Route', 'pnr.html', 'route'],
-    ['Compiler', 'compiler.html', 'code']
+    ['Practice', 'practice.html', 'codeslash'],
+    /* DIRECTLY BELOW PRACTICE, because it is the same thing one step further on: practice is
+       one stage of the flow per page, and this is every stage of it on one. It is also the
+       only tool row left, and the one the three retired rows fed into: the simulator, the
+       synthesizer and the placer are all stages of it. */
+    ['Code2Silicon', 'code2silicon.html', 'flow'],
+    /* LAST, and that is a statement about what the row IS rather than a place left over. The
+       four above are DESTINATIONS - things to read, things to solve, a tool to work in - and
+       this one is the reader's own work in those tools. It belongs after the thing that
+       produces it, the way a file listing sits below the editor rather than above it. */
+    ['My Projects', 'projects.html', 'folder']
   ];
   var G = {
     menu: '<svg viewBox="0 0 16 16"><path d="M1.5 3.25h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Z"/></svg>',
@@ -118,7 +128,70 @@
        and the lower block's left edge, so under the nonzero rule an opposed subpath would
        punch a hole through the join and the wire would read as detached at both ends - the
        same trap `cap`'s tassel records. */
-    route: '<svg viewBox="0 0 16 16"><path d="M1 2h5v5H1V2Zm9 7h5v5h-5V9ZM3 7h1v4h6v1H3V7Z"/></svg>'
+    route: '<svg viewBox="0 0 16 16"><path d="M1 2h5v5H1V2Zm9 7h5v5h-5V9ZM3 7h1v4h6v1H3V7Z"/></svg>',
+    /* CODE2SILICON: a packaged die with code brackets inside it and eight pin leads - the
+       page's own two halves, source going into silicon, which is a THING where the funnel this
+       replaced was a shape. Kept on the artwork's own 24-unit viewBox rather than redrawn onto
+       this set's 16-unit grid, so it is the drawing as supplied; the box is square and the CSS
+       box is square, so the scale is uniform and nothing is letterboxed.
+
+       THE PAINT ATTRIBUTES ARE ON A `<g>`, NOT ON THE `<svg>`, and that is not tidiness: the
+       stylesheet says `.nav-row-icon svg { fill: currentColor }`, so a `fill="none"` on the svg
+       element is a presentation attribute LOSING to a declaration on the same element - the die
+       and both chevrons would fill solid and the glyph would be a blob. On a `<g>` the attribute
+       is the only declaration that element has, and the children inherit `none` from it. This is
+       the rule `mind` above records from the other direction (it puts them on the path), and the
+       hoist-onto-a-g idiom `tools/logo.py`'s cleaned output already uses.
+
+       It is the SECOND stroked glyph in this set, and the lighter of the two: 2 units on a 24 box
+       is 1.33px at 16, against `mind`'s 1.6 on a 16 box. It also carries more detail than any
+       other glyph here - a 2-unit bracket excursion is 1.33px and a 3-unit pin lead 2px - which
+       is the smear `cap`'s tassel and `mind`'s chip were both simplified to avoid, so this one is
+       measured in a browser rather than reasoned about. */
+    /* PRACTICE: a pair of chevrons with a slash between them - what writing code looks like,
+       which is what an exercise page asks you to do, where `mind` (still in `G`, unused, so it is
+       one line to restore) drew the reader instead. On the artwork's own 24-unit viewBox and
+       stroked, like `flow` below it, so the two 24-box glyphs are consistent with each other; the
+       paint attributes are on a `<g>` for the reason that one records at length - on the `<svg>`
+       they lose to `.nav-row-icon svg { fill: currentColor }` and the strokes fill solid.
+
+       WORTH KNOWING: this is chevrons and `flow` is chevrons inside a die, and the two rows are
+       adjacent. They are told apart by the die outline and its eight pins rather than by the
+       brackets, which is the weaker of the two readings - if they ever need more separation it is
+       this one to change, since `flow`'s brackets are what say "source" inside the package. */
+    codeslash: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" '
+          + 'stroke-linecap="round" stroke-linejoin="round">'
+          + '<polyline points="16 18 22 12 16 6"/>'
+          + '<polyline points="8 6 2 12 8 18"/>'
+          + '<line x1="14" y1="4" x2="10" y2="20"/>'
+          + '</g></svg>',
+    flow: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" '
+          + 'stroke-linecap="round" stroke-linejoin="round">'
+          + '<rect x="5" y="5" width="14" height="14" rx="2.5"/>'
+          + '<path d="M9 10l-2 2 2 2"/><path d="M15 10l2 2-2 2"/>'
+          + '<path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>'
+          + '</g></svg>',
+    /* MY PROJECTS: a folder, outlined. Back on this set's 16-unit grid and fill-only, like
+       every glyph here but the two 24-box strokes above - it is drawn here rather than
+       supplied, so there is no artwork to stay faithful to and the set's own rules decide it.
+
+       EVERY coordinate is a whole unit and every wall is exactly ONE, which is the whole of
+       what makes it legible at 16px: a 1-unit wall lands on one whole pixel at full strength,
+       where `cap`'s cord at 0.75 spread across two at half and vanished. Left 1-2, right 14-15,
+       bottom 12-13, body top 5-6, tab top 3-4, tab right 5-6 - measure any of them and they
+       are the same.
+
+       OUTLINED, NOT SOLID, and that is what tells it from `chip`: a filled folder at this size
+       is a rounded blob with a nick in one corner, and the nick is the only thing carrying the
+       meaning. With the hole, the tab reads as a tab. The hole is the SECOND subpath and is
+       wound AGAINST the outline - the outline anticlockwise, the hole clockwise - and under the
+       nonzero rule it is that opposition, in either direction, that punches it out rather than
+       filling it in. Same winding rule `cap` and `route` record from the other side: there the
+       subpaths AGREE, so they merge instead of nicking each other. Verified by rasterising at
+       16px rather than by reading: 44 pixels of wall, 78 punched out, every wall one pixel at
+       full strength, and the tab step 5px against the body's 11. Centred on the box too - three
+       empty rows above and below, one column each side - rather than merely fitted inside it. */
+    folder: '<svg viewBox="0 0 16 16"><path d="M1 3h5v2h9v8H1Z M2 4v8h12V6H5V4Z"/></svg>',
   };
 
   function mk(tag, cls, id, text) {
@@ -158,12 +231,15 @@
     if (base()) return '';
     var file = (window.location && window.location.pathname || '').split('/').pop() || '';
     if (file === 'learn.html' || file.indexOf('learn-') === 0) return 'learn.html';
-    /* `pnr.html` is named here for the same reason every other row is: the fallback below
-       catches every filename it has not been told about and answers `practice.html`, so an
-       app left out of this list marks Practice - which is what pnr.html did while it had no
-       row. Now that it has one, being in this list is what MARKS it, not what excludes it,
-       and dropping it would put the marker back on Practice rather than merely lose it. */
-    var known = ['index.html', 'simulator.html', 'synthesis.html', 'compiler.html', 'pnr.html'];
+    /* THE FOUR APPS ARE NAMED HERE WITHOUT HAVING A ROW, and that is the whole point of the
+       list rather than an oversight in it. The fallback below catches every filename it has
+       not been told about and answers `practice.html`, so an app left out marks Practice -
+       which is what pnr.html did while it had no row. The apps are off the menu now, so what
+       being in this list buys is that they mark NOTHING: naming a page is how you say "not
+       Practice", and marking a row is a separate question the row list answers. Drop a name
+       and that page's drawer lights Practice, which is worse than lighting nothing. */
+    var known = ['index.html', 'simulator.html', 'synthesis.html', 'compiler.html', 'pnr.html',
+                 'code2silicon.html', 'projects.html'];
     return known.indexOf(file) >= 0 ? file : 'practice.html';
   }
 
@@ -487,18 +563,28 @@
      one the drawer needs no network at all, which is the property every other page here is
      built for. The three apps outside this directory (emulator,
      verify, workbench) are deliberately absent: they live one level ABOVE the deployed
-     root, so a `../` row would resolve in the repo and 404 on the site. */
+     root, so a `../` row would resolve in the repo and 404 on the site.
+
+     FOUR DESTINATIONS, NOT SEVEN: the single-stage apps - Simulator, Synthesizer, Place &
+     Route, Compiler - are off the menu and reached by URL. They are still pages, still
+     built, still checked; what went is their rows. So this list is what a reader is offered,
+     which is a different question from what exists, and `currentHref`'s `known` list above is
+     what keeps those four marking nothing rather than marking Practice. Their glyphs are left
+     in `G` below, unused, so restoring a row is one line rather than redrawing an icon. */
   var ITEMS = [
     ['Home', 'index.html', 'home'],
     ['Learn', 'learn.html', 'cap'],
-    ['Practice', 'practice.html', 'mind'],
-    ['Simulator', 'simulator.html', 'pulse'],
-    ['Synthesizer', 'synthesis.html', 'chip'],
-    /* AFTER the synthesizer, because that is the order the flow runs in: a netlist is what
-       this app places and routes. It is a row rather than a `known` entry that marks
-       nothing, which is what it was until it had a page worth linking to. */
-    ['Place & Route', 'pnr.html', 'route'],
-    ['Compiler', 'compiler.html', 'code']
+    ['Practice', 'practice.html', 'codeslash'],
+    /* DIRECTLY BELOW PRACTICE, because it is the same thing one step further on: practice is
+       one stage of the flow per page, and this is every stage of it on one. It is also the
+       only tool row left, and the one the three retired rows fed into: the simulator, the
+       synthesizer and the placer are all stages of it. */
+    ['Code2Silicon', 'code2silicon.html', 'flow'],
+    /* LAST, and that is a statement about what the row IS rather than a place left over. The
+       four above are DESTINATIONS - things to read, things to solve, a tool to work in - and
+       this one is the reader's own work in those tools. It belongs after the thing that
+       produces it, the way a file listing sits below the editor rather than above it. */
+    ['My Projects', 'projects.html', 'folder']
   ];
   var G = {
     menu: '<svg viewBox="0 0 16 16"><path d="M1.5 3.25h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Z"/></svg>',
@@ -562,7 +648,70 @@
        and the lower block's left edge, so under the nonzero rule an opposed subpath would
        punch a hole through the join and the wire would read as detached at both ends - the
        same trap `cap`'s tassel records. */
-    route: '<svg viewBox="0 0 16 16"><path d="M1 2h5v5H1V2Zm9 7h5v5h-5V9ZM3 7h1v4h6v1H3V7Z"/></svg>'
+    route: '<svg viewBox="0 0 16 16"><path d="M1 2h5v5H1V2Zm9 7h5v5h-5V9ZM3 7h1v4h6v1H3V7Z"/></svg>',
+    /* CODE2SILICON: a packaged die with code brackets inside it and eight pin leads - the
+       page's own two halves, source going into silicon, which is a THING where the funnel this
+       replaced was a shape. Kept on the artwork's own 24-unit viewBox rather than redrawn onto
+       this set's 16-unit grid, so it is the drawing as supplied; the box is square and the CSS
+       box is square, so the scale is uniform and nothing is letterboxed.
+
+       THE PAINT ATTRIBUTES ARE ON A `<g>`, NOT ON THE `<svg>`, and that is not tidiness: the
+       stylesheet says `.nav-row-icon svg { fill: currentColor }`, so a `fill="none"` on the svg
+       element is a presentation attribute LOSING to a declaration on the same element - the die
+       and both chevrons would fill solid and the glyph would be a blob. On a `<g>` the attribute
+       is the only declaration that element has, and the children inherit `none` from it. This is
+       the rule `mind` above records from the other direction (it puts them on the path), and the
+       hoist-onto-a-g idiom `tools/logo.py`'s cleaned output already uses.
+
+       It is the SECOND stroked glyph in this set, and the lighter of the two: 2 units on a 24 box
+       is 1.33px at 16, against `mind`'s 1.6 on a 16 box. It also carries more detail than any
+       other glyph here - a 2-unit bracket excursion is 1.33px and a 3-unit pin lead 2px - which
+       is the smear `cap`'s tassel and `mind`'s chip were both simplified to avoid, so this one is
+       measured in a browser rather than reasoned about. */
+    /* PRACTICE: a pair of chevrons with a slash between them - what writing code looks like,
+       which is what an exercise page asks you to do, where `mind` (still in `G`, unused, so it is
+       one line to restore) drew the reader instead. On the artwork's own 24-unit viewBox and
+       stroked, like `flow` below it, so the two 24-box glyphs are consistent with each other; the
+       paint attributes are on a `<g>` for the reason that one records at length - on the `<svg>`
+       they lose to `.nav-row-icon svg { fill: currentColor }` and the strokes fill solid.
+
+       WORTH KNOWING: this is chevrons and `flow` is chevrons inside a die, and the two rows are
+       adjacent. They are told apart by the die outline and its eight pins rather than by the
+       brackets, which is the weaker of the two readings - if they ever need more separation it is
+       this one to change, since `flow`'s brackets are what say "source" inside the package. */
+    codeslash: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" '
+          + 'stroke-linecap="round" stroke-linejoin="round">'
+          + '<polyline points="16 18 22 12 16 6"/>'
+          + '<polyline points="8 6 2 12 8 18"/>'
+          + '<line x1="14" y1="4" x2="10" y2="20"/>'
+          + '</g></svg>',
+    flow: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" '
+          + 'stroke-linecap="round" stroke-linejoin="round">'
+          + '<rect x="5" y="5" width="14" height="14" rx="2.5"/>'
+          + '<path d="M9 10l-2 2 2 2"/><path d="M15 10l2 2-2 2"/>'
+          + '<path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>'
+          + '</g></svg>',
+    /* MY PROJECTS: a folder, outlined. Back on this set's 16-unit grid and fill-only, like
+       every glyph here but the two 24-box strokes above - it is drawn here rather than
+       supplied, so there is no artwork to stay faithful to and the set's own rules decide it.
+
+       EVERY coordinate is a whole unit and every wall is exactly ONE, which is the whole of
+       what makes it legible at 16px: a 1-unit wall lands on one whole pixel at full strength,
+       where `cap`'s cord at 0.75 spread across two at half and vanished. Left 1-2, right 14-15,
+       bottom 12-13, body top 5-6, tab top 3-4, tab right 5-6 - measure any of them and they
+       are the same.
+
+       OUTLINED, NOT SOLID, and that is what tells it from `chip`: a filled folder at this size
+       is a rounded blob with a nick in one corner, and the nick is the only thing carrying the
+       meaning. With the hole, the tab reads as a tab. The hole is the SECOND subpath and is
+       wound AGAINST the outline - the outline anticlockwise, the hole clockwise - and under the
+       nonzero rule it is that opposition, in either direction, that punches it out rather than
+       filling it in. Same winding rule `cap` and `route` record from the other side: there the
+       subpaths AGREE, so they merge instead of nicking each other. Verified by rasterising at
+       16px rather than by reading: 44 pixels of wall, 78 punched out, every wall one pixel at
+       full strength, and the tab step 5px against the body's 11. Centred on the box too - three
+       empty rows above and below, one column each side - rather than merely fitted inside it. */
+    folder: '<svg viewBox="0 0 16 16"><path d="M1 3h5v2h9v8H1Z M2 4v8h12V6H5V4Z"/></svg>',
   };
 
   function mk(tag, cls, id, text) {
@@ -602,12 +751,15 @@
     if (base()) return '';
     var file = (window.location && window.location.pathname || '').split('/').pop() || '';
     if (file === 'learn.html' || file.indexOf('learn-') === 0) return 'learn.html';
-    /* `pnr.html` is named here for the same reason every other row is: the fallback below
-       catches every filename it has not been told about and answers `practice.html`, so an
-       app left out of this list marks Practice - which is what pnr.html did while it had no
-       row. Now that it has one, being in this list is what MARKS it, not what excludes it,
-       and dropping it would put the marker back on Practice rather than merely lose it. */
-    var known = ['index.html', 'simulator.html', 'synthesis.html', 'compiler.html', 'pnr.html'];
+    /* THE FOUR APPS ARE NAMED HERE WITHOUT HAVING A ROW, and that is the whole point of the
+       list rather than an oversight in it. The fallback below catches every filename it has
+       not been told about and answers `practice.html`, so an app left out marks Practice -
+       which is what pnr.html did while it had no row. The apps are off the menu now, so what
+       being in this list buys is that they mark NOTHING: naming a page is how you say "not
+       Practice", and marking a row is a separate question the row list answers. Drop a name
+       and that page's drawer lights Practice, which is worse than lighting nothing. */
+    var known = ['index.html', 'simulator.html', 'synthesis.html', 'compiler.html', 'pnr.html',
+                 'code2silicon.html', 'projects.html'];
     return known.indexOf(file) >= 0 ? file : 'practice.html';
   }
 

@@ -35,6 +35,19 @@
 
       --canvas-default: #ffffff;
       --canvas-subtle: #f6f8fa;
+      /* The netlist viewer's node surface — the gate/port shapes' fill and the const and
+         instance boxes' background, which are one surface in two notations (an SVG `fill`
+         and a `background`) and so must be one token. It is NOT --canvas-default, and only
+         dark mode says why: the diagram's own canvas is --canvas-subtle (#161b22 there), so
+         a node painted #0d1117 is DARKER than the board it sits on and reads as a hole
+         rather than as a raised block. #24272d is one step lighter than that canvas, which
+         is the relationship light mode already has (#ffffff on #f6f8fa) — hence the light
+         value is white and every light rendering is byte-identical to what it was.
+         --fg-default on it measures 12.5:1 in dark and 15.8:1 in light.
+         Named -bg and not -fill, which is not taste: a declaration `--node-fill: #ffffff`
+         reads as `fill: #ffffff` to tools/check_theme.py's white-fill scan, and that scan
+         is right to be suspicious - the name moved rather than the check. */
+      --node-bg: #ffffff;
       --border-default: #d1d9e0;
       --border-muted: #d8dee4;
       --fg-default: #1f2328;
@@ -47,6 +60,41 @@
       --danger-fg: #cf222e;
       --danger-subtle: #ffebe9;
       --attention-fg: #9a6700;
+      /* AN OUTPUT PORT IS ITS OWN HUE, where it used to share --attention-fg with the mux. Those
+         are the two things in the diagram a reader most often wants to find - "what does this
+         module produce" and "where does the selecting happen" - and one colour for both made the
+         legend say `output port, mux`, i.e. named the collision rather than resolving it. Cyan
+         because the port pair then reads as a pair (green in, cyan out) while staying clear of
+         --accent-fg's blue at 211deg and --success-fg's green at 137deg: 186deg sits ~49deg from
+         each, which is the most separable place left in this palette. Dark is GitHub's own cyan;
+         light is the same hue taken down to 4.64:1 on --canvas-subtle, beside --accent-fg's 4.88
+         and --attention-fg's 4.57, since a bright cyan on a white board is not a line. */
+      --port-out-fg: #0f7c86;
+      /* A SUB-MODULE BOX'S OUTLINE in the netlist viewer, and a grey rather than a hue for the
+         reason the diagram's other colours are hues: every one of them means a KIND of block -
+         green an input port, cyan an output port, amber a mux, red an adder, accent a gate - and
+         a sub-module is not one kind among those, it is a BOX WITH MORE INSIDE IT. It was accent,
+         which said "gate" twice: the legend's own row read `gate, dff, sub-module`, i.e. it named
+         the collision rather than resolving it, which is exactly what --port-out-fg was added to
+         stop one row further up.
+
+         ITS OWN TOKEN RATHER THAN --fg-muted, which is the whole reason there is a new name here:
+         that one is already the CONSTANT's colour, so reusing it would trade a gate collision for
+         a constant one. Two Primer neutrals, measured against the two surfaces an outline sits on
+         and against the constant's grey - light 8.99 on the node fill and 8.44 on the board, dark
+         7.62 and 8.81, and 1.47 / 1.48 against --fg-muted, which is a step a reader can see. Both
+         are HIGHER contrast than the blue they replace (5.19 light, 4.83 dark), so the box reads
+         more strongly rather than less. */
+      --node-sub-fg: #424a53;
+      /* THE INPUT SIDE OF A SYMBOL SELECTION in the netlist viewer, and a hue of its own rather
+         than a reused one: every other colour in that diagram already means a KIND of block
+         (green an input port, cyan an output port, amber a mux, red an adder, accent a gate), so
+         a wire lit in any of them says two things at once. Primer's pink (`sponsors`), which is in neither the
+         symbol palette nor the wave palette. The output side of a selection stays --accent-fg,
+         which is also what a selected NET is, so one hue means "the wire you asked about" and
+         this one means "and it arrives here". 4.66:1 on --canvas-subtle in light, 5.64:1 in
+         dark - a graphic well past the 3:1 floor, and legible as the readout's own text too. */
+      --net-in-fg: #bf3989;
       --btn-primary-bg: #1f883d;
       --btn-primary-hover: #1a7f37;
       --btn-busy-bg: #9a6700;
@@ -79,6 +127,29 @@
       --nav-w: 300px;
       --nav-top: 0px;
 
+      /* THE STACKING LADDER, and it is tokens rather than literals because the layers are
+         set in THREE files that have to agree: this block (the drawer), Baerilog/practice.css
+         (the exercise sheet) and Baerilog/cloud-ui.js (the account drawer and the sign-in,
+         conflict and sign-out dialogs, injected at runtime). They disagreed, and the symptom
+         was the exercise sheet reading as `XERCISE` with its left edge behind the panel: the
+         sheet sat at 2000 and the pinned drawer at 2100.
+
+             5, 10   sticky bits inside a card         (literals, local to their rule)
+             100     the header bar
+             1000    popovers - help, radix
+             2050    a DRAWER's backdrop  ) page furniture: the navigation drawer and the
+             2100    a DRAWER's panel     ) account drawer are peers at this layer
+             3000    a DIALOG's backdrop - above BOTH drawers, because a drawer is furniture
+                     and a dialog is modal. Its panel needs no z-index of its own: every
+                     dialog here is a CHILD of its backdrop.
+
+         The ordering is what tools/check_theme.py asserts, across all three files, since no
+         headless harness can see a paint order. Latent until the drawer began staying open:
+         before that it was never on screen at the same time as the sheet. */
+      --z-drawer: 2050;
+      --z-drawer-panel: 2100;
+      --z-dialog: 3000;
+
       /* Dark panels, identical in both modes - GitHub's dark code colours. */
       --panel-bg: #0d1117;
       --panel-bg-alt: #161b22;
@@ -107,6 +178,7 @@
       :root {
         --canvas-default: #0d1117;
         --canvas-subtle: #161b22;
+        --node-bg: #24272d;
         --border-default: #3d444d;
         --border-muted: #2f353d;
         --fg-default: #e6edf3;
@@ -118,6 +190,9 @@
         --danger-fg: #f85149;
         --danger-subtle: #2d1214;
         --attention-fg: #d29922;
+        --port-out-fg: #39c5cf;
+        --node-sub-fg: #b1bac4;
+        --net-in-fg: #db61a2;
         --btn-primary-bg: #238636;
         --btn-primary-hover: #2ea043;
         --btn-busy-bg: #9e6a03;
@@ -615,6 +690,31 @@
       gap: 8px;
       border-bottom: 1px solid var(--border-default);
     }
+    /* ---- the FLOW STRIP: the same row, holding stages instead of tabs ----
+       Baerilog/code2silicon.html and the twenty exercise pages replace their tabs with a row of
+       stage buttons in the order the work happens; the builder is Baerilog/flowstrip.js. It is
+       here rather than in either page's own CSS because two page kinds share it and this is
+       where `.gh-tabs` itself lives - the same reason the band's rules are here.
+
+       KEYED ON `.gh-tabs.flow`, which flowstrip.js puts on the row it fills, so the four menu
+       apps' tab strips keep their own geometry: they share the container's class and none of
+       this is theirs. What is added is only what a row of BUTTONS needs that a row of tabs did
+       not - they must not be squeezed by their neighbours, and the row has to centre them
+       against the separators.
+
+       The colours are `.btn`'s own - green for a stage that can be run, `.btn:disabled`'s grey
+       for one that cannot yet - so nothing here states a colour. That is the point: "green when
+       it is available" is the primary-button rule already in this block, applied to a flow. */
+    .gh-tabs.flow { align-items: center; padding-bottom: 8px; }
+    .flow-stage { flex-shrink: 0; }
+    /* The separator says the row is a SEQUENCE rather than a set of peers. Punctuation, so it
+       is muted and hidden from a screen reader, which reads the buttons in order anyway. */
+    .flow-stage-sep {
+      color: var(--fg-muted);
+      font-size: 12px;
+      flex-shrink: 0;
+      user-select: none;
+    }
     .gh-tab {
       appearance: none;
       background: none;
@@ -714,6 +814,8 @@
       }
       .gh-tabs::-webkit-scrollbar { display: none; }
       .gh-tab { flex: 0 0 auto; }
+      .flow-stage { flex: 0 0 auto; }
+      .gh-tabs.flow { padding-bottom: 6px; }
       /* One column, and gutters that match the 16px the page's other rows use.
          The single column is repeated in most apps' own blocks; stating it here is
          what gives it to `emulator/index.html`, which never had it. */
@@ -836,7 +938,7 @@
     .nav-backdrop {
       position: fixed;
       inset: 0;
-      z-index: 2050;
+      z-index: var(--z-drawer);
       background: rgba(31, 35, 40, 0.5);
       opacity: 0;
       visibility: hidden;
@@ -848,7 +950,7 @@
       top: 0;
       left: 0;
       bottom: 0;
-      z-index: 2100;
+      z-index: var(--z-drawer-panel);
       /* ONE definition of the panel's width, because the pinned layer below indents the
          page by exactly it: two numbers here would let the gap and the panel disagree,
          which is the single-source rule the netlist viewer's `nodeSize` follows. */
@@ -1064,7 +1166,7 @@
     }
     .nav-row-icon svg { width: 16px; height: 16px; fill: currentColor; }
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                /* --- additions for editor / console / waveform, same visual language --- */
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          /* --- additions for editor / console / waveform, same visual language --- */
     /* Expand: the waveform row breaks out of .grid's max-width to the full body
        content width, leaving every other card centred at 1100px. This is an
        app-specific rule and stays out of style.css even though .split-row itself
@@ -1152,7 +1254,15 @@
     .btn.secondary:hover { background: var(--border-default); }
     .btn.outline { background: var(--canvas-default); color: var(--accent-fg); border: 1.5px solid var(--accent-fg); }
     .btn.outline:hover { background: var(--accent-subtle); }
-    .btn:disabled { background: var(--border-muted); cursor: default; }
+    /* A DISABLED BUTTON KEEPS ITS LABEL READABLE, which it did not: `.btn` sets
+       `--fg-on-emphasis` (white) for its green fill, and greying only the BACKGROUND left white
+       on `--border-muted` - #ffffff on #d8dee4, 1.6:1, a label you cannot read in light mode.
+       Latent while a disabled button was a rare thing off to one side; code2silicon's flow strip
+       puts two on screen at first paint and NAMES the stages you cannot reach yet, and the
+       Synthesis Results card disables Copy on its Diagram view, so the text is the point of them.
+       `--fg-muted` on that fill is 4.4:1 light and 5.9:1 dark. Six copies, because `.btn` is in
+       each app's own additions rather than in the shared block. */
+    .btn:disabled { background: var(--border-muted); color: var(--fg-muted); cursor: default; }
     /* Two kinds of "yes, that click landed", and they are deliberately different
        mechanisms because they answer at different moments.
 
@@ -1232,6 +1342,16 @@
       align-items: stretch;
     }
     .editor-hierarchy-row .editor-wrap { flex: 1 1 auto; min-width: 0; }
+    /* The testbench's empty state sits in that row too, in the slot the pane it replaces would
+       have taken - so it needs the same flex or it would be sized by its own sentence and leave
+       the rest of the row blank. */
+    .editor-hierarchy-row > .wave-empty { flex: 1 1 auto; min-width: 0; }
+    /* A ROW THAT SELECTS NOTHING SAYS SO. In the testbench view the panel is a table of contents
+       rather than a control (see renderEditorHierarchyList), so the rows lose the pointer and the
+       hover the design's rows carry - looking identical to something clickable is the dead-control
+       problem this repo keeps designing against. */
+    .editor-module-row.informational { cursor: default; color: var(--panel-dim); }
+    .editor-module-row.informational:hover { background: none; }
     .editor-hierarchy-panel {
       flex: 0 0 150px;
       width: 150px;
