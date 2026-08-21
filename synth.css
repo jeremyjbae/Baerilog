@@ -7,7 +7,7 @@
    selectors and all 29 are byte-identical, so there is no conflict of the kind the
    workbench had to resolve by id (its .gutter). The duplicates land after
    app.css's copy and paint the same thing. */
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          /* --- additions for editor / log / netlist views, same visual language as the sibling simulator --- */
     /* Expand: the netlist row breaks out of .grid's max-width to the full body content
        width, leaving every other card centred at 1100px. Same control, same geometry and
        the same reasoning as `simulator/index.html`'s waveform expand (`.wave-expanded`),
@@ -65,7 +65,15 @@
     .btn.secondary:hover { background: var(--border-default); }
     .btn.outline { background: var(--canvas-default); color: var(--accent-fg); border: 1.5px solid var(--accent-fg); }
     .btn.outline:hover { background: var(--accent-subtle); }
-    .btn:disabled { background: var(--border-muted); cursor: default; }
+    /* A DISABLED BUTTON KEEPS ITS LABEL READABLE, which it did not: `.btn` sets
+       `--fg-on-emphasis` (white) for its green fill, and greying only the BACKGROUND left white
+       on `--border-muted` - #ffffff on #d8dee4, 1.6:1, a label you cannot read in light mode.
+       Latent while a disabled button was a rare thing off to one side; code2silicon's flow strip
+       puts two on screen at first paint and NAMES the stages you cannot reach yet, and the
+       Synthesis Results card disables Copy on its Diagram view, so the text is the point of them.
+       `--fg-muted` on that fill is 4.4:1 light and 5.9:1 dark. Six copies, because `.btn` is in
+       each app's own additions rather than in the shared block. */
+    .btn:disabled { background: var(--border-muted); color: var(--fg-muted); cursor: default; }
     /* Three acknowledgements, the same three Baerilog/simulator.html carries and in the
        same order, because the order is the mechanism rather than a preference.
 
@@ -96,6 +104,56 @@
       flex-shrink: 0;
     }
     .bundle-toggle input { cursor: pointer; }
+
+    /* THE SYNTHESIS RESULTS CARD'S TWO VIEWS, as a radio pair on the heading - the same
+       control Baerilog/compiler.html puts there to choose its frontend, and for the same
+       reason: it names what the card HOLDS, where the toolbar below names what the app
+       does. Two radios rather than a checkbox because neither view is a modifier of the
+       other.
+
+       HEIGHT IS 20px BECAUSE `.layout-btn` IS. That heading already carries a row of those
+       buttons, so with the global `box-sizing: border-box` a 20px pill cannot make this
+       header taller than the Synthesis Log's beside it - a pill sized by its own padding
+       measures ~22px and grows one card's header by a couple of pixels, which only a
+       screenshot catches. Matching an existing control turns that measurement into an
+       argument.
+
+       The selected one takes the site's existing active idiom (--accent-subtle fill,
+       --accent-fg border, what `.layout-btn.active` and the hub's chips use), because the
+       native radio dot alone is a 6px difference. The `.on` class is WRITTEN by
+       syncResultsView rather than derived with `:has(input:checked)`, so the two encodings
+       of the selection move together in one place and the headless stub - which models no
+       radio-group exclusivity - sees the state a browser would.
+
+       It lives HERE rather than in practice.css because Baerilog/practice-synth.js builds
+       the same card: this block is what `synth.css` is generated from, so one copy reaches
+       the eighteen practice pages and the learn topics. Two copies would agree today and
+       drift silently, and practice.css loads FIRST, so the file that appeared to own the
+       rules would be the one losing. */
+    .view-group { display: flex; gap: 4px; margin-left: 10px; }
+    .view-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 20px;
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1;
+      padding: 0 8px;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      background: var(--canvas-subtle);
+      color: var(--fg-muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    .view-toggle:hover { background: var(--border-muted); color: var(--fg-default); }
+    .view-toggle.on {
+      background: var(--accent-subtle);
+      border-color: var(--accent-fg);
+      color: var(--fg-default);
+    }
+    .view-toggle input { margin: 0; cursor: pointer; width: 12px; height: 12px; }
 
     .editor-wrap {
       display: flex;
@@ -187,10 +245,15 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
-    .console-box .err { color: var(--panel-red); }
-    .console-box .warn { color: var(--panel-yellow); }
-    .console-box .info { color: var(--panel-dim); }
-    .console-box .ok { color: var(--panel-green); }
+    /* ONE PALETTE FOR A LOG LEVEL, in both boxes that hold one. `.code-out` is the Synthesis
+       Results card's log panel, which is where the synthesis log lives now that it is no longer
+       a section of the Console - and a level that means the same thing in two panels must not be
+       two colours. Scoped to the two containers rather than left bare, since `.err` and `.ok` are
+       short enough to collide with anything. */
+    .console-box .err, .code-out .err { color: var(--panel-red); }
+    .console-box .warn, .code-out .warn { color: var(--panel-yellow); }
+    .console-box .info, .code-out .info { color: var(--panel-dim); }
+    .console-box .ok, .code-out .ok { color: var(--panel-green); }
 
     .code-out {
       height: 280px;
@@ -231,6 +294,15 @@
       background: var(--canvas-subtle);
       border: 1px solid var(--border-default);
       position: relative;
+      /* touch-action: none, where the waveform uses pan-y - and the difference is the
+         product, not a preference. A waveform pans along ONE axis, so a page that keeps
+         scrolling vertically over it loses nothing; a netlist is two-dimensional, so one
+         finger has to be able to move it in both. The cost is real and bounded: a touch
+         that lands inside this box scrolls the graph rather than the page - fine beside a
+         desktop pointer and a trap on a phone, where it is the only way past the card, so
+         the 760px block at the foot of this file relaxes it to pan-y. */
+      touch-action: none;
+      cursor: grab;
     }
     .flow-placeholder {
       position: absolute;
@@ -244,10 +316,13 @@
       padding: 24px;
     }
 
-    /* React Flow custom node styling */
+    /* The netlist viewer's node styling. These were React Flow's custom node
+       components and are now plain divs built by the viewer at the foot of this
+       file; the class names are kept because synth.css carries them to the
+       practice/learn netlist card, which draws the same shapes. */
     .rf-node {
       position: relative;
-      background: var(--canvas-default);
+      background: var(--node-bg);
       border-radius: var(--radius);
       box-shadow: 0 2px 8px rgba(0,0,0,0.12);
       border: 1.5px solid var(--border-muted);
@@ -274,17 +349,27 @@
        --fg-default from .rf-node, which is #1f2328 light and #e6edf3 dark, so a fill that
        does NOT flip pairs a moving foreground with a fixed background. These shapes were
        written `fill="white"` and in dark mode that put #e6edf3 on #ffffff - 1.18:1, which
-       is what a port name looked like: absent. --canvas-default IS #ffffff in light mode,
-       so light renders byte-identically and only dark moves, to 16.02:1.
+       is what a port name looked like: absent.
+
+       The token is --node-bg rather than --canvas-default, and the two differ only in
+       dark mode: the diagram's canvas is --canvas-subtle, so a node at --canvas-default
+       (#0d1117) is DARKER than the board and reads as a hole rather than a raised block.
+       --node-bg is #ffffff in light mode, so light renders byte-identically and only
+       dark moves - to #24272d, one step above the canvas, at 12.5:1 under --fg-default.
+       It is the same token as .rf-node's own background, because a gate's shape fill and
+       a const/instance box's background are one surface written two ways.
 
        It needs its own class rather than riding on .gate-stroke, which is the trap here:
        that class is on the filled body, notch and bubble AND on `extra` (the xor curve,
        the adder's +/- marks), which is deliberately `fill="none"`. A blanket fill on
        .gate-stroke would paint those solid. */
-    .rf-node .node-fill { fill: var(--canvas-default); }
+    .rf-node .node-fill { fill: var(--node-bg); }
     .rf-node-port svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; z-index: 0; }
     .rf-node-port .port-stroke { stroke: var(--success-fg); }
-    .rf-node-port.port-out .port-stroke { stroke: var(--attention-fg); }
+    /* An output port is --port-out-fg, not --attention-fg, so it no longer shares a colour with
+       the mux - see the token's own note in style.css. The mux keeps amber; the pennant's two
+       directions now read as a pair. */
+    .rf-node-port.port-out .port-stroke { stroke: var(--port-out-fg); }
     .rf-node-port .rf-node-label { font-size: 11px; font-weight: 600; position: relative; z-index: 1; padding: 0 12px; }
     .rf-node-gate {
       background: none;
@@ -344,6 +429,26 @@
       transform: none;
       bottom: auto;
     }
+    /* `x8` ON A BUNDLED CELL, bottom-right, in the SYMBOL's own colour - see multHtml for why
+       it replaced the `[hi:lo]` range badge above. The colour is per kind rather than inherited,
+       because `.rf-node` sets `color: var(--fg-default)` for the labels inside a block and the
+       stroke colour lives on `.gate-stroke`; one declaration each is what ties the count to the
+       outline it counts. Positioned OUTSIDE the box at the corner, like `.rf-node-range` was,
+       so it cannot change the fixed width/height the handle table is fractions of - and it
+       takes no pointer events, since a label must not eat a click meant for the cell. */
+    .rf-node-mult {
+      position: absolute;
+      right: -6px;
+      bottom: -3px;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .rf-node-gate .rf-node-mult, .rf-node-dff .rf-node-mult { color: var(--accent-fg); }
+    .rf-node-fa .rf-node-mult { color: var(--danger-fg); }
+    .rf-node-mux2 .rf-node-mult { color: var(--attention-fg); }
     /* A GENERATED ADDER IS LABELLED ABOVE ITSELF, WITH ITS MODULE NAME, and both halves of that
        are corrections. The adder is the only cell in this library with a pin on its BOTTOM edge -
        the carry in - so a badge under it is the nearest text to that pin and reads as an
@@ -370,7 +475,9 @@
     .rf-node-instance {
       width: 130px;
       min-height: 74px;
-      border-color: var(--accent-fg);
+      /* GREY, NOT ACCENT - see --node-sub-fg. A sub-module is a box with more inside it rather
+         than one of the diagram's kinds of block, and accent already means `gate`. */
+      border-color: var(--node-sub-fg);
       flex-direction: column;
       gap: 2px;
       cursor: pointer;
@@ -379,15 +486,139 @@
     .rf-node-instance:hover { box-shadow: 0 2px 12px rgba(48,176,199,0.35); }
     .rf-node-instance .rf-node-modtype { font-size: 11px; font-weight: 700; color: var(--fg-default); }
     .rf-node-instance .rf-node-instname { font-size: 9px; font-weight: 500; color: var(--fg-muted); }
-    .rf-node-instance .rf-node-drill-hint { font-size: 8px; color: var(--accent-fg); margin-top: 2px; }
-    .react-flow__handle { width: 8px; height: 8px; background: var(--fg-default); border: 1.5px solid var(--canvas-default); }
-    .react-flow__edge-path { stroke: var(--border-muted); }
-    .react-flow__edge.selected .react-flow__edge-path { stroke: var(--accent-fg); }
-    .react-flow__edge-text { font-size: 9px; }
-    .react-flow__edge-textbg { fill: var(--canvas-subtle); }
+    /* The `double-click` hint takes the box's own colour rather than accent: left blue inside a
+       grey box it reads as a link, which is the one thing it is not. */
+    .rf-node-instance .rf-node-drill-hint { font-size: 8px; color: var(--node-sub-fg); margin-top: 2px; }
+    /* ---------------------------------------------------------------------------
+       The viewer's own plumbing: the two transformed layers, and the wires.
+
+       This USED to come from React Flow's stylesheet, loaded from a CDN - and the
+       nodes above were its custom node components. Both viewers draw the same
+       absolutely-positioned .rf-node divs over an SVG edge layer now, which is what
+       React Flow itself did, so ONE copy of these rules serves this app and the
+       practice/learn netlist card through synth.css. They lived in practice.css while
+       that was the only dependency-free viewer; keeping a second copy here would let
+       synth.css (which loads after it on a practice page) silently override the file
+       that owns them, which is how this repo ended up with four style.css variants.
+       --------------------------------------------------------------------------- */
+    .pn-nodes, .pn-edges, .pn-labels {
+      position: absolute;
+      inset: 0;
+      transform-origin: 0 0;
+    }
+    /* Edges under nodes, as in React Flow, so a wire never crosses a gate symbol. */
+    .pn-edges { width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+    /* THE SELECTED NET'S LABEL SITS ABOVE THE NODES, in a layer of its own, and that is the
+       whole of why the layer exists: it used to be appended to the EDGE layer, which is under
+       `.pn-nodes` by the rule right above - so the one label the viewer draws was painted
+       behind the symbols, and on the shared-adder ALU (whose label is a long one) it
+       disappeared under the adder and the mux it ran between. A label naming what you just
+       clicked is the one thing here that must not be occluded by the drawing it annotates.
+       `.pn-edge-label` already carries a `--canvas-subtle` halo through `paint-order: stroke`,
+       which is what keeps it legible where it does cross a body; `selectNet` additionally
+       places it on a stretch of the wire that is clear of every node box when there is one.
+       Takes no clicks: a label that did would count as a click on the background and clear
+       the very selection it names. */
+    .pn-labels { width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+    /* THE NODE LAYER TAKES NO CLICKS, ONLY THE NODES DO - and without this the whole
+       click-a-wire-to-name-its-net feature is dead, which is how it shipped.
+
+       `.pn-nodes` is `inset: 0`, so it is a div the size of the entire viewer, and it is
+       painted AFTER the edge layer - so with the default `pointer-events: auto` it is the
+       topmost hit target over every pixel of the box and swallows every click before one can
+       reach the wire drawn underneath. Measured with `elementFromPoint` at sixty points along
+       twenty wires: sixty of sixty landed on `div.pn-nodes`, none on a `.pn-edge-hit`.
+
+       It is invisible to every headless check here, and that is the lesson rather than an
+       aside: a stub DOM does no hit-testing, so a test that reaches a wire with
+       `dispatchEvent` on the path exercises the handler while proving nothing about whether a
+       pointer can ever get there. Both viewers' net-selection tests did exactly that and
+       passed throughout. What stands in for a browser is the pair of declarations below,
+       asserted as text by Baerilog/test.py.
+
+       The nodes themselves opt back in, or a sub-module block would stop taking the
+       double-click that drills into it and lose its `title` tooltip. Empty space between them
+       now falls through the edge layer to `#flowRoot`, which is where the pan handler is, so
+       dragging the background is unaffected. */
+    .pn-nodes { pointer-events: none; }
+    /* Beats .rf-node's own `position: relative` (two classes to one), which is what
+       lets a node be placed by the layout the engine already computed. */
+    .pn-nodes > .rf-node { position: absolute; pointer-events: auto; }
+    .pn-edge {
+      fill: none;
+      stroke: var(--border-default);
+      stroke-width: 1.5;
+    }
+    .pn-edge.bus { stroke-width: 3; }
+    /* The selected net, in two encodings of the one bit - accent colour AND a heavier line -
+       so it survives a greyscale screenshot and a reader who cannot separate the two colours,
+       the same rule the Scoreboard's flag casing is held to. */
+    .pn-edge.sel { stroke: var(--accent-fg); stroke-width: 2.5; }
+    .pn-edge.bus.sel { stroke-width: 4.5; }
+    /* A SYMBOL SELECTION'S INPUT SIDE, at the SAME two weights as `.sel` above, so the two
+       directions differ only in hue: the heavier stroke says "selected" in greyscale and to a
+       reader who cannot separate the two colours, and the hue says which way it runs. Accent is
+       already the gate and dff SYMBOL colour here, so an accent wire sits beside accent symbols,
+       and the legend no longer names either selection colour - what mitigates it now is that a
+       selection is transient and announces itself: the readout says which net is lit and colours
+       its input half, and the pin labels are the other encoding of direction. */
+    /* `--net-in-fg` IS A HUE OF ITS OWN and not a reused one, which is the whole reason the token
+       exists: every other colour in this diagram already means a KIND of block - green an input
+       port, cyan an output port, amber a mux, red an adder, accent a gate - so an input wire lit
+       in any of them says two things at once. It was amber first, and that was exactly the
+       collision. */
+    .pn-edge.sel-in { stroke: var(--net-in-fg); stroke-width: 2.5; }
+    .pn-edge.bus.sel-in { stroke-width: 4.5; }
+    .pn-edge-label.sel-in { fill: var(--net-in-fg); font-weight: 600; }
+    /* THE READOUT SAYS IT IN COLOUR TOO, so the line above the diagram and the wires below it agree
+       without a reader matching words to hues. `.pn-net-readout` is accent throughout - a selected
+       net, and a symbol's output side - and only the input half takes the other colour. */
+    .pn-net-readout .in { color: var(--net-in-fg); }
+    /* The selected symbol itself, or a reader sees lit wires and cannot tell which block they are
+       lit ABOUT. An `outline` rather than a border: a border would change the node's size and
+       reflow the diagram, the trap `.asm-mnem`'s transparent border records in the compiler. */
+    .pn-nodes > .rf-node.sel-node { outline: 2px solid var(--accent-fg); outline-offset: 2px; }
+    /* Every wire's clickable companion: transparent, 12px wide, and the only thing inside the
+       edge layer that takes pointer events - which is what leaves a drag on the background to
+       the pan handler. */
+    .pn-edge-hit {
+      fill: none;
+      stroke: transparent;
+      stroke-width: 12;
+      pointer-events: stroke;
+      cursor: pointer;
+    }
+    /* Drawn only for the selected net, so it is sized to be read rather than to stay out of
+       the way, and it takes no pointer events - clicking the name must not count as clicking
+       the background and clear the very thing it names. paint-order draws the halo behind the
+       glyphs, which is how a net name stays readable over a wire without a background
+       rectangle to keep in step with it. */
+    .pn-edge-label {
+      font: 10px "SF Mono", Menlo, Consolas, monospace;
+      pointer-events: none;
+      fill: var(--fg-muted);
+      text-anchor: middle;
+      paint-order: stroke;
+      stroke: var(--canvas-subtle);
+      stroke-width: 3px;
+      stroke-linejoin: round;
+    }
+    .pn-edge-label.sel { fill: var(--accent-fg); font-weight: 600; }
+    .pn-net-readout {
+      font: 11px "SF Mono", Menlo, Consolas, monospace;
+      color: var(--accent-fg);
+      flex-shrink: 0;
+    }
 
     @media (max-width: 760px) {
       .grid { grid-template-columns: 1fr; }
+      /* #flowRoot's `touch-action: none` above is deliberate on a desktop pointer and a
+         trap on a phone - a 520px box that eats every vertical drag is a page you cannot
+         scroll past. pan-y hands vertical drags back to the browser and keeps horizontal
+         ones for the pan; the graph is also shorter here, since 520px is most of a phone
+         screen. (A practice page overrides the height inline from the diagram's own size,
+         so there this is only the touch rule.) */
+      #flowRoot { touch-action: pan-y; height: 360px; }
     }
     .footer {
       text-align: center;

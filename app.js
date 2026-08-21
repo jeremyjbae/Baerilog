@@ -20,7 +20,8 @@
    ========================================================================= */
 const KEYWORDS = new Set(['module','endmodule','input','output','reg','wire','assign',
   'always','initial','begin','end','if','else','posedge','negedge','or',
-  'case','casex','casez','endcase','default','parameter']);
+  'case','casex','casez','endcase','default','parameter','localparam',
+  'integer','repeat','for','while','task','endtask','function','endfunction']);
 
 function lex(src) {
   const toks = [];
@@ -94,6 +95,43 @@ function lex(src) {
     if (src.slice(i, i + 3) === '&&&') {
       throw new Error(`Lex error: '&&&' is only valid in a specify-block timing check, which is not supported; write '&& &' if you meant a reduction, at line ${line}`);
     }
+    /* COMPILER DIRECTIVES, split into the ones that mean nothing here and the ones that
+       would change what the source says.
+
+       `timescale` and its neighbours carry no information this engine can act on: there is
+       one time unit and it is whatever the design's own delays count in, nets are declared
+       explicitly, and there are no cells to mark. Skipping them to end of line is therefore
+       exact rather than approximate, and it is what lets a testbench written for a real
+       tool be pasted in unedited.
+
+       THE PREPROCESSOR ONES ARE REFUSED BY NAME, because ignoring them is not neutral:
+       dropping a `define leaves every use of the macro as an undeclared identifier, and
+       dropping an `ifdef silently compiles the wrong branch - or both branches. That is a
+       different program from the one on screen, which is the one failure this project will
+       not ship quietly. */
+    if (c === '`') {
+      let j = i + 1;
+      while (j < n && /[A-Za-z_0-9]/.test(src[j])) j++;
+      const name = src.slice(i + 1, j);
+      const IGNORED = ['timescale', 'default_nettype', 'resetall', 'celldefine',
+                       'endcelldefine', 'unconnected_drive', 'nounconnected_drive'];
+      if (IGNORED.includes(name)) {
+        while (i < n && src[i] !== '\n') i++;      // to end of line, newline handled above
+        continue;
+      }
+      throw new Error(`Lex error: the compiler directive \`${name} at line ${line} is not supported`
+        + ` - this subset has no preprocessor, and ignoring it would compile a different`
+        + ` program than the one written. Expand it by hand, or delete it if it is not needed.`);
+    }
+    /* `===`/`!==` are taken BEFORE the two-character forms, which is the same maximal-munch
+       rule `&&&` records above: reading `a === b` as `a == (= b)` is not a parse anything
+       could recover from, and taking only `==` would silently compare with the wrong
+       operator - an exact 4-state match is not the same question as `==`, which yields X
+       when either side has an unknown bit. */
+    const three = src.slice(i, i + 3);
+    if (three === '===' || three === '!==') {
+      toks.push({ type: 'OP', value: three, line, start: i, end: i + 3 }); i += 3; continue;
+    }
     const two = src.slice(i, i + 2);
     if (['<=','>=','==','!=','&&','||','<<','>>','~&','~|','~^','^~'].includes(two)) {
       toks.push({ type: 'OP', value: two, line, start: i, end: i + 2 }); i += 2; continue;
@@ -124,7 +162,7 @@ function describeTokenValue(t) {
 }
 
 class Parser {
-  constructor(toks) { this.toks = toks; this.p = 0; this.curModule = null; this.arrayDecls = new Set(); this.params = new Map(); }
+  constructor(toks) { this.toks = toks; this.p = 0; this.curModule = null; this.arrayDecls = new Set(); this.params = new Map(); this.paramSeed = null; this.warnings = []; }
   peek(o=0) { return this.toks[this.p + o]; }
   at(type, value) {
     const t = this.peek();
@@ -145,10 +183,14 @@ class Parser {
 
   parseModule() {
     const modTok = this.expectKw('module');
+    const tokStart = this.p - 1;          // the `module` token, for a re-parse
     const name = this.expectIdent();
     this.curModule = name;
+    this.seenParams = [];
     const ports = [];
     const decls = [];
+    // Before the ports, deliberately: see parseParamPortList.
+    if (this.atOp('#')) this.parseParamPortList();
     if (this.atOp('(')) {
       this.next();
       if (!this.atOp(')')) {
@@ -160,16 +202,34 @@ class Parser {
     this.expectOp(';');
     const items = [];
     while (!this.atKw('endmodule')) {
-      if (this.atKw('input') || this.atKw('output') || this.atKw('reg') || this.atKw('wire')) {
-        decls.push(...this.parseDecl());
+      if (this.atKw('input') || this.atKw('output') || this.atKw('reg') || this.atKw('wire')
+          || this.atKw('integer')) {
+        const ds = this.parseDecl();
+        decls.push(...ds);
+        // A declaration initialiser becomes the item it actually means: see parseDeclName.
+        for (const d of ds) {
+          if (!d.init) continue;
+          const lhs = { type: 'Ident', name: d.name };
+          if (d.kind === 'wire') items.push({ type: 'Assign', lhs, rhs: d.init });
+          else items.push({ type: 'Initial', body: { type: 'AssignStmt', lhs, rhs: d.init, blocking: true } });
+        }
       } else if (this.atKw('assign')) {
         items.push(this.parseAssign());
       } else if (this.atKw('always')) {
         items.push(this.parseAlways());
       } else if (this.atKw('initial')) {
         items.push(this.parseInitial());
-      } else if (this.atKw('parameter')) {
+      } else if (this.atKw('parameter') || this.atKw('localparam')) {
         this.parseParameterDecl();
+      } else if (this.atKw('task') || this.atKw('function')) {
+        /* NAMED rather than left to fall through. Without this the parser reads
+           `task write_byte(input [7:0] d);` as an instantiation of a module called `task`
+           and fails on the port list with `expected expression, got KW 'input'` - a message
+           about the wrong line and the wrong construct. A reader whose testbench uses tasks
+           needs to be told that, not sent looking for a syntax error. */
+        const kw = this.peek().value;
+        this.err(`${kw}s are not supported in this subset - inline the body at each call site,`
+               + ` or use a loop (for/while/repeat) where the ${kw} was only repeating work`);
       } else if (this.at('IDENT')) {
         items.push(this.parseInstance());
       } else {
@@ -177,7 +237,41 @@ class Parser {
       }
     }
     const endTok = this.expectKw('endmodule');
-    return { type: 'Module', name, ports, decls, items, srcStart: modTok.start, srcEnd: endTok.end };
+    return { type: 'Module', name, ports, decls, items, srcStart: modTok.start, srcEnd: endTok.end,
+             tokStart, paramNames: this.seenParams };
+  }
+
+  /* Re-parse one module with some of its parameters forced to given values.
+
+     THIS IS HOW PER-INSTANCE OVERRIDES WORK, and re-parsing is the design rather
+     than a shortcut. Parameters here are resolved at PARSE time - folded into
+     ranges, array bounds and replication counts, and substituted as AST nodes
+     wherever their name appears - so one module's AST embodies one set of values.
+     A second set therefore needs a second parse. The alternative, carrying
+     parameter expressions through to elaboration and folding per instance there,
+     would move parseRange, parseArrayRange, parsePrimary, parseConcatItem, every
+     decl's width and declKindMap all at once, in an engine that also lives in
+     verify/index.html.
+
+     Costs one parse per distinct override set, which is nothing: elaboration
+     already walks and renames every instance separately. */
+  reparseModule(mod, values) {
+    const sub = new Parser(this.toks);
+    /* Its warnings go nowhere, and nothing has to arrange that: the sub-parser has its own
+       `warnings` from the constructor and only THIS parser's array is carried onto the
+       module map. So a module specialised three ways still reports each of its warnings
+       once, from the first parse. An explicit `sub.warnings = []` here was written and then
+       removed - it was redundant, and a mutation sweep reported deleting it as caught, which
+       was a false signal worth chasing rather than trusting. */
+    sub.p = mod.tokStart;
+    sub.paramSeed = new Map(values);
+    const out = sub.parseModule();
+    if (sub.paramSeed.size) {
+      throw new Error(`Parse error: module '${mod.name}' has no parameter `
+        + [...sub.paramSeed.keys()].map(n => `'${n}'`).join(', ')
+        + ` to override (it declares ${mod.paramNames.length ? mod.paramNames.map(n => `'${n}'`).join(', ') : 'none'})`);
+    }
+    return out;
   }
 
   // A port-list item is either the old style, a bare name whose input/output/
@@ -216,6 +310,7 @@ class Parser {
 
   parseInstance() {
     const module = this.expectIdent();
+    const overrides = this.atOp('#') ? this.parseOverrideList() : null;
     const name = this.expectIdent();
     this.expectOp('(');
     const conns = [];
@@ -229,7 +324,61 @@ class Parser {
     if (conns.some(c => (c.port !== null) !== named)) {
       this.err('cannot mix named (.port(...)) and positional port connections');
     }
-    return { type: 'Instance', module, name, conns, named };
+    return { type: 'Instance', module, name, conns, named, overrides };
+  }
+
+  /* `#(.WIDTH(8))` or `#(8)` on an instantiation: the parameter values THIS
+     instance is built with.
+
+     THE VALUES ARE ALREADY RESOLVED BY THE TIME THIS RETURNS, and that is what
+     makes the whole feature cheap. `#(.MAX_DATA(MAX_DATA))` means the PARENT's
+     MAX_DATA, and parsePrimary substitutes a parameter's defining node wherever
+     its name appears - so this expression is parsed in the parent's scope and
+     comes back as a plain constant. Elaboration therefore needs no access to the
+     parent's parameter table, which it does not have and could not easily be
+     given (the tables live on the Parser and are gone by then).
+
+     Folded here rather than at elaboration for the same reason parseParamAssignments
+     folds: a bad override should fail at the instantiation that wrote it. */
+  parseOverrideList() {
+    this.expectOp('#');
+    this.expectOp('(');
+    const list = [];
+    if (!this.atOp(')')) {
+      for (;;) {
+        const tok = this.peek();
+        let name = null;
+        if (this.atOp('.')) {
+          this.next();
+          name = this.expectIdent();
+          this.expectOp('(');
+          const expr = this.parseExpr();
+          this.expectOp(')');
+          list.push({ name, value: this.foldOverride(expr, name, tok) });
+        } else {
+          const expr = this.parseExpr();
+          list.push({ name: null, value: this.foldOverride(expr, null, tok) });
+        }
+        if (!this.atOp(',')) break;
+        this.next();
+      }
+    }
+    this.expectOp(')');
+    const named = list.length > 0 && list[0].name !== null;
+    if (list.some(o => (o.name !== null) !== named)) {
+      this.err('cannot mix named (.NAME(value)) and positional parameter overrides');
+    }
+    return { named, list };
+  }
+
+  foldOverride(expr, name, tok) {
+    try {
+      return evalConstExpr(expr, this.curModule, this.params);
+    } catch (e) {
+      throw new Error(`Parse error at line ${tok.line}: parameter override`
+        + (name ? ` for '${name}'` : '')
+        + ` must be a constant expression - ${e.message.replace(/^Parse error: /, '')}`);
+    }
   }
 
   parsePortConn() {
@@ -263,6 +412,18 @@ class Parser {
       this.expectOp(']');
       const msb = evalConstExpr(hi, this.curModule, this.params);
       const lsb = evalConstExpr(lo, this.curModule, this.params);
+      /* A NEGATIVE bound is refused rather than measured. `Math.abs(msb - lsb) + 1`
+         turns `[-1:0]` into a perfectly healthy-looking 2-bit register, and that
+         range is not hypothetical now that $clog2 exists: $clog2(1) is 0 per the
+         LRM, so the ordinary `[$clog2(DEPTH)-1:0]` idiom produces exactly it for
+         DEPTH = 1. A one-deep memory addressed by zero bits is a nonsensical
+         configuration and every real tool rejects the declaration; measuring it
+         as two bits is the one answer that lets the design keep running while
+         being wrong about its own width. */
+      if (msb < 0 || lsb < 0) {
+        throw new Error(`Parse error at line ${this.peek().line}: bit range [${msb}:${lsb}] has a negative bound`
+          + (msb < 0 && lsb === 0 ? ' - $clog2(1) is 0, so a depth of 1 needs no address bits' : ''));
+      }
       return { width: Math.abs(msb - lsb) + 1, msb, lsb };
     }
     return { width: 1, msb: null, lsb: null };
@@ -293,28 +454,119 @@ class Parser {
   // evalConstExpr covers, and keeps a 4-state literal's x/z bits intact for
   // e.g. a casex label (`parameter ADD = 3'b10?;`) instead of collapsing it
   // to evalConstExpr's known-bits-only integer.
+  //
+  // `localparam` is accepted as a SYNONYM, and the fact that it is one is a
+  // statement about this subset rather than laziness: what localparam actually
+  // means is "not overridable from outside", and per-instance overrides
+  // (`#(.WIDTH(8))`) are not supported here at all - so there is no context in
+  // which the two could behave differently. If overrides ever land, this is the
+  // one place that has to start telling them apart, and an override aimed at a
+  // localparam has to be refused rather than silently applied.
   parseParameterDecl() {
-    this.expectKw('parameter');
-    const name = this.expectIdent();
-    this.expectOp('=');
-    const expr = this.parseExpr();
+    const kw = this.next().value;   // 'parameter' or 'localparam'
+    this.parseParamAssignments(kw);
     this.expectOp(';');
-    evalConstExpr(expr, this.curModule, this.params);
-    this.params.set(this.curModule + '::' + name, expr);
+  }
+
+  /* One or more `NAME = expr` pairs after a `parameter`/`localparam` keyword.
+     Shared by the body declaration and the ANSI `#( ... )` port list, which is
+     what stops the two forms from drifting into different ideas of what a
+     parameter is - the list form is the only reason this is a separate method. */
+  parseParamAssignments(kw) {
+    for (;;) {
+      const nameTok = this.peek();
+      const name = this.expectIdent();
+      this.expectOp('=');
+      const expr = this.parseExpr();
+      /* A SEEDED VALUE WINS OVER THE WRITTEN DEFAULT, which is what an override
+         means: the expression is still parsed (its tokens have to be consumed)
+         and then discarded. Only a `parameter` can be seeded - a `localparam` is
+         by definition not overridable, and this is the one place where the two
+         stop being synonyms in this subset, so an override aimed at one is
+         refused by name rather than silently applied. A localparam is always
+         recomputed, which is the whole point: AWIDTH has to follow MAX_DATA. */
+      if (this.paramSeed && this.paramSeed.has(name)) {
+        if (kw === 'localparam') {
+          throw new Error(`Parse error at line ${nameTok.line}: '${name}' is a localparam of module '${this.curModule}', which cannot be overridden from an instantiation`);
+        }
+        this.params.set(this.curModule + '::' + name,
+          { type: 'Number', raw: { size: null, base: 'd', digits: String(this.paramSeed.get(name)) } });
+        this.paramSeed.delete(name);
+        if (this.seenParams) this.seenParams.push(name);
+        if (!(this.atOp(',') && this.peek(1) && this.peek(1).type === 'IDENT'
+              && this.peek(2) && this.peek(2).type === 'OP' && this.peek(2).value === '=')) return;
+        this.next();
+        continue;
+      }
+      try {
+        evalConstExpr(expr, this.curModule, this.params);
+      } catch (e) {
+        throw new Error(`Parse error at line ${nameTok.line}: ${kw} '${name}' must be a constant expression - ${e.message.replace(/^Parse error: /, '')}`);
+      }
+      this.params.set(this.curModule + '::' + name, expr);
+      // Declaration order of the OVERRIDABLE parameters, which is what a
+      // positional `#(8, 4)` list is matched against.
+      if (this.seenParams && kw === 'parameter') this.seenParams.push(name);
+      if (!(this.atOp(',') && this.peek(1) && this.peek(1).type === 'IDENT'
+            && this.peek(2) && this.peek(2).type === 'OP' && this.peek(2).value === '=')) return;
+      this.next();
+    }
+  }
+
+  /* The ANSI parameter port list: `module m #(parameter A = 1, localparam B = A*2) (...)`.
+     Two things about it are load-bearing.
+
+     IT IS PARSED BEFORE THE PORT LIST, which is the entire point of the feature -
+     `output reg [AWIDTH-1:0] addr` in the ports resolves AWIDTH through
+     this.params, and parseRange folds it eagerly, so a list parsed after the
+     ports would fold against an empty table and report `unknown parameter
+     'AWIDTH'` on a module that plainly declares it.
+
+     THE KEYWORD CARRIES ACROSS COMMAS, as it does in every other Verilog
+     declaration list here: `#(parameter A = 1, B = 2)` declares two parameters,
+     which is why parseParamAssignments loops on `IDENT =` rather than requiring
+     the keyword again. A comma followed by anything else ends the run, so a
+     `localparam` appearing mid-list starts its own. */
+  parseParamPortList() {
+    this.expectOp('#');
+    this.expectOp('(');
+    if (!this.atOp(')')) {
+      for (;;) {
+        if (this.atKw('parameter') || this.atKw('localparam')) {
+          this.parseParamAssignments(this.next().value);
+        } else {
+          // A bare `#(N)` positional override list, or `#(WIDTH = 8)` with no
+          // keyword: neither is this subset's form, and naming what is missing
+          // beats `expected '('`.
+          this.err("a parameter port list item must start with 'parameter' or 'localparam'");
+        }
+        if (!this.atOp(',')) break;
+        this.next();
+      }
+    }
+    this.expectOp(')');
   }
 
   parseDecl() {
-    const kind = this.next().value;
+    const kw = this.next().value;
+    /* `integer` IS a 32-bit reg here, and that equivalence is exact rather than a
+       simplification: every value in this engine is already three 32-bit masks (see mkVal),
+       so a 32-bit variable is what the machine natively holds. What it does NOT bring is
+       signedness - relational operators here are unsigned - so `integer` is the loop counter
+       and byte-arithmetic type it is usually used as, and a design relying on a negative
+       `integer` comparing less than zero would be wrong. That is worth knowing rather than
+       discovering, so it is stated here and in the subset list. */
+    const kind = kw === 'integer' ? 'reg' : kw;
     let kind2 = null;
     if (this.atKw('reg') || this.atKw('wire')) kind2 = this.next().value;
-    const { width, msb, lsb } = this.parseRange();
+    const { width, msb, lsb } = kw === 'integer' ? { width: 32, msb: 31, lsb: 0 } : this.parseRange();
     const entries = [this.parseDeclName()];
     while (this.atOp(',')) { this.next(); entries.push(this.parseDeclName()); }
     this.expectOp(';');
-    return entries.map(({ name, array }) => ({
+    return entries.map(({ name, array, init }) => ({
       kind: kind2 || kind,
       ioKind: (kind === 'input' || kind === 'output') ? kind : null,
-      name, width, msb, lsb, array
+      name, width, msb, lsb, array, init
     }));
   }
 
@@ -322,7 +574,17 @@ class Parser {
     const name = this.expectIdent();
     const array = this.parseArrayRange();
     if (array) this.arrayDecls.add(this.curModule + '::' + name);
-    return { name, array };
+    /* A DECLARATION INITIALISER, which is two different constructs wearing one syntax and
+       must not be conflated. On a variable (`integer errors = 0;`, `reg clk = 0;`) it is an
+       initial assignment that happens once at time zero. On a NET (`wire [7:0] y = a + b;`)
+       it is a continuous assignment - the net follows the expression for the whole run.
+       Treating a wire's as an initial would sample it once and leave the net stuck at its
+       time-zero value, which reads as a design whose logic silently stopped working.
+       parseModule turns each into the right item. */
+    let init = null;
+    if (this.atOp('=')) { this.next(); init = this.parseExpr(); }
+    if (init && array) this.err(`a memory ('${name}') cannot have a declaration initialiser - use $readmemh/$readmemb, or an initial block`);
+    return { name, array, init };
   }
 
 
@@ -397,6 +659,19 @@ class Parser {
     return { type: 'Ident', name };
   }
 
+  /* The step of a `for`, which is an assignment with no terminating `;` - the `)` ends it.
+     Shared with nothing else, and separate from parseStmt precisely because parseStmt
+     consumes that semicolon. */
+  parseAssignBody() {
+    const lhs = this.parseLValue();
+    let blocking;
+    if (this.atOp('=')) { this.next(); blocking = true; }
+    else if (this.atOp('<=')) { this.next(); blocking = false; }
+    else this.err("expected '=' or '<=' in the step of a for loop");
+    const rhs = this.parseExpr();
+    return { type: 'AssignStmt', lhs, rhs, blocking };
+  }
+
   parseStmt() {
     if (this.atKw('begin')) {
       this.next();
@@ -406,6 +681,38 @@ class Parser {
       return { type: 'Block', stmts };
     }
     if (this.atKw('case') || this.atKw('casex') || this.atKw('casez')) return this.parseCase();
+    /* `repeat (N) stmt` - N is evaluated ONCE, on entry, which is what the LRM says and what
+       distinguishes it from `while`: `repeat (n) ...` with the body changing `n` still runs
+       the original count. */
+    if (this.atKw('repeat')) {
+      this.next();
+      this.expectOp('(');
+      const count = this.parseExpr();
+      this.expectOp(')');
+      return { type: 'Repeat', count, body: this.parseStmt() };
+    }
+    if (this.atKw('while')) {
+      this.next();
+      this.expectOp('(');
+      const cond = this.parseExpr();
+      this.expectOp(')');
+      return { type: 'While', cond, body: this.parseStmt() };
+    }
+    /* `for (init; cond; step) stmt`, kept as its three parts rather than desugared into a
+       While with the step appended to the body: a desugar would put the step inside the
+       body's scope, so a `disable`-style early exit or a body that is a Block would run the
+       step in the wrong place. The parts are ordinary statements and expressions, so nothing
+       new reaches evalExpr. */
+    if (this.atKw('for')) {
+      this.next();
+      this.expectOp('(');
+      const init = this.parseStmt();          // consumes its own ';'
+      const cond = this.parseExpr();
+      this.expectOp(';');
+      const step = this.parseAssignBody();    // no ';' - the ')' ends it
+      this.expectOp(')');
+      return { type: 'For', init, cond, step, body: this.parseStmt() };
+    }
     if (this.atKw('if')) {
       this.next();
       this.expectOp('(');
@@ -519,7 +826,7 @@ class Parser {
   parseBitOr() { return this.binLevel(this.parseBitXor, ['|']); }
   parseBitXor() { return this.binLevel(this.parseBitAnd, ['^']); }
   parseBitAnd() { return this.binLevel(this.parseEquality, ['&']); }
-  parseEquality() { return this.binLevel(this.parseRelational, ['==','!=']); }
+  parseEquality() { return this.binLevel(this.parseRelational, ['==','!=','===','!==']); }
   parseRelational() { return this.binLevel(this.parseShift, ['<','>','<=','>=']); }
   parseShift() { return this.binLevel(this.parseAdditive, ['<<','>>']); }
   parseAdditive() { return this.binLevel(this.parseMultiplicative, ['+','-']); }
@@ -557,7 +864,38 @@ class Parser {
     const t = this.peek();
     if (t.type === 'STRING') { this.next(); return { type: 'StringLit', value: t.value }; }
     if (t.type === 'NUMBER') { this.next(); return { type: 'Number', raw: t.value }; }
-    if (this.atOp('$')) { this.next(); const name = this.expectIdent(); return { type: 'SysFunc', name }; }
+    if (this.atOp('$')) {
+      this.next();
+      const name = this.expectIdent();
+      /* A CONSTANT system function is FOLDED TO A NUMBER right here, so no
+         `SysFunc` node anywhere in this engine ever carries arguments. That is
+         the whole reason to fold at parse time rather than at evaluation:
+         `SysFunc` is visited by renameExpr, evalExpr, widthOfExpr and both
+         collect walkers, each with a one-line `case 'SysFunc'` that returns the
+         node untouched - and every one of them would have had to learn to
+         recurse into an argument list, in a copy of this engine that also lives
+         in verify/index.html. $clog2's operand is a constant expression by
+         definition, so there is nothing to defer and nothing gained by deferring.
+
+         It is spelled as a check on the NAME rather than "does an open paren
+         follow", because $time is the argument-less case and a `$time` written
+         as `$time()` should still be $time, not a fold of nothing. */
+      if (name === 'clog2') {
+        this.expectOp('(');
+        const argTok = this.peek();
+        const arg = this.parseExpr();
+        this.expectOp(')');
+        let n;
+        try {
+          n = evalConstExpr(arg, this.curModule, this.params);
+        } catch (e) {
+          throw new Error(`Parse error at line ${argTok.line}: $clog2's argument must be a constant expression (a literal, a parameter, or arithmetic on them)`);
+        }
+        if (n < 0) throw new Error(`Parse error at line ${argTok.line}: $clog2 of a negative value (${n}) is not meaningful`);
+        return { type: 'Number', raw: { size: null, base: 'd', digits: String(clog2(n)) } };
+      }
+      return { type: 'SysFunc', name };
+    }
     if (t.type === 'IDENT') {
       this.next();
       let name = t.value;
@@ -586,13 +924,53 @@ class Parser {
       return e;
     }
     if (this.atOp('{')) {
+      const tok = this.peek();
       this.next();
       let items = this.parseConcatItem();
       while (this.atOp(',')) { this.next(); items = items.concat(this.parseConcatItem()); }
       this.expectOp('}');
+      this.warnUnsizedInConcat(items, tok.line);
       return { type: 'Concat', items };
     }
     this.err('expected expression');
+  }
+
+  /* AN UNSIZED LITERAL AS A DIRECT ELEMENT OF A CONCATENATION IS WARNED ABOUT, and this is
+     the one place in this engine that warns rather than errors or stays silent.
+
+     It is the construct the LRM forbids, for the reason that bites here: an unsized literal
+     is 32 bits, so `{a, 1, b}` is not the nine bits it reads as - the `1` occupies bits
+     4..35 and pushes `a` off the top of a 32-bit value entirely, so `a` VANISHES. Measured:
+     `{a, 1, b}` with a=4'hA, b=4'hB gives 0xBB where `{a, 1'b1, b}` gives 0x15B.
+
+     BEHAVIOUR IS NOT CHANGED. This engine keeps the LRM's 32 bits, because that is what
+     `$display` of a 32-bit expression should print and because changing it would move every
+     design that relies on an unsized literal's width. `Baerilog/synthesis.html` sizes the
+     same literal to what its value needs, so the two apps genuinely disagree about this
+     construct - deliberately, and this warning is what stops that being silent.
+
+     A DIRECT element only. `{a + 1, b}` is a different question: the `1` is inside an
+     expression whose own width already governs, and warning there would be a claim about
+     arithmetic this does not mean to make. Warning nowhere else is what keeps it signal:
+     an assignment takes its target's width and a comparison takes the maximum, so the 32
+     bits are unobservable in both - measured across every built-in design and all twenty
+     solutions, this fires on none of them. */
+  warnUnsizedInConcat(items, line) {
+    for (const it of items) {
+      if (!it || it.type !== 'Number' || it.raw.size) continue;
+      if (/[xXzZ?]/.test(it.raw.digits)) continue;      // no value to size
+      /* Shown as written, as far as the token records it: a base marker where there is one,
+         and bare digits otherwise. `1` and `'d1` lex identically, so a bare decimal is
+         printed bare - quoting it would show the reader a literal they did not type. */
+      const based = it.raw.base !== 'd';
+      const asWritten = (based ? "'" + it.raw.base : '') + it.raw.digits;
+      const bits = Math.max(1, (parseNumberLiteral(it.raw).value.v >>> 0).toString(2).length);
+      this.warnings.push(`line ${line}: the unsized literal \`${asWritten}\` inside {...} is 32 bits `
+        + `here, so everything above it in the concatenation is shifted by 32 - write `
+        + `\`${bits}'${it.raw.base}${it.raw.digits}\` (or another explicit width) to say what you mean. `
+        + `The synthesizer sizes it to ${bits} bit${bits === 1 ? '' : 's'}, so the two apps will `
+        + `not agree about this concatenation.`);
+    }
   }
   // One comma-separated slot inside {...}: a plain expression (1 item), or
   // Verilog's replication form {N{expr}} - N must be a constant expression
@@ -612,6 +990,20 @@ class Parser {
   }
 }
 
+/* Bits needed to index n things: ceil(log2(n)), with $clog2(0) and $clog2(1)
+   both 0, per IEEE 1800. Computed by SHIFTING (n-1) rather than as
+   Math.ceil(Math.log2(n)), because that expression is wrong at exact powers of
+   two on some inputs - log2(2**29) can land a hair above the integer and give 30
+   - and a width that is one bit too wide is precisely the plausible-looking
+   wrong number that would survive every test written against MAX_DATA=256.
+   Division rather than >>> so a parameter folded above 2**31 (evalConstExpr does
+   not mask its arithmetic) still counts correctly. */
+function clog2(n) {
+  let bits = 0;
+  for (let v = Math.floor(n) - 1; v > 0; v = Math.floor(v / 2)) bits++;
+  return bits;
+}
+
 function evalConstExpr(node, curModule, params) {
   if (node.type === 'Number') return parseNumberLiteral(node.raw).value.v;
   if (node.type === 'Ident') {
@@ -619,11 +1011,42 @@ function evalConstExpr(node, curModule, params) {
     if (params && params.has(key)) return evalConstExpr(params.get(key), curModule, params);
     throw new Error(`Parse error: unknown parameter '${node.name}' in constant expression`);
   }
+  /* Unary minus is here because a parameter expression routinely needs it
+     (`localparam LO = -OFFSET;`) and because parsePrimary folds $clog2 through
+     this function, so a negative operand has to be REACHABLE for $clog2 to be
+     able to reject it rather than throwing "non-constant expression" at it. */
+  if (node.type === 'Unary') {
+    const v = evalConstExpr(node.expr, curModule, params);
+    if (node.op === '-') return -v;
+    if (node.op === '+') return v;
+    if (node.op === '~') return ~v;
+  }
+  if (node.type === 'Ternary') {
+    return evalConstExpr(node.cond, curModule, params)
+      ? evalConstExpr(node.then, curModule, params)
+      : evalConstExpr(node.els, curModule, params);
+  }
   if (node.type === 'Binary') {
     const l = evalConstExpr(node.left, curModule, params), r = evalConstExpr(node.right, curModule, params);
     if (node.op === '+') return l + r;
     if (node.op === '-') return l - r;
     if (node.op === '*') return l * r;
+    /* Division TRUNCATES, which is what Verilog's integer division does and what
+       an unguarded `l / r` in JavaScript does not - a `[SIZE/8-1:0]` range folded
+       to a fraction would reach parseRange and make a width of 4.5 out of it. */
+    if (node.op === '/') {
+      if (r === 0) throw new Error('Parse error: division by zero in a constant expression');
+      return Math.trunc(l / r);
+    }
+    if (node.op === '%') {
+      if (r === 0) throw new Error('Parse error: modulo by zero in a constant expression');
+      return l % r;
+    }
+    if (node.op === '<<') return l * Math.pow(2, r);
+    if (node.op === '>>') return Math.floor(l / Math.pow(2, r));
+    if (node.op === '&') return l & r;
+    if (node.op === '|') return l | r;
+    if (node.op === '^') return l ^ r;
   }
   throw new Error('non-constant expression in range');
 }
@@ -706,6 +1129,13 @@ function parseTopLevelModules(src) {
     modules.set(mod.name, mod);
   }
   if (modules.size === 0) throw new Error('Parse error: no module found');
+  /* The PARSER is carried on the map, not just its output, because a per-instance
+     parameter override needs the token stream to re-parse a module with different
+     values (see Parser.reparseModule). Hung off the Map as a property rather than
+     changing this function's return shape, since every caller here and in the
+     three copies of this engine destructures nothing and iterates the modules. */
+  modules._parser = p;
+  modules._warnings = p.warnings;
   return modules;
 }
 
@@ -770,6 +1200,45 @@ function elaborate(modules) {
   const declaredMemoryNames = new Set();
 
   function qualify(prefix, name) { return prefix ? prefix + '.' + name : name; }
+
+  /* Resolves an instantiation to the module AST it is actually built from: the
+     one that was parsed, or - when the instance carries `#( ... )` overrides - a
+     copy re-parsed with those values in place.
+
+     CACHED BY (module, values), so two instances built the same way share one
+     specialisation and one parse. The fifo does exactly that: both of its
+     addr_gen instances pass the same MAX_DATA, so there is ONE specialisation and
+     the case that would collide - two widths of one module - is not exercised by
+     it at all. That is why the test for this uses two different values.
+
+     An instance with no overrides is returned untouched, so nothing about a design
+     that never writes `#(` moves, including the parse count. */
+  const specialisations = new Map();
+  function specialise(item, mod) {
+    if (!mod || !item.overrides || !item.overrides.list.length) return mod;
+    const values = new Map();
+    if (item.overrides.named) {
+      for (const o of item.overrides.list) values.set(o.name, o.value);
+    } else {
+      /* Positional overrides are matched against the module's OVERRIDABLE
+         parameters in declaration order - which is what `paramNames` records, and
+         why it excludes localparams: `#(8)` on `#(parameter W = 4, localparam H = W/2)`
+         means W, and counting H would silently aim the 8 at the wrong one. */
+      if (item.overrides.list.length > mod.paramNames.length) {
+        throw new Error(`Parse error: '${item.module}' instantiated as '${item.name}' passes `
+          + `${item.overrides.list.length} positional parameter override(s), but the module declares `
+          + `${mod.paramNames.length} overridable parameter(s)`
+          + (mod.paramNames.length ? ` (${mod.paramNames.join(', ')})` : ''));
+      }
+      item.overrides.list.forEach((o, i) => values.set(mod.paramNames[i], o.value));
+    }
+    const key = mod.name + '#' + [...values.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1)
+      .map(([k, v]) => k + '=' + v).join(',');
+    if (!specialisations.has(key)) {
+      specialisations.set(key, modules._parser.reparseModule(mod, values));
+    }
+    return specialisations.get(key);
+  }
   function renameLValue(lv, prefix) {
     if (lv.type === 'Ident') return { type: 'Ident', name: qualify(prefix, lv.name) };
     if (lv.type === 'BitSelect') return { type: 'BitSelect', name: qualify(prefix, lv.name), index: renameExpr(lv.index, prefix) };
@@ -807,6 +1276,10 @@ function elaborate(modules) {
         })),
       };
       case 'AssignStmt': return { type: 'AssignStmt', lhs: renameLValue(stmt.lhs, prefix), rhs: renameExpr(stmt.rhs, prefix), blocking: stmt.blocking };
+      case 'Repeat': return { type: 'Repeat', count: renameExpr(stmt.count, prefix), body: renameStmt(stmt.body, prefix) };
+      case 'While': return { type: 'While', cond: renameExpr(stmt.cond, prefix), body: renameStmt(stmt.body, prefix) };
+      case 'For': return { type: 'For', init: renameStmt(stmt.init, prefix), cond: renameExpr(stmt.cond, prefix),
+                           step: renameStmt(stmt.step, prefix), body: renameStmt(stmt.body, prefix) };
       case 'Timing': {
         const control = stmt.control.kind === 'delay'
           ? { kind: 'delay', amount: renameExpr(stmt.control.amount, prefix) }
@@ -879,12 +1352,20 @@ function elaborate(modules) {
         });
         return;
       case 'AssignStmt': collectIdentsInLValue(stmt.lhs, out, outMem); collectIdentsInExpr(stmt.rhs, out, outMem); return;
+      case 'Repeat': collectIdentsInExpr(stmt.count, out, outMem); collectIdentsInStmt(stmt.body, out, outMem); return;
+      case 'While': collectIdentsInExpr(stmt.cond, out, outMem); collectIdentsInStmt(stmt.body, out, outMem); return;
+      case 'For':
+        collectIdentsInStmt(stmt.init, out, outMem); collectIdentsInExpr(stmt.cond, out, outMem);
+        collectIdentsInStmt(stmt.step, out, outMem); collectIdentsInStmt(stmt.body, out, outMem); return;
       case 'Timing':
         if (stmt.control.kind === 'delay') collectIdentsInExpr(stmt.control.amount, out, outMem);
         else stmt.control.edges.forEach(e => out.add(e.signal));
         if (stmt.stmt) collectIdentsInStmt(stmt.stmt, out, outMem);
         return;
-      case 'SysCall': stmt.args.forEach(a => collectIdentsInExpr(a, out, outMem)); return;
+      // A VCD task's arguments name a scope, not signals: see VCD_TASKS.
+      case 'SysCall':
+        if (!VCD_TASKS.has(stmt.name)) stmt.args.forEach(a => collectIdentsInExpr(a, out, outMem));
+        return;
       case 'Readmem':
         collectIdentsInExpr(stmt.file, out, outMem);
         outMem.add(stmt.memName);
@@ -936,6 +1417,13 @@ function elaborate(modules) {
         return;
       case 'Case': stmt.items.forEach(it => collectDriveTargets(it.body, out)); return;
       case 'AssignStmt': lvalueTargets(stmt.lhs).forEach(n => out.add(n)); return;
+      case 'Repeat': case 'While': collectDriveTargets(stmt.body, out); return;
+      /* A `for`'s counter is driven by its own init and step, so those count as drivers
+         too - without them a loop counter looks undriven to checkSingleDriver and a second
+         real driver on it would go unreported. */
+      case 'For':
+        collectDriveTargets(stmt.init, out); collectDriveTargets(stmt.step, out);
+        collectDriveTargets(stmt.body, out); return;
       case 'Timing': if (stmt.stmt) collectDriveTargets(stmt.stmt, out); return;
       // A $readmemh fills a memory but is not a continuous driver of it, so it is
       // not counted here - two always blocks that both $readmemh one memory is
@@ -1034,7 +1522,7 @@ function elaborate(modules) {
       } else if (item.type === 'Initial') {
         items.push({ type: 'Initial', body: renameStmt(item.body, prefix) });
       } else if (item.type === 'Instance') {
-        const child = modules.get(item.module);
+        const child = specialise(item, modules.get(item.module));
         if (!child) throw new Error(`Parse error: module '${item.module}' is not defined (instantiated as '${item.name}')`);
         if (stack.includes(item.module)) {
           throw new Error(`Parse error: instantiation cycle detected: ${[...stack, item.module].join(' -> ')}`);
@@ -1098,7 +1586,8 @@ function elaborate(modules) {
   const tree = elaborateModule(top, '');
   checkUndeclaredSignals(items);
   checkSingleDriver(items);
-  return { type: 'Module', name: top.name, ports: [], decls, items, tree, unusedModules };
+  return { type: 'Module', name: top.name, ports: [], decls, items, tree, unusedModules,
+           warnings: modules._warnings || [] };
 }
 
 /* =========================================================================
@@ -1509,7 +1998,7 @@ function widthOfExpr(node, ctx) {
     case 'Concat': return node.items.reduce((sum, it) => sum + widthOfExpr(it, ctx), 0);
     case 'Unary': return ['!','&','|','^','~&','~|','~^','^~'].includes(node.op) ? 1 : widthOfExpr(node.expr, ctx);
     case 'Binary':
-      if (['&&','||','==','!=','<','>','<=','>='].includes(node.op)) return 1;
+      if (['&&','||','==','!=','===','!==','<','>','<=','>='].includes(node.op)) return 1;
       return Math.max(widthOfExpr(node.left, ctx), widthOfExpr(node.right, ctx));
     case 'Ternary': return Math.max(widthOfExpr(node.then, ctx), widthOfExpr(node.els, ctx));
   }
@@ -1539,6 +2028,51 @@ function caseMatch(kind, e, item) {
   return (((e.v ^ item.v) & keep) === 0) && (((e.x ^ item.x) & keep) === 0) && (((e.z ^ item.z) & keep) === 0);
 }
 
+/* A procedural loop that never suspends has no time limit to stop it - no time passes, so
+   maxTime never arrives - and in a browser that is a hung tab with no message. The cap is
+   therefore on CONSECUTIVE non-suspending iterations, which is exactly that shape and
+   nothing else: a loop clocking a DUT resets the count every time it waits.
+
+   100,000 is far above any real loop here (the widest thing in these designs iterates 32
+   times) and far below what takes a noticeable moment to reach. */
+const LOOP_ITER_LIMIT = 100000;
+function makeLoopGuard(kind) {
+  let n = 0;
+  return {
+    tick() {
+      if (++n > LOOP_ITER_LIMIT) {
+        throw new Error(`${kind} loop ran ${LOOP_ITER_LIMIT} iterations without waiting for time to pass`
+          + ` - it has no delay or @(edge) in it, so nothing can end it. Check the loop's condition.`);
+      }
+    },
+    reset() { n = 0; },
+  };
+}
+/* Runs a loop body and reports whether it SUSPENDED, which the guard needs and a plain
+   `yield*` cannot tell it. */
+function* runLoopBody(body, ctx, kind, guard) {
+  let suspended = false;
+  const it = execStmt(body, ctx);
+  let r = it.next();
+  while (!r.done) {
+    if (r.value && (r.value.kind === 'delay' || r.value.kind === 'edge')) suspended = true;
+    r = it.next(yield r.value);
+  }
+  return suspended;
+}
+
+/* The VCD tasks, which are ACCEPTED AND DO NOTHING - deliberately, and this is the one place
+   in this engine where that is the right answer. They exist to write a waveform file for an
+   external viewer; here the Waveform Viewer IS the waveform, reading `signal.history`
+   directly, so there is nothing for a dump file to add and nothing for these to do.
+
+   THEIR ARGUMENTS ARE NOT SIGNALS, which is why they need naming rather than just ignoring:
+   `$dumpvars(0, fifo_tb)` names a SCOPE, and a scope is not something this engine has - so
+   the undeclared-signal check would report a perfectly ordinary testbench as using an
+   undeclared signal called `fifo_tb`. Skipping their argument lists is what makes a testbench
+   written for iverilog paste in unedited. */
+const VCD_TASKS = new Set(['dumpfile', 'dumpvars', 'dumpon', 'dumpoff', 'dumpall', 'dumplimit', 'dumpflush']);
+
 function* execStmt(stmt, ctx) {
   switch (stmt.type) {
     case 'Block':
@@ -1547,6 +2081,42 @@ function* execStmt(stmt, ctx) {
     case 'If': {
       if (truthOfExpr(evalExpr(stmt.cond, ctx), stmt.cond, ctx) === 1) yield* execStmt(stmt.then, ctx);
       else if (stmt.els) yield* execStmt(stmt.els, ctx);
+      return;
+    }
+    /* THE THREE LOOPS. Each yields through its body, so a timing control inside one works
+       exactly as it does anywhere else - `repeat (2) @(negedge clk);` suspends twice, and a
+       `for` that clocks a DUT is an ordinary process that happens to be shaped like a loop.
+       That falls out of the scheduler being generator-based and needs nothing of its own.
+
+       THE ITERATION CAP COUNTS ONLY ITERATIONS THAT DID NOT YIELD, which is the whole
+       subtlety. A loop waiting on an edge or a delay is already bounded by maxTime, however
+       many times it goes round; what hangs a browser is a loop that never suspends and never
+       finishes, and there is no time limit for that because no time passes. So the counter
+       resets whenever the body suspends, and trips only on a genuinely runaway loop. */
+    case 'Repeat': {
+      const n = evalExpr(stmt.count, ctx);
+      // an unknown count is not a number of times, so the loop does not run
+      const times = isFullyKnown(n) ? n.v : 0;
+      for (let k = 0; k < times; k++) yield* runLoopBody(stmt.body, ctx, 'repeat');
+      return;
+    }
+    case 'While': {
+      const guard = makeLoopGuard('while');
+      while (truthOfExpr(evalExpr(stmt.cond, ctx), stmt.cond, ctx) === 1) {
+        guard.tick();
+        if (yield* runLoopBody(stmt.body, ctx, 'while', guard)) guard.reset();
+      }
+      return;
+    }
+    case 'For': {
+      yield* execStmt(stmt.init, ctx);
+      const guard = makeLoopGuard('for');
+      while (truthOfExpr(evalExpr(stmt.cond, ctx), stmt.cond, ctx) === 1) {
+        guard.tick();
+        const suspended = yield* runLoopBody(stmt.body, ctx, 'for', guard);
+        yield* execStmt(stmt.step, ctx);
+        if (suspended) guard.reset();
+      }
       return;
     }
     case 'Case': {
@@ -1572,6 +2142,8 @@ function* execStmt(stmt, ctx) {
       return;
     }
     case 'SysCall':
+      // Not evaluated at all: an argument may be a scope name, which has no value.
+      if (VCD_TASKS.has(stmt.name)) return;
       ctx.sysCall(stmt.name, stmt.args.map(a => evalArgForDisplay(a, ctx)));
       return;
     case 'Readmem':
@@ -1687,6 +2259,14 @@ function evalExpr(node, ctx) {
         }
         case '==': return bothKnown ? boolVal(l.v === r.v) : X1;
         case '!=': return bothKnown ? boolVal(l.v !== r.v) : X1;
+        /* CASE equality compares the x and z bit-planes as well as the value, so it is
+           always 0 or 1 and NEVER X - which is the whole reason it exists: `if (d === 8'hx)`
+           is how a testbench asks whether something is unknown, and a comparison that went
+           X on an unknown operand could not answer that question. valuesEqual is exactly
+           this test and is already the engine's definition of two values being the same,
+           correct because mkVal keeps `v` masked clear of the x/z bits. */
+        case '===': return boolVal(valuesEqual(l, r));
+        case '!==': return boolVal(!valuesEqual(l, r));
         case '<': return bothKnown ? boolVal(l.v < r.v) : X1;
         case '>': return bothKnown ? boolVal(l.v > r.v) : X1;
         case '<=': return bothKnown ? boolVal(l.v <= r.v) : X1;
@@ -2018,7 +2598,6 @@ module pc (
 
 endmodule
 
-/* ---- Testbench (Skip Synthesis)  ---- */
 // ======== TESTBENCH ========
 
 module rom (
@@ -2172,7 +2751,6 @@ module pc (
 
 endmodule
 
-/* ---- Testbench (Skip Synthesis)  ---- */
 // ======== TESTBENCH ========
 
 module rom (
@@ -2351,596 +2929,195 @@ module rf_tb;
   end
 endmodule`,
 
-  '8-bit CPU (16-bit instruction)': `/* 8-bit CPU (reduced AVR2 instruction) */
-
-module cpu (
-  input clk, 
-  input rst_n, output [15:0] iaddr, 
-  input [15:0] inst, 
-  output [15:0] daddr, 
-  output we, 
-  output [7:0] wdata, 
-  input [7:0] rdata
+  '8-bit FIFO': `// parameterized FIFO
+// address generator/counter
+module addr_gen
+#(  parameter MAX_DATA=256,
+	localparam AWIDTH = $clog2(MAX_DATA)
+) ( input en, clk, rst,
+	output reg [AWIDTH-1:0] addr
 );
+	initial addr = 0;
 
-  wire [15:0] pc;
-  reg [15:0] pc_nxt;
-  wire [15:0] sp, sp_nxt;
-  reg  [3:0] opcode;
-  wire [7:0] rd, rr;
-  wire [7:0] alu_out;
-  wire [3:0] sreg;
-  reg sreg_we;
-  reg [4:0] rf_idx_d, rf_idx_r;
-  reg       rf_we;
-  reg [7:0] rf_wdata;
-  wire retire;
-  reg [39:0] debug_inst;
-  reg [15:0] pc_add;
+	// async reset
+	// increment address when enabled
+	always @(posedge clk or posedge rst)
+		if (rst)
+			addr <= 0;
+		else if (en) begin
+			if ({'0, addr} == MAX_DATA-1)
+				addr <= 0;
+			else
+				addr <= addr + 1;
+		end
+endmodule //addr_gen
 
-  assign sp = 16'b0;      // Not Implemented
-  assign sp_nxt = 16'b0;  // Not Implemented
-  assign iaddr = pc;
-  assign daddr = 16'b0;    // Not Implemented
-  assign we = 1'b0;       // Not Implemented
-  assign wdata = 8'b0;    // Not Implemented
-  assign retire = 1'b1;   // Not Implemented
+// Define our top level fifo entity
+module fifo
+#(  parameter MAX_DATA=256,
+	localparam AWIDTH = $clog2(MAX_DATA)
+) ( input wen, ren, clk, rst,
+	input [7:0] wdata,
+	output reg [7:0] rdata,
+	output reg [AWIDTH:0] count
+);
+	// fifo storage
+	// sync read before write
+	wire [AWIDTH-1:0] waddr, raddr;
+	reg [7:0] data [MAX_DATA-1:0];
+	always @(posedge clk) begin
+		if (wen)
+			data[waddr] <= wdata;
+		rdata <= data[raddr];
+	end // storage
 
-  always@(*) begin
-    sreg_we <= 1'b0;
-    opcode <= 4'b0;
-    rf_we <= 1'b0;
-    rf_idx_d <= 5'b0;
-    rf_idx_r <= 5'b0;
-    rf_wdata <= 8'b0;
-    pc_add <= 16'b0;
-    pc_nxt <= pc + pc_add + 1'b1;
+	// addr_gen for both write and read addresses
+	addr_gen #(.MAX_DATA(MAX_DATA))
+	fifo_writer (
+		.en     (wen),
+		.clk    (clk),
+		.rst    (rst),
+		.addr   (waddr)
+	);
 
-    casex(inst[15:10])
+	addr_gen #(.MAX_DATA(MAX_DATA))
+	fifo_reader (
+		.en     (ren),
+		.clk    (clk),
+		.rst    (rst),
+		.addr   (raddr)
+	);
 
-      6'b00xxxx: begin // alu
-        debug_inst <= u_alu.debug_alu; 
-        opcode <= inst[13:10];
-        if(opcode == 4'b0101)
-          rf_we <= 1'b0;
-        else rf_we <= 1'b1;
-        sreg_we <= 1'b1;
-        rf_idx_d <= inst[8:4];
-        rf_idx_r <= {inst[9], inst[3:0]};
-        rf_wdata <= alu_out;
-      end
+	// status signals
+	initial count = 0;
 
-      6'b1110xx: begin // ldi
-        debug_inst <= "LDI";
-        rf_we <= 1'b1;
-        rf_idx_d <= {1'b1, inst[7:4]};
-        rf_wdata <= {inst[11:8], inst[3:0]};
-      end
-
-      6'b1100xx: begin // rjmp (offset)
-        debug_inst <= "RJMP";
-        pc_add <= {inst[11], inst[11], inst[11], inst[11], inst[11:0]};
-      end
-
-      6'b111100: begin // breq
-        debug_inst <= "BREQ";
-        if(sreg[1])
-          pc_add <= {inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9:3]};
-      end
-
-      6'b111101: begin // brne
-        debug_inst <= "BRNE";
-        if(~sreg[1])
-          pc_add <= {inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9:3]};
-      end
-      
-      default: begin
-        debug_inst <= "ERR"; 
-      end
-    endcase
-  end
-
-  alu u_alu (.clk(clk), .rst_n(rst_n), .opcode(opcode), .rd(rd), .rr(rr), .sreg_we(sreg_we), .alu_out(alu_out), .sreg(sreg));
-  rf u_rf (.clk(clk), .rst_n(rst_n), .rf_we(rf_we), .rf_idx_d(rf_idx_d), .rf_idx_r(rf_idx_r), .rf_wdata(rf_wdata), .rd(rd), .rr(rr));
-  pc u_pc (.clk(clk), .rst_n(rst_n), .inst(inst), .pc_nxt(pc_nxt), .pc(pc));
+	always @(posedge clk or posedge rst) begin
+		if (rst)
+			count <= 0;
+		else if (wen && !ren)
+			count <= count + 1;
+		else if (ren && !wen)
+			count <= count - 1;
+	end
 
 endmodule
 
-module alu (
-  input clk, 
-  input rst_n, 
-  input [3:0] opcode, 
-  input [7:0] rd, rr, 
-  input sreg_we,
-  output reg [7:0] alu_out, 
-  output [3:0] sreg
-);
-
-reg sreg_v; // Overflow
-reg sreg_n; // Negative
-reg sreg_z; // Zero
-reg sreg_c; // Carry
-reg v_nxt; // Overflow (next)
-reg n_nxt; // Negative (next)
-reg z_nxt; // Zero (next)
-reg c_nxt; // Carry (next)
-
-assign sreg = {sreg_v, sreg_n, sreg_z, sreg_c};
-
-always@(posedge clk or negedge rst_n)
-begin
-  if(!rst_n) begin
-    sreg_v <= 4'b0;
-    sreg_n <= 4'b0;
-    sreg_z <= 4'b0;
-    sreg_c <= 4'b0;
-  end
-  else if(sreg_we) begin
-    sreg_v <= v_nxt;
-    sreg_n <= n_nxt;
-    sreg_z <= z_nxt;
-    sreg_c <= c_nxt;
-  end
-end
-
-always@(*)
-begin
-  case(opcode)
-    4'b0001: alu_out <= rd + rr;          // ADD
-    4'b0011: alu_out <= rd + rr + sreg_c; // ADC (Add with Carry): Rd = Rd + Rr + C
-    4'b0010: alu_out <= rd - rr - sreg_c; // SBC (Subtract with Carry)
-    4'b0110: alu_out <= rd - rr;          // SUB
-    4'b0101: alu_out <= rd - rr;          // CP (Compare)
-    4'b1000: alu_out <= rd & rr;          // AND
-    4'b1001: alu_out <= rd ^ rr;          // EOR
-    4'b1010: alu_out <= rd | rr;          // OR
-    4'b1011: alu_out <= rr;               // MOV
-    default: alu_out <= rd;               // default
-  endcase
-end
-
-wire add_v, sub_v, add_z, sbc_z, add_c, sub_c;
-
-assign add_v = ( rd[7] &  rr[7] & ~alu_out[7]) | (~rd[7] & ~rr[7] & alu_out[7]);
-assign sub_v = ( rd[7] & ~rr[7] & ~alu_out[7]) | (~rd[7] &  rr[7] & alu_out[7]);
-assign add_z = &~alu_out;
-assign sbc_z = add_z & sreg_z;
-assign add_c = ( rd[7] &  rr[7]) | (rr[7] & ~alu_out[7]) | (~alu_out[7] &  rd[7]);
-assign sub_c = (~rd[7] &  rr[7]) | (rr[7] &  alu_out[7]) | ( alu_out[7] & ~rd[7]);
-
-
-always@(*)
-begin
-  case(opcode)
-    4'b0001: begin v_nxt <= add_v;  n_nxt <= alu_out[7]; z_nxt <= add_z;  c_nxt <= add_c;  end // ADD
-    4'b0011: begin v_nxt <= add_v;  n_nxt <= alu_out[7]; z_nxt <= add_z;  c_nxt <= add_c;  end // ADC (Add with Carry): Rd = Rd + Rr + C
-    4'b0010: begin v_nxt <= sub_v;  n_nxt <= alu_out[7]; z_nxt <= sbc_z;  c_nxt <= sub_c;  end // SBC (Subtract with Carry)
-    4'b0110: begin v_nxt <= sub_v;  n_nxt <= alu_out[7]; z_nxt <= add_z;  c_nxt <= sub_c;  end // SUB
-    4'b0101: begin v_nxt <= sub_v;  n_nxt <= alu_out[7]; z_nxt <= add_z;  c_nxt <= sub_c;  end // CP (Compare)
-    4'b1000: begin v_nxt <= 1'b0;   n_nxt <= alu_out[7]; z_nxt <= add_z;  c_nxt <= sreg_c; end // AND
-    4'b1001: begin v_nxt <= 1'b0;   n_nxt <= alu_out[7]; z_nxt <= add_z;  c_nxt <= sreg_c; end // EOR
-    4'b1010: begin v_nxt <= 1'b0;   n_nxt <= alu_out[7]; z_nxt <= add_z;  c_nxt <= sreg_c; end // OR
-    4'b1011: begin v_nxt <= sreg_v; n_nxt <= sreg_n;     z_nxt <= sreg_z; c_nxt <= sreg_c; end // MOV
-    default: begin v_nxt <= sreg_v; n_nxt <= sreg_n;     z_nxt <= sreg_z; c_nxt <= sreg_c; end // default
-  endcase
-end
-
-reg [23:0] debug_alu;
-
-always@(*)
-begin
-  case(opcode)
-    4'b0001: debug_alu <= "ADD";
-    4'b0011: debug_alu <= "ADC";
-    4'b0010: debug_alu <= "SBC";
-    4'b0110: debug_alu <= "SUB";
-    4'b0101: debug_alu <= "CP";
-    4'b1000: debug_alu <= "AND";
-    4'b1001: debug_alu <= "EOR";
-    4'b1010: debug_alu <= "OR ";
-    4'b1011: debug_alu <= "MOV";
-    default: debug_alu <= "ERR";
-  endcase
-end
-
-endmodule
-
-module rf (
-  input clk, 
-  input rst_n, 
-  input rf_we, 
-  input [4:0] rf_idx_d, rf_idx_r, 
-  input [7:0] rf_wdata, 
-  output [7:0] rd, rr
-);
-
-wire [7:0] r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31;
-wire [31:0] we_1h;
-
-rf_reg_32 u_rf_reg_32 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h), .rf_wdata(rf_wdata), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .r5(r5), .r6(r6), .r7(r7), .r8(r8), .r9(r9), .r10(r10), .r11(r11), .r12(r12), .r13(r13), .r14(r14), .r15(r15), .r16(r16), .r17(r17), .r18(r18), .r19(r19), .r20(r20), .r21(r21), .r22(r22), .r23(r23), .r24(r24), .r25(r25), .r26(r26), .r27(r27), .r28(r28), .r29(r29), .r30(r30), .r31(r31));
-
-rf_wdec u_wdec (.idx(rf_idx_d), .rf_we(rf_we), .we_1h(we_1h));
-
-rf_rdec u_rdec_d (.idx(rf_idx_d), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .r5(r5), .r6(r6), .r7(r7), .r8(r8), .r9(r9), .r10(r10), .r11(r11), .r12(r12), .r13(r13), .r14(r14), .r15(r15), .r16(r16), .r17(r17), .r18(r18), .r19(r19), .r20(r20), .r21(r21), .r22(r22), .r23(r23), .r24(r24), .r25(r25), .r26(r26), .r27(r27), .r28(r28), .r29(r29), .r30(r30), .r31(r31), .opr(rd));
-
-rf_rdec u_rdec_r (.idx(rf_idx_r), .r0(r0), .r1(r1), .r2(r2), .r3(r3), .r4(r4), .r5(r5), .r6(r6), .r7(r7), .r8(r8), .r9(r9), .r10(r10), .r11(r11), .r12(r12), .r13(r13), .r14(r14), .r15(r15), .r16(r16), .r17(r17), .r18(r18), .r19(r19), .r20(r20), .r21(r21), .r22(r22), .r23(r23), .r24(r24), .r25(r25), .r26(r26), .r27(r27), .r28(r28), .r29(r29), .r30(r30), .r31(r31), .opr(rr));
-
-endmodule
-
-module rf_reg_32 (
-  input clk, 
-  input rst_n, 
-  input [31:0] we_1h, 
-  input [7:0] rf_wdata, 
-  output [7:0] r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31
-);
-
-rf_reg u_r0 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 0]), .wdata(rf_wdata), .r(r0 ));
-rf_reg u_r1 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 1]), .wdata(rf_wdata), .r(r1 ));
-rf_reg u_r2 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 2]), .wdata(rf_wdata), .r(r2 ));
-rf_reg u_r3 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 3]), .wdata(rf_wdata), .r(r3 ));
-rf_reg u_r4 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 4]), .wdata(rf_wdata), .r(r4 ));
-rf_reg u_r5 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 5]), .wdata(rf_wdata), .r(r5 ));
-rf_reg u_r6 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 6]), .wdata(rf_wdata), .r(r6 ));
-rf_reg u_r7 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 7]), .wdata(rf_wdata), .r(r7 ));
-rf_reg u_r8 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 8]), .wdata(rf_wdata), .r(r8 ));
-rf_reg u_r9 (.clk(clk), .rst_n(rst_n), .we_1h(we_1h[ 9]), .wdata(rf_wdata), .r(r9 ));
-rf_reg u_r10(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[10]), .wdata(rf_wdata), .r(r10));
-rf_reg u_r11(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[11]), .wdata(rf_wdata), .r(r11));
-rf_reg u_r12(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[12]), .wdata(rf_wdata), .r(r12));
-rf_reg u_r13(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[13]), .wdata(rf_wdata), .r(r13));
-rf_reg u_r14(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[14]), .wdata(rf_wdata), .r(r14));
-rf_reg u_r15(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[15]), .wdata(rf_wdata), .r(r15));
-rf_reg u_r16(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[16]), .wdata(rf_wdata), .r(r16));
-rf_reg u_r17(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[17]), .wdata(rf_wdata), .r(r17));
-rf_reg u_r18(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[18]), .wdata(rf_wdata), .r(r18));
-rf_reg u_r19(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[19]), .wdata(rf_wdata), .r(r19));
-rf_reg u_r20(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[20]), .wdata(rf_wdata), .r(r20));
-rf_reg u_r21(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[21]), .wdata(rf_wdata), .r(r21));
-rf_reg u_r22(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[22]), .wdata(rf_wdata), .r(r22));
-rf_reg u_r23(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[23]), .wdata(rf_wdata), .r(r23));
-rf_reg u_r24(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[24]), .wdata(rf_wdata), .r(r24));
-rf_reg u_r25(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[25]), .wdata(rf_wdata), .r(r25));
-rf_reg u_r26(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[26]), .wdata(rf_wdata), .r(r26));
-rf_reg u_r27(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[27]), .wdata(rf_wdata), .r(r27));
-rf_reg u_r28(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[28]), .wdata(rf_wdata), .r(r28));
-rf_reg u_r29(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[29]), .wdata(rf_wdata), .r(r29));
-rf_reg u_r30(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[30]), .wdata(rf_wdata), .r(r30));
-rf_reg u_r31(.clk(clk), .rst_n(rst_n), .we_1h(we_1h[31]), .wdata(rf_wdata), .r(r31));
-
-endmodule
-
-module rf_reg (
-  input clk, rst_n, we_1h,
-  input [7:0] wdata,
-  output reg [7:0] r
-);
-
-always@(posedge clk or negedge rst_n)
-  if(!rst_n)
-    r <= 8'b0;
-  else if (we_1h)
-    r <= wdata;
- 
-endmodule
-
-module rf_wdec (
-  input [4:0] idx,
-  input       rf_we,
-  output reg [31:0] we_1h
-);
-
-always@(*)
-  if(rf_we)
-    case(idx)
-      5'd0 : we_1h = 32'b0000_0000_0000_0000_0000_0000_0000_0001;
-      5'd1 : we_1h = 32'b0000_0000_0000_0000_0000_0000_0000_0010;
-      5'd2 : we_1h = 32'b0000_0000_0000_0000_0000_0000_0000_0100;
-      5'd3 : we_1h = 32'b0000_0000_0000_0000_0000_0000_0000_1000;
-      5'd4 : we_1h = 32'b0000_0000_0000_0000_0000_0000_0001_0000;
-      5'd5 : we_1h = 32'b0000_0000_0000_0000_0000_0000_0010_0000;
-      5'd6 : we_1h = 32'b0000_0000_0000_0000_0000_0000_0100_0000;
-      5'd7 : we_1h = 32'b0000_0000_0000_0000_0000_0000_1000_0000;
-      5'd8 : we_1h = 32'b0000_0000_0000_0000_0000_0001_0000_0000;
-      5'd9 : we_1h = 32'b0000_0000_0000_0000_0000_0010_0000_0000;
-      5'd10: we_1h = 32'b0000_0000_0000_0000_0000_0100_0000_0000;
-      5'd11: we_1h = 32'b0000_0000_0000_0000_0000_1000_0000_0000;
-      5'd12: we_1h = 32'b0000_0000_0000_0000_0001_0000_0000_0000;
-      5'd13: we_1h = 32'b0000_0000_0000_0000_0010_0000_0000_0000;
-      5'd14: we_1h = 32'b0000_0000_0000_0000_0100_0000_0000_0000;
-      5'd15: we_1h = 32'b0000_0000_0000_0000_1000_0000_0000_0000;
-      5'd16: we_1h = 32'b0000_0000_0000_0001_0000_0000_0000_0000;
-      5'd17: we_1h = 32'b0000_0000_0000_0010_0000_0000_0000_0000;
-      5'd18: we_1h = 32'b0000_0000_0000_0100_0000_0000_0000_0000;
-      5'd19: we_1h = 32'b0000_0000_0000_1000_0000_0000_0000_0000;
-      5'd20: we_1h = 32'b0000_0000_0001_0000_0000_0000_0000_0000;
-      5'd21: we_1h = 32'b0000_0000_0010_0000_0000_0000_0000_0000;
-      5'd22: we_1h = 32'b0000_0000_0100_0000_0000_0000_0000_0000;
-      5'd23: we_1h = 32'b0000_0000_1000_0000_0000_0000_0000_0000;
-      5'd24: we_1h = 32'b0000_0001_0000_0000_0000_0000_0000_0000;
-      5'd25: we_1h = 32'b0000_0010_0000_0000_0000_0000_0000_0000;
-      5'd26: we_1h = 32'b0000_0100_0000_0000_0000_0000_0000_0000;
-      5'd27: we_1h = 32'b0000_1000_0000_0000_0000_0000_0000_0000;
-      5'd28: we_1h = 32'b0001_0000_0000_0000_0000_0000_0000_0000;
-      5'd29: we_1h = 32'b0010_0000_0000_0000_0000_0000_0000_0000;
-      5'd30: we_1h = 32'b0100_0000_0000_0000_0000_0000_0000_0000;
-      5'd31: we_1h = 32'b1000_0000_0000_0000_0000_0000_0000_0000;
-    endcase
-  else
-      we_1h = 32'b0000_0000_0000_0000_0000_0000_0000_0000;
-  
-endmodule
-
-module rf_rdec(
-  input [4:0] idx, 
-  input [7:0] r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31,
-  output reg [7:0] opr
-);
-
-always@(*)
-begin
-  case(idx)
-    5'd0:  opr = r0;
-    5'd1:  opr = r1;
-    5'd2:  opr = r2;
-    5'd3:  opr = r3;
-    5'd4:  opr = r4;
-    5'd5:  opr = r5;
-    5'd6:  opr = r6;
-    5'd7:  opr = r7;
-    5'd8:  opr = r8;
-    5'd9:  opr = r9;
-    5'd10: opr = r10;
-    5'd11: opr = r11;
-    5'd12: opr = r12;
-    5'd13: opr = r13;
-    5'd14: opr = r14;
-    5'd15: opr = r15;
-    5'd16: opr = r16;
-    5'd17: opr = r17;
-    5'd18: opr = r18;
-    5'd19: opr = r19;
-    5'd20: opr = r20;
-    5'd21: opr = r21;
-    5'd22: opr = r22;
-    5'd23: opr = r23;
-    5'd24: opr = r24;
-    5'd25: opr = r25;
-    5'd26: opr = r26;
-    5'd27: opr = r27;
-    5'd28: opr = r28;
-    5'd29: opr = r29;
-    5'd30: opr = r30;
-    5'd31: opr = r31;
-  endcase
-end
-
-endmodule
-
-module pc (
-  input clk, 
-  input rst_n, 
-  input [15:0] inst, 
-  input [15:0] pc_nxt, 
-  output reg [15:0] pc
-);
-
-  always@(posedge clk or negedge rst_n) begin
-    if(!rst_n)
-      pc <= 0;
-    else begin
-      pc <= pc_nxt;
-    end
-  end
-
-endmodule
-
-/* ---- Testbench (Skip Synthesis)  ---- */
 // ======== TESTBENCH ========
+module fifo_tb;
 
-module rom_256x16 (
-  input [15:0] addr, 
-  output [15:0] data
-);
+  localparam MAX_DATA = 8;                 // small depth so wrap-around is easy to hit
+  localparam AWIDTH   = $clog2(MAX_DATA);
 
-  reg [15:0] mem [0:'hff];
+  reg                wen, ren, clk, rst;
+  reg  [7:0]         wdata;
+  wire [7:0]         rdata;
+  wire [AWIDTH:0]    count;
 
-  assign data = mem[addr[15:0]];
+  integer i;
+  integer errors;
 
-  // loads mem[] from a file attached via the Memory Viewer card below -
-  // this app has no real filesystem access over file://, so $readmemh can
-  // only resolve a filename the user has already attached there
-  initial $readmemh("rom.txt", mem, 0);
+  fifo #(.MAX_DATA(MAX_DATA)) dut (
+    .wen   (wen),
+    .ren   (ren),
+    .clk   (clk),
+    .rst   (rst),
+    .wdata (wdata),
+    .rdata (rdata),
+    .count (count)
+  );
 
-endmodule
-
-module ram_4kx8 (
-  input clk, 
-  input we, 
-  input [7:0] addr, 
-  input [7:0] wdata, 
-  output [7:0] rdata
-);
-
-  reg [7:0] mem [0:'h10ff]; // 4K + 256
-
-  always@(posedge clk)
-    if(we) mem[addr] = wdata;
-
-  assign rdata = mem[addr]; // 0x100 offset
-
-  // loads mem[] from a file attached via the Memory Viewer card below -
-  // this app has no real filesystem access over file://, so $readmemh can
-  // only resolve a filename the user has already attached there
-  initial $readmemh("ram.txt", mem, 0);
-endmodule
-
-module system (input clk, input rst_n);
-  wire [15:0] inst;
-  wire [15:0] iaddr;
-  wire [16:0] daddr;
-  wire [7:0] wdata;
-  wire [7:0] rdata;
-  wire we;
-
-  rom_256x16 u_rom (iaddr, inst);
-  ram_4kx8 u_ram (clk, we, daddr, wdata, rdata);
-  cpu u_cpu (clk, rst_n, iaddr, inst, daddr, we, wdata, rdata);
-
-endmodule
-
-module system_tb;
-  reg clk;
-  reg rst_n;
-
-  system u_sys (clk, rst_n);
-
-  // clock generator: toggles every 5 time units
+  // 100 MHz clock
+  initial clk = 0;
   always #5 clk = ~clk;
 
+  // waves
   initial begin
-    clk = 0;
-    rst_n = 0;
-    #10 rst_n = 1;
-    #400 
-    $display("r0 : %h", u_sys.u_cpu.u_rf.r0 ,  u_sys.u_cpu.u_rf.r0 );
-    $display("r1 : %h", u_sys.u_cpu.u_rf.r1 ,  u_sys.u_cpu.u_rf.r1 );
-    $display("r2 : %h", u_sys.u_cpu.u_rf.r2 ,  u_sys.u_cpu.u_rf.r2 );
-    $display("r3 : %h", u_sys.u_cpu.u_rf.r3 ,  u_sys.u_cpu.u_rf.r3 );
-    $display("r4 : %h", u_sys.u_cpu.u_rf.r4 ,  u_sys.u_cpu.u_rf.r4 );
-    $display("r5 : %h", u_sys.u_cpu.u_rf.r5 ,  u_sys.u_cpu.u_rf.r5 );
-    $display("r6 : %h", u_sys.u_cpu.u_rf.r6 ,  u_sys.u_cpu.u_rf.r6 );
-    $display("r7 : %h", u_sys.u_cpu.u_rf.r7 ,  u_sys.u_cpu.u_rf.r7 );
-    $display("r8 : %h", u_sys.u_cpu.u_rf.r8 ,  u_sys.u_cpu.u_rf.r8 );
-    $display("r9 : %h", u_sys.u_cpu.u_rf.r9 ,  u_sys.u_cpu.u_rf.r9 );
-    $display("r10: %h", u_sys.u_cpu.u_rf.r10,  u_sys.u_cpu.u_rf.r10);
-    $display("r11: %h", u_sys.u_cpu.u_rf.r11,  u_sys.u_cpu.u_rf.r11);
-    $display("r12: %h", u_sys.u_cpu.u_rf.r12,  u_sys.u_cpu.u_rf.r12);
-    $display("r13: %h", u_sys.u_cpu.u_rf.r13,  u_sys.u_cpu.u_rf.r13);
-    $display("r14: %h", u_sys.u_cpu.u_rf.r14,  u_sys.u_cpu.u_rf.r14);
-    $display("r15: %h", u_sys.u_cpu.u_rf.r15,  u_sys.u_cpu.u_rf.r15);
-    $display("r16: %h", u_sys.u_cpu.u_rf.r16,  u_sys.u_cpu.u_rf.r16);
-    $display("r17: %h", u_sys.u_cpu.u_rf.r17,  u_sys.u_cpu.u_rf.r17);
-    $display("r18: %h", u_sys.u_cpu.u_rf.r18,  u_sys.u_cpu.u_rf.r18);
-    $display("r19: %h", u_sys.u_cpu.u_rf.r19,  u_sys.u_cpu.u_rf.r19);
-    $display("r20: %h", u_sys.u_cpu.u_rf.r20,  u_sys.u_cpu.u_rf.r20);
-    $display("r21: %h", u_sys.u_cpu.u_rf.r21,  u_sys.u_cpu.u_rf.r21);
-    $display("r22: %h", u_sys.u_cpu.u_rf.r22,  u_sys.u_cpu.u_rf.r22);
-    $display("r23: %h", u_sys.u_cpu.u_rf.r23,  u_sys.u_cpu.u_rf.r23);
-    $display("r24: %h", u_sys.u_cpu.u_rf.r24,  u_sys.u_cpu.u_rf.r24);
-    $display("r25: %h", u_sys.u_cpu.u_rf.r25,  u_sys.u_cpu.u_rf.r25);
-    $display("r26: %h", u_sys.u_cpu.u_rf.r26,  u_sys.u_cpu.u_rf.r26);
-    $display("r27: %h", u_sys.u_cpu.u_rf.r27,  u_sys.u_cpu.u_rf.r27);
-    $display("r28: %h", u_sys.u_cpu.u_rf.r28,  u_sys.u_cpu.u_rf.r28);
-    $display("r29: %h", u_sys.u_cpu.u_rf.r29,  u_sys.u_cpu.u_rf.r29);
-    $display("r30: %h", u_sys.u_cpu.u_rf.r30,  u_sys.u_cpu.u_rf.r30);
-    $display("r31: %h", u_sys.u_cpu.u_rf.r31,  u_sys.u_cpu.u_rf.r31);
+    $dumpfile("fifo_tb.vcd");
+    $dumpvars(0, fifo_tb);
+  end
+
+  initial begin
+    errors = 0;
+    wen    = 0;
+    ren    = 0;
+    wdata  = 0;
+    rst    = 1;
+
+    repeat (2) @(negedge clk);
+    rst = 0;
+
+    if (count !== 0) begin
+      $display("[%0t] ERROR: count not 0 after reset (%0d)", $time, count);
+      errors = errors + 1;
+    end
+
+    // ---- fill the fifo ----
+    for (i = 0; i < MAX_DATA; i = i + 1) begin
+      @(negedge clk);
+      wen   = 1;
+      wdata = 8'hA0 + i[7:0];
+    end
+    @(negedge clk);
+    wen = 0;
+
+    if (count !== MAX_DATA) begin
+      $display("[%0t] ERROR: count=%0d expected=%0d", $time, count, MAX_DATA);
+      errors = errors + 1;
+    end
+
+    // ---- drain it and check FIFO ordering ----
+    for (i = 0; i < MAX_DATA; i = i + 1) begin
+      @(negedge clk);
+      ren = 1;
+      @(negedge clk);
+      ren = 0;
+      #1;
+      if (rdata !== (8'hA0 + i[7:0])) begin
+        $display("[%0t] ERROR: rdata=%0h expected=%0h", $time, rdata, 8'hA0 + i[7:0]);
+        errors = errors + 1;
+      end else begin
+        $display("[%0t] OK   : rdata=%0h", $time, rdata);
+      end
+    end
+
+    if (count !== 0) begin
+      $display("[%0t] ERROR: count=%0d expected 0 after drain", $time, count);
+      errors = errors + 1;
+    end
+
+    // ---- simultaneous read+write: count should hold ----
+    @(negedge clk);
+    wen   = 1;
+    wdata = 8'h11;
+    @(negedge clk);
+    wen   = 1;
+    ren   = 1;
+    wdata = 8'h22;
+    @(negedge clk);
+    wen = 0;
+    ren = 0;
+    if (count !== 1) begin
+      $display("[%0t] ERROR: count=%0d expected 1 on simultaneous r/w", $time, count);
+      errors = errors + 1;
+    end
+
+    // ---- reset mid-stream ----
+    rst = 1;
+    @(negedge clk);
+    rst = 0;
+    if (count !== 0) begin
+      $display("[%0t] ERROR: count=%0d expected 0 after mid-stream reset", $time, count);
+      errors = errors + 1;
+    end
+
+    repeat (2) @(negedge clk);
+    if (errors == 0) $display("=== TEST PASSED ===");
+    else             $display("=== TEST FAILED: %0d error(s) ===", errors);
     $finish;
   end
-endmodule
 
-/* Test Code for LDI and ALU (rom.txt)
-e604 // w00  ldi r16, 100      r16 = 0x64
-2e00 // w01  mov r0,  r16      r0  = 100
-e605 // w02  ldi r16, 101      r16 = 0x65
-2e10 // w03  mov r1,  r16      r1  = 101
-e606 // w04  ldi r16, 102      r16 = 0x66
-2e20 // w05  mov r2,  r16      r2  = 102
-e607 // w06  ldi r16, 103      r16 = 0x67
-2e30 // w07  mov r3,  r16      r3  = 103
-2c41 // w08  mov r4,  r1       r4  = 101
-0c42 // w09  add r4,  r2       r4  = r1 + r2 = 203 (0xcb)
-2c53 // w0a  mov r5,  r3       r5  = 103
-1851 // w0b  sub r5,  r1       r5  = r3 - r1 = 2   (0x02)
-0000 // w0c  nop
-0000 // w0d  nop
-0000 // w0e  nop
-0000 // w0f  nop
-0000 // w10  nop
-0000 // w11  nop
+endmodule`,
 
-   Expected non-zero registers, hex as the console prints them (decimal in
-   parens where the decimal is the number that means something):
-     r0=64 (100)   r1=65 (101)   r2=66 (102)   r3=67 (103)
-     r4=cb (203)   r5=02         r16=67 (103)
-   Every other register stays 0.
-*/
-
-/* Test Code for BREQ and BRNE (rom.txt)
-
-e604 // w00  ldi r16, 100   r16 = 0x64
-2e00 // w01  mov r0,  r16   r0  = 100
-e604 // w02  ldi r16, 100   r16 = 0x64
-2e10 // w03  mov r1,  r16   r1  = 100   == r0
-ec08 // w04  ldi r16, 200   r16 = 0xc8
-2e20 // w05  mov r2,  r16   r2  = 200   != r0
-1401 // w06  cp  r0,  r1    100 == 100  -> Z = 1
-f009 // w07  breq +1        TAKEN:     pc = 07 + 1 + 1 -> w09
-2e70 // w08  mov r7,  r16   SKIPPED    -> r7 stays 0
-e001 // w09  ldi r16, 1     <-- BREQ landed HERE
-2e30 // w0a  mov r3,  r16   r3  = 1     proves the branch was taken
-1402 // w0b  cp  r0,  r2    100 != 200  -> Z = 0
-f009 // w0c  breq +1        NOT taken: pc = 0c + 1     -> w0d
-e002 // w0d  ldi r16, 2     <-- fell through to HERE
-2e40 // w0e  mov r4,  r16   r4  = 2     proves it was not taken
-1402 // w0f  cp  r0,  r2    100 != 200  -> Z = 0
-f409 // w10  brne +1        TAKEN:     pc = 10 + 1 + 1 -> w12
-2e80 // w11  mov r8,  r16   SKIPPED    -> r8 stays 0
-e003 // w12  ldi r16, 3     <-- BRNE landed HERE
-2e50 // w13  mov r5,  r16   r5  = 3     proves the branch was taken
-1401 // w14  cp  r0,  r1    100 == 100  -> Z = 1
-f409 // w15  brne +1        NOT taken: pc = 15 + 1     -> w16
-e004 // w16  ldi r16, 4     <-- fell through to HERE
-2e60 // w17  mov r6,  r16   r6  = 4     proves it was not taken
-0000 // w18  nop
-0000 // w19  nop
-0000 // w1a  nop
-0000 // w1b  nop
-
-   Expected non-zero registers (correct AVR semantics):
-     r0=64 (100)   r1=64 (100)   r2=c8 (200)
-     r3=01         r4=02         r5=03        r6=04       r16=04
-   Must stay 0: r7 and r8, the two writes a taken branch skips. They are the
-   only witnesses that a branch really skipped something, so they matter as
-   much as r3..r6.
-*/
-
-/* Test Code for RJMP (rom.txt)
-
-   A forward jump and a backward jump, each with its own witness. Written to
-   be loaded on its own - paste these words over rom.txt, the same way the
-   LDI/ALU block above is used, since $readmemh's filename is fixed.
-
-e005 // w00  ldi r16, 5     r16 = 5
-c003 // w01  rjmp +3        pc = 01 + 1 + 3 -> w05   forward, over w02..w04
-2e30 // w02  mov r3,  r16   SKIPPED    -> r3 stays 0
-e007 // w03  ldi r16, 7     <-- backward RJMP landed HERE
-c003 // w04  rjmp +3        pc = 04 + 1 + 3 -> w08   exit, only reached from w03
-e006 // w05  ldi r16, 6     <-- forward RJMP landed HERE
-2e10 // w06  mov r1,  r16   r1  = 6     proves the forward jump landed on w05
-cffb // w07  rjmp -5        pc = 07 + 1 - 5 -> w03   backward
-2e20 // w08  mov r2,  r16   r2  = 7     proves the backward jump landed on w03
-0000 // w09  nop
-0000 // w0a  nop
-0000 // w0b  nop
-
-   Execution order is w00 w01 w05 w06 w07 w03 w04 w08 and then the nops:
-   every word runs at most once and w02 never runs at all, so the test
-   terminates without needing a conditional - which it has to, since breq/brne
-   do not execute on this CPU either. RJMP takes the same pc <- pc + k + 1 as a
-   branch, with k a 12-bit signed WORD displacement, so -5 encodes as 0xffb
-   -> cffb.
-
-   Expected non-zero registers (correct AVR semantics):
-     r1=06   r2=07   r16=07
-   Must stay 0: r3, the write the forward jump skips.
-
-   Each witness catches a different fault. r1 pins where the forward jump
-   landed - one word late leaves r16 at 5, so r1=05. r2 pins where the
-   backward jump landed - one word late reaches w08 with r16 still 6, so
-   r2=06. r3 catches the jumps not being taken at all, and one word early on
-   the backward jump lands on w02, which writes r3 too.
-*/`,
 };
 
 /* =========================================================================
@@ -3588,6 +3765,7 @@ let editorFullSource = '';
 let editorSelectedModule = '(all)';
 let editorModuleSpan = null;   // {start, end} of the selected module inside editorFullSource, null in (all) view
 let lastGoodModuleNames = [];  // module list from the last parse that succeeded, so a syntax error doesn't empty the panel
+let editorHierarchyListIsTb = false;  // which half lastGoodModuleNames describes - see renderEditorHierarchyList
 let tbSpan = null;             // {start, end} of the testbench region, null when the document has no marker
 
 /* ---- the design / testbench split ----------------------------------------
@@ -3698,6 +3876,23 @@ const runBtn = document.getElementById('runBtn');
 const resetBtn = document.getElementById('resetBtn');
 const maxTimeInput = document.getElementById('maxTimeInput');
 const maxTimeAutoNote = document.getElementById('maxTimeAutoNote');
+/* DECLARED HERE, BESIDE THE ELEMENT, and not next to the function that uses them - which is
+   the temporal-dead-zone trap this file already records for the compiler's LANGUAGES registry.
+   `loadExample` runs at the end of this body and calls tryApplyAutoFinishTime, so a `let`
+   sitting next to applyAutoFinishTime a thousand lines below is read before it is initialised
+   and every page dies at load with `Cannot access 'maxTimeIsAuto' before initialization`.
+
+   MAX_TIME_DEFAULT is read from the MARKUP's own attribute rather than written again here, so
+   the field's fallback and its initial value are one number that cannot disagree - and from the
+   ATTRIBUTE rather than `.value` because `.value` is whatever the field holds right now, which
+   on a learn topic page (where this row is hidden) is empty. Capturing that emptiness and
+   later writing it back BLANKED the field, which four learn checks caught. Nothing ever writes
+   an empty default: a field with no default is left as it is.
+
+   maxTimeIsAuto records whether what is in the field now was DERIVED or TYPED, which
+   applyAutoFinishTime needs because only one of those may be inherited by the next design. */
+const MAX_TIME_DEFAULT = maxTimeInput.getAttribute('value') || maxTimeInput.value;
+let maxTimeIsAuto = false;
 const consoleBox = document.getElementById('consoleBox');
 const waveCanvas = document.getElementById('waveCanvas');
 const waveEmpty = document.getElementById('waveEmpty');
@@ -4521,14 +4716,46 @@ function spliceEditorChangesBack() {
   if (tbSpan) tbSpan = { start: tbSpan.start + delta, end: tbSpan.end + delta };
 }
 
-/* The panel lists the DESIGN's modules, not the document's: a testbench module
-   is not editable here (it belongs to the other card), so offering it would open
-   a view the merge cannot own. Parsing the design span alone is also what keeps
-   the list honest while the testbench half is mid-edit and does not parse. */
+/* THE PANEL LISTS WHICHEVER HALF IS ON SCREEN, and it used to list the design's
+   modules always. That was right while the testbench was a card of its own - a
+   testbench module was not editable HERE, so offering it would have opened a view
+   the merge could not own - and it stopped being right when the testbench became a
+   VIEW of this card: the panel then sat beside the checks naming the modules of a
+   design the reader could not see, which is a table of contents for the wrong
+   document.
+
+   IN THE TESTBENCH VIEW THE ROWS ARE INFORMATIONAL, and that is the honest half of
+   this. Slicing the design to one module works because `editorModuleSpan` tracks
+   where the visible text came from and `spliceEditorChangesBack` merges it back;
+   the testbench half has one span and no such tracking, so a row that sliced it
+   would need a second merge path - the one thing in this file that must not be got
+   wrong. So the list SAYS what is in the testbench (a rom, a ram model, the
+   `system` wrapper, `tb` itself - worth knowing, and nowhere else on the page) and
+   selects nothing, the way a memory's row in the waveform's own hierarchy panel is
+   drawn dimmed with no handler.
+
+   `viewIsTestbench` is guarded because this file has TWO editors side by side and
+   no view pair at all: `EDITOR_VIEW_API` is shell.js's, so on this page the answer
+   is always `design` and the old behaviour is what runs. */
+function viewIsTestbench() {
+  const api = window.EDITOR_VIEW_API;
+  return !!(api && api.view && api.view() === 'tb');
+}
 function renderEditorHierarchyList() {
-  const s = designSpan(editorFullSource);
+  const tbView = viewIsTestbench();
+  const s = tbView ? (testbenchSpan(editorFullSource) || designSpan(editorFullSource))
+                   : designSpan(editorFullSource);
   try { lastGoodModuleNames = [...parseTopLevelModules(editorFullSource.slice(s.start, s.end)).keys()]; }
   catch (e) { /* keep the last-good list: a transient syntax error shouldn't empty the panel */ }
+  /* THE LAST-GOOD LIST IS PER VIEW, or switching to the testbench and back would show one half's
+     modules under the other's name for as long as the new half failed to parse. Cheap to keep
+     honest: the cache is only there to survive a transient syntax error, and a view switch is not
+     one. */
+  if (tbView !== editorHierarchyListIsTb) {
+    editorHierarchyListIsTb = tbView;
+    try { lastGoodModuleNames = [...parseTopLevelModules(editorFullSource.slice(s.start, s.end)).keys()]; }
+    catch (e) { lastGoodModuleNames = []; }
+  }
   const want = ['(all)', ...lastGoodModuleNames];
   /* THE ROWS ARE REUSED WHEN THE LIST HAS NOT CHANGED, and that is what makes ONE click select a
      module. This function is also called from the editor's `blur`, and pressing a row blurs the
@@ -4542,7 +4769,10 @@ function renderEditorHierarchyList() {
      A genuine change to the module set still rebuilds - that is the panel doing its job, and a press
      landing on a list that has just changed under the pointer has no right answer anyway. */
   const rows = [...editorHierarchyPanel.children];
-  const same = rows.length === want.length && rows.every((r, i) => r.textContent === want[i]);
+  /* A view change must REBUILD even when the two halves happen to list the same names, because the
+     rows differ in whether they carry a handler at all. */
+  const same = rows.length === want.length && rows.every((r, i) => r.textContent === want[i])
+            && rows.every((r) => /informational/.test(r.className) === tbView);
   if (same) {
     rows.forEach((r, i) => r.classList.toggle('active', want[i] === editorSelectedModule));
     return;
@@ -4560,7 +4790,10 @@ function renderEditorHierarchyList() {
        editor blurs, the blur handler splices and re-renders, and this row's own selection has to
        survive that. With it there is no blur on this path at all, and setTextIn's own focus() leaves
        the caret in the editor exactly where a release used to leave it. */
-    row.addEventListener('mousedown', (ev) => { ev.preventDefault(); selectEditorModule(name); });
+    /* No handler in the testbench view - see this function's own note. The row is marked so the
+       stylesheet can say it is not a control, rather than looking identical to one that is. */
+    if (tbView) row.className += ' informational';
+    else row.addEventListener('mousedown', (ev) => { ev.preventDefault(); selectEditorModule(name); });
     editorHierarchyPanel.appendChild(row);
   }
 }
@@ -4634,13 +4867,50 @@ codeInput.addEventListener('blur', () => {
 if (tbInput) tbInput.addEventListener('blur', () => { spliceEditorChangesBack(); });
 
 /* ---- collapse buttons (generic, works for any .card-collapse-btn) ---- */
-document.querySelectorAll('[data-collapse]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const card = btn.closest('.card');
-    card.classList.toggle('collapsed');
-    btn.textContent = card.classList.contains('collapsed') ? '▸' : '▾';
+/* THE TWO GENERIC CARD CONTROLS, WIRED FROM ONE PLACE - the fold chevron and the (?) icon.
+   Both used to be attached inline with `querySelectorAll` AT LOAD, which is correct for the
+   cards this file ships and silently wrong for every card built afterwards: practice-synth.js
+   appends the Synthesis Results card and code2silicon.js two more, and on those the chevron did
+   nothing and the popup never opened. practice-synth.js had already copied both handlers to fix
+   its own; code2silicon.js would have been a THIRD copy, which is how three readings of one
+   control come to disagree.
+
+   So it is a function of a ROOT, called here with `document` for this file's own cards and by
+   each later builder with the card it just made. A function declaration, so it really is a
+   property of `window` and a later classic script can reach it - the rule this file records for
+   `currentFullSource`. Idempotent per element it is called with, since each builder passes only
+   its own new card.
+
+   `foldCard` comes with them for the same reason: practice.js had the only copy, code2silicon
+   needs it too, and the ▸/▾ glyph is this handler's convention - a second writer of it is how
+   the arrow comes to point the wrong way. */
+function wireCardControls(root) {
+  (root || document).querySelectorAll('[data-collapse]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const card = btn.closest('.card');
+      card.classList.toggle('collapsed');
+      btn.textContent = card.classList.contains('collapsed') ? '▸' : '▾';
+    });
   });
-});
+  (root || document).querySelectorAll('.help-icon').forEach(btn => {
+    const popup = btn.nextElementSibling;
+    if (!popup || !popup.classList.contains('help-popup')) return;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const willShow = !popup.classList.contains('visible');
+      document.querySelectorAll('.help-popup.visible').forEach(p => p.classList.remove('visible'));
+      if (willShow) popup.classList.add('visible');
+    });
+  });
+}
+function foldCard(id, folded) {
+  const card = document.getElementById(id);
+  if (!card) return;
+  card.classList.toggle('collapsed', folded);
+  const btn = card.querySelector('.card-collapse-btn');
+  if (btn) btn.textContent = folded ? '▸' : '▾';
+}
+wireCardControls(document);
 
 /* ---- editor/console layout toggle (side-by-side vs stacked) ---- */
 (() => {
@@ -5133,6 +5403,22 @@ function computeAutoFinishTime(ast) {
         }
         return walk(stmt.stmt, null); // event/edge-wait control - duration unknowable ahead of running
       }
+      /* A LOOP MAKES THE TIME UNKNOWABLE, which has to be said explicitly: falling through to
+         `default` returns `acc` UNCHANGED, i.e. treats the loop as taking no time at all, and
+         a `$finish` after it is then recorded at far too early a time. That is worse than
+         giving up, because a number here is written into the run-length field AND DISABLES it
+         - so `initial begin repeat (10) #5; $finish; end` was capped at 0 for a run that needs
+         50, with no way for the reader to raise it. Returning null falls back to manual, which
+         is the honest answer for a testbench with loops in it.
+
+         A `repeat` with a literal count and a resolvable body could be computed exactly
+         (`acc + n * delta`), and that is deliberately NOT attempted: `walk` records every
+         `$finish` it passes into `finishes`, so walking a body to measure it would file any
+         `$finish` inside that body at a time based on the wrong origin. Getting the common
+         case right at the cost of an obscure wrong number is the trade this function exists
+         to avoid. */
+      case 'Repeat': case 'For': case 'While':
+        return null;
       default:
         return acc;
     }
@@ -5145,13 +5431,35 @@ function computeAutoFinishTime(ast) {
   return Math.max(...finishes);
 }
 
+/* Hands the run length back to the reader, and it is ONE function because the rule has two
+   call sites - a design whose $finish time cannot be derived, and one that does not parse at
+   all - which are the same case and must not come to disagree.
+
+   A DERIVED NUMBER IS NOT INHERITED BY A DIFFERENT DESIGN, which is a trap that cost a reader
+   a whole debugging session. When a design's $finish time is statically known the field is
+   filled in and DISABLED; when the next design's is not, the field used to be re-enabled with
+   whatever number was in it - the PREVIOUS design's derived time, never anything this reader
+   chose. A testbench needing 330 time units therefore ran for 65 and printed nothing at all,
+   with the field showing a number that looked deliberate.
+
+   A number the reader TYPED is theirs and is kept; one this code wrote is returned to the
+   default, because it was only ever a fact about a design that is no longer loaded. An EMPTY
+   default is never written: a learn topic page hides this row and has none, and blanking the
+   field there is what four of its checks catch. */
+function releaseRunLength() {
+  if (maxTimeIsAuto && MAX_TIME_DEFAULT) maxTimeInput.value = MAX_TIME_DEFAULT;
+  maxTimeIsAuto = false;
+  maxTimeInput.disabled = false;
+  maxTimeAutoNote.style.display = 'none';
+}
+
 function applyAutoFinishTime(ast) {
   const t = computeAutoFinishTime(ast);
   if (t === null) {
-    maxTimeInput.disabled = false;
-    maxTimeAutoNote.style.display = 'none';
+    releaseRunLength();
   } else {
     maxTimeInput.value = t;
+    maxTimeIsAuto = true;
     maxTimeInput.disabled = true;
     maxTimeAutoNote.style.display = '';
   }
@@ -5165,8 +5473,8 @@ function tryApplyAutoFinishTime(src) {
   try {
     applyAutoFinishTime(parseVerilog(src));
   } catch (e) {
-    maxTimeInput.disabled = false;
-    maxTimeAutoNote.style.display = 'none';
+    // A design that does not parse has no derivable time either, so this is the same case.
+    releaseRunLength();
   }
 }
 
@@ -5213,6 +5521,16 @@ function runSimulation(overrideSrc) {
     logLine('<span class="info">Top module is ' + escapeHtml(ast.tree.modType)
           + ' (by name); not instantiated: ' + escapeHtml(ast.unusedModules.join(', '))
           + '</span>');
+  }
+  /* PARSE WARNINGS, which today means one thing: an unsized literal used as a direct element
+     of a concatenation, where its 32-bit width is not what the design reads as and where the
+     synthesizer sizes it differently. Info rather than an error - the run is valid Verilog and
+     its result is the LRM's - so the Run button must not go red for it. Printed after the
+     top-module notice and before the run, because it is a fact about the source rather than
+     about what happened. Warnings carry no PASS or FAIL: the practice verdict pill counts
+     those over the whole console. */
+  for (const w of ast.warnings || []) {
+    logLine('<span class="info">Warning: ' + escapeHtml(w) + '</span>');
   }
   applyAutoFinishTime(ast);
   const maxTime = Math.max(10, parseInt(maxTimeInput.value, 10) || 300);
@@ -6575,16 +6893,9 @@ window.addEventListener('resize', () => {
 
 /* ---- (?) help popovers on card headers (generic: any .help-icon toggles the
    element right after it, and a click anywhere closes them all) ---- */
-document.querySelectorAll('.help-icon').forEach(btn => {
-  const popup = btn.nextElementSibling;
-  if (!popup || !popup.classList.contains('help-popup')) return;
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const willShow = !popup.classList.contains('visible');
-    document.querySelectorAll('.help-popup.visible').forEach(p => p.classList.remove('visible'));
-    if (willShow) popup.classList.add('visible');
-  });
-});
+/* The icons themselves are wired by `wireCardControls` above, with the fold chevron, so a card
+   built later gets both from one call. What stays here is the DOCUMENT-level dismiss, which is
+   one listener for the whole page rather than one per icon. */
 document.addEventListener('click', () => {
   document.querySelectorAll('.help-popup.visible').forEach(p => p.classList.remove('visible'));
 });
@@ -6600,18 +6911,28 @@ document.addEventListener('click', () => {
      one the drawer needs no network at all, which is the property every other page here is
      built for. The three apps outside this directory (emulator,
      verify, workbench) are deliberately absent: they live one level ABOVE the deployed
-     root, so a `../` row would resolve in the repo and 404 on the site. */
+     root, so a `../` row would resolve in the repo and 404 on the site.
+
+     FOUR DESTINATIONS, NOT SEVEN: the single-stage apps - Simulator, Synthesizer, Place &
+     Route, Compiler - are off the menu and reached by URL. They are still pages, still
+     built, still checked; what went is their rows. So this list is what a reader is offered,
+     which is a different question from what exists, and `currentHref`'s `known` list above is
+     what keeps those four marking nothing rather than marking Practice. Their glyphs are left
+     in `G` below, unused, so restoring a row is one line rather than redrawing an icon. */
   var ITEMS = [
     ['Home', 'index.html', 'home'],
     ['Learn', 'learn.html', 'cap'],
-    ['Practice', 'practice.html', 'mind'],
-    ['Simulator', 'simulator.html', 'pulse'],
-    ['Synthesizer', 'synthesis.html', 'chip'],
-    /* AFTER the synthesizer, because that is the order the flow runs in: a netlist is what
-       this app places and routes. It is a row rather than a `known` entry that marks
-       nothing, which is what it was until it had a page worth linking to. */
-    ['Place & Route', 'pnr.html', 'route'],
-    ['Compiler', 'compiler.html', 'code']
+    ['Practice', 'practice.html', 'codeslash'],
+    /* DIRECTLY BELOW PRACTICE, because it is the same thing one step further on: practice is
+       one stage of the flow per page, and this is every stage of it on one. It is also the
+       only tool row left, and the one the three retired rows fed into: the simulator, the
+       synthesizer and the placer are all stages of it. */
+    ['Code2Silicon', 'code2silicon.html', 'flow'],
+    /* LAST, and that is a statement about what the row IS rather than a place left over. The
+       four above are DESTINATIONS - things to read, things to solve, a tool to work in - and
+       this one is the reader's own work in those tools. It belongs after the thing that
+       produces it, the way a file listing sits below the editor rather than above it. */
+    ['My Projects', 'projects.html', 'folder']
   ];
   var G = {
     menu: '<svg viewBox="0 0 16 16"><path d="M1.5 3.25h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Z"/></svg>',
@@ -6675,7 +6996,70 @@ document.addEventListener('click', () => {
        and the lower block's left edge, so under the nonzero rule an opposed subpath would
        punch a hole through the join and the wire would read as detached at both ends - the
        same trap `cap`'s tassel records. */
-    route: '<svg viewBox="0 0 16 16"><path d="M1 2h5v5H1V2Zm9 7h5v5h-5V9ZM3 7h1v4h6v1H3V7Z"/></svg>'
+    route: '<svg viewBox="0 0 16 16"><path d="M1 2h5v5H1V2Zm9 7h5v5h-5V9ZM3 7h1v4h6v1H3V7Z"/></svg>',
+    /* CODE2SILICON: a packaged die with code brackets inside it and eight pin leads - the
+       page's own two halves, source going into silicon, which is a THING where the funnel this
+       replaced was a shape. Kept on the artwork's own 24-unit viewBox rather than redrawn onto
+       this set's 16-unit grid, so it is the drawing as supplied; the box is square and the CSS
+       box is square, so the scale is uniform and nothing is letterboxed.
+
+       THE PAINT ATTRIBUTES ARE ON A `<g>`, NOT ON THE `<svg>`, and that is not tidiness: the
+       stylesheet says `.nav-row-icon svg { fill: currentColor }`, so a `fill="none"` on the svg
+       element is a presentation attribute LOSING to a declaration on the same element - the die
+       and both chevrons would fill solid and the glyph would be a blob. On a `<g>` the attribute
+       is the only declaration that element has, and the children inherit `none` from it. This is
+       the rule `mind` above records from the other direction (it puts them on the path), and the
+       hoist-onto-a-g idiom `tools/logo.py`'s cleaned output already uses.
+
+       It is the SECOND stroked glyph in this set, and the lighter of the two: 2 units on a 24 box
+       is 1.33px at 16, against `mind`'s 1.6 on a 16 box. It also carries more detail than any
+       other glyph here - a 2-unit bracket excursion is 1.33px and a 3-unit pin lead 2px - which
+       is the smear `cap`'s tassel and `mind`'s chip were both simplified to avoid, so this one is
+       measured in a browser rather than reasoned about. */
+    /* PRACTICE: a pair of chevrons with a slash between them - what writing code looks like,
+       which is what an exercise page asks you to do, where `mind` (still in `G`, unused, so it is
+       one line to restore) drew the reader instead. On the artwork's own 24-unit viewBox and
+       stroked, like `flow` below it, so the two 24-box glyphs are consistent with each other; the
+       paint attributes are on a `<g>` for the reason that one records at length - on the `<svg>`
+       they lose to `.nav-row-icon svg { fill: currentColor }` and the strokes fill solid.
+
+       WORTH KNOWING: this is chevrons and `flow` is chevrons inside a die, and the two rows are
+       adjacent. They are told apart by the die outline and its eight pins rather than by the
+       brackets, which is the weaker of the two readings - if they ever need more separation it is
+       this one to change, since `flow`'s brackets are what say "source" inside the package. */
+    codeslash: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" '
+          + 'stroke-linecap="round" stroke-linejoin="round">'
+          + '<polyline points="16 18 22 12 16 6"/>'
+          + '<polyline points="8 6 2 12 8 18"/>'
+          + '<line x1="14" y1="4" x2="10" y2="20"/>'
+          + '</g></svg>',
+    flow: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" '
+          + 'stroke-linecap="round" stroke-linejoin="round">'
+          + '<rect x="5" y="5" width="14" height="14" rx="2.5"/>'
+          + '<path d="M9 10l-2 2 2 2"/><path d="M15 10l2 2-2 2"/>'
+          + '<path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>'
+          + '</g></svg>',
+    /* MY PROJECTS: a folder, outlined. Back on this set's 16-unit grid and fill-only, like
+       every glyph here but the two 24-box strokes above - it is drawn here rather than
+       supplied, so there is no artwork to stay faithful to and the set's own rules decide it.
+
+       EVERY coordinate is a whole unit and every wall is exactly ONE, which is the whole of
+       what makes it legible at 16px: a 1-unit wall lands on one whole pixel at full strength,
+       where `cap`'s cord at 0.75 spread across two at half and vanished. Left 1-2, right 14-15,
+       bottom 12-13, body top 5-6, tab top 3-4, tab right 5-6 - measure any of them and they
+       are the same.
+
+       OUTLINED, NOT SOLID, and that is what tells it from `chip`: a filled folder at this size
+       is a rounded blob with a nick in one corner, and the nick is the only thing carrying the
+       meaning. With the hole, the tab reads as a tab. The hole is the SECOND subpath and is
+       wound AGAINST the outline - the outline anticlockwise, the hole clockwise - and under the
+       nonzero rule it is that opposition, in either direction, that punches it out rather than
+       filling it in. Same winding rule `cap` and `route` record from the other side: there the
+       subpaths AGREE, so they merge instead of nicking each other. Verified by rasterising at
+       16px rather than by reading: 44 pixels of wall, 78 punched out, every wall one pixel at
+       full strength, and the tab step 5px against the body's 11. Centred on the box too - three
+       empty rows above and below, one column each side - rather than merely fitted inside it. */
+    folder: '<svg viewBox="0 0 16 16"><path d="M1 3h5v2h9v8H1Z M2 4v8h12V6H5V4Z"/></svg>',
   };
 
   function mk(tag, cls, id, text) {
@@ -6715,12 +7099,15 @@ document.addEventListener('click', () => {
     if (base()) return '';
     var file = (window.location && window.location.pathname || '').split('/').pop() || '';
     if (file === 'learn.html' || file.indexOf('learn-') === 0) return 'learn.html';
-    /* `pnr.html` is named here for the same reason every other row is: the fallback below
-       catches every filename it has not been told about and answers `practice.html`, so an
-       app left out of this list marks Practice - which is what pnr.html did while it had no
-       row. Now that it has one, being in this list is what MARKS it, not what excludes it,
-       and dropping it would put the marker back on Practice rather than merely lose it. */
-    var known = ['index.html', 'simulator.html', 'synthesis.html', 'compiler.html', 'pnr.html'];
+    /* THE FOUR APPS ARE NAMED HERE WITHOUT HAVING A ROW, and that is the whole point of the
+       list rather than an oversight in it. The fallback below catches every filename it has
+       not been told about and answers `practice.html`, so an app left out marks Practice -
+       which is what pnr.html did while it had no row. The apps are off the menu now, so what
+       being in this list buys is that they mark NOTHING: naming a page is how you say "not
+       Practice", and marking a row is a separate question the row list answers. Drop a name
+       and that page's drawer lights Practice, which is worse than lighting nothing. */
+    var known = ['index.html', 'simulator.html', 'synthesis.html', 'compiler.html', 'pnr.html',
+                 'code2silicon.html', 'projects.html'];
     return known.indexOf(file) >= 0 ? file : 'practice.html';
   }
 

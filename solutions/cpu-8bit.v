@@ -79,8 +79,8 @@ module pc (
   end
 endmodule
 
-/* ---- the machine around it: ROM, RAM, and the wiring ---- */
 // ======== TESTBENCH ========
+/* ---- the machine around it: ROM, RAM, and the wiring ---- */
 
 module rom (
   input [7:0] addr,

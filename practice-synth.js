@@ -61,6 +61,14 @@
                      var slots = (m && m.slots) || [];
                      return slots.indexOf('netlist') >= 0 || slots.indexOf('netlist-view') >= 0;
                    })());
+  /* A THIRD CALLER, and it DECLARES itself rather than being detected. code2silicon.html is
+     neither an exercise nor a topic - it has no manifest entry and no slug - so neither test
+     above can see it, and without this it got no netlist cards at all: this file returned on
+     its first line and the page was missing two of its eleven panels with nothing to say so.
+     Widened rather than copied, which is the choice this guard already records for the learn
+     pages; and a declaration rather than a sniff, which is the rule CLAUDE.md states for
+     CLOUD_APP - a global that happens to exist today is not a statement of intent. */
+  if (window.WANTS_SYNTH) wantsSynth = true;
   if (!wantsSynth) return;
   if (!window.SYNTH) return;
 
@@ -90,7 +98,21 @@
     xor: { viewBox: '0 0 90 80', body: GATE_XSHIELD_D, extra: GATE_XCURVE_D, stubs: [[0, 16, 14, 16], [0, 64, 14, 64], [81, 40, 89, 40]] },
     xnor: { viewBox: '0 0 100 80', body: GATE_XSHIELD_D, extra: GATE_XCURVE_D, stubs: [[0, 16, 14, 16], [0, 64, 14, 64], [92, 40, 99, 40]], bubble: { cx: 86, cy: 40 } },
     not: { viewBox: '0 13 75 54', body: GATE_NOT_D, stubs: [[0, 40.5, 16, 40.5], [67, 40, 74, 40]], bubble: { cx: 61, cy: 40 } },
-    buf: { viewBox: '0 13 75 54', body: GATE_NOT_D, stubs: [[0, 40.5, 16, 40.5], [67, 40, 74, 40]] },
+    /* A BUFFER IS THE NOT TRIANGLE WITH THE BUBBLE GONE, AND ITS OUTPUT STUB HAS TO MOVE BACK WITH
+       IT. `not`'s stub starts at 67 because that is exactly where its bubble ends (cx 61, r 6), so
+       the two touch; the triangle's own apex is back at 57.5. Delete the bubble and leave the stub
+       where it was, and what is drawn is a tip with a 9.5-unit gap and then a floating dash - which
+       at 16px reads as a symbol whose output is not connected to anything. So the stub runs from the
+       apex, and `40` rather than the input's `40.5` because that is the y the body's own `L57.5,40`
+       lands on: half a unit off and the join shows a step at this size.
+
+       Nothing about the wires moves - `handleSpecs` puts a unary gate's `y` at the middle of the
+       box's right edge, which is where the stub already ended. This is the drawing only.
+
+       `dffnr` is the same situation handled the other way, and worth reading beside this: there the
+       bubble's pin goes away entirely, so the stub is DELETED along with it. Here the pin is the
+       output and has to stay. */
+    buf: { viewBox: '0 13 75 54', body: GATE_NOT_D, stubs: [[0, 40.5, 16, 40.5], [57.5, 40, 74, 40]] },
     /* THE SELECT COMES IN FROM THE TOP, where the data inputs stay on the left. Three pins stacked
        down one edge says nothing about which of them chooses and which are chosen; a mux drawn with
        `sel` on the top edge is the convention every schematic uses, and it reads the way the sentence
@@ -288,6 +310,13 @@
   var viewStack = [];             // breadcrumb: module names, top down to the viewed one
   var lastGraph = { nodes: [], edges: [] };
   var netlistFullText = '';
+  /* THE AREA REPORT IS THIS CARD'S, NOT THE CONSOLE'S. It used to be one `info` row in the
+     simulator's console; the card that now offers it is its single home, because the same
+     numbers in two panels is exactly what this file removed the viewer's node/net count for
+     - two readings of nearly one question, disagreeing with nothing on the page to explain
+     it. The Console keeps what only it can say: the parse and elaboration messages, which
+     top module was synthesized, and whether the design was already a netlist. */
+  var areaReportText = '';
   /* Derived from Run's own wording rather than written out, the rule app.js's
      RUN_LABEL_AGAIN follows: `simulator.html`'s markup stays the one source of the verb,
      so if that button ever reads something else this one still agrees with it. */
@@ -319,8 +348,8 @@
     if (netlistStale) netlistStale.style.display = show;
     if (viewerStale) viewerStale.style.display = show;
     // Only on a real transition: `input` fires per keystroke, and re-rendering the
-    // console section on each one would be work nobody asked for.
-    if (moved && synthLines.length) renderSynthSection();
+    // log view on each one would be work nobody asked for.
+    if (moved && synthLines.length) renderLogView();
   }
 
   /* localStorage keys are deliberately NOT synthesis.html's own
@@ -331,6 +360,21 @@
   var K_BUNDLE = 'practiceNetlistBundle';
   var K_HEIGHT = 'practiceNetlistHeight';
   var K_VIEW_HEIGHT = 'practiceNetlistViewHeight';
+  /* THE CARD'S VIEW, and the STORED CHOICE IS HONOURED IN BOTH DIRECTIONS: `=== 'netlist'`
+     reads a missing key as the default and a deliberate pick of either view comes back as
+     itself. The form that only ever turns one of two states on is the bug this repo records
+     for the Scoreboard's checkbox and for `compilerLang`.
+
+     Declared up here with the other keys rather than beside the functions that use it,
+     because the wiring block below reads it and a `var` declared further down reads
+     `undefined` there - the hoisting trap this file already paid for twice. */
+  /* The diagram is where a successful synthesis lands, so it is also where the card starts. Not
+     read from storage - see setResultsView for why a stored view stopped meaning anything. */
+  var resultsView = 'diagram';
+  /* Set by showCards for a design that was ALREADY a netlist. It suppresses the listing
+     without touching `resultsView`, so a reader who prefers the netlist gets it back the
+     moment they edit the design into something that is actually synthesized. */
+  var listingSuppressed = false;
 
   /* The viewer's two heights, DECLARED HERE because the wiring block below sets the empty
      one and `var` hoisting made a declaration further down read as `undefined` - the box
@@ -386,7 +430,11 @@
     return wrap;
   }
 
-  function cardHead(title, helpLines, controls) {
+  /* `extra` lands BETWEEN the (?) icon and `.header-controls`, which is where
+     Baerilog/synthesis.html's markup puts the same node and where compiler.html puts its
+     frontend radios: `.header-controls` keeps its margin-left:auto, so anything before it
+     sits left-adjacent to the title with no layout of its own. */
+  function cardHead(title, helpLines, controls, extra) {
     var h = document.createElement('h2');
     var collapse = mk('span', 'card-collapse-btn');
     collapse.setAttribute('data-collapse', '');
@@ -394,6 +442,7 @@
     h.appendChild(collapse);
     h.appendChild(document.createTextNode(title));
     h.appendChild(help(helpLines));
+    if (extra) h.appendChild(extra);
     if (controls) h.appendChild(controls);
     return h;
   }
@@ -414,18 +463,72 @@
     save.innerHTML = '<svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 0.8 V7.5 M5 4.5 L8 7.5 L11 4.5"/><path d="M1.5 8.5 V10.2 a1 1 0 0 0 1 1 H13.5 a1 1 0 0 0 1-1 V8.5"/></svg>';
     g1.appendChild(save);
     controls.appendChild(g1);
-    var g2 = mk('span', 'layout-toggle');
+    var g2 = mk('span', 'layout-toggle', 'codeOutHierarchyGroup');
     var hierBtn = mk('span', 'layout-btn', 'codeOutHierarchyToggleBtn');
     hierBtn.setAttribute('title', 'Show/hide module hierarchy');
     hierBtn.innerHTML = HIER_GLYPH;
     g2.appendChild(hierBtn);
     controls.appendChild(g2);
+    /* THE EXPAND IS THE CARD'S NOW, not the viewer row's - one width control for one card, and it
+       serves the two text panels as well, which are `pre` boxes that scroll sideways in a grid
+       cell. Same measured bleed, same per-app key; only the element it toggles moved. */
+    var g3 = mk('span', 'layout-toggle');
+    var expand = mk('span', 'layout-btn', 'netlistExpandBtn');
+    expand.setAttribute('title', 'Expand to the full browser width');
+    expand.innerHTML = '<svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1 V11 M15 1 V11"/><path d="M4.5 6 H11.5 M6.5 3.8 L4.3 6 L6.5 8.2 M9.5 3.8 L11.7 6 L9.5 8.2"/></svg>';
+    g3.appendChild(expand);
+    controls.appendChild(g3);
 
-    card.appendChild(cardHead('Synthesized Gate-level Verilog Netlist (Read-only)', [
-      'the same design as gates: a top module instantiating primitive cells, then the behavioural definition of each cell it used',
-      'the testbench is not synthesized - everything below the TESTBENCH marker is dropped first, which is exactly what the Testbench Editor holds',
-      'read-only, and regenerated on every Run: edit the design above, not this'
-    ], controls));
+    /* TWO VIEWS OF ONE SYNTHESIS, chosen by a radio pair on the heading - the same card
+       Baerilog/synthesis.html carries, down to the classes, which reach this page through
+       synth.css. On the heading because they name what the card HOLDS, where the toolbar
+       below the editor names what the page does; two radios rather than a checkbox because
+       neither view is a modifier of the other. Synthesis Log is the default for now: it is the
+       answer
+       to "what did that cost", which is the question a learner has about a design they have
+       just written, where the netlist text is what you read when you want to check a cell. */
+    var views = mk('span', 'view-group');
+    /* NAMED FOR THE ARTEFACT, not for the widget: `Synthesis Log` is where a synthesis says what
+       it did (and, under that, what the design costs), `Gate-level Verilog` is the netlist as text.
+       A third radio, `Diagram`, joins them when the Netlist Viewer card merges into this one -
+       which is why the internal values stay `area`/`netlist` for now rather than churning every
+       reader of them twice. */
+    [['viewDiagramRadio', 'diagram', 'Diagram'],
+     ['viewAreaRadio', 'area', 'Synthesis Log'],
+     ['viewNetlistRadio', 'netlist', 'Gate-level Verilog']].forEach(function (v) {
+      var lab = mk('label', 'view-toggle' + (v[1] === 'diagram' ? ' on' : ''));
+      lab.setAttribute('for', v[0]);
+      var r = mk('input', null, v[0]);
+      r.setAttribute('type', 'radio');
+      r.type = 'radio';
+      r.setAttribute('name', 'synthView');
+      r.setAttribute('value', v[1]);
+      r.value = v[1];
+      if (v[1] === 'diagram') r.checked = true;
+      lab.appendChild(r);
+      var t = mk('span');
+      t.textContent = v[2];
+      lab.appendChild(t);
+      views.appendChild(lab);
+    });
+
+    card.appendChild(cardHead('Synthesis Results', [
+      'Diagram - the same design as blocks and wires: drag to pan, scroll or pinch to zoom, '
+        + 'and the zoom buttons step about the centre while fit brings the whole thing back',
+      'click a wire to name its net and light every segment of it, or a symbol to light what it '
+        + 'is wired to - inputs pink, outputs accent; Escape or a background click clears it',
+      'double-click a sub-module block to drill into its own netlist; the breadcrumb comes back out',
+      'bundle multi-bit logic collapses same-width cell chains into one N-bit box',
+      'Synthesis Log - what the synthesis did, and what the design costs in cells: a '
+        + 'per-module table, a count per gate type, and an approximate area in 2-input NAND '
+        + 'equivalents',
+      'Gate-level Verilog - the same design as gates: a top module instantiating primitive '
+        + 'cells, then the behavioural definition of each cell it used',
+      'the testbench is not synthesized - everything below the TESTBENCH marker is dropped '
+        + 'first, which is exactly what the Testbench Editor holds',
+      'the netlist is read-only, and both are regenerated on every Synthesize: edit the '
+        + 'design above, not this'
+    ], controls, views));
 
     var row = mk('div', 'editor-hierarchy-row hierarchy-collapsed', 'codeOutHierarchyRow');
     row.appendChild(mk('div', 'editor-hierarchy-panel', 'codeOutHierarchyPanel'));
@@ -438,6 +541,16 @@
     stale.style.display = 'none';
     stale.textContent = 'The design has changed since this was synthesized — press Synthesize.';
     card.appendChild(stale);
+    /* ONE PRE PER VIEW, shown one at a time, with the module list going along with the
+       netlist it slices - it picks which module's TEXT to show, which is not a question
+       about an area report, so the whole row goes rather than leaving a panel beside a
+       report it cannot act on. */
+    /* The three panels, in the order the radios read: the diagram first, since it is the default
+       and the thing a reader looks at. */
+    card.appendChild(buildDiagramPanel());
+    var areaPre = mk('pre', 'code-out', 'areaOut');
+    card.appendChild(areaPre);
+    row.style.display = 'none';
     card.appendChild(row);
     // An empty dark panel reads as a rendering fault rather than as "nothing yet",
     // which is why this sits beside it instead of inside it.
@@ -450,7 +563,7 @@
 
        At the BOTTOM, after the text, because it acts on what is above it: read the
        netlist, then run it. */
-    var runGate = mk('div', 'toolbar');
+    var runGate = mk('div', 'toolbar', 'gateRunRow');
     runGate.style.marginTop = '12px';
     runGate.style.marginBottom = '0';
     var b = mk('button', 'btn', 'gateRunBtn');
@@ -461,31 +574,18 @@
     return card;
   }
 
-  function buildViewerCard() {
-    var row = mk('div', 'split-row', 'netlistSplitRow');
-    var card = mk('div', 'card', 'card-netlist-view');
+  /* ---- THE DIAGRAM IS A PANEL OF THE SYNTHESIS RESULTS CARD, not a card of its own ----
+     It was `card-netlist-view` in a `split-row` below the netlist card, which made two cards for
+     one synthesis: the same design as a picture and as text, each with its own head, its own
+     height buttons and its own stale band. It is the third VIEW of one card now, chosen by the
+     radio beside the other two, so the card's header carries one height pair, one expand and one
+     stale band for whichever of the three is up.
 
-    var controls = mk('span', 'header-controls');
-    var g1 = mk('span', 'layout-toggle');
-    g1.appendChild(heightBtn('netlistViewHeightDec', false));
-    g1.appendChild(heightBtn('netlistViewHeightInc', true));
-    controls.appendChild(g1);
-    var g2 = mk('span', 'layout-toggle');
-    var expand = mk('span', 'layout-btn', 'netlistExpandBtn');
-    expand.setAttribute('title', 'Expand to the full browser width');
-    expand.innerHTML = '<svg viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1 V11 M15 1 V11"/><path d="M4.5 6 H11.5 M6.5 3.8 L4.3 6 L6.5 8.2 M9.5 3.8 L11.7 6 L9.5 8.2"/></svg>';
-    g2.appendChild(expand);
-    controls.appendChild(g2);
-
-    card.appendChild(cardHead('Netlist Viewer', [
-      'drag to pan, scroll or pinch to zoom - the view refits itself on every new graph',
-      'click a wire to name its net and light up every segment of it; Escape, or a click on the '
-        + 'background, clears that again',
-      'the zoom buttons step in and out about the centre, and fit brings the whole diagram '
-        + 'back - zooming out stops there, so the diagram is never lost in empty space',
-      'double-click a sub-module block to drill into its own netlist; the breadcrumb comes back out',
-      'bundle multi-bit logic collapses same-width cell chains into one N-bit box'
-    ], controls));
+     What comes with it unchanged is everything inside: the toolbar (breadcrumb, net readout,
+     bundle checkbox, zoom trio), `#flowRoot` and its three layers, and the legend. Nothing about
+     the viewer's own code moves, which is what keeps this a re-arrangement rather than a rewrite. */
+  function buildDiagramPanel() {
+    var panel = mk('div', null, 'netlistDiagramPanel');
 
     var bar = mk('div', 'toolbar');
     bar.style.marginBottom = '8px';
@@ -496,11 +596,6 @@
     var netSel = mk('span', 'pn-net-readout', 'netlistSelectedNet');
     netSel.style.display = 'none';
     bar.appendChild(netSel);
-    var vstale = mk('span', 'editor-sync-warning', 'viewerStale');
-    vstale.style.display = 'none';
-    vstale.style.marginBottom = '0';
-    vstale.textContent = 'Design changed — press Synthesize.';
-    bar.appendChild(vstale);
     var label = mk('label', 'bundle-toggle');
     label.setAttribute('title', 'Bundle same-width mux/dff/gate chains into one N-bit box, or show every individual 1-bit cell');
     var cb = mk('input', null, 'bundleMultibitCheckbox');
@@ -528,7 +623,7 @@
       zoomGroup.appendChild(el);
     });
     bar.appendChild(zoomGroup);
-    card.appendChild(bar);
+    panel.appendChild(bar);
 
     var root = mk('div', null, 'flowRoot');
     var edges = document.createElementNS(SVG_NS, 'svg');
@@ -540,40 +635,64 @@
     root.appendChild(edges);
     var nodes = mk('div', 'pn-nodes', 'pnNodes');
     root.appendChild(nodes);
+    /* THE SELECTED NET'S LABEL GETS A LAYER OF ITS OWN, ABOVE THE NODES. It used to be
+       appended to the edge layer, which is deliberately UNDER `.pn-nodes` so that no wire
+       crosses a symbol - so the one label this viewer draws was painted behind the very
+       symbols it runs between and simply vanished on a long name. See the rule in
+       synthesis.html's additions, which is where the CSS for both viewers lives. */
+    var labels = document.createElementNS(SVG_NS, 'svg');
+    labels.setAttribute('class', 'pn-labels');
+    labels.id = 'pnLabels';
+    var labelG = document.createElementNS(SVG_NS, 'g');
+    labelG.id = 'pnLabelG';
+    labels.appendChild(labelG);
+    root.appendChild(labels);
     var placeholder = mk('div', 'flow-placeholder', 'flowPlaceholder');
     placeholder.textContent = 'Nothing synthesized yet - press Synthesize.';
     root.appendChild(placeholder);
-    card.appendChild(root);
+    panel.appendChild(root);
 
-    /* Five entries, not synthesis.html's nine. Its legend dots are nine literal iOS
+    /* Seven entries, not synthesis.html's nine. Its legend dots are nine literal iOS
        colours from before the Primer conversion, and its own .rf-node rules no longer
        paint them - several kinds now share one token, so nine rows would name
        distinctions that are not on the screen. Each row here names everything drawn in
-       that colour, and the colours are the tokens the shapes actually use. */
+       that colour, and the colours are the tokens the shapes actually use - which is why
+       the output port and the mux are two rows: the port took --port-out-fg, and they were
+       one row for as long as they shared amber. */
     var legend = mk('div', 'legend-row');
-    [['--success-fg', 'input port'],
-     ['--attention-fg', 'output port, mux'],
-     ['--accent-fg', 'gate, dff, sub-module'],
-     ['--danger-fg', 'adder / subtractor'],
-     ['--fg-muted', 'constant']].forEach(function (pair) {
+    /* SIX ROWS, ALL SYMBOLS: the two that named the SELECTION colours as short wire swatches are
+       gone, here and in synthesis.html's markup together - a legend of eleven rows is one nobody
+       reads, and a selection explains itself at the moment it happens in a way a resting legend
+       cannot (the readout names the lit net and colours its input half, and the pin labels carry
+       the direction). So this row says what the SHAPES mean, which is what is true before a click.
+       The `kind` column is kept, since it is what said `dot` against `wireswatch`, and every row
+       is a dot now. Same rows, same wording, as synthesis.html's legend. */
+    /* SEVEN NOW, AND THE SUB-MODULE IS WHAT SPLIT OFF. It shared accent with `gate, dff`, so
+       that row named a collision rather than resolving it - which is what --port-out-fg was added
+       to stop when the output port shared amber with the mux. Same rows, same wording, same
+       order as synthesis.html's legend; tools/check_theme.py compares the two. */
+    [['--success-fg', 'input port', 'dot'],
+     ['--port-out-fg', 'output port', 'dot'],
+     ['--attention-fg', 'mux', 'dot'],
+     ['--accent-fg', 'gate, dff', 'dot'],
+     ['--node-sub-fg', 'sub-module', 'dot'],
+     ['--danger-fg', 'adder / subtractor', 'dot'],
+     ['--fg-muted', 'constant', 'dot']].forEach(function (pair) {
       var item = mk('div', 'legend-item');
-      var dot = mk('span', 'dot');
+      var dot = mk('span', pair[2]);
       dot.style.background = 'var(' + pair[0] + ')';
       item.appendChild(dot);
       item.appendChild(document.createTextNode(pair[1]));
       legend.appendChild(item);
     });
-    card.appendChild(legend);
-
-    row.appendChild(card);
-    return row;
+    panel.appendChild(legend);
+    return panel;
   }
 
   var grid = document.querySelector('.grid');
   var waveRow = document.getElementById('waveSplitRow');
   if (!grid) return;
   var netlistCard = buildNetlistCard();
-  var viewerRow = buildViewerCard();
   // Below the Waveform Viewer, above the Memory Viewer. insertBefore(x, null)
   // appends, which is what happens if the waveform row is somehow last.
   var after = null;
@@ -584,7 +703,6 @@
     }
   }
   grid.insertBefore(netlistCard, after);
-  grid.insertBefore(viewerRow, after);
   /* Both cards start HIDDEN and are revealed only by a synthesis that succeeded. That
      is what lets the flag go on a page whose design the synthesizer cannot handle at
      all - eight of the eighteen - without putting an error panel under every learner's
@@ -592,11 +710,12 @@
      the cards simply never appear. So "the cards are on screen" means "a successful
      synthesis is on screen", and a later failure takes them away again. */
   netlistCard.style.display = 'none';
-  viewerRow.style.display = 'none';
 
   var codeOut = document.getElementById('codeOut');
   var codeOutPanel = document.getElementById('codeOutHierarchyPanel');
   var codeOutRow = document.getElementById('codeOutHierarchyRow');
+  var areaOut = document.getElementById('areaOut');
+  var codeOutGroup = document.getElementById('codeOutHierarchyGroup');
   var netlistEmpty = document.getElementById('netlistEmpty');
   // built inside buildNetlistCard, so resolved here like every other element of it
   var gateBtn = document.getElementById('gateRunBtn');
@@ -605,6 +724,7 @@
   var flowRoot = document.getElementById('flowRoot');
   var nodesLayer = document.getElementById('pnNodes');
   var edgeLayer = document.getElementById('pnEdgeG');
+  var labelLayer = document.getElementById('pnLabelG');
   var edgeSvg = document.getElementById('pnEdges');
   var placeholderEl = document.getElementById('flowPlaceholder');
   var crumbRow = document.getElementById('breadcrumbRow');
@@ -676,61 +796,69 @@
      4. the generic wiring app.js already did for its own cards
      ===================================================================== */
 
-  /* app.js wires [data-collapse] and .help-icon with querySelectorAll AT LOAD, and
-     these cards did not exist then - this file runs after it. So the same two
-     handlers are attached here, to these cards only. */
-  var newCards = [netlistCard, document.getElementById('card-netlist-view')];
-  newCards.forEach(function (card) {
-    card.querySelectorAll('[data-collapse]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var c = btn.closest('.card');
-        c.classList.toggle('collapsed');
-        btn.textContent = c.classList.contains('collapsed') ? '▸' : '▾';
-      });
-    });
-    card.querySelectorAll('.help-icon').forEach(function (btn) {
-      var popup = btn.nextElementSibling;
-      if (!popup || !popup.classList.contains('help-popup')) return;
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        var willShow = !popup.classList.contains('visible');
-        document.querySelectorAll('.help-popup.visible').forEach(function (p) { p.classList.remove('visible'); });
-        if (willShow) popup.classList.add('visible');
-      });
-    });
-  });
+  /* app.js wires [data-collapse] and .help-icon with querySelectorAll AT LOAD, and this card
+     did not exist then - this file runs after it. It used to re-attach both handlers here, a
+     copy of app.js's; they are one function there now (`wireCardControls`), because
+     code2silicon.js appends two more cards and would have been a third copy. */
+  /* THE BARE BINDING, not `window.wireCardControls`: a classic script sees the top-level
+     declarations of the ones before it, which is how this file already reaches app.js's
+     `logLine` and `editorFullSource` - and it is the only form that works under the harness,
+     which evaluates app.js into a function scope where a declaration is just a local.
+     `typeof` on an undeclared identifier is safe, so the guard costs nothing where app.js is
+     absent. */
+  if (typeof wireCardControls === 'function') wireCardControls(netlistCard);
 
   // Same constants as app.js's own height controls, so every panel on the page
   // steps by the same amount.
-  function wireHeight(key, el, dec, inc, after) {
+  /* `el` may be a LIST, which this card needs: its two views are two panels sharing one
+     pair of buttons and one stored number. The measurement has to come from whichever is
+     VISIBLE - getBoundingClientRect().height is 0 on a display:none element, so measuring
+     the wrong one would clamp the box to MIN on the first press in the other view - and the
+     result is written to both, so switching view leaves the box the size the reader chose
+     with nothing to re-apply on reveal. */
+  function wireHeight(key, el, dec, inc, after, when) {
     var MIN = 200, MAX = 1000, STEP = 80;
+    var els = Object.prototype.toString.call(el) === '[object Array]' ? el : [el];
     var saved = parseInt(localStorage.getItem(key), 10);
-    if (!isNaN(saved)) el.style.height = saved + 'px';
+    if (!isNaN(saved)) els.forEach(function (e) { e.style.height = saved + 'px'; });
     function adjust(delta) {
-      var now = el.getBoundingClientRect().height || parseInt(el.style.height, 10) || MIN;
+      var shown = els.filter(function (e) { return e.style.display !== 'none'; })[0] || els[0];
+      var now = shown.getBoundingClientRect().height || parseInt(shown.style.height, 10) || MIN;
       var next = Math.max(MIN, Math.min(MAX, now + delta));
-      el.style.height = next + 'px';
+      els.forEach(function (e) { e.style.height = next + 'px'; });
       localStorage.setItem(key, next);
       if (after) after();
     }
-    dec.addEventListener('click', function () { adjust(-STEP); });
-    inc.addEventListener('click', function () { adjust(STEP); });
+    dec.addEventListener('click', function () { if (!when || when()) adjust(-STEP); });
+    inc.addEventListener('click', function () { if (!when || when()) adjust(STEP); });
   }
-  wireHeight(K_HEIGHT, codeOut,
-             document.getElementById('netlistHeightDec'),
-             document.getElementById('netlistHeightInc'));
-  // The viewer's fit depends on its own height, so resizing it must refit - the same
-  // obligation the waveform's container has.
-  wireHeight(K_VIEW_HEIGHT, flowRoot,
-             document.getElementById('netlistViewHeightDec'),
-             document.getElementById('netlistViewHeightInc'),
-             function () { viewHeightPinned = true; invalidateFit(); fitView(); });
+  /* ONE HEIGHT PAIR FOR THREE PANELS, acting on whichever is up - the card has one header now.
+     Two keys rather than one, because a `pre` of text and a drawing are not the same box and a
+     reader's choice for one is not a claim about the other; and the diagram's own change has to
+     refit, the obligation every container-size change here carries. */
+  (function () {
+    var dec = document.getElementById('netlistHeightDec');
+    var inc = document.getElementById('netlistHeightInc');
+    wireHeight(K_HEIGHT, [areaOut, codeOut], dec, inc, null,
+               function () { return resultsView !== 'diagram'; });
+    wireHeight(K_VIEW_HEIGHT, flowRoot, dec, inc,
+               function () { viewHeightPinned = true; invalidateFit(); fitView(); },
+               function () { return resultsView === 'diagram'; });
+  })();
   /* The empty box starts small too, not only once something has been rendered into it: a
      page that has never synthesized never reaches renderGraph, so without this the first
      thing the reader sees is the 520px synth.css gives it. Set DIRECTLY rather than through
      sizeViewToGraph(), which reads `lastGraph` - a `var` declared hundreds of lines below
      and therefore still undefined here, so the call did nothing at all. */
   flowRoot.style.height = VIEW_EMPTY_H + 'px';
+
+  (function () {
+    ['viewDiagramRadio', 'viewAreaRadio', 'viewNetlistRadio'].forEach(function (id) {
+      var r = document.getElementById(id);
+      if (r) r.addEventListener('change', function (ev) { setResultsView(ev.target.value); });
+    });
+    syncResultsView();
+  })();
 
   (function () {
     var btn = document.getElementById('codeOutHierarchyToggleBtn');
@@ -750,7 +878,7 @@
      documentElement.clientWidth rather than calc(50% - 50vw), because 100vw includes
      the vertical scrollbar and the textbook trick pops a horizontal one. */
   (function () {
-    var row = document.getElementById('netlistSplitRow');
+    var row = netlistCard;          // the card, since the viewer's own row is gone
     var btn = document.getElementById('netlistExpandBtn');
     function measureBleed() {
       var cs = window.getComputedStyle(document.body);
@@ -803,9 +931,30 @@
     fitView();
   });
 
+  /* COPY AND SAVE ACT ON WHAT IS ON SCREEN, in both directions - a button that silently
+     hands back the other view's text is the header describing something not displayed. The
+     report saves as a .txt because it is prose in columns rather than Verilog; naming it .v
+     would invite feeding it to a tool. */
+  function resultsText() {
+    if (resultsView === 'diagram') return '';        // a picture has no text to hand back
+    return (resultsView === 'netlist' && !listingSuppressed) ? netlistFullText : logViewText();
+  }
+  /* THE DIAGRAM'S SAVE WRITES THE SVG, which is what the viewer's own Export SVG button used to
+     do - one control per card that writes a file, and its target follows the view like Copy's.
+     The builder behind it is untouched: `window.__netlistSvg` is the seam, and everything it
+     states about resolving tokens and including the wires in its bounds still holds. */
+  function saveTarget() {
+    if (resultsView === 'diagram') {
+      var svg = typeof window.__netlistSvg === 'function' ? window.__netlistSvg() : '';
+      return { text: svg, ext: '_netlist.svg', mime: 'image/svg+xml' };
+    }
+    var netlist = resultsView === 'netlist' && !listingSuppressed;
+    return { text: resultsText(), ext: netlist ? '_netlist.v' : '_synthesis.txt',
+             mime: 'text/plain' };
+  }
   document.getElementById('netlistCopyBtn').addEventListener('click', function () {
     var ta = document.createElement('textarea');
-    ta.value = netlistFullText;
+    ta.value = resultsText();
     ta.style.position = 'fixed';
     ta.style.opacity = '0';
     document.body.appendChild(ta);
@@ -814,15 +963,16 @@
     document.body.removeChild(ta);
   });
   document.getElementById('netlistSaveBtn').addEventListener('click', function () {
-    if (!netlistFullText) return;
-    var blob = new Blob([netlistFullText], { type: 'text/plain' });
+    var t = saveTarget();
+    if (!t.text) return;
+    var blob = new Blob([t.text], { type: t.mime });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
     /* PRACTICE_META is shell.js's, built from PRACTICE_SLUG - which a learn page does not
        declare, so there its slug is undefined and this would offer `undefined_netlist.v`. */
     var stem = (PRACTICE_META && PRACTICE_META.slug) || window.LEARN_SLUG || 'netlist';
-    a.download = stem + '_netlist.v';
+    a.download = stem + t.ext;
     a.click();
     URL.revokeObjectURL(url);
   });
@@ -832,29 +982,32 @@
      cards are hidden until a synthesis succeeds. practice.js rebuilds only its own tabs
      (inserting them before whatever is already there), so these two can be added and
      removed independently and always sit at the end. */
-  var synthTabsSkip = null;   // which tab set is on the strip, see syncSynthTabs
   var synthTabs = [];
-  /* `skipNetlist` drops the Netlist tab when its card is suppressed, because a tab pointing at a
-     hidden card is the dead control this strip is built to avoid. It is remembered rather than
-     tested for presence alone: a design edited from structural to RTL keeps the same two cards
-     shown, so `synthTabs.length` would say "already built" and the strip would stay one tab short
-     of the cards on the page. */
-  function syncSynthTabs(show, skipNetlist) {
+  /* ONE TAB, since there is one card: the viewer became this card's Diagram view, so a `Viewer`
+     tab would point at a card that no longer exists - the dead control practice.js's strip is
+     built to avoid. */
+  var tabsSuppressed = false;
+  function syncSynthTabs(show) {
     var strip = document.getElementById('exTabs');
     if (!strip) return;
+    if (tabsSuppressed) show = false;
+    /* A FLOW STRIP IS NOT A TABLE OF CONTENTS, so a page carrying one gets no tab from here.
+       Declared by the page's own builder rather than detected, the rule CLOUD_APP already
+       follows: code2silicon.html calls suppressTabs() explicitly, and practice.js cannot -
+       it runs BEFORE this file, so PRACTICE_SYNTH_API does not exist yet when it would have
+       to. It sets the flag instead, which is readable whenever this happens to run. */
+    if (window.FLOW_STRIP) show = false;
     if (!show) {
       synthTabs.forEach(function (b) { b.remove(); });
       synthTabs = [];
-      synthTabsSkip = null;
       return;
     }
-    if (synthTabs.length && synthTabsSkip === !!skipNetlist) return;
-    synthTabs.forEach(function (b) { b.remove(); });
-    synthTabs = [];
-    synthTabsSkip = !!skipNetlist;
-    [['tabNetlist', 'Netlist', 'code', 'card-netlist'],
-     ['tabNetlistView', 'Viewer', 'chip', 'card-netlist-view']]
-      .filter(function (t) { return !(skipNetlist && t[3] === 'card-netlist'); })
+    if (synthTabs.length) return;
+    /* `Synthesis Results` rather than `Netlist`, because that is what the card is called and
+       the tab is a pointer at a card. It is read off the heading in the four menu apps
+       (tools/tabstrip.js has no override for this card any more); here the strip's labels are
+       a literal table, so this is where the same name is written. */
+    [['tabNetlist', 'Synthesis Results', 'code', 'card-netlist']]
       .forEach(function (t) {
       var b = mk('button', 'gh-tab', t[0]);
       b.setAttribute('type', 'button');
@@ -892,24 +1045,57 @@
      visible: #flowRoot has no width while it is display:none, so a fit computed then
      would place every node against a fallback width and the first thing the reader sees
      would be a badly framed diagram. */
+  /* WHAT THE LOG VIEW HOLDS WHEN THERE IS NO REPORT TO SHOW: the error, and the subset hint if
+     the design tripped a documented gap rather than a mistake. The Console still carries the full
+     log; this is the answer to "why is there no netlist" on the card that would have held one. */
+  function failReport(msg, hints) {
+    var lines = ['Synthesis failed.', '', msg];
+    (hints || []).forEach(function (gap) {
+      lines.push('', 'This design uses ' + gap + ', which the synthesizer\'s subset does not '
+                   + 'cover - the simulator above does.');
+    });
+    areaReportText = lines.join('\n');
+    renderLogView();
+    resultsView = 'area';        // forced: a Diagram of nothing is what a failure means
+  }
+
+  /* A PAGE MAY PIN THE CARD ON SCREEN, and a learn topic does: `learn.js` moves the one
+     Synthesize button into this card, so hiding it would leave a topic with no way to synthesize
+     at all - on the first press and after every failure. It was accidental before (the viewer card
+     had been moved out of the row that got hidden); a flag makes it one owner's decision rather
+     than two writers racing over `style.display`. */
+  var cardsPinned = false;
+
   function showCards(on) {
     cardsShown = !!on;
-    /* THE LISTING IS SUPPRESSED FOR A DESIGN THAT WAS ALREADY A NETLIST. A card titled
-       "Synthesized Gate-level Verilog Netlist" over a design that instantiated its cells by hand is
-       showing the reader their own source back under a heading that claims it was produced - the
-       viewer beside it is the useful half, because a picture of a structure is not the structure's
-       text. Derived per synthesis from the result, so an edit from an instantiation to an operator
-       brings the card back with nothing to keep in step.
+    /* THE LISTING IS SUPPRESSED FOR A DESIGN THAT WAS ALREADY A NETLIST - the listing, not
+       the card. A view headed "Gate-level Netlist" over a design that instantiated its cells
+       by hand is showing the reader their own source back under a heading claiming it was
+       produced. What the card offers instead is the AREA REPORT, which is a real answer about
+       a structural design: those cells cost what they cost, and the Console says in the same
+       breath that nothing was inferred. That is why this stopped hiding the whole card, which
+       it did while the netlist was all the card held - hiding it now would take the report off
+       the page with the listing.
 
-       ONE THING GOES WITH IT: the gate-level Run button lives at the bottom of that card. On a
-       structural design it would re-run the very modules the simulator just ran - the netlist and
-       the source are the same modules - so losing it costs nothing there, and it returns the moment
-       something is actually synthesized. */
-    var structural = cardsShown
+       Derived per synthesis from the result, so an edit from an instantiation to an operator
+       brings the listing back with nothing to keep in step. ONE THING GOES WITH IT: the
+       gate-level Run at the bottom of the card, which on a structural design would re-run the
+       very modules the simulator just ran - the netlist and the source are the same modules.
+       syncResultsView owns both, and it leaves `resultsView` alone, so a reader who prefers
+       the netlist gets it back the moment there is one to show. */
+    listingSuppressed = cardsShown
       && topIsStructural(currentAll && currentAll.top && currentAll.top.name);
-    netlistCard.style.display = (cardsShown && !structural) ? '' : 'none';
-    viewerRow.style.display = cardsShown ? '' : 'none';
-    syncSynthTabs(cardsShown, structural);
+    netlistCard.style.display = (cardsShown || cardsPinned) ? '' : 'none';
+    syncResultsView();
+    syncSynthTabs(cardsShown);
+    /* THE FLOW FOLLOWS THE CARDS, and this is the file that moves them. A gate-level stage is
+       runnable only while there is a netlist to run, which it reads off this card's own
+       visibility - so whoever changes that has to say so, or the row keeps whatever greyness it
+       had when it was last built. It self-corrects when the reader presses a stage (the handler
+       re-syncs), which is exactly why it needs stating here: a synthesis the STRIP did not start
+       would otherwise leave the next stage looking unavailable. Guarded, because the four menu
+       apps and code2silicon.html carry this file with no practice.js flow to notify. */
+    if (window.PRACTICE_API && window.PRACTICE_API.syncStrip) window.PRACTICE_API.syncStrip();
     syncSynthLabel();   // the label follows the cards, and syncSynthLabel is its only writer
     if (cardsShown) fitView();
   }
@@ -929,64 +1115,51 @@
      Nothing here prints the words PASS or FAIL, so the verdict pill - which counts
      them over the whole console - cannot be moved by a synthesis. */
   var synthLines = [];      // {level, msg}, the last synthesis's log - the truth
-  var printedEls = [];      // the console rows currently showing it
   function synthLog(level, msg) {
     synthLines.push({ level: level, msg: msg });
-    printSynthLine(level, msg);
+    renderLogView();
   }
-  /* `before` is the row to insert ahead of, or null to append. That is what puts this
-     section in RECENCY order: the Console reads oldest at the top, and a synthesis that
-     happened BEFORE the run now on screen has to sit above it. It could only ever append
-     before, which is why Synthesize-then-Run printed the older log under the newer
-     output - every time, since Run clears the box and this re-prints afterwards. */
-  /* A section rule is spaced from the block above it, so the Console reads as sections
-     rather than as one stream - and both writers mark it the same way, since `— synthesis —`
-     is an ordinary entry of synthLines and would otherwise be the one rule without it. */
-  function isRule(msg) { return msg.charAt(0) === '\u2014'; }
-  function printSynthLine(level, msg, before) {
-    if (before) {
-      var div = document.createElement('div');
-      if (isRule(msg)) div.className = 'console-rule';
-      div.innerHTML = '<span class="' + level + '">' + escapeHtml(msg) + '</span>';
-      consoleBox.insertBefore(div, before);
-      printedEls.push(div);
-      return;
-    }
-    logLine('<span class="' + level + '">' + escapeHtml(msg) + '</span>');
-    // logLine appends one div and hands nothing back, so the row it just made is the
-    // console's last child. Keeping the element is what lets this section be removed
-    // again without touching a line the simulation printed.
-    var kids = consoleBox.children;
-    var el = kids[kids.length - 1];
-    if (el) {
-      if (isRule(msg)) el.className = 'console-rule';
-      printedEls.push(el);
-    }
+  /* THE LOG IS THE `Synthesis Log` VIEW OF THE `Synthesis Results` CARD, and it used to be a
+     section of the Console. That was wrong twice over: a view LABELLED `Synthesis Log` held the
+     area report and no log, while the log itself sat in a card labelled `Simulation Results`
+     reporting something that is not a simulation. Both names now describe their contents.
+
+     The report is the TAIL of this view rather than a fourth radio, because it was one `info` row
+     of this very log before it was given a card - the last thing the synthesizer says about the
+     design it just built. So the view reads in the order the work happened: what it did, then what
+     it cost.
+
+     THREE THINGS WENT AWAY WITH THE MOVE, and they were the trickiest code in this file. The
+     Console had one box and two owners, so this had to insert at the TOP when its section was
+     older than the run on screen, keep every row it printed as an ELEMENT so it could remove them
+     again without touching a line the simulation printed, and re-print itself after Run and Reset
+     cleared the box. A panel this file owns outright needs none of it: one writer, no ordering
+     question, and nothing else clears it. The `— synthesis —` rule went too - it separated two
+     sections of one box, and the card's own heading says it now.
+
+     One consequence worth keeping: the pill counts PASS/FAIL over the CONSOLE, so a synthesis line
+     could once have moved a verdict it has nothing to do with. Out of that box, it cannot. */
+  function logViewText() {
+    var out = synthLines.map(function (l) { return l.msg; });
+    if (stale) out.push('(the design has changed since this synthesis)');
+    if (areaReportText) out.push('', areaReportText);
+    return out.join('\n');
   }
-  function dropPrintedSynthLines() {
-    printedEls.forEach(function (el) {
-      if (el.parentElement) el.parentElement.removeChild(el);
+  function renderLogView() {
+    if (!areaOut) return;
+    var html = synthLines.map(function (l) {
+      return '<span class="' + l.level + '">' + escapeHtml(l.msg) + '</span>';
     });
-    printedEls = [];
-  }
-  // After something else has cleared the console, or after the stale flag moved: the
-  // rows are gone (or wrong), the lines are not.
-  function renderSynthSection(atTop) {
-    dropPrintedSynthLines();
-    if (!synthLines.length) return;
-    /* atTop means "this synthesis is older than what is already in the box" - which is
-       true of every re-print after a Run, and false when Synthesize is what just
-       happened. The `— synthesis —` rule needs no special handling: it is the FIRST entry
-       of synthLines, pushed once when a synthesis starts, so it travels with the rows and
-       there is still exactly one writer of it. */
-    var before = atTop ? consoleBox.firstChild : null;
-    synthLines.forEach(function (l) { printSynthLine(l.level, l.msg, before); });
-    /* The band on the two cards is not visible to a reader who is scrolling the
-       Console, so the section says it too - otherwise the log reads as a report of the
-       design in the editor when it is a report of an older one. Not pushed into
-       synthLines: it is a fact about the flag, not a line the synthesizer produced, and
-       storing it would accumulate one per re-render. */
-    if (stale) printSynthLine('warn', '(the design has changed since this synthesis)');
+    /* The band on the card is not visible to a reader scrolling this panel, so the log says it
+       too - otherwise it reads as a report of the design in the editor when it is a report of an
+       older one. NOT pushed into synthLines: it is a fact about the flag rather than a line the
+       synthesizer produced, and storing it would accumulate one per re-render. */
+    if (stale) {
+      html.push('<span class="warn">'
+        + escapeHtml('(the design has changed since this synthesis)') + '</span>');
+    }
+    if (areaReportText) html.push('', escapeHtml(areaReportText));
+    areaOut.innerHTML = html.join('\n');
   }
 
   /* Why a failed synthesis gets a HINT as well as the error. The synthesizer's subset is
@@ -1045,7 +1218,91 @@
       if (seg) text = netlistFullText.slice(seg.start, seg.end);
     }
     codeOut.textContent = text;
-    netlistEmpty.style.display = netlistFullText ? 'none' : '';
+    syncEmptyState();
+  }
+
+  /* ONE WRITER for the placeholder, called from both the text render and the view switch:
+     it says "nothing synthesized yet", which is a fact about the synthesis rather than about
+     which of the two views is up, so both paths have to reach the same answer. */
+  /* THE DIAGRAM CARRIES ITS OWN EMPTY STATE - `flowPlaceholder`, inside the box - so the card's
+     `netlistEmpty` must stay out of the way on that view or the same sentence appears twice. The
+     other two panels are bare `pre`s, so there it is the only thing that says "nothing yet". */
+  function syncEmptyState() {
+    var diagram = resultsView === 'diagram';
+    netlistEmpty.style.display = (netlistFullText || diagram) ? 'none' : '';
+  }
+
+  function renderAreaView() { renderLogView(); }
+
+  /* ONE WRITER for the whole of what the view means: the radios, their `.on` pills, which
+     panel is up, whether the module-list button is on the header, and - for a design that
+     was already a netlist - whether the netlist is offered at all. Two encodings of one
+     selection written in one place is the rule this repo holds every such control to.
+
+     The suppressed case takes the netlist RADIO away rather than disabling it, because a
+     control you cannot use and nothing explains is worse than one that is not there; the
+     gate-level Run goes with it, since on a structural design it would re-run the very
+     modules the simulator just ran. */
+  /* ONE WRITER FOR THREE VIEWS. Everything that depends on which panel is up is decided here -
+     the radios and their pills, the three panels, and what the header's controls act on - so a
+     control cannot come to describe a panel that is not on screen. */
+  function syncResultsView() {
+    var view = resultsView === 'netlist' && listingSuppressed ? 'area' : resultsView;
+    var diagram = view === 'diagram', netlist = view === 'netlist';
+    [['viewDiagramRadio', 'diagram'], ['viewAreaRadio', 'area'],
+     ['viewNetlistRadio', 'netlist']].forEach(function (v) {
+      var r = document.getElementById(v[0]);
+      if (!r) return;
+      r.checked = v[1] === view;
+      if (r.parentElement) r.parentElement.classList.toggle('on', r.checked);
+      /* The Gate-level Verilog radio is HIDDEN for a design that was already a netlist - a
+         control you cannot use and nothing explains is worse than one that is not there. */
+      if (v[1] === 'netlist' && r.parentElement) {
+        r.parentElement.style.display = listingSuppressed ? 'none' : '';
+      }
+    });
+    var diagramPanel = document.getElementById('netlistDiagramPanel');
+    if (diagramPanel) diagramPanel.style.display = diagram ? '' : 'none';
+    areaOut.style.display = (!diagram && !netlist) ? '' : 'none';
+    codeOutRow.style.display = netlist ? '' : 'none';
+    syncEmptyState();
+    // the module list slices the netlist TEXT, so it belongs to that view alone
+    if (codeOutGroup) codeOutGroup.style.display = netlist ? '' : 'none';
+    /* COPY IS DISABLED ON THE DIAGRAM, not hidden: with three views and a fixed set of header
+       controls, hiding one makes the row reshuffle as a reader switches. Disabled says "not for
+       this view" and keeps the header still - which is why `.btn:disabled` had to become legible
+       first. Save is never disabled: on this view it writes the SVG. */
+    var copyBtn = document.getElementById('netlistCopyBtn');
+    if (copyBtn) {
+      copyBtn.classList.toggle('disabled', diagram);
+      if (diagram) copyBtn.setAttribute('aria-disabled', 'true');
+      else copyBtn.removeAttribute('aria-disabled');
+      copyBtn.setAttribute('title', diagram ? 'Nothing to copy from the diagram — Save writes an SVG'
+                                            : 'Copy to clipboard');
+    }
+    var saveBtn = document.getElementById('netlistSaveBtn');
+    if (saveBtn) {
+      saveBtn.setAttribute('title', diagram ? 'Save the diagram as an SVG' : 'Save to file');
+    }
+    var gateRow = document.getElementById('gateRunRow');
+    if (gateRow) gateRow.style.display = listingSuppressed ? 'none' : '';
+    /* The diagram was drawn while its panel was `display: none` on any view switch, so the fit was
+       computed against a box with no width - the obligation every container-width change here
+       carries. Told rather than re-fitted: the expand's own rule, for the same reason. */
+    if (diagram) { invalidateFit(); fitView(); }
+  }
+
+  /* Reads ev.target.value rather than which radio is checked, so it does not depend on
+     radio-group exclusivity - a property of a real DOM the headless stub does not model, so
+     a `.checked` sweep would pass in a browser and switch nothing under test. */
+  /* NOT PERSISTED, and that is a reversal worth stating: every synthesis now FORCES a view -
+     the diagram on success, the log on a failure - so a stored choice could only survive until
+     the next press, and in Baerilog/synthesis.html (which synthesizes at load) not even that. A
+     preference nobody can hold is not a preference; the expand and the panel heights, which the
+     reader really does keep, are still stored. */
+  function setResultsView(view) {
+    resultsView = view === 'netlist' ? 'netlist' : (view === 'diagram' ? 'diagram' : 'area');
+    syncResultsView();
   }
 
   function renderModulePanel() {
@@ -1112,7 +1369,11 @@
       netlistSegments = gen.segments;
       renderNetlistView();
       renderModulePanel();
-      lastGraph = packColumns(symbolizeGateCells(S.toFlowElements(v.graph, v.layout)));
+      /* Hoist BEFORE the constants are placed - see synthesis.html's copy: the hoist moves a node
+         and the translate that follows moves every node, so constants placed first would be aimed
+         at pins that then shift. */
+      lastGraph = placeConstants(hoistControlDrivers(
+        packColumns(symbolizeGateCells(S.toFlowElements(v.graph, v.layout)))));
       renderGraph(lastGraph);
       renderBreadcrumb();
       return true;
@@ -1131,6 +1392,11 @@
     netlistFullText = '';
     netlistSegments = [];
     netlistSelectedModule = '(all)';
+    /* Cleared with the netlist, on every path: a report left over from the last synthesis,
+       sitting in the card's default view while the Console reports a fresh failure, is the
+       panel disagreeing with the page about whether anything was synthesized. */
+    areaReportText = '';
+    renderAreaView();
     renderNetlistView();
     renderModulePanel();
     crumbRow.innerHTML = '';
@@ -1146,12 +1412,11 @@
     spliceEditorChangesBack();
     var whole = editorFullSource;
     var cut = designOnly(whole);
-    /* This synthesis's own log replaces the last one's, in memory and on screen. The
-       console cannot be cleared here - the simulation output above it belongs to Run -
-       so the previous section's rows are removed individually. */
-    dropPrintedSynthLines();
+    /* This synthesis's own log replaces the last one's, in memory and on screen - one
+       assignment, since this panel holds nothing but this. It took a row-by-row removal while
+       the log lived in the Console, which could not simply be cleared there: the simulation
+       output above it belongs to Run. */
     synthLines = [];
-    synthLog('info', '— synthesis —');
     if (cut.dropped) {
       synthLog('info', 'ignored the ' + cut.dropped + ' lines below the TESTBENCH marker: the '
                      + 'synthesizer has no #delay, $display or initial, and a testbench '
@@ -1170,12 +1435,16 @@
         synthLog('info', 'this design uses ' + gap + ', which the synthesizer\'s subset '
                        + 'does not cover - the simulator above does');
       });
-      // Nothing was synthesized, so there is nothing to show: the cards go away (or stay
-      // away), and the Console carries the whole of the answer.
-      // Set BEFORE showCards, which is what calls syncSynthLabel - the ordering is the
-      // whole correctness of this: after it, the label would be written from the old flag.
+      /* THE CARD STAYS AND SAYS WHY, where it used to be taken away with the Console left
+         holding the whole answer. A reader who pressed Synthesize and got nothing on the page had
+         to know to look two cards down; the card that would have carried the result is where the
+         reason belongs. Forced onto the Synthesis Log view, since a Diagram of nothing is what
+         the failure means.
+         Set BEFORE showCards, which is what calls syncSynthLabel - the ordering is the whole
+         correctness of this: after it, the label would be written from the old flag. */
       synthFailed = true;
-      showCards(false);
+      failReport(e.message, subsetHints(cut.src));
+      showCards(true);
       markStale(false);
       return;
     }
@@ -1188,33 +1457,40 @@
     if (!showCurrentView()) {
       clearNetlist('the netlist could not be built');
       synthFailed = true;   // before showCards, as above
-      showCards(false);
+      failReport('the netlist could not be built', []);
+      showCards(true);
       markStale(false);
       return;
     }
     markStale(false);
-    /* No node/net count here any more. It described the DIAGRAM of the module on screen,
-       while the report below counts the whole design per instantiation site - two numbers
-       for nearly the same thing, disagreeing for reasons nothing on the page explained
-       (`5 nodes` three lines above `Number of cells: 4`). The Console states one of them
-       and the viewer shows the other. */
+    /* No node/net count here. It described the DIAGRAM of the module on screen, while the
+       area report counts the whole design per instantiation site - two numbers for nearly
+       the same thing, disagreeing for reasons nothing on the page explained (`5 nodes` three
+       lines above `Number of cells: 4`). The Synthesis Results card states one of them and
+       the viewer shows the other. */
     synthLog('ok', 'synthesized top module ' + currentAll.top.name);
-    /* The SAME function synthesis.html logs, reached through the slice rather than
-       reimplemented - so the two apps cannot report a different area for one design. It
-       returns one multi-line string and is logged as one row: the console box is monospace
-       and pre-wrap, so its padded columns line up, and one row is what keeps the section's
-       own bookkeeping (printedEls, the re-print ordering, Clear) working unchanged. */
     /* SAY WHICH IT WAS. A design that only instantiates cells was already a netlist, and calling
        that a synthesis claims work nobody did - the cells on screen are the ones the source named.
-       The area report still follows, because the cost of those cells is the same question either
-       way. Derived per press from the result, so an edit from an instantiation to an operator
-       changes the sentence with nothing to keep in step. */
+       The area report is still produced, because the cost of those cells is the same question
+       either way, and it is why the card stays on a structural design where the LISTING does not.
+       Derived per press from the result, so an edit from an instantiation to an operator changes
+       the sentence with nothing to keep in step. */
     if (topIsStructural(currentAll.top && currentAll.top.name)) {
       var cells = currentAll.results[currentAll.top.name].cells.length;
       synthLog('info', 'this design is already a netlist: ' + cells + ' instantiated cell'
              + (cells === 1 ? '' : 's') + ', nothing to infer - the diagram is its structure');
     }
-    synthLog('info', S.buildAreaReport(currentAll));
+    /* The SAME function synthesis.html renders, reached through the slice rather than
+       reimplemented - so the two apps cannot report a different area for one design. It
+       goes in the Synthesis Results card, which is this card's default view, rather than
+       into the console it used to be logged into: see areaReportText's own note. */
+    areaReportText = S.buildAreaReport(currentAll);
+    renderAreaView();
+    /* FORCED, every time: a synthesis that worked has a diagram to show, and that is what the
+       card opens on. It is why the view is no longer persisted - see setResultsView. Last, so it
+       wins over anything the run wrote on the way here. */
+    resultsView = 'diagram';
+    syncResultsView();
   }
 
   /* =====================================================================
@@ -1227,9 +1503,33 @@
     return e;
   }
 
-  function gateSymbolHtml(kind) {
+  /* A BUNDLED CELL IS DRAWN AS A STACK OF ITS OWN SYMBOL, and that replaces the `[hi:lo]`
+     badge the range used to be written as. `[7:0]` names the bits the bundle carries, which is
+     a fact about the WIRES; what the reader wants from the block is how many copies of this
+     cell the netlist really contains, and eight flip-flops drawn as one box labelled `[7:0]`
+     says that only if you already know the convention. A second outline offset behind the first
+     is the schematic idiom for "more of these", and `x8` is the count said in words.
+
+     Body only - no second notch, bubble, `extra` curve or pin. Those are features OF the
+     symbol, and duplicating them would read as a different cell rather than as another copy of
+     this one. It is drawn FIRST, so the real body's own `node-fill` covers the half of it that
+     overlaps, which is what makes the ghost read as sitting behind rather than crossing through.
+
+     The offset is in viewBox UNITS, not pixels, so it is the same fraction of every symbol -
+     `GATE_PX_PER_UNIT` is shared, so a unit is the same size everywhere except the adder, which
+     is deliberately drawn at 2x and gets a proportionally bigger stack. It deliberately falls
+     OUTSIDE the viewBox at the top and right, which is fine and is why the four symbol nodes'
+     `svg` rules carry `overflow: visible`; nothing measures it, since `nodeSize` reads the
+     viewBox and the handle table is fractions of that. Byte-identical to synthesis.html's. */
+  var STACK_OFF = 7;
+
+  function gateSymbolHtml(kind, stacked) {
     var def = GATE_DEFS[kind];
     var s = '<svg viewBox="' + def.viewBox + '" preserveAspectRatio="none">';
+    if (stacked) {
+      s += '<path d="' + def.body + '" class="gate-stroke" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"'
+         + ' transform="translate(' + STACK_OFF + ',' + (-STACK_OFF) + ')"/>';
+    }
     def.stubs.forEach(function (st) {
       s += '<line x1="' + st[0] + '" y1="' + st[1] + '" x2="' + st[2] + '" y2="' + st[3]
          + '" class="gate-stroke" stroke-width="3" stroke-linecap="butt"/>';
@@ -1242,8 +1542,15 @@
     return s + '</svg>';
   }
 
-  function rangeHtml(data) {
-    return data.isBus && data.range ? '<div class="rf-node-range">' + escapeHtml(data.range) + '</div>' : '';
+  /* `x8`, bottom-right, in the SYMBOL's colour rather than the muted grey the range badge used -
+     it is a property of the block, not an annotation beside it, and the colour is what ties it
+     to the outline it counts. `width` is the bundle's bit count and comes from the same bundling
+     pass that sets `isBus`, so the two cannot disagree; the range is kept as a fallback for a
+     node that somehow has no width, which is better than a bare `x`. */
+  function multHtml(d) {
+    if (!d.isBus) return '';
+    var text = typeof d.width === 'number' ? 'x' + d.width : (d.range || '');
+    return text ? '<div class="rf-node-mult">' + escapeHtml(text) + '</div>' : '';
   }
 
   function buildNode(n) {
@@ -1251,6 +1558,16 @@
     var e = mk('div', 'rf-node');
     e.style.left = n.position.x + 'px';
     e.style.top = n.position.y + 'px';
+    /* SELECTING A SYMBOL IS A CLICK ON ANY PART OF IT, wired here so every kind gets it from one
+       place. `suppressClick` is the pan threshold the wire click already consults; the click is
+       stopped, or the background handler clears what it just made; and the three kinds that own a
+       dblclick flash selected before the drill re-renders, which is accepted rather than deferred
+       behind a timer. See synthesis.html's copy. */
+    e.addEventListener('click', function (ev) {
+      if (ev.stopPropagation) ev.stopPropagation();
+      if (suppressClick) { suppressClick = false; return; }
+      selectNode(n.id);
+    });
     if (n.type === 'const') {
       e.classList.add('rf-node-const');
       e.style.width = sz.width + 'px';
@@ -1273,20 +1590,20 @@
         if (d.inverted) e.classList.add('inverted');
         if (d.isBus) e.classList.add('is-bus');
         e.setAttribute('title', d.label);
-        e.innerHTML = gateSymbolHtml(d.kind) + rangeHtml(d);
+        e.innerHTML = gateSymbolHtml(d.kind, d.isBus) + multHtml(d);
         break;
       case 'dff':
         e.classList.add('rf-node-dff');
         if (d.isBus) e.classList.add('is-bus');
         e.setAttribute('title', 'DFF');
-        e.innerHTML = gateSymbolHtml(d.noReset ? 'dffnr' : 'dff') + rangeHtml(d);
+        e.innerHTML = gateSymbolHtml(d.noReset ? 'dffnr' : 'dff', d.isBus) + multHtml(d);
         break;
       case 'fa':
         e.classList.add('rf-node-fa');
         if (d.isBus) e.classList.add('is-bus');
         e.setAttribute('title', d.label + ' — double-click to view gate-level internals');
         e.style.cursor = 'pointer';
-        e.innerHTML = gateSymbolHtml((d.op === 'sub' ? 'sub' : 'add') + (d.noCarry ? 'nc' : '')) + rangeHtml(d);
+        e.innerHTML = gateSymbolHtml((d.op === 'sub' ? 'sub' : 'add') + (d.noCarry ? 'nc' : ''), d.isBus) + multHtml(d);
         e.addEventListener('dblclick', function () { drillInto('FA_PRIMITIVE'); });
         break;
       case 'adder':
@@ -1316,7 +1633,7 @@
         e.classList.add('rf-node-mux2');
         if (d.isBus) e.classList.add('is-bus');
         e.setAttribute('title', 'MUX2');
-        e.innerHTML = gateSymbolHtml('mux2') + rangeHtml(d);
+        e.innerHTML = gateSymbolHtml('mux2', d.isBus) + multHtml(d);
         break;
       case 'instance':
         e.classList.add('rf-node-instance');
@@ -1339,37 +1656,205 @@
      drawn as 46 separate segments. "Where does this signal go" is answerable only if all
      46 light up. The label is drawn ONCE, at the wire that was clicked - labelling 46
      segments would rebuild the clutter this replaced. */
-  var drawn = [];            // {net, wire, mid} per drawn edge
+  var drawn = [];            // {net, wire, mid, pts, from, fromPort, to, toPort} per drawn edge
   var byNet = {};            // net name -> those records
+  var byNode = {};           // node id -> the records incident on it, either direction
+  var nodeEls = {};          // node id -> its .rf-node element
+  var flowById = {};         // node id -> the flow node, for its type and data
+  var selectedNode = null;   // TWO KINDS OF SELECTION, ONE AT A TIME - see selectNode
+  var selectedLabels = [];   // the <text> elements: one for a net, one per PIN for a symbol
   var selectedNet = null;
-  var selectedLabel = null;  // the one <text> element, or null
 
-  function clearNetSelection() {
-    if (selectedLabel && selectedLabel.parentElement) {
-      selectedLabel.parentElement.removeChild(selectedLabel);
-    }
-    selectedLabel = null;
+  /* ONE CLEAR FOR BOTH, because they are one selection with two shapes - see synthesis.html's
+     own note beside selectNode. */
+  function clearSelection() {
+    selectedLabels.forEach(function (t) {
+      if (t.parentElement) t.parentElement.removeChild(t);
+    });
+    selectedLabels = [];
     if (selectedNet && byNet[selectedNet]) {
       byNet[selectedNet].forEach(function (r) { r.wire.classList.remove('sel'); });
     }
+    if (selectedNode) {
+      (byNode[selectedNode] || []).forEach(function (r) {
+        r.wire.classList.remove('sel');
+        r.wire.classList.remove('sel-in');
+      });
+      if (nodeEls[selectedNode]) nodeEls[selectedNode].classList.remove('sel-node');
+    }
+    selectedNode = null;
     selectedNet = null;
     if (netReadout) { netReadout.textContent = ''; netReadout.style.display = 'none'; }
   }
 
+  /* ---- A SELECTED NET IS NAMED WITH ITS WIDTH ----
+     A wire labelled `raddr` is an 8-bit bus, and the label said nothing about that. It is the reader's
+     own name and correct as one - `mergeInstancePins` prefers `portExprText`, the text written at the
+     instantiation (`.raddr0(raddr)`) - so the fix is not to rename the net but to say how wide it is
+     where there is room to.
+
+     READ FROM THE DECLARATION, never derived from a count: `sig` carries `{width, lo}` for the module
+     being viewed, so `raddr` reads `raddr[7:0]` and a signal declared `[4:1]` would read `[4:1]`
+     rather than a plausible `[3:0]` - the same reason the simulator's own range label is built from
+     `parseRange` rather than from a width.
+
+     ONLY A BARE NAME GAINS ONE. A label that already carries `[hi:lo]` is left alone (no double
+     range), and so is one naming a single bit (`sum[0]` really is one bit), a literal (`9'b000000001`
+     states its own width) and an expression (`(count + 1)`, which is not a declared signal).
+
+     The IN-PLACE label gains it too, not just the readout: exactly one is drawn at a time - the whole
+     point of the selected-net label - so there is no crowding to trade against, and having the wire
+     and the line above the diagram say different things about one net would be worse than either. */
+  function netRangeLabel(net) {
+    if (!net || /\]$/.test(net) || /'[bdho]/i.test(net)) return net;
+    var mod = viewStack.length ? viewStack[viewStack.length - 1]
+              : (currentAll && currentAll.top ? currentAll.top.name : null);
+    var res = mod && currentAll && currentAll.results ? currentAll.results[mod] : null;
+    var s = res && res.sig ? res.sig[net] : null;
+    if (!s || !(s.width > 1)) return net;
+    return net + '[' + (s.lo + s.width - 1) + ':' + s.lo + ']';
+  }
+
+  /* Placed where the symbols are NOT: the clicked point first, then the midpoint of each
+     other segment of this net, taking the first whose label box clears every node box; the
+     clicked point if none does. The box is estimated (10px mono, ~6px a character) rather
+     than measured, because getComputedTextLength needs a laid-out SVG no headless harness
+     here has and this is the click path. Same numbers and same rule as synthesis.html's. */
+  var LABEL_CH = 6, LABEL_H = 12;
+  function labelSpot(net, first, text) {
+    var boxes = boxesFor(lastGraph.nodes || []);
+    function clear(p) {
+      if (!p) return false;
+      var halfW = (String(text).length * LABEL_CH) / 2 + 2;
+      return boxes.every(function (b) {
+        return !segHitsBox({ x: p.x - halfW, y: p.y - 3 - LABEL_H }, { x: p.x + halfW, y: p.y }, b);
+      });
+    }
+    if (clear(first)) return first;
+    /* A PIN label passes no net: its point is the pin's, so there is no other segment of the
+       same name to try - it keeps the anchor and relies on the halo. */
+    var others = (net && byNet[net]) || [];
+    for (var i = 0; i < others.length; i++) if (clear(others[i].mid)) return others[i].mid;
+    return first;
+  }
+
+  /* ---- SELECTING A SYMBOL LIGHTS THE NETS IT IS WIRED TO ----
+     A net selection answers "where does this signal go"; this answers "what is wired to this".
+     Input side amber, output side the net colour, at the same two stroke weights; one label per
+     PIN (not per wire) placed at the wire's node end; a port pennant gets none, since it already
+     carries its own name. See synthesis.html's own note for the reasoning - this is the same
+     behaviour in the second hand-maintained copy of one viewer, held to it by check_theme.py. */
+  var PIN_LABEL_MAX = 3;
+
+  function nodeTitle(n) {
+    var d = (n && n.data) || {};
+    if (!n) return '?';
+    if (n.type === 'instance' || n.type === 'adder') {
+      return d.instName ? d.instName + ' (' + d.modType + ')' : d.modType;
+    }
+    /* The `xN` badge is a CELL bundle's - a bundled port is drawn once as a pennant carrying its
+       range, so saying `y[7:0] x8` here would describe something not on screen. */
+    var mult = n.type !== 'port' && d.isBus && d.width > 1 ? ' x' + d.width : '';
+    return (d.label || n.type) + mult;
+  }
+
+  /* `pts` runs source -> target, so an output leaves at pts[0] and an input arrives at the last
+     point; a few pixels back along the wire keeps the text off the symbol's outline. */
+  function pinAnchor(rec, out) {
+    var pts = rec.pts || [];
+    if (!pts.length) return rec.mid;
+    var at = out ? pts[0] : pts[pts.length - 1];
+    var next = out ? (pts[1] || at) : (pts[pts.length - 2] || at);
+    var dx = next.x - at.x, dy = next.y - at.y;
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var back = Math.min(18, len / 2);
+    return { x: at.x + dx / len * back, y: at.y + dy / len * back };
+  }
+
+  function selectNode(id) {
+    var again = id === selectedNode;
+    clearSelection();
+    /* Keyed on the NODE existing, not on it having wires: an unconnected port is a real thing on an
+       unimplemented starter, and clicking it used to do nothing at all. See synthesis.html's copy. */
+    if (again || !id || !flowById[id]) return;
+    selectedNode = id;
+    if (nodeEls[id]) nodeEls[id].classList.add('sel-node');
+    var node = flowById[id];
+    var isPort = node && node.type === 'port';
+    var pins = { in: [], out: [] };
+    var seen = { in: {}, out: {} };
+    /* A SELF-LOOP IS BOTH - a flop's `q` back into its own `d`, the hold path every unimplemented
+       starter has. One wire carries one hue, so the COLOUR is the output side while BOTH pins are
+       named. See synthesis.html's copy. */
+    var add = function (rec, side) {
+      var pin = (side === 'out' ? rec.fromPort : rec.toPort) || '';
+      var key = pin || '\u00b7';
+      if (!seen[side][key]) {
+        seen[side][key] = { pin: pin, nets: [], first: rec, out: side === 'out' };
+        pins[side].push(seen[side][key]);
+      }
+      if (rec.net && seen[side][key].nets.indexOf(rec.net) < 0) seen[side][key].nets.push(rec.net);
+    };
+    (byNode[id] || []).forEach(function (rec) {
+      var isOut = rec.from === id, isIn = rec.to === id;
+      rec.wire.classList.add(isOut ? 'sel' : 'sel-in');
+      if (isOut) add(rec, 'out');
+      if (isIn) add(rec, 'in');
+    });
+    if (!isPort) {
+      ['in', 'out'].forEach(function (side) {
+        pins[side].forEach(function (p) {
+          if (!p.pin) return;
+          var point = labelSpot(null, pinAnchor(p.first, p.out), p.pin);
+          var t = svg('text', { class: 'pn-edge-label ' + (p.out ? 'sel' : 'sel-in'),
+                                x: point.x, y: point.y - 3 });
+          t.textContent = p.pin;
+          labelLayer.appendChild(t);
+          selectedLabels.push(t);
+        });
+      });
+    }
+    if (netReadout) {
+      var say = function (side) {
+        var parts = pins[side].map(function (p) {
+          var nets = p.nets.map(netRangeLabel).join(', ');
+          /* A PORT's pin name is the viewer's own handle id (`y`), not anything the reader wrote,
+             so it is dropped for the same reason its wires get no label. */
+          if (isPort || !p.pin) return nets;
+          return nets ? p.pin + '(' + nets + ')' : p.pin;
+        }).filter(Boolean);
+        if (!parts.length) return '';
+        var shown = parts.slice(0, PIN_LABEL_MAX).join(', ');
+        return shown + (parts.length > PIN_LABEL_MAX
+          ? ', +' + (parts.length - PIN_LABEL_MAX) + ' more' : '');
+      };
+      /* MARKUP, not text, so the input half carries the wires' own colour - see synthesis.html's
+         copy. Escaped, since a net name is arbitrary source text. */
+      var inText = say('in'), outText = say('out');
+      netReadout.innerHTML = escapeHtml('cell: ' + nodeTitle(node))
+        + (inText ? '<span class="in">' + escapeHtml(' \u2014 in ' + inText) + '</span>' : '')
+        + (outText ? escapeHtml(' \u00b7 out ' + outText) : '')
+        + (inText || outText ? '' : escapeHtml(' \u2014 nothing wired'));
+      netReadout.style.display = '';
+    }
+  }
+
   function selectNet(net, at) {
     var again = net === selectedNet;
-    clearNetSelection();
+    clearSelection();
     if (again || !net || !byNet[net]) return;   // clicking the selected net again clears it
     selectedNet = net;
     byNet[net].forEach(function (r) { r.wire.classList.add('sel'); });
-    var point = at || byNet[net][0].mid;
-    selectedLabel = svg('text', { class: 'pn-edge-label sel', x: point.x, y: point.y - 3 });
-    selectedLabel.textContent = net;
-    edgeLayer.appendChild(selectedLabel);
+    var shown = netRangeLabel(net);
+    var point = labelSpot(net, at || byNet[net][0].mid, shown);
+    var label = svg('text', { class: 'pn-edge-label sel', x: point.x, y: point.y - 3 });
+    label.textContent = shown;
+    labelLayer.appendChild(label);
+    selectedLabels.push(label);
     /* Also said in words beside the breadcrumb, because the label can be panned
        off-screen while the highlight is still on. */
     if (netReadout) {
-      netReadout.textContent = 'net: ' + net + ' (' + byNet[net].length
+      netReadout.textContent = 'net: ' + shown + ' (' + byNet[net].length
         + (byNet[net].length === 1 ? ' segment)' : ' segments)');
       netReadout.style.display = '';
     }
@@ -1409,7 +1894,126 @@
      steps out by, reused rather than a second constant, and it is long enough for `roundedPath`'s
      8px corner to sit inside it. */
   var PIN_LEAD = 22;
-  function edgePoints(a, b) {
+  /* ---- A WIRE MUST NOT CROSS A SYMBOL ----
+     The midpoint S-bend below is right for two adjacent columns and wrong the moment an edge
+     spans more than one: its vertical leg lands at `(a.x + b.x) / 2`, which for a two-column
+     edge is the middle of the column in between. Measured, that really happens - one wire of
+     seven on the register file's `rf_reg` ran straight through the flip-flop, six of sixteen on
+     the shift register cross a flop - and it reads as "behind" rather than "through", which is
+     worse: edges are drawn under nodes and a body is filled with `--canvas-default`, so the wire
+     disappears at the block's edge and reappears on the far side. A chevron in a rectangular box
+     (the adder) leaks it through the empty corners too.
+
+     So the direct route is tried, and if it hits anything the wire goes around: the same
+     five-point shape the backward route uses, with the channel taken above or below whatever is
+     in the way, whichever is shorter and actually clear. If NEITHER is clear (a design dense
+     enough to have no channel) the direct route is returned rather than a worse detour - this may
+     fail to find a way through, and when it does the picture is what it was before.
+
+     Both viewers carry it; tools/check_theme.py compares the clearance the two use. */
+  /* A node's box, stated ONCE - the router, the constant placement and the fit all ask for it. */
+  function boxOf(n) {
+    var sz = nodeSize(n);
+    return { id: n.id, x0: n.position.x, y0: n.position.y,
+             x1: n.position.x + sz.width, y1: n.position.y + sz.height };
+  }
+  function boxesFor(nodes) { return nodes.map(boxOf); }
+  function segHitsBox(p, q, b) {
+    return Math.max(p.x, q.x) > b.x0 + 1 && Math.min(p.x, q.x) < b.x1 - 1
+        && Math.max(p.y, q.y) > b.y0 + 1 && Math.min(p.y, q.y) < b.y1 - 1;
+  }
+  function routeClear(pts, boxes) {
+    for (var i = 1; i < pts.length; i++) {
+      for (var j = 0; j < boxes.length; j++) if (segHitsBox(pts[i - 1], pts[i], boxes[j])) return false;
+    }
+    return true;
+  }
+  function pathLength(pts) {
+    var t = 0;
+    for (var i = 1; i < pts.length; i++) {
+      t += Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
+    }
+    return t;
+  }
+  function detour(a, b, yChannel) {
+    var xOut = a.x + PIN_LEAD, xIn = b.x - PIN_LEAD;
+    return [a, { x: xOut, y: a.y }, { x: xOut, y: yChannel },
+            { x: xIn, y: yChannel }, { x: xIn, y: b.y }, b];
+  }
+  /* ---- ONE LANE PER NET IN A SHARED CHANNEL ----
+     Two wires that want the same channel were given the same coordinate and drawn exactly on top of
+     one another. Measured by sampling every wire every 4px, more than HALF the points on the 8:1 mux
+     tree (706 of 1211) sat within 4px of a wire carrying a DIFFERENT net, and 649 of 1526 on the
+     shift register. Several nets drawn as one thick line is not a diagram of anything.
+
+     THE LANE IS KEYED BY NET, which is what makes one rule do both jobs: a net that already has a
+     lane keeps it, so the eight wires fanning out of `d[7:0]` share one line and read as the trunk
+     they are, while `clk` and `rst_n` broadcasting to the same four flops stop occupying the same
+     pixels. Offsets alternate outward from the original, so the first net keeps exactly the
+     coordinate it had and nothing moves where there is no contention. A nudged route is re-checked
+     for clearance and falls back, so separation never costs a wire its route. See synthesis.html's
+     copy for the note on why there is no negative-coordinate guard. */
+  var LANE_STEP = 9, LANE_MAX = 6;
+  function makeLanes() { return { v: {}, h: {} }; }
+  function laneOffset(lanes, axis, coord, net) {
+    var key = Math.round(coord / 4);
+    var chan = lanes[axis][key] || (lanes[axis][key] = { byNet: {}, next: 0 });
+    var name = net == null ? '' : String(net);
+    if (chan.byNet[name] === undefined) chan.byNet[name] = chan.next++;
+    var i = Math.min(chan.byNet[name], LANE_MAX);
+    return (i % 2 ? 1 : -1) * Math.ceil(i / 2) * LANE_STEP;
+  }
+
+  var ROUTE_CLEAR = 12, ROUTE_TRIES = 40;
+  function routeAround(a, b, boxes, lanes, net) {
+    var plain = routeBetween(a, b);
+    var ok = function (pts) { return !boxes.length || routeClear(pts, boxes); };
+    /* The lane is claimed on the coordinate the route WOULD have used, so the key is the same for
+       every wire contending for that channel however far each one is nudged. */
+    var dv = lanes ? laneOffset(lanes, 'v', plain.length > 2 ? plain[1].x : a.x, net) : 0;
+    var dh = lanes ? laneOffset(lanes, 'h', plain.length > 4 ? plain[2].y : a.y, net) : 0;
+    var laned = routeBetween(a, b, dv, dh);
+    var direct = ok(laned) ? laned : plain;
+    if (!boxes.length || routeClear(direct, boxes)) return direct;
+    var lo = Math.min(a.x, b.x) - PIN_LEAD, hi = Math.max(a.x, b.x) + PIN_LEAD;
+    var inSpan = boxes.filter(function (x) { return x.x1 > lo && x.x0 < hi; });
+    if (!inSpan.length) return direct;
+    /* THE CHANNEL IS A GAP BETWEEN ROWS, not "above everything" - see synthesis.html's copy. The
+       short version: going over the top row is `minY - CLEAR`, negative whenever the top row sits
+       at y=0, which puts the wire outside the fit in the viewer and clips it off a topic's static
+       figure. Nearest corridor first with an early exit, because FUNC_ram256x8 puts 256 boxes in
+       one x-span and scoring every candidate would be ~650k segment tests per wire. */
+    var mid = (a.y + b.y) / 2;
+    var ys = [];
+    inSpan.forEach(function (x) { ys.push(x.y0 - ROUTE_CLEAR, x.y1 + ROUTE_CLEAR); });
+    ys.sort(function (p, q) { return Math.abs(p - mid) - Math.abs(q - mid); });
+    /* UNDER EVERYTHING as the last resort, below rather than above - nothing sits under the bottom
+       row, so it is always clear, and unlike `minY - CLEAR` it cannot be negative and clipped off a
+       static figure. Long, but only reached when no corridor was clear, and a long visible wire
+       beats a short hidden one. */
+    for (var i = 0; i < ys.length && i < ROUTE_TRIES; i++) {
+      // The corridor is laned too, or every wire forced into the same gap between two rows lands
+      // on the same pixel row - the contention this whole block exists to break.
+      var off = lanes ? laneOffset(lanes, 'h', ys[i], net) : 0;
+      var p = detour(a, b, ys[i] + off);
+      if (ok(p)) return p;
+      if (off) { var q = detour(a, b, ys[i]); if (ok(q)) return q; }
+    }
+    /* UNDER EVERYTHING, tried OUTSIDE the loop rather than as its last candidate - which is
+       where it was, and therefore unreachable on any design big enough to need it, since `ys`
+       is sorted by distance and ROUTE_TRIES truncated long before its end. See synthesis.html's
+       copy: 145 wires still crossed a symbol on the 16-bit CPU before this moved out. */
+    var maxY = -Infinity;
+    boxes.forEach(function (x) { if (x.y1 > maxY) maxY = x.y1; });
+    var under = maxY + ROUTE_CLEAR;
+    var offU = lanes ? laneOffset(lanes, 'h', under, net) : 0;
+    var laneUnder = detour(a, b, under + offU);
+    if (ok(laneUnder)) return laneUnder;
+    var plainUnder = detour(a, b, under);
+    if (ok(plainUnder)) return plainUnder;
+    return direct;
+  }
+  function edgePoints(a, b, boxes, lanes, net) {
     /* A pin on a horizontal edge is approached PERPENDICULARLY, or the wire arrives at the top or
        bottom of a symbol running sideways along it. So the route is computed to a lead point 22px
        clear of the pin and the pin itself is added on the end: below for a bottom pin (the adder's
@@ -1418,20 +2022,27 @@
            : a.side === 't' ? { x: a.x, y: a.y - PIN_LEAD } : a;
     var b2 = b.side === 'b' ? { x: b.x, y: b.y + PIN_LEAD }
            : b.side === 't' ? { x: b.x, y: b.y - PIN_LEAD } : b;
-    var pts = routeBetween(a2, b2);
+    var pts = routeAround(a2, b2, boxes || [], lanes, net);
     if (a2 !== a) pts.unshift(a);
     if (b2 !== b) pts.push(b);
     return pts;
   }
 
-  function routeBetween(a, b) {
+  function routeBetween(a, b, dv, dh) {
+    dv = dv || 0; dh = dh || 0;
     if (b.x - a.x >= 30) {
-      var mx = (a.x + b.x) / 2;
+      var mx = (a.x + b.x) / 2 + dv;
+      // A straight run has no vertical leg to lane, and nudging it would bend a wire that is fine.
       if (Math.abs(a.y - b.y) < 0.5) return [a, b];
       return [a, { x: mx, y: a.y }, { x: mx, y: b.y }, b];
     }
-    var out = a.x + 22, back = b.x - 22;
-    var below = Math.max(a.y, b.y) + 34;
+    if (b.x >= a.x) {
+      if (Math.abs(a.y - b.y) < 0.5) return [a, b];
+      var mx2 = (a.x + b.x) / 2 + dv;
+      return [a, { x: mx2, y: a.y }, { x: mx2, y: b.y }, b];
+    }
+    var out = a.x + 22 + dv, back = b.x - 22 - dv;
+    var below = Math.max(a.y, b.y) + 34 + dh;
     return [a, { x: out, y: a.y }, { x: out, y: below }, { x: back, y: below }, { x: back, y: b.y }, b];
   }
 
@@ -1455,6 +2066,7 @@
     var t = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.k + ')';
     nodesLayer.style.transform = t;
     edgeLayer.setAttribute('transform', 'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')');
+    labelLayer.setAttribute('transform', 'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')');
   }
 
   /* The engine lays out on a fixed grid - `COL = 200, ROW = 84`, node k of a column at
@@ -1563,15 +2175,283 @@
   function packColumns(g) {
     var cols = {};
     g.nodes.forEach(function (n) { (cols[n.position.x] || (cols[n.position.x] = [])).push(n); });
+    var heights = {};
     Object.keys(cols).forEach(function (x) {
       var col = cols[x].slice().sort(function (a, b) { return a.position.y - b.position.y; });
+      cols[x] = col;
       var y = 0;
       col.forEach(function (n) {
         n.position = { x: n.position.x, y: y };
         y += nodeSize(n).height + COLUMN_GAP;
       });
+      heights[x] = Math.max(0, y - COLUMN_GAP);
+    });
+    /* EVERY COLUMN IS CENTRED ON ONE MIDLINE - see synthesis.html's copy for why. In short: the
+       engine ranks nodes into columns and the loop above packs each to its real heights, but both
+       leave every column TOP-ALIGNED, so an 8:1 mux tree of 4 muxes then 2 then 1 hangs off the
+       top edge with a wedge of empty space beneath and does not read as a tree. The tallest column
+       does not move, so the bounds are unchanged, and this shifts whole columns without ever
+       reordering one - which is what keeps `clk` the last node of its own column. */
+    var tallest = 0;
+    Object.keys(cols).forEach(function (x) { if (heights[x] > tallest) tallest = heights[x]; });
+    Object.keys(cols).forEach(function (x) {
+      var shift = Math.round((tallest - heights[x]) / 2);
+      if (!shift) return;
+      cols[x].forEach(function (n) { n.position = { x: n.position.x, y: n.position.y + shift }; });
     });
     return g;
+  }
+
+  /* ---- A SELECT DRIVER SITS ABOVE THE MUXES IT DRIVES ----
+     `sel` is on a mux's TOP edge, so a wire into one is led 22px above the pin and comes straight
+     down. That is right when the driver is above and absurd when it is not: measured on
+     `learn-mux-8to1`, the one `sel[2:0]` port sits at y=132 while the topmost sel pin it feeds is at
+     y=0, so every one of its seven wires has to climb 132px, hook over the mux and come back down.
+     Four of those hooks are what makes that diagram look tangled, and no amount of routing can fix
+     it: the wire is going the wrong way before it starts.
+
+     THE TRIGGER IS THE CLIMB, not the pin type. A driver already level with or above everything it
+     selects is left alone, so a design like `mux-2to1` - one mux, sel already in line - does not gain
+     a row it has no use for. What the pass removes is exactly the upward run.
+
+     IT IS KEYED ON WHAT A NODE DRIVES, never on what it is, so a port, a gate and a sub-block all
+     qualify by the same test. And it must drive NOTHING BUT selects: a node that also feeds data pins
+     would be dragged away from those consumers and make their wires worse, which is the reasoning the
+     constant placement's one-reader rule already follows.
+
+     IT LIVES HERE, after packColumns, for the two reasons that pass records - the position it wants
+     is a PIN's, which is the viewer's knowledge, and packColumns is what settles a node's final row,
+     so anything done earlier is undone. The engine has the precedent in the other direction:
+     `layoutGraph` lifts `clk` out of normal packing and gives it its own row at the BOTTOM.
+
+     AND THEN THE GRAPH IS TRANSLATED BACK DOWN, which is not tidiness. Hoisting puts the driver above
+     y=0, and this repo has already paid for negative coordinates once: `Baerilog/test_learn.py` caught
+     a wire at y=-18 as `outside the box on the near side`, because a static figure clips rather than
+     growing. So if anything went negative every node moves down by the same amount - one loop, and it
+     leaves `graphBounds` reading what it always did. It also happens to retire the pre-existing case
+     this file records from the other end: a mux in the top row has its `sel` leader at y=-22 whatever
+     the lanes do, and after a hoist the top row is the driver, so the leader is positive. */
+  var CTRL_GAP = 28;
+  function hoistControlDrivers(g) {
+    var byId = {};
+    g.nodes.forEach(function (n) { byId[n.id] = n; });
+    var info = {};
+    g.edges.forEach(function (e) {
+      var from = byId[e.source], to = byId[e.target];
+      if (!from || !to) return;
+      var at = handlePoint(to, e.targetHandle);
+      if (!at) return;
+      var d = info[e.source] || (info[e.source] = { tops: [], cols: [], other: 0 });
+      if (at.side === 't') { d.tops.push(at.y); d.cols.push(to.position.x); }
+      else d.other++;
+    });
+    var moved = 0;
+    Object.keys(info).forEach(function (id) {
+      var d = info[id], n = byId[id];
+      if (!d.tops.length || d.other) return;
+      var sz = nodeSize(n);
+      var topPin = Math.min.apply(null, d.tops);
+      if (topPin >= n.position.y) return;                    // nothing has to climb
+      // It has to be LEFT of what it drives, or the wire leaves its right edge going backwards -
+      // which is the feedback case the backward route already draws properly on its own.
+      if (n.position.x + sz.width > Math.min.apply(null, d.cols)) return;
+      var home = n.position;
+      n.position = { x: home.x, y: Math.round(topPin - PIN_LEAD - CTRL_GAP - sz.height) };
+      var b = boxOf(n);
+      var clash = g.nodes.some(function (o) {
+        if (o === n) return false;
+        var q = boxOf(o);
+        return b.x1 > q.x0 && b.x0 < q.x1 && b.y1 > q.y0 && b.y0 < q.y1;
+      });
+      if (clash) { n.position = home; return; }
+      moved++;
+    });
+    if (moved) {
+      var minY = Math.min.apply(null, g.nodes.map(function (n) { return n.position.y; }));
+      if (minY < 0) g.nodes.forEach(function (n) { n.position = { x: n.position.x, y: n.position.y - minY }; });
+    }
+    return g;
+  }
+
+  /* ---- A CONSTANT SITS IN FRONT OF THE PIN IT FEEDS - see synthesis.html's copy for the whole
+     argument. In short: `splitSharedConstants` gives every consumer its own constant, so a
+     constant with one reader has exactly one place it belongs, and the engine's own rule (one
+     COLUMN left of the cell it ties) leaves a 200px gutter and a wire across it. The position
+     wanted is a PIN's, which is a fact about the symbol and so only exists here.
+
+     Two things keep it safe. Every node's box is reserved, a movable constant's own home
+     included, so a move is refused unless its slot is clear and a REVERT can never overlap. And
+     the routes are then computed and each crossing ATTRIBUTED, so a constant that has landed in a
+     channel wires were using is known by name and sent home - measured on the 16-bit ALU, all
+     five land in the highway `a[15:0]` and `b[15:0]` run down and all five go back, which is the
+     pass declining rather than failing. */
+  var CONST_GAP = 16, CONST_CLEAR = 8, CONST_REPAIR = 3;
+  function placeConstants(g) {
+    var byId = {};
+    g.nodes.forEach(function (n) { byId[n.id] = n; });
+    var fed = {};
+    g.edges.forEach(function (e) {
+      var s = byId[e.source];
+      if (s && s.type === 'const') (fed[e.source] || (fed[e.source] = [])).push(e);
+    });
+    var boxes = g.nodes.map(boxOf), moves = [];
+    Object.keys(fed).forEach(function (id) {
+      if (fed[id].length !== 1) return;
+      var e = fed[id][0], to = byId[e.target], k = byId[id];
+      var at = to && handlePoint(to, e.targetHandle);
+      /* A VERTICAL PIN NEEDS NO TEST OF ITS OWN, and one was written before it was measured.
+         A mux's `sel` is on the top edge and an adder's `cin` underneath, and a constant put a gap
+         to the LEFT of either is reached by a wire that turns twice and passes the symbol on the
+         way - so an `at.side !== 'l'` guard reads as obviously right. It is unreachable: the
+         clearance test below already refuses every one of them, and for a reason that cannot come
+         apart. `handlePoint` returns a vertical pin ON its own edge, so a 28px box centred there
+         straddles the consumer by 14px; and the x overlap needs only the pin's fraction along that
+         edge to exceed the 8px clearance, which the shallowest symbol here manages three times
+         over (a mux's `sel` at 0.5 of 65 units). Both mutants survived - in this viewer and in
+         practice-synth.js - and the measurement that showed why is `1'b1/b@174,258 BLOCKED by
+         sub0`, the consumer refusing its own constant.
+
+         So the rule is left to the one mechanism rather than stated twice, and what pins the
+         OUTCOME is a check ('a vertical pin keeps its column') rather than a line of code no
+         input can reach. */
+      if (!at) return;
+      var sz = nodeSize(k);
+      moves.push({ node: k, home: k.position,
+                   want: { x: Math.round(at.x - CONST_GAP - sz.width),
+                           y: Math.round(at.y - sz.height / 2) },
+                   to: to.position, at: at });
+    });
+    moves.sort(function (p, q) {
+      return (p.to.x - q.to.x) || (p.at.y - q.at.y) || (p.want.x - q.want.x);
+    });
+    var placed = [];
+    moves.forEach(function (m) {
+      var sz = nodeSize(m.node);
+      var w = { x0: m.want.x - CONST_CLEAR, y0: m.want.y - CONST_CLEAR,
+                x1: m.want.x + sz.width + CONST_CLEAR, y1: m.want.y + sz.height + CONST_CLEAR };
+      if (m.want.x < 0) return;
+      var blocked = boxes.some(function (b) {
+        return b.id !== m.node.id && w.x1 > b.x0 && w.x0 < b.x1 && w.y1 > b.y0 && w.y0 < b.y1;
+      });
+      if (blocked) return;
+      m.node.position = m.want;             // a NEW object - see packColumns
+      boxes.push(boxOf(m.node));
+      placed.push(m);
+    });
+    for (var pass = 0; placed.length && pass < CONST_REPAIR; pass++) {
+      var bad = constsInTheWay(g, placed);
+      if (!bad.size) break;
+      placed.forEach(function (m) { if (bad.has(m.node.id)) m.node.position = m.home; });
+      placed = placed.filter(function (m) { return !bad.has(m.node.id); });
+    }
+    return g;
+  }
+  /* Routes every edge exactly as renderGraph will and reports which of `cands` a wire runs
+     through. Its own lanes, because they are allocated as routes are made and a shared allocator
+     would leave this pass's choices behind for the real one to trip over. */
+  function constsInTheWay(g, cands) {
+    var byId = {}, bad = new Set();
+    g.nodes.forEach(function (n) { byId[n.id] = n; });
+    var boxes = boxesFor(g.nodes), lanes = makeLanes();
+    var watch = boxes.filter(function (b) {
+      return cands.some(function (m) { return m.node.id === b.id; });
+    });
+    g.edges.forEach(function (e) {
+      var from = byId[e.source], to = byId[e.target];
+      var a = from && handlePoint(from, e.sourceHandle);
+      var b = to && handlePoint(to, e.targetHandle);
+      if (!a || !b) return;
+      var pts = edgePoints(a, b, boxes, lanes, e.label);
+      for (var i = 1; i < pts.length; i++) {
+        watch.forEach(function (w) { if (segHitsBox(pts[i - 1], pts[i], w)) bad.add(w.id); });
+      }
+    });
+    return bad;
+  }
+
+  /* ---- ONE TRUNK PER NET PER COLUMN, WHICH IS WHAT A FAN-OUT LOOKS LIKE ON PAPER ----
+     A net driving forty pins is drawn as forty wires, each routed on its own from the source to its
+     own target - and where the geometry is simple they coincide and read as a trunk with drops
+     already, because the lane allocator gives one net one lane. Where any of them has to detour they
+     come apart: measured across the enabled pages, **27 of 35 fan-out nets (>=3 drops) fragment into
+     several vertical legs, carrying 251 wires**, and the 16-bit CPU alone has 19 of them (215 wires).
+     `w_and6` there is the lucky one - all forty of its legs land on x=717 - which is exactly why
+     reading one net and generalising from it was the wrong way to size this.
+
+     So the trunk is CONSTRUCTED rather than hoped for. Per (net, source pin, target column, pin
+     side): one stem from the source to the gutter beside that column, one trunk down the gutter, and
+     a short drop into each pin. Grouping by COLUMN as well as by net is the whole of why this stays
+     tractable - a net whose drops span six columns gets six short local trunks rather than one long
+     one looking for a clear channel across the whole diagram, which on a 263-block page is a channel
+     that does not exist. It also means nothing has to move: the trunk lives in the gutter the router
+     was already using.
+
+     TWO PIN SIDES, ONE MECHANISM, and that is items 1 and 2 of the plan turning out to be one
+     change. A left-side pin is reached by a short horizontal off the trunk. A `sel` pin is on the
+     mux's TOP edge, so its drop runs along at `pin.y - PIN_LEAD` (the height a wire into a top pin is
+     already led to) and turns down into the pin - which is the "control above the multiplexer, routed
+     multi-drop" arrangement, and it needs no node to be hoisted: a column of muxes all share one x,
+     so the trunk beside them serves every one.
+
+     EVERY SEGMENT IS CHECKED AND THE GROUP IS ABANDONED WHOLE, never in part. A trunk half-adopted
+     is worse than none - the drops that took it and the wires that did not would read as two
+     different nets - so if the stem, the trunk or any one drop crosses a symbol, every edge in the
+     group goes back to being routed on its own. Same discipline as the constant placement above, and
+     for the same reason: a refusal has to leave the picture exactly as it was. */
+  var TRUNK_GAP = 24, TRUNK_MIN = 2;
+  function trunkPlan(g, byId, boxes) {
+    var groups = {};
+    g.edges.forEach(function (e, ix) {
+      var from = byId[e.source], to = byId[e.target];
+      if (!from || !to) return;
+      var a = handlePoint(from, e.sourceHandle), b = handlePoint(to, e.targetHandle);
+      if (!a || !b || (b.side !== 'l' && b.side !== 't')) return;
+      /* JSON rather than a joined string, and that is not fussiness: this file has twice grown a
+         key built with a separator that turned out to be a control byte, which worked and made
+         `grep` treat the whole file as binary. A stringified array has no separator to get wrong. */
+      var k = JSON.stringify([e.label, e.source, e.sourceHandle, to.position.x, b.side]);
+      (groups[k] || (groups[k] = [])).push({ ix: ix, a: a, b: b, col: to.position.x });
+    });
+    var plan = {};
+    Object.keys(groups).forEach(function (k) {
+      var gr = groups[k];
+      if (gr.length < TRUNK_MIN) return;
+      var a = gr[0].a, side = gr[0].b.side, col = gr[0].col;
+      var trunkX = col - TRUNK_GAP;
+      // A source to the RIGHT of the gutter would have its stem run backwards into the trunk, which
+      // is the feedback case the backward route already draws properly on its own.
+      if (a.x >= trunkX) return;
+      var a2 = a.side === 'b' ? { x: a.x, y: a.y + PIN_LEAD }
+               : a.side === 't' ? { x: a.x, y: a.y - PIN_LEAD } : a;
+      var drops = gr.map(function (d) {
+        return side === 'l' ? { x: d.b.x, y: d.b.y } : { x: d.b.x, y: d.b.y - PIN_LEAD };
+      });
+      var ys = drops.map(function (d) { return d.y; });
+      var lo = Math.min(a2.y, ...ys), hi = Math.max(a2.y, ...ys);
+      /* THE STEM IS A STRAIGHT HORIZONTAL, and it took a measurement to see why it has to be.
+         Routing it with the ordinary router looked obviously right - inherit the detours, the lanes,
+         the corridor search - and it made the drawing WORSE: `routeAround` moves vertically too, so
+         each group ended up with the stem's own leg AND the trunk's, where before one leg at the
+         midpoint had done both jobs. Measured on the 16-bit ALU, distinct vertical legs went 65 to
+         67 with the trunk switched on, which is the opposite of the whole point.
+
+         So the trunk carries ALL the vertical movement and the stem carries none. A stem that cannot
+         run straight abandons the group rather than detouring, because a detour puts the leg back. */
+      var stem = [a2, { x: trunkX, y: a2.y }];
+      var seg = [{ x: trunkX, y: lo }, { x: trunkX, y: hi }];
+      if (!routeClear(stem, boxes) || !routeClear(seg, boxes)) return;
+      var out = {};
+      for (var gi = 0; gi < gr.length; gi++) {
+        var d = gr[gi];
+        var at = side === 'l' ? { x: d.b.x, y: d.b.y } : { x: d.b.x, y: d.b.y - PIN_LEAD };
+        var pts = stem.concat([{ x: trunkX, y: at.y }, at]);
+        if (side === 't') pts.push({ x: d.b.x, y: d.b.y });
+        if (!routeClear(pts, boxes)) return;         // abandon the GROUP, never one drop
+        out[d.ix] = pts;
+      }
+      Object.keys(out).forEach(function (ix) { plan[ix] = out[ix]; });
+    });
+    return plan;
   }
 
   function graphBounds() {
@@ -1666,18 +2546,30 @@
     nodesLayer.innerHTML = '';
     edgeLayer.innerHTML = '';
     var byId = {};
+    nodeEls = {};
+    flowById = {};
     g.nodes.forEach(function (n) {
       byId[n.id] = n;
-      nodesLayer.appendChild(buildNode(n));
+      flowById[n.id] = n;
+      var el = buildNode(n);
+      nodeEls[n.id] = el;
+      nodesLayer.appendChild(el);
     });
     var dropped = 0;
     /* A new diagram is a new set of nets, so nothing carries over: the selection is
        cleared here rather than in every caller (Synthesize, drill, the bundle toggle). */
-    clearNetSelection();
+    clearSelection();
     invalidateFit();          // a new diagram has new bounds
     drawn = [];
     byNet = {};
-    g.edges.forEach(function (e) {
+    byNode = {};
+    var boxes = boxesFor(g.nodes);
+    var lanes = makeLanes();
+    /* Computed before the loop, because a trunk is a fact about a GROUP of edges and the loop sees
+       one at a time - see synthesis.html's copy. It takes no lane allocator: every segment it makes
+       is placed by construction, so there is no channel to contend for. */
+    var trunks = trunkPlan(g, byId, boxes);
+    g.edges.forEach(function (e, i) {
       var from = byId[e.source], to = byId[e.target];
       var a = from && handlePoint(from, e.sourceHandle);
       var b = to && handlePoint(to, e.targetHandle);
@@ -1685,11 +2577,25 @@
       // instead is the difference between a diagram that is missing wires and a
       // diagram that says so.
       if (!a || !b) { dropped++; return; }
-      var pts = edgePoints(a, b);
+      /* EVERY box is an obstacle, its own two endpoints included - see synthesis.html's copy.
+         A pin sits ON its node's boundary and every route leaves it outward, so a segment attached
+         to a pin never registers as inside its own box; exempting the endpoints bought nothing and
+         let a BACKWARD wire's detour run straight through the source it had just left. */
+      var pts = trunks[i] || edgePoints(a, b, boxes, lanes, e.label);
       var thick = e.style && e.style.strokeWidth === 3;
       var d = roundedPath(pts, 8);
       var wire = svg('path', { class: 'pn-edge' + (thick ? ' bus' : ''), d: d });
       edgeLayer.appendChild(wire);
+      /* THE RECORD CARRIES ITS TWO ENDS, and is pushed for EVERY wire rather than only a named
+         one: a SYMBOL selection lights the wires incident on a NODE where a net selection lights
+         the wires sharing a NAME, and an unnamed wire is still one of a node's inputs. Only a
+         named wire gets the clickable companion and a byNet entry - a net with no name is not
+         something a reader can select by name. */
+      var rec = { net: e.label || null, wire: wire, mid: midOf(pts), pts: pts,
+                  from: e.source, fromPort: e.sourceHandle, to: e.target, toPort: e.targetHandle };
+      drawn.push(rec);
+      (byNode[e.source] || (byNode[e.source] = [])).push(rec);
+      if (e.target !== e.source) (byNode[e.target] || (byNode[e.target] = [])).push(rec);
       /* No label is drawn until a net is asked for. The old behaviour labelled every
          edge, and on the 16-bit CPU that is 622 labels of which 69 landed inside a block
          - so the diagram was unreadable in exactly the places it mattered. */
@@ -1708,8 +2614,6 @@
         selectNet(e.label, midOf(pts));
       });
       edgeLayer.appendChild(hit);
-      var rec = { net: e.label, wire: wire, mid: midOf(pts) };
-      drawn.push(rec);
       (byNet[e.label] || (byNet[e.label] = [])).push(rec);
     });
     if (dropped) synthLog('warn', dropped + ' net(s) could not be drawn: no such pin on the cell');
@@ -1777,13 +2681,13 @@
   // A click on the background clears the selection, the way every editor does it.
   flowRoot.addEventListener('click', function () {
     if (suppressClick) { suppressClick = false; return; }
-    clearNetSelection();
+    clearSelection();
   });
   /* Escape clears it too. This shares the key with the exercise sheet, and the two cannot
      fight: practice.js's handler is registered first and only acts while the sheet is
      open, and a net can only be selected once the sheet has been dismissed. */
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && selectedNet) clearNetSelection();
+    if (e.key === 'Escape' && (selectedNet || selectedNode)) clearSelection();
   });
 
   var touch = null;
@@ -1883,16 +2787,14 @@
   function runGateLevel() {
     /* Refuses while stale rather than running the old netlist or silently
        re-synthesizing: the button says it runs what this card shows, and what the card
-       shows is marked as no longer describing the design. Said in the Console, because
-       that is where every other refusal on this page is said. */
+       shows is marked as no longer describing the design. Said in the Synthesis Log, which is
+       where this card says everything else, and synthLog renders it. */
     if (stale) {
       synthLog('err', 'the netlist is behind the design - press Synthesize before running it');
-      renderSynthSection();
       return;
     }
     if (!netlistFullText) {
       synthLog('err', 'nothing synthesized yet - press Synthesize first');
-      renderSynthSection();
       return;
     }
     var gate = gateLevelDocument();
@@ -1901,11 +2803,10 @@
        to be a sentence logged here, and the rule says it better and in the same idiom as
        the synthesis section's. */
     runSimulation(gate.text);
-    /* ORDER MATTERS HERE, and getting it wrong is what put the rule at the very top of the
-       box with the synthesis log between it and its own output. Both noteRun and
-       renderSynthSection insert at the TOP, so the later call ends up higher - which means
-       this has to run in the same sequence the plain Run path gets for free from script
-       load order: the run's own rule first, then the older synthesis section above it.
+    /* NO ORDERING QUESTION ANY MORE. This used to have to run after noteRun, because both
+       inserted at the top of the one Console and the later call ended up higher - which is what
+       once put the run's rule above the synthesis log and its own output below it. The log lives
+       on its own card now, so the two cannot interleave at all.
 
        The page's own post-run work comes with it - the verdict pill, the tab strip, the
        first-run unfold - called rather than duplicated, which is why practice.js exposes
@@ -1915,20 +2816,17 @@
         gate.swapped + ' module' + (gate.swapped === 1 ? '' : 's') + ' replaced by gates, '
         + gate.kept + ' kept from the document (testbench, memories)');
     }
-    renderSynthSection(true);   // older than the run that just printed, so above it
     gateHasRun = true;
     syncGateLabel();
   }
   gateBtn.addEventListener('click', function () {
     withBusyButton(gateBtn, runGateLevel, syncGateLabel);
   });
-  /* Above whatever the run just printed, because it is older than it. Reset takes the
-     same path: it leaves the console holding its placeholder, and a synthesis that
-     survives a Reset is still the older thing on the page. */
-  ['runBtn', 'resetBtn'].forEach(function (id) {
-    var b = document.getElementById(id);
-    if (b) b.addEventListener('click', function () { renderSynthSection(true); });
-  });
+  /* NOTHING TO RE-PRINT after a Run or a Reset. Both clear the Console, which is why this file
+     used to hook them and put its section back; the log is on this card's own panel now, so a
+     synthesis survives both without anyone doing anything. The two listeners are deleted rather
+     than left calling a renderer, because a listener that re-renders on a button that cannot
+     affect it is the kind of line a later reader keeps out of caution. */
   /* An edit does two independent things, and they need different tests. A successful
      synthesis becomes STALE (guarded on currentAll, since there has to be something to
      be stale). A FAILED one is retired outright - the label described text the reader
@@ -2001,12 +2899,22 @@
       x1 = Math.max(x1, n.position.x + sz.width);
       y1 = Math.max(y1, n.position.y + sz.height);
     });
-    g.edges.forEach(function (e) {
+    var boxes = boxesFor(g.nodes);
+    var lanes = makeLanes();
+    /* Computed before the loop, because a trunk is a fact about a GROUP of edges and the loop sees
+       one at a time - see synthesis.html's copy. It takes no lane allocator: every segment it makes
+       is placed by construction, so there is no channel to contend for. */
+    var trunks = trunkPlan(g, byId, boxes);
+    g.edges.forEach(function (e, i) {
       var from = byId[e.source], to = byId[e.target];
       var a = from && handlePoint(from, e.sourceHandle);
       var b = to && handlePoint(to, e.targetHandle);
       if (!a || !b) return;          // no such pin: the caller's edge count is what says so
-      var pts = edgePoints(a, b);
+      /* EVERY box is an obstacle, its own two endpoints included - see synthesis.html's copy.
+         A pin sits ON its node's boundary and every route leaves it outward, so a segment attached
+         to a pin never registers as inside its own box; exempting the endpoints bought nothing and
+         let a BACKWARD wire's detour run straight through the source it had just left. */
+      var pts = trunks[i] || edgePoints(a, b, boxes, lanes, e.label);
       /* THE EXTENT IS WHAT IS DRAWN, NOT JUST THE NODES. A backward wire routes 22px out from
          its source and 34px BELOW the lower of its two ends, so a wire into the bottom row leaves
          the box the nodes alone would define - and `.pn-edges` is an SVG filling that box, so the
@@ -2066,21 +2974,20 @@
        remembered log and the rows showing it, so a later Run cannot re-print what was just
        cleared - and leaves the netlist, the diagram and the cards alone, because Clear is
        the Console's control and not a Reset. */
-    forgetLog: function () { dropPrintedSynthLines(); synthLines = []; },
+    forgetLog: function () { synthLines = []; renderLogView(); },
     /* Back to never-synthesized, for practice.js's Reset. Built out of the functions
        that already own each piece rather than by re-clearing their variables: an eighth
        thing to forget is exactly how the "list of things true before a core is live"
        bug in the emulator happened. Note this is the one place a Reset DISCARDS the
-       synthesis section rather than re-printing it - Run and Reset both re-print,
-       because they clear a console whose synthesis half they do not own, whereas this
-       is a return to a page where no synthesis ever happened. */
+       synthesis log rather than keeping it: this is a return to a page where no synthesis
+       ever happened, where Run and Reset merely clear a Console this no longer writes to. */
     reset: function () {
       synthLines = [];
       synthFailed = false;   // before showCards below, which is what rewrites the label
-      dropPrintedSynthLines();
+      renderLogView();
       clearNetlist('Nothing synthesized yet - press Synthesize.');
       markStale(false);
-      clearNetSelection();
+      clearSelection();
       showCards(false);      // takes the two tabs with it, and puts the verb back
     },
     designOnly: designOnly,
@@ -2092,24 +2999,92 @@
        (A DUPLICATE of this entry was added for that reader before noticing this one existed. A
        repeated key is legal JavaScript and the last wins, so nothing broke - which is exactly why it
        took a mutant surviving to find it: the mutation hit the first copy and the second answered.) */
+    /* Pinned by learn.js, which puts the only Synthesize button inside this card. */
+    pinCard: function () { cardsPinned = true; showCards(cardsShown); },
+    /* NO TAB ON A PAGE WHOSE STRIP IS NOT A TABLE OF CONTENTS. code2silicon's `#exTabs` holds the
+       seven stage buttons of its flow, so a `Synthesis Results` tab appended into that row is a
+       control of a different kind sitting among them - and the Synthesize STAGE already points at
+       this card. */
+    suppressTabs: function () { tabsSuppressed = true; syncSynthTabs(false); },
+    /* Which view is up, and a way to choose one - a check that dispatched `change` on the radio
+       would be testing the stub's event plumbing rather than the card. */
+    setView: setResultsView,
+    cardPinned: function () { return cardsPinned; },
     netlistText: function () { return netlistFullText; },
+    areaText: function () { return areaReportText; },
+    /* WHAT COPY AND SAVE WOULD ACT ON, which is the substance of "the controls follow the
+       view": both build a throwaway <textarea>/<a> that a stub DOM cannot be asked about, so
+       without this the only checkable claim would be that the panel changed. */
+    /* THREE VALUES, and this accessor is where the merge's last two-view assumption hid: it
+       collapsed everything that was not the netlist to `area`, so it could never say `diagram` and
+       every caller asking "which view is up" got a wrong answer for the default one. */
+    resultsView: function () {
+      if (resultsView === 'netlist') return listingSuppressed ? 'area' : 'netlist';
+      return resultsView === 'diagram' ? 'diagram' : 'area';
+    },
+    resultsText: resultsText,
     segments: function () { return netlistSegments.slice(); },
     graph: function () { return lastGraph; },
     isStale: function () { return stale; },
     selectedNet: function () { return selectedNet; },
     netSegments: function (net) { return (byNet[net] || []).length; },
     selectNet: selectNet,
-    clearNetSelection: clearNetSelection,
+    clearNetSelection: clearSelection,
     highlighted: function () {
       return drawn.filter(function (r) { return r.wire.classList.contains('sel'); })
                   .map(function (r) { return r.net; });
     },
+    /* ---- the SYMBOL selection, for a harness that cannot hit-test ----
+       `highlightedIn` and `highlightedOut` are the two directions read back off the DRAWN wires
+       rather than off the selection's own bookkeeping, which is the point: a mutant that records a
+       pin and paints nothing would satisfy a check on `selectedNode` alone. `pinLabels` is what
+       "one label per PIN, not per wire" is asserted with, and `nodeIds`/`nodeKind` let a check pick
+       a symbol by kind without knowing this app's id scheme. */
+    selectNode: selectNode,
+    selectedNode: function () { return selectedNode; },
+    nodeIds: function () { return (lastGraph.nodes || []).map(function (n) { return n.id; }); },
+    nodeKind: function (id) { return flowById[id] ? flowById[id].type : null; },
+    nodeEdges: function (id) {
+      return (byNode[id] || []).map(function (r) {
+        return { net: r.net, from: r.from, fromPort: r.fromPort, to: r.to, toPort: r.toPort };
+      });
+    },
+    highlightedIn: function () {
+      return drawn.filter(function (r) { return r.wire.classList.contains('sel-in'); })
+                  .map(function (r) { return r.net; });
+    },
+    highlightedOut: function () {
+      return drawn.filter(function (r) { return r.wire.classList.contains('sel'); })
+                  .map(function (r) { return r.net; });
+    },
+    pinLabels: function () {
+      var out = [];
+      [edgeLayer, labelLayer].forEach(function (layer) {
+        Array.prototype.forEach.call(layer.children, function (c) {
+          if (c.tagName === 'TEXT') out.push(c.textContent);
+        });
+      });
+      return out;
+    },
+    /* The element itself, so a check can dispatch a real click on a symbol - the harness cannot
+       hit-test, so reaching the node any other way would mean knowing this file's id scheme. */
+    nodeElement: function (id) { return nodeEls[id] || null; },
+    nodeMarked: function () {
+      return (lastGraph.nodes || []).filter(function (n) {
+        return nodeEls[n.id] && nodeEls[n.id].classList.contains('sel-node');
+      }).map(function (n) { return n.id; });
+    },
+    readout: function () { return netReadout ? netReadout.textContent : ''; },
+    /* Counted over BOTH transformed layers, not just the one the label happens to live in:
+       the label moved from the edge layer to a layer above the nodes, and a counter pinned to
+       one of them read 0 and reported the feature gone. Asking both means the count is about
+       how many labels are drawn - the claim - rather than about where they are drawn. */
     labelCount: function () {
       var n = 0;
-      edgeLayer.children.forEach ? edgeLayer.children.forEach(function (c) {
-        if (c.tagName === 'TEXT') n++;
-      }) : Array.prototype.forEach.call(edgeLayer.children, function (c) {
-        if (c.tagName === 'TEXT') n++;
+      [edgeLayer, labelLayer].forEach(function (layer) {
+        Array.prototype.forEach.call(layer.children, function (c) {
+          if (c.tagName === 'TEXT') n++;
+        });
       });
       return n;
     },
@@ -2122,6 +3097,8 @@
     drawStatic: drawStatic,
     nodeSize: nodeSize,
     handlePoint: handlePoint,
+    // The gap, so a check can assert a constant is flush against its pin without restating 16.
+    constGap: CONST_GAP,
     edgePoints: edgePoints,
     view: function () { return { k: view.k, x: view.x, y: view.y }; },
     fitView: fitView,
@@ -2132,4 +3109,18 @@
     drillInto: drillInto,
     hierGlyph: function () { return HIER_GLYPH; }
   };
+
+  /* THE FLOW STRIP HAS TO BE REBUILT NOW THIS FILE'S BUTTONS EXIST, and the load order is the
+     whole reason. `practice.js` runs BEFORE this file - it must, because this file's Run
+     listener has to fire after that one's verdict-pill refresh - so when it built the row there
+     was no `synthBtn` and no `gateRunBtn` on the page, and flowstrip DROPS a stage whose button
+     is absent. Left there, every exercise page would show a two-stage flow and no way to
+     synthesize from it.
+
+     `build` is idempotent (it takes back its own nodes and re-inserts them), so calling it a
+     second time is a rebuild rather than a duplicate row - and it is guarded, because the four
+     menu apps and code2silicon.html carry this file with no flow of practice.js's to rebuild. */
+  if (window.PRACTICE_API && window.PRACTICE_API.rebuildStrip) {
+    window.PRACTICE_API.rebuildStrip();
+  }
 })();

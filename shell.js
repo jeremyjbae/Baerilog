@@ -112,7 +112,7 @@ var PRACTICE_MARKUP = String.raw`
     </div>
 
     <div class="card full" id="card-console">
-      <h2><span class="card-collapse-btn" data-collapse>▾</span>Console
+      <h2><span class="card-collapse-btn" data-collapse>▾</span>Simulation Results
         <span class="help-wrap"><span class="help-icon">?</span><div class="help-popup"><div>&middot; $display output and simulator status</div></div></span>
         <span class="header-controls">
           <span class="layout-toggle">
@@ -310,6 +310,131 @@ var NAV_ITEMS = [
 
   /* ---- 1. the simulator, verbatim ---- */
   document.body.insertAdjacentHTML('afterbegin', PRACTICE_MARKUP);
+
+  /* ---- 1b. ONE EDITOR CARD, TWO VIEWS ----
+
+     The Testbench Editor card is merged INTO the Verilog Source Editor here, as a second view
+     on a radio pair - `Design` and `Testbench`, the same `.view-group`/`.view-toggle` control
+     the Synthesis Results card carries. One document, one card, two views of it.
+
+     WHY HERE AND NOT IN practice.js. Two pages want this and they are not the same page:
+     the twenty exercises, which load practice.js, and code2silicon.html, which does not.
+     `shell.js` is the one file both load and learn.js does not, so this is where the merge
+     reaches both without reaching a topic. It is DOM surgery on the injected markup rather
+     than an edit to the markup region, because that region is sliced verbatim from
+     Baerilog/simulator.html - the standalone simulator keeps its two editable cards side by
+     side, and nothing here changes that.
+
+     THE LABEL IS KEYED ON `PRACTICE_SLUG`, NOT ON `tbInput.readOnly`, and that is a
+     correction rather than a preference: `readOnly` is what practice.js SETS, and practice.js
+     runs after this file, so reading it here answers `false` on every page and both would
+     read `Testbench`. The slug is the declaration that says "this page is one of the twenty"
+     and it is present before any script runs - the same fact the guard below keys on. So an
+     exercise page reads `Testbench (read-only)`, because there the checks ARE the exercise,
+     and code2silicon - where the box is genuinely editable, and its own harness asserts so -
+     reads `Testbench`.
+
+     THE CARD GOES FULL WIDTH. Both cards were `.card.layout-pair`, i.e. half-width and
+     paired, so merging them would otherwise leave the editor in one cell with an empty one
+     beside it. `.card.full` is `grid-column: 1 / -1` in the shared block, so this is a class
+     swap and needs no CSS.
+
+     AND THE SIDE/STACKED TOGGLE COMES OFF IT. Those two buttons pair `.layout-pair` cards,
+     and these two WERE the only pair on the page - with one card there is nothing left to
+     put side by side, so the control would be a dead one. The shared
+     `.grid.stack-editor-console` rule stays in style.css for the simulator, which still has
+     both cards.
+
+     THE TRADE, recorded rather than glossed: the split existed so a reader could see the
+     checks WHILE writing the design. Behind a radio the two are never visible at once. On a
+     practice page that costs little - the testbench card was folded shut anyway, so this is
+     one click sideways rather than one click further - and what pays for it is the full
+     width the design editor gains. */
+  (function mergeTestbenchIntoEditor() {
+    /* Not on a topic page: learn.js places `card-testbench` by slot name and a topic that
+       asked for it would find it hidden inside another card. */
+    if (window.LEARN_SLUG) return;
+    var editor = document.getElementById('card-editor');
+    var tbCard = document.getElementById('card-testbench');
+    var tbWrap = document.getElementById('tbWrap');
+    var tbEmpty = document.getElementById('tbEmpty');
+    var codeWrap = document.getElementById('editorWrap');
+    var h2 = editor && editor.querySelector('h2');
+    if (!editor || !tbCard || !tbWrap || !codeWrap || !h2) return;
+
+    editor.className = 'card full';
+    /* INTO THE HIERARCHY ROW, BESIDE THE MODULE PANEL - not appended to the card. Appended, it
+       landed after every other child: below the `run for … / Clear` toolbar and outside the row
+       the panel is in, so selecting Testbench put the checks at the bottom of the card with the
+       run controls stranded above them and the panel beside an empty space. The two wraps are
+       ONE SLOT - exactly one of them is displayed at a time - so the testbench belongs where the
+       design is, which is the row's second child.
+       It needs no CSS: `.editor-hierarchy-row .editor-wrap` already flexes, and tbWrap carries
+       that very class.
+
+       appendChild MOVES a node, which is the whole mechanism - the textarea keeps its id, its
+       listeners and app.js's handle on it, so the two-editor code below is untouched. */
+    var row = document.getElementById('editorHierarchyRow');
+    (row || editor).appendChild(tbWrap);
+    if (tbEmpty) (row || editor).appendChild(tbEmpty);
+    tbCard.style.display = 'none';
+
+    /* The pair sits before `.header-controls`, which is pushed to the far end of the header:
+       appended, it would land to the RIGHT of the height and copy buttons instead of after
+       the words it qualifies. Same placement rule practice.js's own heading note followed. */
+    var controls = h2.querySelector('.header-controls');
+    var group = mk('span', null, 'view-group');
+    var radios = [];
+    [['editorViewDesign', 'design', 'Design'],
+     ['editorViewTb', 'tb', window.PRACTICE_SLUG ? 'Testbench (read-only)' : 'Testbench']
+    ].forEach(function (spec) {
+      var label = mk('label', null, 'view-toggle' + (spec[1] === 'design' ? ' on' : ''));
+      label.setAttribute('for', spec[0]);
+      var input = mk('input', spec[0]);
+      input.type = 'radio';
+      input.name = 'editorView';
+      input.value = spec[1];
+      input.checked = spec[1] === 'design';
+      label.appendChild(input);
+      label.appendChild(mk('span', null, null, spec[2]));
+      group.appendChild(label);
+      radios.push(input);
+    });
+    if (controls) h2.insertBefore(group, controls); else h2.appendChild(group);
+
+    /* ONE WRITER for both encodings - the `checked` flags and the `.on` pill - and for which
+       wrap is up. Two encodings of one selection written in one place is the rule every such
+       control here follows; deriving the pill with `:has(input:checked)` instead would let
+       them disagree under a stub that models neither. */
+    function syncEditorView(view) {
+      for (var i = 0; i < radios.length; i++) {
+        radios[i].checked = radios[i].value === view;
+        radios[i].parentElement.classList.toggle('on', radios[i].checked);
+      }
+      codeWrap.style.display = view === 'tb' ? 'none' : '';
+      tbWrap.style.display = view === 'tb' ? '' : 'none';
+      if (tbEmpty) tbEmpty.style.display = 'none';
+      /* THE MODULE PANEL FOLLOWS THE VIEW, because it is beside whichever half is on screen and
+         listing the other one's modules would describe text the reader cannot see. app.js owns
+         that list; this only says the view changed. Guarded because this runs once at build time,
+         before app.js has loaded - and because simulator.html carries app.js with two editors and
+         no view pair at all. */
+      if (typeof window.renderEditorHierarchyList === 'function') {
+        window.renderEditorHierarchyList();
+      }
+    }
+    /* Reads ev.target.value rather than which radio is checked: the stub DOM models no
+       radio-group exclusivity, so a `.checked` sweep would pass in a browser and switch
+       nothing under test - the trap the compiler's language pair records. */
+    for (var i = 0; i < radios.length; i++) {
+      radios[i].addEventListener('change', function (ev) { syncEditorView(ev.target.value); });
+    }
+    syncEditorView('design');
+    window.EDITOR_VIEW_API = {
+      view: function () { return radios[1].checked ? 'tb' : 'design'; },
+      setView: syncEditorView
+    };
+  })();
 
   /* ---- 2. the page chrome ----
      The header bar arrives with the injected markup, because it is the simulator's

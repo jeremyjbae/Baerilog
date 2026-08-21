@@ -227,7 +227,13 @@
     'memory': 'card-memory',
     'model': 'card-model',
     'netlist': 'card-netlist',
-    'netlist-view': 'card-netlist-view'
+    /* BOTH NAMES ARE THE SAME CARD NOW: the Netlist Viewer became the Synthesis Results card's
+       Diagram view, so there is one card for a topic to place. A topic that asks for both - all
+       fifteen do - gets it at the LATER of the two holes, because `fill` appends per slot in
+       document order and appendChild MOVES a node; the earlier hole is left empty. That is why no
+       topic file had to change, and the later position is the better one anyway: it is where the
+       prose introducing the picture leads, and the picture is what the card opens on. */
+    'netlist-view': 'card-netlist'
   };
 
   /* A card is MOVED, not copied: appendChild on a node already in the document detaches it
@@ -241,22 +247,41 @@
      statements about a card that is a grid item, and a card in the middle of an article is
      not one. A button that silently does nothing is worse than one that is not there. */
   function fill() {
+    /* TWO PASSES, AND THE SECOND ONE IS WHY. Since the Netlist Viewer became the Synthesis
+       Results card's Diagram view, `netlist` and `netlist-view` are ONE card - so a topic
+       asking for both (all fifteen do) has two holes and one thing to put in them, and
+       `appendChild` MOVES a node: the second hole wins and the FIRST is left behind. Deciding
+       a hole's visibility in the same pass as the move therefore decided it too early - the
+       abandoned hole was measured `display: ''` with no child in it, i.e. 24px of
+       `.learn-slot` margin sitting in the prose where the listing used to be.
+
+       So every move happens first, and only then is each hole asked the question that can now
+       be answered: does it actually hold its card? That also keeps the rule a SINGLE writer -
+       one place decides whether a hole is shown, for both reasons a hole can be empty (its
+       card is hidden, or its card went to a later hole). */
+    var wanted = {};
     Object.keys(slots).forEach(function (name) {
       var hole = slots[name];
       var card = $(CARD_FOR[name] || '');
       if (!card) return;
-      /* A HOLE FOLLOWS ITS CARD'S VISIBILITY, and this runs even when the card is already here -
-         which is the case that matters, since a card's visibility moves long after it was moved in.
-         Without it the netlist LISTING's hole keeps its own 24px margin on a design that was already
-         a netlist, where practice-synth suppresses that card: a gap in the prose with nothing in it.
-         Read from the card rather than decided here - whoever hid it owns the reason. */
-      hole.style.display = card.style.display === 'none' ? 'none' : '';
+      wanted[name] = card;
       if (card.parentElement === hole) return;            // already in this hole
       hole.appendChild(card);
       var stack = card.querySelector('.layout-toggle [data-layout-btn]');
       if (stack && stack.parentElement) stack.parentElement.style.display = 'none';
       var expand = card.querySelector('#waveExpandBtn');
       if (expand && expand.parentElement) expand.parentElement.style.display = 'none';
+    });
+    /* A HOLE FOLLOWS ITS CARD'S VISIBILITY, and this runs even when the card was already here -
+       which is the case that matters, since a card's visibility moves long after it was moved in.
+       Without it the Synthesis Results hole keeps its own 24px margin on a page whose design the
+       synthesizer refused, where practice-synth takes that card away: a gap in the prose with
+       nothing in it. Read from the card rather than decided here - whoever hid it owns the
+       reason - and `parentElement` is what covers the abandoned-hole case above. */
+    Object.keys(wanted).forEach(function (name) {
+      var hole = slots[name], card = wanted[name];
+      var empty = card.parentElement !== hole || card.style.display === 'none';
+      hole.style.display = empty ? 'none' : '';
     });
   }
   /* ---- 2d. figures: a static logic diagram in the prose --------------------------
@@ -2061,19 +2086,49 @@
      The footer is its own row rather than the legend itself: the legend is a CENTRED flex row,
      so a button inside it would shove the dots off-centre. As its sibling in a flex footer the
      button takes the left and the legend keeps its centring in what is left. */
+  /* THE CARD, NOT THE DIAGRAM PANEL, and that is the one thing to get right here: the viewer is
+     the Synthesis Results card's Diagram VIEW now, so a footer built inside that panel would
+     vanish the moment a reader picked Synthesis Log - taking the only Synthesize button with it.
+     In the card, after the panels, it is always there, and at load the picture is what it was: the
+     placeholder box above, the button bottom left, the legend centred beside it. The legend comes
+     with it for that reason - it is what makes them one row. */
   function moveSynthIntoViewer() {
     var btn = $('synthBtn');
-    var card = $('card-netlist-view');
+    var card = $('card-netlist');
     if (!btn || !card) return;
     var legend = card.querySelector('.legend-row');
     if (!legend) return;
     var foot = card.querySelector('.learn-synth-foot');
     if (!foot) {
       foot = mk('div', 'learn-synth-foot');
-      if (legend.parentElement) legend.parentElement.insertBefore(foot, legend);
+      card.appendChild(foot);
       foot.appendChild(legend);
     }
+    /* ONE ROW: Synthesize, then the gate-level Run, then the legend. The Run was a `.toolbar` of
+       its own above this row, which read as two footers for one card; in the flow's order they are
+       the two things a reader does with a netlist, so they sit side by side. The ROW is moved rather
+       than its button, so `syncResultsView` still owns whether it is on screen - it takes the
+       gate-level Run away for a design that was already a netlist. */
+    var gateRow = $('gateRunRow');
+    if (gateRow && gateRow.parentElement !== foot) {
+      gateRow.style.marginTop = '0';
+      gateRow.style.marginBottom = '0';
+      foot.insertBefore(gateRow, foot.firstChild);
+    }
     if (btn.parentElement !== foot) foot.insertBefore(btn, foot.firstChild);
+  }
+
+  /* PINNED BEFORE `fill()`, WHICH IS THE WHOLE OF IT. That function gives a hole its card's own
+     visibility - `hole.style.display = card.style.display === 'none' ? 'none' : ''` - so a card
+     pinned AFTERWARDS ends up visible inside a hidden hole, and the topic shows nothing at all
+     between its prose and the next heading. That is exactly what shipped in the first cut of this,
+     and neither learn check saw it: they ask where the button is and whether the CARD is hidden,
+     and the hole is a third thing. One owner for the decision either way - practice-synth.js's
+     own flag, not this file writing `style.display` behind its back. */
+  function pinNetlistCard() {
+    if (window.PRACTICE_SYNTH_API && window.PRACTICE_SYNTH_API.pinCard) {
+      window.PRACTICE_SYNTH_API.pinCard();
+    }
   }
 
   /* THE VIEWER CARD MUST STAY ON THE PAGE, because the only Synthesize button is now inside
@@ -2087,6 +2142,7 @@
      is test_learn.py asserting it at load and after a failed synthesis - which a future change to
      showCards would fail, where a redundant write would have hidden that change instead. Same
      with re-running the move on every click: nothing rebuilds this card, so once is once. */
+  pinNetlistCard();       // before fill(), or the card lands in a hidden hole - see its note
   fill();
   moveSynthIntoViewer();
   /* Once, at load: a figure is an illustration, so nothing re-draws it. A PLACEMENT is not drawn
@@ -2480,7 +2536,6 @@
 
   if (topic && topic.verilog) {
     var maxInput = $('maxTimeInput');
-    if (maxInput) maxInput.value = String(topicMaxTime());
     /* The topic document is handed to seedFullSource, which splits it across the two
        editors WITHOUT recording an undoable edit. Both halves of that matter. Writing it
        into the design editor first (setEditorText, then a reset that read it back) put the
@@ -2490,6 +2545,21 @@
        left `module dff` one keystroke behind the topic. See app.js at seedFullSource. */
     seedFullSource(topicDocument());
     tryApplyAutoFinishTime(codeInput.value);
+    /* THE RUN LENGTH IS WRITTEN AFTER THAT CALL, AND ONLY IF IT DECLINED - which is the
+       opposite of the obvious order, and the obvious order was silently wrong. app.js loads
+       its first example on the way past, deriving that design's $finish time and setting
+       `maxTimeIsAuto`; this call is then handed the DESIGN half alone, which has no $finish
+       in it, so it declines - and declining means `releaseRunLength()`, which restores
+       app.js's own MAX_TIME_DEFAULT over whatever was in the field. So a topic's `maxTime`
+       written before it was thrown away and every page ran for 300 units.
+       Nothing had noticed because no topic asked for more until `alu-4bit-opt`, whose
+       testbench sweeps 1,024 input combinations and needs 1,120: measured in a browser, the
+       Console said `Stopped: reached run length of 300 time units without $finish` while
+       `LEARN_API.maxTime()` reported 1120 quite correctly - the intent and the effect had
+       come apart, which is why test_learn.py now reads the FIELD. The `disabled` test is
+       what keeps a genuinely derived time: if the derivation DID answer, it owns the field
+       and has switched it off. */
+    if (maxInput && !maxInput.disabled) maxInput.value = String(topicMaxTime());
     /* TRAILING BLANK LINES TRIMMED FROM THE VIEW. The seeded document puts a blank line
        before the marker so the two halves read apart, and `designSpan` keeps it - where
        `testbenchSpan` deliberately skips the blank lines AFTER the marker. So the editor

@@ -197,8 +197,12 @@ this topic.</p>
      the same trade the 2:1 page makes, for the same reason: a symbol drawn bigger than the netlist
      viewer draws it would put this figure and the netlist card in disagreement.
 
-     THE SELECT PORTS ARE BELOW THE DATA, one per level, and their wires run up into every mux of that
-     level. That fan-out is busy on purpose: it is the second cost of a wide mux and the prose says so. */
+     THE SELECT PORTS ARE ABOVE THE DATA, one per level, at y=0 while the data starts at y=80, and
+     their wires run DOWN into every mux of that level. That fan-out is busy on purpose: it is the
+     second cost of a wide mux and the prose says so. (This said "below ... run up" for a long time,
+     which the coordinates below have never agreed with; the netlist viewer now hoists a select
+     driver above the muxes it drives for exactly the reason this figure is drawn this way, so the
+     two finally describe one arrangement.) */
   figures: {
     'tree': {
       caption: 'An 8:1 mux as seven 2:1 muxes: four on sel[0], two on sel[1], one on sel[2].',

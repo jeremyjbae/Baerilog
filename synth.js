@@ -112,10 +112,200 @@ assign    condFlag[1] = aluCtl[2] ? aluCarry    : 1'b0;    // carry flag
 assign    condFlag[0] = aluCtl[2] ? aluOverflow : 1'b0;    // overflow flag
 
 endmodule`,
+
+  'FIFO': `// parameterized FIFO
+// address generator/counter
+module addr_gen
+#(  parameter MAX_DATA=256,
+	localparam AWIDTH = $clog2(MAX_DATA)
+) ( input en, clk, rst,
+	output reg [AWIDTH-1:0] addr
+);
+	initial addr = 0;
+
+	// async reset
+	// increment address when enabled
+	always @(posedge clk or posedge rst)
+		if (rst)
+			addr <= 0;
+		else if (en) begin
+			if ({'0, addr} == MAX_DATA-1)
+				addr <= 0;
+			else
+				addr <= addr + 1;
+		end
+endmodule //addr_gen
+
+// Define our top level fifo entity
+module fifo
+#(  parameter MAX_DATA=256,
+	localparam AWIDTH = $clog2(MAX_DATA)
+) ( input wen, ren, clk, rst,
+	input [7:0] wdata,
+	output reg [7:0] rdata,
+	output reg [AWIDTH:0] count
+);
+	// fifo storage
+	// sync read before write
+	wire [AWIDTH-1:0] waddr, raddr;
+	reg [7:0] data [MAX_DATA-1:0];
+	always @(posedge clk) begin
+		if (wen)
+			data[waddr] <= wdata;
+		rdata <= data[raddr];
+	end // storage
+
+	// addr_gen for both write and read addresses
+	addr_gen #(.MAX_DATA(MAX_DATA))
+	fifo_writer (
+		.en     (wen),
+		.clk    (clk),
+		.rst    (rst),
+		.addr   (waddr)
+	);
+
+	addr_gen #(.MAX_DATA(MAX_DATA))
+	fifo_reader (
+		.en     (ren),
+		.clk    (clk),
+		.rst    (rst),
+		.addr   (raddr)
+	);
+
+	// status signals
+	initial count = 0;
+
+	always @(posedge clk or posedge rst) begin
+		if (rst)
+			count <= 0;
+		else if (wen && !ren)
+			count <= count + 1;
+		else if (ren && !wen)
+			count <= count - 1;
+	end
+
+endmodule
+
+// ======== TESTBENCH ========
+module fifo_tb;
+
+  localparam MAX_DATA = 8;                 // small depth so wrap-around is easy to hit
+  localparam AWIDTH   = $clog2(MAX_DATA);
+
+  reg                wen, ren, clk, rst;
+  reg  [7:0]         wdata;
+  wire [7:0]         rdata;
+  wire [AWIDTH:0]    count;
+
+  integer i;
+  integer errors;
+
+  fifo #(.MAX_DATA(MAX_DATA)) dut (
+    .wen   (wen),
+    .ren   (ren),
+    .clk   (clk),
+    .rst   (rst),
+    .wdata (wdata),
+    .rdata (rdata),
+    .count (count)
+  );
+
+  // 100 MHz clock
+  initial clk = 0;
+  always #5 clk = ~clk;
+
+  // waves
+  initial begin
+    $dumpfile("fifo_tb.vcd");
+    $dumpvars(0, fifo_tb);
+  end
+
+  initial begin
+    errors = 0;
+    wen    = 0;
+    ren    = 0;
+    wdata  = 0;
+    rst    = 1;
+
+    repeat (2) @(negedge clk);
+    rst = 0;
+
+    if (count !== 0) begin
+      $display("[%0t] ERROR: count not 0 after reset (%0d)", $time, count);
+      errors = errors + 1;
+    end
+
+    // ---- fill the fifo ----
+    for (i = 0; i < MAX_DATA; i = i + 1) begin
+      @(negedge clk);
+      wen   = 1;
+      wdata = 8'hA0 + i[7:0];
+    end
+    @(negedge clk);
+    wen = 0;
+
+    if (count !== MAX_DATA) begin
+      $display("[%0t] ERROR: count=%0d expected=%0d", $time, count, MAX_DATA);
+      errors = errors + 1;
+    end
+
+    // ---- drain it and check FIFO ordering ----
+    for (i = 0; i < MAX_DATA; i = i + 1) begin
+      @(negedge clk);
+      ren = 1;
+      @(negedge clk);
+      ren = 0;
+      #1;
+      if (rdata !== (8'hA0 + i[7:0])) begin
+        $display("[%0t] ERROR: rdata=%0h expected=%0h", $time, rdata, 8'hA0 + i[7:0]);
+        errors = errors + 1;
+      end else begin
+        $display("[%0t] OK   : rdata=%0h", $time, rdata);
+      end
+    end
+
+    if (count !== 0) begin
+      $display("[%0t] ERROR: count=%0d expected 0 after drain", $time, count);
+      errors = errors + 1;
+    end
+
+    // ---- simultaneous read+write: count should hold ----
+    @(negedge clk);
+    wen   = 1;
+    wdata = 8'h11;
+    @(negedge clk);
+    wen   = 1;
+    ren   = 1;
+    wdata = 8'h22;
+    @(negedge clk);
+    wen = 0;
+    ren = 0;
+    if (count !== 1) begin
+      $display("[%0t] ERROR: count=%0d expected 1 on simultaneous r/w", $time, count);
+      errors = errors + 1;
+    end
+
+    // ---- reset mid-stream ----
+    rst = 1;
+    @(negedge clk);
+    rst = 0;
+    if (count !== 0) begin
+      $display("[%0t] ERROR: count=%0d expected 0 after mid-stream reset", $time, count);
+      errors = errors + 1;
+    end
+
+    repeat (2) @(negedge clk);
+    if (errors == 0) $display("=== TEST PASSED ===");
+    else             $display("=== TEST FAILED: %0d error(s) ===", errors);
+    $finish;
+  end
+
+endmodule`,
+
 };
 
 /* ---------------- Lexer ---------------- */
-const KEYWORDS = new Set(['module','endmodule','input','output','wire','reg','assign','always','begin','end','if','else','posedge','negedge','or','case','casex','endcase','default','parameter']);
+const KEYWORDS = new Set(['module','endmodule','input','output','wire','reg','assign','always','initial','begin','end','if','else','posedge','negedge','or','case','casex','endcase','default','parameter','localparam']);
 // Only needed so `\"` cannot end a string literal early; the value itself is discarded
 // (see stripUnsynthesizable) and is kept purely to quote in log lines and errors.
 const STR_ESCAPES = { n: '\n', t: '\t', r: '\r', '0': '\0', '\\': '\\', '"': '"' };
@@ -247,6 +437,29 @@ function lex(src) {
       i = j;
       continue;
     }
+    /* An UNSIZED literal with no width in front of it - `'0`, `'1`, `'hff`. The
+       simulator's lexer has always accepted this form and read it as an unsized
+       literal in the given base (decimal when no base letter follows), so this is
+       here to make the two agree rather than to add a feature: a design that
+       simulates must not fail to lex on the way to the synthesizer.
+
+       In SystemVerilog `'0`/`'1` are FILL literals sized by context, and this is
+       deliberately not that - there is no context-determined width machinery in
+       either app. What it means here is an unsized literal, i.e. 32 bits, which is
+       the one reading both apps can honestly implement and is documented as such.
+       Inside a concatenation that width is indeterminate per the LRM, so `{'0, x}`
+       is a construct to write as `{1'b0, x}` if the width is load-bearing. */
+    if (c === "'") {
+      let k = i + 1, base = 'd';
+      if (/[bBoOdDhH]/.test(src[k])) { base = src[k].toLowerCase(); k++; }
+      const ds = k;
+      while (k < n && /[0-9A-Fa-fxXzZ?_]/.test(src[k])) k++;
+      const digits = src.slice(ds, k).replace(/_/g, '');
+      if (!digits) throw new Error(`Parse error: numeric literal '${src.slice(i, k)}' has no digits (line ${line})`);
+      toks.push({ type: 'num', value: { width: null, base, digits }, line, start: i, end: k });
+      i = k;
+      continue;
+    }
     /* A system task or function name — `$display`, `$monitor`, `$finish`, `$time`. The `$`
        is lexed as part of ONE token, so it can never be read as an operator beside an
        identifier and `$display` cannot collide with a signal called `display`; the parser
@@ -280,7 +493,13 @@ function lex(src) {
     }
     const two = src.slice(i, i+2);
     if (['==','!=','<=','>=','~^','^~','&&','||'].includes(two)) { toks.push({ type: two, value: two, line, start: i, end: i + 2 }); i += 2; continue; }
-    if ('()[]{};,.@=&|^~!+-:*?<>'.includes(c)) { toks.push({ type: c, value: c, line, start: i, end: i + 1 }); i++; continue; }
+    /* `#` is here for the parameter port list (`module m #(parameter W = 8) (...)`) and
+       for nothing else this subset accepts. It used to be a LEX error, which is the
+       message the testbench-marker note above quotes - so a `#delay` that gets past the
+       marker now reaches the parser and is reported as an unexpected token rather than
+       an unexpected character. That is the better of the two: a delay is a construct
+       this app deliberately does not synthesize, not an unreadable character. */
+    if ('()[]{};,.@=&|^~!+-:*?<>#'.includes(c)) { toks.push({ type: c, value: c, line, start: i, end: i + 1 }); i++; continue; }
     throw new Error(`Lex error: unexpected character '${c}' at line ${line}`);
   }
   toks.push({ type: 'eof', value: null, line, start: i, end: i });
@@ -305,7 +524,7 @@ function describeSkip(src, skipInfo) {
 
 /* ---------------- Parser (recursive descent) ---------------- */
 class Parser {
-  constructor(toks) { this.toks = toks; this.pos = 0; this.params = {}; this.skipInfo = toks.skipInfo || null; }
+  constructor(toks) { this.toks = toks; this.pos = 0; this.params = {}; this.memories = {}; this.skipInfo = toks.skipInfo || null; }
   peek(o=0) { return this.toks[this.pos+o]; }
   at(type) { return this.peek().type === type; }
   next() { return this.toks[this.pos++]; }
@@ -327,10 +546,16 @@ class Parser {
   }
   parseModule() {
     const modTok = this.expect('module');
+    const tokStart = this.pos - 1;        // the `module` token, for a re-parse
     const name = this.expect('ident').value;
+    this.curModuleName = name;
+    this.seenParams = [];
     this.params = {}; // parameters are module-scoped; a later module starts with a clean table
+    this.memories = {}; // and so are memories, for the same reason
     const ports = [];
     const decls = [];
+    // Before the ports, deliberately: see parseParamPortList.
+    if (this.at('#')) this.parseParamPortList();
     if (this.at('(')) {
       this.next();
       if (!this.at(')')) {
@@ -340,17 +565,32 @@ class Parser {
       this.expect(')');
     }
     this.expect(';');
-    const assigns = [], always = [], instances = [];
+    const assigns = [], always = [], instances = [], ignoredInitials = [];
     while (!this.at('endmodule')) {
       if (this.at('input') || this.at('output') || this.at('wire') || this.at('reg')) {
         decls.push(this.parseDecl());
-      } else if (this.at('parameter')) {
+      } else if (this.at('parameter') || this.at('localparam')) {
         this.parseParameterDecl();
+      } else if (this.at('initial')) {
+        /* PARSED AND DROPPED, WITH A LINE IN THE LOG. `initial addr = 0;` is how an
+           FPGA design states its power-on contents, and it is idiomatic enough that
+           refusing it would turn a synthesizable design into a parse error over a
+           statement that describes no hardware. There is no cell in this library
+           that holds a value at power-on - what resets a flop here is its async
+           reset input - so nothing can be generated for it.
+
+           It is DROPPED rather than silently skipped: a tool that quietly ignores
+           part of its input is the failure this repo keeps designing against, and a
+           reader whose reset value came from an `initial` needs to be told that the
+           netlist does not have one. */
+        ignoredInitials.push({ line: this.peek().line });
+        this.skipInitialBlock();
       } else if (this.at('assign')) {
         assigns.push(this.parseAssign());
       } else if (this.at('always')) {
         always.push(this.parseAlways());
-      } else if (this.at('ident') && this.peek(1).type === 'ident') {
+      } else if (this.at('ident') && (this.peek(1).type === 'ident' || this.peek(1).type === '#')) {
+        // `type name (...)` or `type #(overrides) name (...)`
         instances.push(this.parseInstance());
       } else {
         const tok = this.peek();
@@ -358,27 +598,120 @@ class Parser {
       }
     }
     const endTok = this.expect('endmodule');
-    return { name, ports, decls, assigns, always, instances, srcStart: modTok.start, srcEnd: endTok.end };
+    return { name, ports, decls, assigns, always, instances, ignoredInitials,
+             srcStart: modTok.start, srcEnd: endTok.end, tokStart, paramNames: this.seenParams,
+             memories: this.memories };
+  }
+
+  /* Consumes an `initial` block without building anything from it. Balanced on
+     begin/end rather than routed through parseStmt, because the statements inside
+     are allowed to be things this subset cannot represent at all (`$readmemh`, a
+     delay, a memory write) - and refusing those would defeat the point of dropping
+     the block. A bare single statement ends at its own semicolon. */
+  skipInitialBlock() {
+    this.expect('initial');
+    if (this.at('begin')) {
+      let depth = 0;
+      do {
+        const t = this.next();
+        if (t.type === 'begin') depth++;
+        else if (t.type === 'end') depth--;
+        else if (t.type === 'eof') throw new Error("Parse error: an 'initial' block is missing its 'end'");
+      } while (depth > 0);
+      return;
+    }
+    for (;;) {
+      const t = this.next();
+      if (t.type === ';') return;
+      if (t.type === 'eof' || t.type === 'endmodule') throw new Error("Parse error: an 'initial' statement is missing its ';'");
+    }
   }
   // `parameter NAME = expr;` (comma-separated for multiple per statement). The value must
-  // fold to a literal `Num` — either a plain literal, or a reference to an earlier parameter
-  // in this module, which by the time we get here has already been substituted into a `Num`
-  // by parsePrimary (see there). Resolution happens eagerly at parse time, so a parameter
+  // fold to a literal `Num` — a plain literal, a reference to an earlier parameter in this
+  // module (parsePrimary has already substituted that into a `Num`), or arithmetic on them,
+  // which foldConstExpr does. Resolution happens eagerly at parse time, so a parameter
   // must be declared before its first use, same restriction the simulator's parameters have.
+  //
+  // `localparam` is a SYNONYM here, exactly as in the simulator: what it means is "not
+  // overridable from outside", and per-instance overrides (`#(.WIDTH(8))`) are not supported
+  // in either app, so there is no context in which the two could behave differently. If
+  // overrides land, this is the one place that has to start telling them apart.
   parseParameterDecl() {
-    this.expect('parameter');
-    this.parseOneParameter();
-    while (this.at(',')) { this.next(); this.parseOneParameter(); }
+    const kw = this.next().type;   // 'parameter' or 'localparam'
+    this.parseOneParameter(kw);
+    while (this.at(',')) { this.next(); this.parseOneParameter(kw); }
     this.expect(';');
   }
-  parseOneParameter() {
+  /* The ANSI parameter port list: `module m #(parameter A = 1, localparam B = A*2) (...)`.
+
+     PARSED BEFORE THE PORT LIST, which is the whole point - `output reg [AWIDTH-1:0] addr`
+     in the ports folds AWIDTH through this.params at parse time, so a list read after the
+     ports would fold against an empty table and report that a module's own parameter is
+     not a parameter. The keyword carries across commas, as in every other declaration list
+     here, so `#(parameter A = 1, B = 2)` declares two. */
+  parseParamPortList() {
+    this.expect('#');
+    this.expect('(');
+    if (!this.at(')')) {
+      for (;;) {
+        if (!this.at('parameter') && !this.at('localparam')) {
+          const tok = this.peek();
+          throw new Error(`Parse error: a parameter port list item must start with 'parameter' or 'localparam', got '${tok.type}' (line ${tok.line})`);
+        }
+        const kw = this.next().type;
+        this.parseOneParameter(kw);
+        while (this.at(',') && this.peek(1).type === 'ident' && this.peek(2).type === '=') {
+          this.next(); this.parseOneParameter(kw);
+        }
+        if (!this.at(',')) break;
+        this.next();
+      }
+    }
+    this.expect(')');
+  }
+  parseOneParameter(kw) {
+    kw = kw || 'parameter';
     const name = this.expect('ident').value;
     if (this.params[name]) throw new Error(`Parse error: parameter '${name}' declared more than once (line ${this.peek().line})`);
     this.expect('=');
     const line = this.peek().line;
     const value = this.parseExpr();
-    if (value.type !== 'Num') throw new Error(`Parse error: parameter '${name}' value must be a constant literal, got '${exprToStr(value)}' (line ${line})`);
-    this.params[name] = value;
+    /* A SEEDED VALUE WINS OVER THE WRITTEN DEFAULT - that is what an override means.
+       The default is still parsed (its tokens must be consumed) and then discarded.
+       Only a `parameter` can be seeded: a `localparam` is by definition not
+       overridable, and this is the one place the two stop being synonyms here. A
+       localparam is always recomputed, which is the point - AWIDTH must follow the
+       overridden MAX_DATA. */
+    if (this.paramSeed && Object.prototype.hasOwnProperty.call(this.paramSeed, name)) {
+      if (kw === 'localparam') {
+        throw new Error(`Parse error: '${name}' is a localparam of module '${this.curModuleName}', which cannot be overridden from an instantiation (line ${line})`);
+      }
+      this.params[name] = { type: 'Num', value: { width: null, base: 'd', digits: String(this.paramSeed[name]) } };
+      delete this.paramSeed[name];
+      if (this.seenParams) this.seenParams.push(name);
+      return;
+    }
+    const folded = foldConstExpr(value);
+    if (!folded.ok) {
+      const why = folded.blocker ? ` — '${folded.blocker}' is not a parameter declared before this point` : '';
+      throw new Error(`Parse error: ${kw} '${name}' value must be a constant literal, got '${exprToStr(value)}' (line ${line})${why}`);
+    }
+    /* A LITERAL IS STORED AS WRITTEN, and only a computed value gets the folded
+       node. That is not an optimisation, it is the difference between `parameter
+       GREEN = 2'd0` meaning two bits and meaning thirty-two: foldConstExpr
+       normalises to an UNSIZED decimal, which is the right shape for a value that
+       has no written width and the wrong one for a literal that does. Storing the
+       folded node unconditionally widened every parameter in the traffic-light FSM
+       from 2-3 bits to 32, which took its netlist from 71 cells to 303 - a design
+       that still elaborated, still had one driver per net, and was simply built out
+       of 32-bit comparators. Nothing in the log said so; the cell count is what
+       said so. So the fold is only ever consulted for expressions that were not
+       already a literal, which makes every design that parsed before this change
+       byte-identical by construction rather than by measurement. */
+    this.params[name] = value.type === 'Num' ? value : folded.node;
+    // Declaration order of the OVERRIDABLE parameters, which a positional
+    // `#(8, 4)` list is matched against - localparams are excluded on purpose.
+    if (this.seenParams && kw === 'parameter') this.seenParams.push(name);
   }
   // A port-list item is either the old style, a bare name whose input/output/wire/reg
   // declaration appears later in the module body (`module m(a, b);`), or ANSI style,
@@ -412,6 +745,7 @@ class Parser {
   parseInstance() {
     const line = this.peek().line;
     const modType = this.expect('ident').value;
+    const overrides = this.at('#') ? this.parseOverrideList(line) : null;
     const instName = this.expect('ident').value;
     this.expect('(');
     const conns = [];
@@ -425,7 +759,45 @@ class Parser {
     if (conns.some(c => (c.port !== null) !== named)) {
       throw new Error(`Parse error: cannot mix named (.port(...)) and positional port connections on instance '${instName}' (line ${line})`);
     }
-    return { type: 'Instance', modType, instName, conns, named, line };
+    return { type: 'Instance', modType, instName, conns, named, line, overrides };
+  }
+
+  /* `#(.WIDTH(8))` or `#(8)` on an instantiation. The values are already resolved
+     when this returns: parsePrimary substitutes a parameter's value for its name, so
+     `#(.MAX_DATA(MAX_DATA))` is parsed in the PARENT's scope and folds to a constant
+     before it is stored. Same arrangement as the simulator's, for the same reason. */
+  parseOverrideList(line) {
+    this.expect('#');
+    this.expect('(');
+    const list = [];
+    if (!this.at(')')) {
+      for (;;) {
+        let name = null, expr;
+        if (this.at('.')) {
+          this.next();
+          name = this.expect('ident').value;
+          this.expect('(');
+          expr = this.parseExpr();
+          this.expect(')');
+        } else {
+          expr = this.parseExpr();
+        }
+        const folded = foldConstExpr(expr);
+        if (!folded.ok) {
+          throw new Error(`Parse error: parameter override${name ? ` for '${name}'` : ''} must be a constant expression, got '${exprToStr(expr)}' (line ${line})`
+            + (folded.blocker ? ` — '${folded.blocker}' is not a parameter` : ''));
+        }
+        list.push({ name, value: Number(folded.value) });
+        if (!this.at(',')) break;
+        this.next();
+      }
+    }
+    this.expect(')');
+    const named = list.length > 0 && list[0].name !== null;
+    if (list.some(o => (o.name !== null) !== named)) {
+      throw new Error(`Parse error: cannot mix named (.NAME(value)) and positional parameter overrides (line ${line})`);
+    }
+    return { named, list, line };
   }
   parsePortConn() {
     if (this.at('.')) {
@@ -453,18 +825,29 @@ class Parser {
 
      `what` names the position, because `expected 'num' but got 'ident'` was the message for
      `fsm[ST]`, `d[W-1:0]` and `mem[addr]` alike — a supported construct, an unfolded
-     expression and genuinely unsynthesizable hardware, which want three different answers. */
+     expression and genuinely unsynthesizable hardware, which want three different answers.
+
+     `d[W-1:0]` USED TO BE THE MIDDLE ONE and is now simply supported: the bound goes through
+     foldConstExpr, so arithmetic on parameters folds here exactly as it does in the simulator.
+     That leaves two genuinely different failures, and the distinction is carried by which
+     identifier stopped the fold rather than by the shape of the expression - `mem[addr]` and
+     `d[addr+1]` are the same problem (a bit chosen at run time) and now read the same way,
+     where before the second fell into the "not folded here" bucket and blamed the arithmetic
+     for something the signal was responsible for. */
   parseConstIndex(what) {
     const tok = this.peek();
     const node = this.parseExpr();
-    if (node.type !== 'Num') {
-      const named = node.type === 'Ident' && !this.params[node.name]
-        ? ` — '${node.name}' is not a parameter, and a netlist has to select a fixed bit`
-        : ` — write a literal or a parameter (arithmetic on parameters is not folded here)`;
-      throw new Error(`Parse error: ${what} must be a constant, got '${exprToStr(node)}' (line ${tok.line})${named}`);
+    const folded = foldConstExpr(node);
+    if (!folded.ok) {
+      const why = folded.blocker
+        ? ` — '${folded.blocker}' is not a parameter, and a netlist has to select a fixed bit`
+        : ' — write a literal, a parameter, or + - & | ^ on them';
+      throw new Error(`Parse error: ${what} must be a constant, got '${exprToStr(node)}' (line ${tok.line})${why}`);
     }
     // 32 bits is far more than an index can mean; the reduce is exact at this width.
-    return numToBits(node.value, 32).reduce((v, b, i) => v + b * 2 ** i, 0);
+    // A literal reads through unchanged, for the width reason parseOneParameter records.
+    const numVal = node.type === 'Num' ? node.value : folded.node.value;
+    return numToBits(numVal, 32).reduce((v, b, i) => v + b * 2 ** i, 0);
   }
   parseRange() {
     if (!this.at('[')) return null;
@@ -475,16 +858,74 @@ class Parser {
     this.expect(']');
     return { hi, lo };
   }
+  /* A 2-D memory declaration (`reg [7:0] data [MAX_DATA-1:0];`) is EXPANDED INTO ONE
+     ORDINARY REGISTER PER WORD - `data_0 … data_31` - and every access to it is
+     desugared into gates that already exist. That is the whole feature: there is no
+     memory in this cell library and no `mem` node anywhere downstream, so the
+     synthesizer, the netlist builder, the viewer and genVerilog need NO changes at
+     all. It is the same choice `$clog2` makes one level up, and the same rule the
+     compiler's two frontends follow: new notation belongs in the parser, a new AST
+     node has to be added to every backend.
+
+     What it costs is real and is logged rather than left to be discovered: measured
+     at 47 cells per 8-bit word, so a 32-deep memory is ~1,360 cells and a 256-deep
+     one is ~12,000 - against the 1,224 of the largest netlist this repo otherwise
+     has. A memory is expensive in gates, and this makes that visible instead of
+     refusing to draw it.
+
+     The element range is shared by every word, which is what makes one `parseDecl`
+     entry able to carry all of them: `data_0 … data_31` are each `[7:0]`. */
   parseDecl() {
     const kind = this.next().type;
     let isReg = false;
     if (kind === 'output' && this.at('reg')) { this.next(); isReg = true; }
     const range = this.parseRange();
-    const names = [this.expect('ident').value];
-    while (this.at(',')) { this.next(); names.push(this.expect('ident').value); }
+    const names = [];
+    for (;;) {
+      const nameTok = this.expect('ident');
+      if (this.at('[')) {
+        this.next();
+        const hi = this.parseConstIndex(`the depth of memory '${nameTok.value}'`);
+        this.expect(':');
+        const lo = this.parseConstIndex(`the depth of memory '${nameTok.value}'`);
+        this.expect(']');
+        names.push(...this.declareMemory(nameTok, kind, range, hi, lo));
+      } else {
+        names.push(nameTok.value);
+      }
+      if (!this.at(',')) break;
+      this.next();
+    }
     this.expect(';');
     return { kind, isReg, range, names };
   }
+
+  /* Registers the memory and declares NOTHING in the parent.
+
+     The words live inside the generated FUNC_ram module, so the enclosing module has no
+     `data_0 … data_31` of its own - it has one RAM instance. That is the difference
+     between this and the flat expansion it replaces: there, each word was a real reg in
+     the parent and the netlist was a field of dff gates; here the memory is a block you
+     drill into.
+
+     `lo` and `hi` are kept as WRITTEN (a `[31:0]` declaration is descending) because the
+     index arithmetic downstream has to agree with what the reader wrote: word `k` is the
+     one selected by index value k, whichever way round the bounds were given. */
+  declareMemory(nameTok, kind, range, hi, lo) {
+    const name = nameTok.value;
+    const first = Math.min(hi, lo), last = Math.max(hi, lo);
+    const depth = last - first + 1;
+    if (kind === 'input' || kind === 'output') {
+      throw new Error(`Parse error: '${name}' is a memory, and a memory cannot be a module port (line ${nameTok.line}) — a netlist has one net per bit, so pass an address and a data port instead`);
+    }
+    if (depth > MAX_MEMORY_WORDS) {
+      throw new Error(`Parse error: memory '${name}' is ${depth} words deep (line ${nameTok.line}) — this synthesizer builds one register per word inside a generated memory module, and ${MAX_MEMORY_WORDS} is the most it will build; a design this size needs a memory macro, which this cell library does not have`);
+    }
+    const width = range ? Math.abs(range.hi - range.lo) + 1 : 1;
+    this.memories[name] = { name, first, last, depth, width, line: nameTok.line };
+    return [];
+  }
+
   parseLvalue() {
     if (this.at('{')) {
       this.next();
@@ -500,7 +941,19 @@ class Parser {
     if (this.at('.')) return this.parseHierRest(nameTok, 'HierLvalue');
     const name = nameTok.value;
     let bit = null;
-    if (this.at('[')) { this.next(); bit = this.parseConstIndex(`the bit index of '${name}'`); this.expect(']'); }
+    if (this.at('[')) {
+      this.next();
+      /* A memory write keeps its index as an EXPRESSION - parseConstIndex would
+         refuse `data[waddr]`, which is the whole construct this supports. It is
+         desugared into a one-hot decoder by parseStmt, which is where a statement
+         can be produced; an lvalue has nowhere to put one. */
+      if (this.memories[name]) {
+        const index = this.parseExpr();
+        this.expect(']');
+        return { type: 'MemLvalue', name, index, line: nameTok.line };
+      }
+      bit = this.parseConstIndex(`the bit index of '${name}'`); this.expect(']');
+    }
     return { type: 'Lvalue', name, bit };
   }
   /* A dotted name is a HIERARCHICAL reference into another instance (`u_alu.debug_alu`).
@@ -751,6 +1204,26 @@ class Parser {
        is about rather than `expected 'ident' but got 'systask'`, which reads as a typo. */
     if (this.at('systask')) {
       const t = this.peek();
+      /* $clog2 IS THE ONE EXCEPTION, and it is an exception to the sentence below
+         rather than to the rule behind it: that message is right because a system
+         function's value would have to be produced by hardware, and $clog2's never
+         is - it is a constant, folded to a `Num` here at parse time, so what reaches
+         the netlist builder is a literal indistinguishable from a written one. This
+         is the same fold the simulator does, in the same place, for the same reason. */
+      if (t.value === '$clog2') {
+        this.next();
+        this.expect('(');
+        const argTok = this.peek();
+        const arg = this.parseExpr();
+        this.expect(')');
+        const folded = foldConstExpr(arg);
+        if (!folded.ok) {
+          const why = folded.blocker ? ` — '${folded.blocker}' is not a parameter` : '';
+          throw new Error(`Parse error: $clog2's argument must be a constant expression, got '${exprToStr(arg)}' (line ${argTok.line})${why}`);
+        }
+        if (folded.value < 0n) throw new Error(`Parse error: $clog2 of a negative value (${folded.value}) is not meaningful (line ${argTok.line})`);
+        return { type: 'Num', value: { width: null, base: 'd', digits: String(clog2(folded.value)) } };
+      }
       throw new Error(`Parse error: '${t.value}' is a system function used as a value (line ${t.line}) — only a system task written as its own statement (\`${t.value}(...);\`) can be ignored; there is no hardware that produces this value`);
     }
     const nameTok = this.expect('ident');
@@ -758,10 +1231,25 @@ class Parser {
     const name = nameTok.value;
     if (this.at('[')) {
       this.next();
+      /* A memory read selects a WORD at run time, so its index is an EXPRESSION rather
+         than a constant bit position - parseConstIndex would refuse `data[raddr]`, which
+         is the whole construct this supports. It stays a node: the synthesizer turns each
+         read site into a read port on the memory's generated module. */
+      if (this.memories[name]) {
+        const index = this.parseExpr();
+        this.expect(']');
+        return { type: 'MemRead', name, index, line: nameTok.line };
+      }
       const hi = this.parseConstIndex(`the index of '${name}'`);
       if (this.at(':')) { this.next(); const lo = this.parseConstIndex(`the range bound of '${name}'`); this.expect(']'); return { type: 'Slice', name, hi, lo }; }
       this.expect(']');
       return { type: 'Index', name, bit: hi };
+    }
+    /* A memory named with no index at all has no value a netlist could produce -
+       there is no single net for the whole array - so it is refused where it is
+       written rather than resolving to whichever register happens to share a name. */
+    if (this.memories[name]) {
+      throw new Error(`Parse error: '${name}' is a memory and needs an index (line ${nameTok.line}) — write '${name}[addr]'`);
     }
     if (this.params[name]) return { type: 'Num', value: this.params[name].value };
     return { type: 'Ident', name };
@@ -1073,10 +1561,134 @@ function parseVerilog(src) {
   if (!modules.length) {
     throw new Error(`Parse error: no module found${skipInfo ? ` before the ${skipInfo.marker} on line ${skipInfo.line}, which drops everything below it` : ''}`);
   }
+  specialiseOverrides(modules, parser);
   // Carried on the array so findTopModule and synthesizeAll can report the truncation without
   // a signature change, and so parseTopLevelModules (which returns a Map) can ignore it.
   modules.skipInfo = skipInfo;
   return modules;
+}
+
+/* Turns every `#( ... )` override into a real module.
+
+   THIS APP SYNTHESIZES EVERY MODULE INDEPENDENTLY rather than walking the hierarchy
+   (see synthesizeAll's loop), so a specialisation cannot be a private variant handed
+   to one instance the way it is in the simulator: it has to be a module in this list,
+   with a name of its own, because genVerilog emits one `module` per entry and two
+   `addr_gen`s of different widths would otherwise collide in the generated text.
+
+   NAMING: a module with exactly one variant in use keeps its plain name, so the
+   common case - the fifo, whose two addr_gen instances pass the same MAX_DATA -
+   produces `module addr_gen` and no noise. Only where several variants are really
+   instantiated does each overridden one take a suffix naming its values. That is why
+   the pass COLLECTS EVERY VARIANT FIRST and names them afterwards: at the moment the
+   first specialisation is created there is no way to know whether a second is coming.
+
+   The default variant, where it is instantiated bare or is the top, always keeps the
+   plain name - so a design that gains an override does not rename the module the
+   reader was already looking at.
+
+   Iterated to a fixed point, because a specialised module contains instances of its
+   own and those may carry overrides too. */
+function specialiseOverrides(modules, parser) {
+  const byName = new Map(modules.map(m => [m.name, m]));
+  for (let round = 0; ; round++) {
+    if (round > 32) throw new Error('Parse error: parameter overrides nest more than 32 deep — check for a cycle');
+    // variants[modName] = Map(signature -> {values, insts:[]})
+    const variants = new Map();
+    for (const m of modules) {
+      for (const inst of m.instances) {
+        if (!inst.overrides || !inst.overrides.list.length) continue;
+        const target = byName.get(inst.modType);
+        if (!target) continue;             // reported later, by the interface check
+        const values = overrideValues(inst, target);
+        const sig = Object.keys(values).sort().map(k => k + '=' + values[k]).join(',');
+        if (!variants.has(inst.modType)) variants.set(inst.modType, new Map());
+        const vs = variants.get(inst.modType);
+        if (!vs.has(sig)) vs.set(sig, { values, insts: [] });
+        vs.get(sig).insts.push(inst);
+      }
+    }
+    if (!variants.size) return;
+    let made = 0;
+    const dead = new Set();
+    for (const [modName, vs] of variants) {
+      const target = byName.get(modName);
+      // Is the plain name still in use - instantiated with no overrides, or the top?
+      const bareUse = modules.some(m => m.instances.some(i => i.modType === modName && (!i.overrides || !i.overrides.list.length)))
+                   || !modules.some(m => m.instances.some(i => i.modType === modName));
+      const several = vs.size > 1 || bareUse;
+      for (const [sig, v] of vs) {
+        const newName = several ? modName + '__' + sig.replace(/[=,]/g, m => m === '=' ? '' : '_') : modName;
+        if (newName === modName) {
+          // one variant and nobody wants the default: re-parse in place, keeping the name
+          if (!target.__specialised) {
+            const spec = reparseModuleWith(parser, target, v.values);
+            spec.__specialised = true;
+            modules[modules.indexOf(target)] = spec;
+            byName.set(modName, spec);
+            made++;
+          }
+        } else if (!byName.has(newName)) {
+          const spec = reparseModuleWith(parser, target, v.values);
+          spec.name = newName;
+          spec.__specialised = true;
+          modules.push(spec);
+          byName.set(newName, spec);
+          made++;
+        }
+        for (const inst of v.insts) { inst.modType = newName; inst.overrides = null; }
+      }
+      /* THE ORIGINAL IS DROPPED when every instance of it has been retargeted and
+         nothing wants the defaults. Left in place it is a module nobody instantiates,
+         which is exactly what findTopModule counts as a candidate top - so two
+         variants of one module turned a perfectly good design into `multiple modules
+         are never instantiated`. Where the bare name IS used the original stays, and
+         it is the default variant. */
+      if (several && !bareUse) dead.add(modName);
+    }
+    for (const name of dead) {
+      const m = byName.get(name);
+      const at = modules.indexOf(m);
+      if (at >= 0) modules.splice(at, 1);
+      byName.delete(name);
+    }
+    if (!made) return;
+  }
+}
+
+function overrideValues(inst, target) {
+  const values = {};
+  if (inst.overrides.named) {
+    for (const o of inst.overrides.list) values[o.name] = o.value;
+  } else {
+    /* Positional overrides match the module's OVERRIDABLE parameters in declaration
+       order, which is what paramNames records and why it excludes localparams:
+       `#(8)` on `#(parameter W = 4, localparam H = W/2)` means W, and counting H
+       would aim the 8 at the wrong one. */
+    if (inst.overrides.list.length > target.paramNames.length) {
+      throw new Error(`Parse error: '${inst.modType}' instantiated as '${inst.instName}' passes `
+        + `${inst.overrides.list.length} positional parameter override(s), but the module declares `
+        + `${target.paramNames.length} overridable parameter(s)`
+        + (target.paramNames.length ? ` (${target.paramNames.join(', ')})` : '')
+        + ` (line ${inst.line})`);
+    }
+    inst.overrides.list.forEach((o, i) => { values[target.paramNames[i]] = o.value; });
+  }
+  return values;
+}
+
+function reparseModuleWith(parser, mod, values) {
+  const sub = new Parser(parser.toks);
+  sub.pos = mod.tokStart;
+  sub.paramSeed = { ...values };
+  const out = stripUnsynthesizable(sub.parseModule());
+  const left = Object.keys(sub.paramSeed);
+  if (left.length) {
+    throw new Error(`Parse error: module '${mod.name}' has no parameter `
+      + left.map(n => `'${n}'`).join(', ')
+      + ` to override (it declares ${mod.paramNames.length ? mod.paramNames.map(n => `'${n}'`).join(', ') : 'none'})`);
+  }
+  return out;
 }
 
 function parseTopLevelModules(src) {
@@ -1170,12 +1782,110 @@ function numToBits(numVal, width) {
   return bits;
 }
 
+/* Bits needed to index n things: ceil(log2(n)), $clog2(0) and $clog2(1) both 0,
+   per IEEE 1800. The simulator carries the same definition over Numbers where
+   this one works in BigInt (that app's constant folder is Number-based, this
+   one's is not), so the two are NOT interchangeable text - what has to hold is
+   that they agree on every value, because a design that simulates at one width
+   and synthesizes at another is the worst outcome available here. A test pins
+   the two against each other rather than against a table. Shifted rather than
+   Math.ceil(Math.log2(n)), which is wrong at some exact powers of two. */
+function clog2(n) {
+  let bits = 0;
+  for (let v = n - 1n; v > 0n; v >>= 1n) bits++;
+  return bits;
+}
+
+/* Folds a constant expression to a single `Num` node, or says what stopped it.
+
+   THE REASON IS PART OF THE RETURN, not a thrown message, because the callers
+   want different sentences: an unfoldable range bound is a different problem
+   from an unfoldable parameter value, and `mem[addr]` (genuinely unsynthesizable
+   hardware) is a different problem again from an operator this folder does not
+   implement. `blocker` names the identifier that defeated the fold where there is
+   one, which is what lets a caller say *which* name it needed to be a parameter -
+   the single most useful word in the message.
+
+   THE OPERATOR SET IS EXACTLY WHAT THIS APP'S GRAMMAR CAN PRODUCE, and that is
+   narrower than the simulator's constant folder on purpose. There is no
+   multiplicative level in parseAdd, `/` and `%` are not lexed at all, `<<`/`>>`
+   are not lexed either (the documented subset gap that keeps six practice designs
+   from synthesizing), and there is no unary minus - so arms for any of those would
+   be code no input could reach and no test could cover, which this repo removes
+   rather than keeps as reassurance. The consequence a reader has to know: a design
+   writing `[W*2-1:0]` simulates and does NOT synthesize, and the two apps'
+   constant arithmetic therefore agree only on what is listed below. Adding the
+   missing operators is a change to the expression grammar, not to this function,
+   because a non-constant `a*b` would then reach a netlist builder that has no cell
+   for it and no message about it.
+
+   Arithmetic is BigInt: BigInt `%` takes the dividend's sign and BigInt division
+   truncates toward zero, so if a multiplicative level is ever added the semantics
+   here are already Verilog's rather than Number's. */
+function foldConstExpr(node) {
+  const num = n => ({ type: 'Num', value: { width: null, base: 'd', digits: String(n) } });
+  const val = node => {
+    if (/[xXzZ?]/.test(node.value.digits)) return null;   // a casex wildcard has no value
+    const d = node.value.digits, b = node.value.base;
+    return BigInt(b === 'b' ? '0b' + d : b === 'h' ? '0x' + d : b === 'o' ? '0o' + d : d);
+  };
+  const go = node => {
+    if (node.type === 'Num') { const v = val(node); return v === null ? { blocker: null } : { v }; }
+    if (node.type === 'Ident') return { blocker: node.name };
+    // Only `~` reaches here: parseUnary maps both `~` and `!` onto it, and the
+    // reductions (redand/redor/redxor/redxnor) are operations on a WIDTH rather
+    // than on a value, so they are correctly unfoldable.
+    if (node.type === 'Unary' && node.op === '~') {
+      const a = go(node.expr);
+      return a.v === undefined ? a : { v: ~a.v };
+    }
+    if (node.type === 'Ternary') {
+      const c = go(node.cond); if (c.v === undefined) return c;
+      return go(c.v ? node.then : node.else);
+    }
+    if (node.type === 'Binary') {
+      const l = go(node.l); if (l.v === undefined) return l;
+      const r = go(node.r); if (r.v === undefined) return r;
+      switch (node.op) {
+        case '+': return { v: l.v + r.v };
+        case '-': return { v: l.v - r.v };
+        case '&': return { v: l.v & r.v };
+        case '|': return { v: l.v | r.v };
+        case '^': return { v: l.v ^ r.v };
+        case '==': return { v: l.v === r.v ? 1n : 0n };
+        case '!=': return { v: l.v !== r.v ? 1n : 0n };
+        case '<': return { v: l.v < r.v ? 1n : 0n };
+        case '>': return { v: l.v > r.v ? 1n : 0n };
+        case '<=': return { v: l.v <= r.v ? 1n : 0n };
+        case '>=': return { v: l.v >= r.v ? 1n : 0n };
+      }
+      return { blocker: null };
+    }
+    return { blocker: null };
+  };
+  const r = go(node);
+  if (r.v === undefined) return { ok: false, blocker: r.blocker };
+  return { ok: true, node: num(r.v), value: r.v };
+}
+
 /* ---------------- Elaborator / Synthesizer ---------------- */
 // cap on how wide a case/casex/casez selection may be before _synthPriorityTree's balanced
 // mux2 tree is used in place of the plain linear priority chain (see there) — an arbitrary
 // but generous bound; beyond it the linear chain (still fully correct, just O(N) deep instead
 // of O(log N)) is used instead, so no design is ever put at risk by this cap.
 const MAX_PRIORITY_MUX_FANIN = 32;
+
+/* The deepest memory this synthesizer will expand into registers. It builds one
+   register per word plus a comparator per word, measured at ~47 cells for an 8-bit
+   word, so 1,024 words is roughly 48,000 cells - already several times the largest
+   netlist this repo otherwise contains (the 16-bit CPU, at 1,224). The cap exists so
+   that an accidental `reg [7:0] m [65535:0]` says what the problem is instead of
+   building for a minute and then handing the viewer 260,000 nodes.
+
+   It is a REFUSAL WITH A REASON rather than a silent truncation, which is the rule
+   this file keeps: a design over the cap is told it needs a memory macro, and that
+   this cell library has none. */
+const MAX_MEMORY_WORDS = 1024;
 class Synthesizer {
   constructor(ast, interfaces, adderRegistry, skipInfo) {
     this.ast = ast;
@@ -1290,6 +2000,36 @@ class Synthesizer {
     return `${type}${this.counters[type] - 1}`;
   }
 
+  /* ---- A GENERATED MULTI-BIT VALUE IS A DECLARED SIGNAL, not N invented strings ----
+     The engine's nets are one bit each, and that is not an oversight: the cell library is 1-bit
+     (`and_gate`, `mux2_gate`, `dff_gate`), so a gate-level netlist has 1-bit nets by definition,
+     and the sibling simulator that the equivalence checks run the netlist through represents every
+     value as three 32-bit masks - a wide port is unrepresentable past 32 bits. So a BUS here is a
+     DECLARATION, never a net: `sig` holds `{width, lo}`, `netName` spells the bits `name[i]`, and
+     `genVerilog` emits one `wire [hi:lo] name;` from the declaration.
+
+     What this fixes is that the generated hardware used to skip that step. A memory read, the RAM's
+     word registers and its read-mux stages invented net names directly - `w_data_rd0_0 … _7`, eight
+     separate one-bit nets with nothing declaring them - and four separate symptoms followed from the
+     one cause: `genVerilog` swept them into its anonymous-wire line and emitted eight scalars where
+     the design means one 8-bit value; `collapseBuses` had no `netLabel` to put on the bundle;
+     `mergeInstancePins` fell back to naming the merged edge after bit 0 (`w_data_rd0_0`, which is a
+     representative and not a name); and nothing downstream knew the width. Declaring them fixes all
+     four at the source. Measured scope: one family in `fifo`, 273 in `FUNC_ram256x8` (256 word
+     registers plus 17 mux stages), and none anywhere else - every other undeclared net in the repo
+     is a genuine one-bit gate output.
+
+     UNIQUIFIED RATHER THAN ASSUMED FREE, because `w_` is a convention and not a reservation: a
+     design may legally declare `wire [7:0] w_word0;`, and `_buildSignalTable` would then have
+     already taken the name. Silently reusing it would wire generated hardware into the reader's own
+     signal, which is the one failure here that no cell count could show. */
+  _declareBus(name, width) {
+    let n = name, k = 0;
+    while (this.sig[n]) n = `${name}_${++k}`;
+    this.sig[n] = { width, lo: 0, dir: 'wire' };
+    return n;
+  }
+
   markDriven(net, cellId) {
     if (this.driven.has(net)) this.warn(`Net '${net}' has more than one driver (cell '${cellId}')`);
     this.driven.add(net);
@@ -1301,13 +2041,41 @@ class Synthesizer {
   // at their own full width before being folded down, not truncated to the caller's width.
   naturalWidth(node) {
     switch (node.type) {
-      case 'Num': return node.value.width || 32;
+      /* AN UNSIZED LITERAL IS SIZED TO WHAT ITS VALUE NEEDS - `0` and `1` are one bit, `2`
+         is two, `255` is eight - where the LRM makes every unsized literal 32 bits.
+
+         That is a deliberate divergence, and the reason is that 32 is not a width anything
+         here means. `{a, 1, b}` with a 32-bit `1` puts `a` at bits 37..40 of a 41-bit
+         concatenation, so a design that plainly means "a, then a set bit, then b" builds
+         nine bits of hardware in the reader's head and forty-one in the netlist. The LRM
+         agrees the construct is wrong - an unsized literal in a concatenation has
+         indeterminate width and is illegal - but "illegal" is not what a synthesizer should
+         answer when the intent is unambiguous.
+
+         `Baerilog/simulator.html` deliberately does NOT do this: it keeps the LRM's 32 bits
+         and WARNS in its Console instead, naming both readings. So the two apps disagree
+         about this one construct on purpose, which is a reversal of the rule this project
+         otherwise holds to (see $clog2, where the two are pinned against each other) - the
+         difference being that here neither reading is wrong, and the warning is what stops
+         the disagreement being silent.
+
+         A literal with x/z digits keeps 32, because it has no value to measure. */
+      case 'Num': {
+        const v = node.value;
+        if (v.width) return v.width;
+        if (/[xXzZ?]/.test(v.digits)) return 32;
+        const bi = v.base === 'b' ? BigInt('0b' + v.digits)
+                 : v.base === 'h' ? BigInt('0x' + v.digits)
+                 : v.base === 'o' ? BigInt('0o' + v.digits) : BigInt(v.digits);
+        return Math.max(1, bi.toString(2).length);
+      }
       // Unreachable via stripUnsynthesizable, which either deletes the assignment or errors
       // on the node; here so a future parser path that leaks one fails loudly.
       case 'Str': this.error(`string literal ${JSON.stringify(node.value)} has no width — a string is only allowed as the whole right-hand side of an assignment, which is then ignored`);
       case 'Hier': this.error(`hierarchical reference '${hierToStr(node)}' has no width here — it names a net inside another module, and every statement mentioning one is ignored`);
       case 'Ident': return this._sigWidth(node.name);
       case 'Index': return 1;
+      case 'MemRead': return this.ast.memories[node.name].width;
       case 'Slice': return node.hi - node.lo + 1;
       case 'Unary':
         if (['redand', 'redor', 'redxor', 'redxnor'].includes(node.op)) return 1;
@@ -1470,6 +2238,33 @@ class Synthesizer {
         const nets = [];
         for (let i = 0; i < width; i++) nets.push(i < s.width ? this.netName(node.name, i) : this.constNet(0));
         return nets;
+      }
+      /* Each read SITE is its own port on the memory's module, so two reads at two
+         addresses are two muxes inside it rather than one mux and a conflict. The nets
+         come back before the module exists - it is generated once every port is known,
+         at the end of run() - which is why this hands out names and defers. */
+      case 'MemRead': {
+        const port = this._memPort(node.name);
+        const mem = this.ast.memories[node.name];
+        const idx = this._memAddrBits(node.index, mem);
+        const bus = this._declareBus(`w_${node.name}_rd${port.reads.length}`, mem.width);
+        const nets = Array.from({ length: mem.width }, (_, i) => this.netName(bus, i));
+        /* NOT markDriven'd HERE, and that is the whole of a bug the FIFO reported eight times over:
+           `[fifo] Net 'w_data_rd0_0' has more than one driver (cell 'data_ram')`, once per bit of
+           its one read port. There was only ever one driver, and the message named it twice - the
+           read site registered these nets speculatively, and then `_emitMemories` emitted the real
+           `data_ram` instance at the end of run(), where `_emitInstance` marks every output-port net
+           it drives. Same cell, same nets, marked twice.
+
+           The mark here could only ever be the false one. Every net it touches belongs to a memory
+           with at least one read, so `_emitMemories` is certain to emit that memory's instance, so
+           the instance is certain to mark these very nets - the duplicate is unconditional. And it
+           cannot be protecting against a name collision either: `netName` spells a signal's bits
+           `sig` or `sig[bit]`, with brackets, so no user signal can produce the `w_..._rdN_b` form.
+           A genuine second driver is still caught, by whichever other cell marks the net before the
+           instance does. */
+        port.reads.push({ addr: idx, data: nets });
+        return this._fitWidth(nets, width);
       }
       case 'Index': {
         const nets = [this.netName(node.name, node.bit)];
@@ -1682,6 +2477,384 @@ class Synthesizer {
     this.adderRegistry.set(modName, result);
     this.interfaces[modName] = { name: modName, ports: fakeAst.ports, sig: sub.sig };
     return result;
+  }
+
+  /* An ENABLED REGISTER module - clk, rstn, en, d, q - built once per width and cached
+     in the same registry the generated adders use, by the same mechanism: a fake AST, a
+     sub-Synthesizer over it, an entry in `interfaces` so an instance's ports resolve.
+
+     Its body is one mux2 + dff per bit, so the HOLD lives inside the module. That is
+     what makes it the right shape for a memory word: `if (wen) data[a] <= d;` is a
+     register with an enable, and the two hold-muxes the resolver builds for it are
+     exactly this module's contents (see _buildRamModule, which instantiates one of these
+     per word and drives `en` from the write decoder).
+
+     Only memory words use it, deliberately. Applying it to every multi-bit register
+     would be more consistent and would move fourteen existing netlists, each of which
+     would then have to be re-proved by gate-level equivalence rather than by
+     comparison; keeping it to memories is what lets every other golden stay
+     byte-identical and makes the scoping checkable. */
+  _getOrBuildRegModule(width) {
+    const modName = `FUNC_reg${width}`;
+    if (this.adderRegistry.has(modName)) return this.adderRegistry.get(modName);
+    if (this.interfaces[modName]) {
+      this.error(`Cannot auto-generate the '${modName}' register module — a module with that name already exists in this source. Rename it to avoid the clash.`);
+    }
+    const range = width > 1 ? { hi: width - 1, lo: 0 } : null;
+    const fakeAst = {
+      name: modName, ports: ['clk', 'rstn', 'en', 'd', 'q'], assigns: [], always: [], instances: [],
+      decls: [
+        { kind: 'input', isReg: false, range: null, names: ['clk', 'rstn', 'en'] },
+        { kind: 'input', isReg: false, range, names: ['d'] },
+        { kind: 'output', isReg: false, range, names: ['q'] },
+      ],
+    };
+    const sub = new Synthesizer(fakeAst, this.interfaces, this.adderRegistry, this.skipInfo);
+    for (let i = 0; i < width; i++) {
+      const qNet = sub.netName('q', i);
+      const mid = sub.newId('mux2');
+      const dSel = `w_${mid}`;
+      sub.cells.push({ id: mid, type: 'mux2',
+                       ports: { sel: sub.netName('en', 0), a: qNet, b: sub.netName('d', i), y: dSel },
+                       comment: i === 0 ? 'en ? d : q  (hold)' : null });
+      sub.markDriven(dSel, mid);
+      const did = sub.newId('dff');
+      sub.cells.push({ id: did, type: 'dff',
+                       ports: { clk: sub.netName('clk', 0), rstn: sub.netName('rstn', 0), d: dSel, q: qNet },
+                       comment: i === 0 ? 'q <= en ? d : q' : null });
+      sub.markDriven(qNet, did);
+    }
+    const result = { sig: sub.sig, cells: sub.cells, log: [], ports: fakeAst.ports,
+                     moduleName: modName, clkSignals: new Set(['clk']), rstSignals: new Set(), isRegModule: true };
+    this.adderRegistry.set(modName, result);
+    this.interfaces[modName] = { name: modName, ports: fakeAst.ports, sig: sub.sig };
+    return result;
+  }
+
+  /* Address bits for a memory index, synthesized at the width the DEPTH needs.
+
+     Not at the index expression's own width: `data[waddr]` where waddr is 8 bits and the
+     memory is 4 deep needs two bits, and handing eight to a 4-way decoder would build six
+     comparisons against constants that can never match. _fitWidth truncates or zero-extends
+     to exactly what the depth requires. */
+  _memAddrBits(idxExpr, mem) {
+    const abits = Math.max(1, Math.ceil(Math.log2(mem.depth)));
+    /* A CONSTANT index outside the declared range is refused, which the desugared form used
+       to do and the RAM form would otherwise lose: the decoder simply never asserts that
+       word, so `data[9]` on a four-word memory reads as whatever the address happens to
+       select and writes nowhere - a design that is wrong about its own memory, running. A
+       variable index cannot be checked here and is the reader's business, exactly as an
+       out-of-range variable index is in the simulator. */
+    const folded = foldConstExpr(idxExpr);
+    if (folded.ok) {
+      const k = Number(folded.value);
+      if (k < mem.first || k > mem.last) {
+        this.error(`'${mem.name}[${k}]' is outside the memory's declared range [${mem.last}:${mem.first}] (line ${mem.line})`);
+      }
+    }
+    return this._fitWidth(this.synthExpr(idxExpr, Math.max(abits, this.naturalWidth(idxExpr))), abits);
+  }
+
+  /* A one-hot write decoder: `depth` outputs, exactly one high when `en` is, chosen by `a`.
+
+     BUILT AS A TREE, not as one address comparison per word. A comparator per output is
+     `depth * (2*abits - 1)` gates - 3,840 of them for a 256-word memory - where a tree
+     shares every partial product: level k splits each of the 2^k branches already built
+     into two with one AND each, so the whole decoder is 2*depth-2 ANDs and abits NOTs. For
+     256 words that is 510 cells against 3,840, and it is the same one-hot function. */
+  _getOrBuildDecoderModule(depth, abits) {
+    const modName = `FUNC_dec${abits}to${depth}`;
+    if (this.adderRegistry.has(modName)) return this.adderRegistry.get(modName);
+    if (this.interfaces[modName]) {
+      this.error(`Cannot auto-generate the '${modName}' decoder module — a module with that name already exists in this source. Rename it to avoid the clash.`);
+    }
+    const fakeAst = {
+      name: modName, ports: ['en', 'a', 'y'], assigns: [], always: [], instances: [],
+      decls: [
+        { kind: 'input', isReg: false, range: null, names: ['en'] },
+        { kind: 'input', isReg: false, range: abits > 1 ? { hi: abits - 1, lo: 0 } : null, names: ['a'] },
+        { kind: 'output', isReg: false, range: depth > 1 ? { hi: depth - 1, lo: 0 } : null, names: ['y'] },
+      ],
+    };
+    const sub = new Synthesizer(fakeAst, this.interfaces, this.adderRegistry, this.skipInfo);
+    const inv = [];
+    for (let b = 0; b < abits; b++) {
+      const id = sub.newId('not');
+      const y = `w_${id}`;
+      sub.cells.push({ id, type: 'not', ports: { a: sub.netName('a', b), y }, comment: b === 0 ? '~a' : null });
+      sub.markDriven(y, id);
+      inv.push(y);
+    }
+    /* level 0 is `en` itself; each level splits every branch on one more address bit.
+
+       INDEXED, NOT PUSHED, and that distinction is the whole correctness of the tree: the
+       branch for address value v has to sit at position v, and pushing in loop order puts
+       it at `i*2 + bit` while its value is `i + bit*2^b`. Those agree only while there are
+       two levels, so a 4-word decoder worked and a 16-word one addressed the wrong words -
+       which read as a memory that never returns anything, since no write select ever
+       matched the read mux. */
+    let level = [sub.netName('en', 0)];
+    for (let b = 0; b < abits; b++) {
+      const next = new Array(level.length * 2);
+      for (let i = 0; i < level.length; i++) {
+        for (const bit of [0, 1]) {
+          const idx = i + bit * level.length;
+          const last = b === abits - 1;
+          if (last && idx >= depth) continue;      // a depth that is not a power of two
+          const sel = bit ? sub.netName('a', b) : inv[b];
+          const id = sub.newId('and');
+          const y = last ? sub.netName('y', idx) : `w_${id}`;
+          sub.cells.push({ id, type: 'and', ports: { a: level[i], b: sel, y },
+                           comment: b === 0 && bit === 0 ? 'one-hot decode' : null });
+          sub.markDriven(y, id);
+          next[idx] = y;
+        }
+      }
+      level = next;
+    }
+    const result = { sig: sub.sig, cells: sub.cells, log: [], ports: fakeAst.ports,
+                     moduleName: modName, clkSignals: new Set(), rstSignals: new Set(), isDecoderModule: true };
+    this.adderRegistry.set(modName, result);
+    this.interfaces[modName] = { name: modName, ports: fakeAst.ports, sig: sub.sig };
+    return result;
+  }
+
+  /* A RADIX-R read mux: R data ports of `width` bits, one `sel` of log2(R) bits, one `y`.
+
+     ONE PORT PER INPUT WORD, NOT ONE FLAT BUS, and that is a hard engine constraint rather
+     than a preference. Every value in this project is three 32-bit masks (see mkVal), so a
+     `[depth*width-1:0]` port is unrepresentable the moment depth*width exceeds 32: the
+     netlist was correct and could not be SIMULATED, which showed up as a 4-word memory
+     passing its equivalence check and an 8-word one returning nothing. Separate ports keep
+     every signal inside the engine's width.
+
+     R is 16, or the depth if that is smaller. It is a tree of these, so R decides how many
+     levels a large memory has: 16 gives a 256-word mux two levels and seventeen instances,
+     where a radix of 2 would give eight levels and 255. Sixteen ports is still a module a
+     reader can take in, and 15 mux2 per bit inside it. */
+  _getOrBuildReadMuxModule(radix, width) {
+    const sbits = Math.max(1, Math.ceil(Math.log2(radix)));
+    const modName = `FUNC_mux${radix}x${width}`;
+    if (this.adderRegistry.has(modName)) return this.adderRegistry.get(modName);
+    if (this.interfaces[modName]) {
+      this.error(`Cannot auto-generate the '${modName}' read-mux module — a module with that name already exists in this source. Rename it to avoid the clash.`);
+    }
+    const dRange = width > 1 ? { hi: width - 1, lo: 0 } : null;
+    const dNames = Array.from({ length: radix }, (_, i) => `d${i}`);
+    const ports = dNames.concat(['sel', 'y']);
+    const fakeAst = {
+      name: modName, ports, assigns: [], always: [], instances: [],
+      decls: [
+        { kind: 'input', isReg: false, range: dRange, names: dNames },
+        { kind: 'input', isReg: false, range: sbits > 1 ? { hi: sbits - 1, lo: 0 } : null, names: ['sel'] },
+        { kind: 'output', isReg: false, range: dRange, names: ['y'] },
+      ],
+    };
+    const sub = new Synthesizer(fakeAst, this.interfaces, this.adderRegistry, this.skipInfo);
+    for (let bit = 0; bit < width; bit++) {
+      let level = dNames.map(n => sub.netName(n, bit));
+      for (let b = 0; b < sbits && level.length > 1; b++) {
+        const next = [];
+        for (let i = 0; i < level.length; i += 2) {
+          const lo = level[i], hi = level[i + 1];
+          if (hi === undefined) { next.push(lo); continue; }   // odd tail passes through
+          const last = level.length <= 2;
+          const id = sub.newId('mux2');
+          const y = last ? sub.netName('y', bit) : `w_${id}`;
+          sub.cells.push({ id, type: 'mux2', ports: { sel: sub.netName('sel', b), a: lo, b: hi, y },
+                           comment: bit === 0 && b === 0 && i === 0 ? 'read mux tree' : null });
+          sub.markDriven(y, id);
+          next.push(y);
+        }
+        level = next;
+      }
+      // radix 1 selects nothing, so the input IS the output - through a buf, since a net
+      // here cannot carry two names.
+      if (level.length === 1 && level[0] !== sub.netName('y', bit)) {
+        const id = sub.newId('buf');
+        sub.cells.push({ id, type: 'buf', ports: { a: level[0], y: sub.netName('y', bit) }, comment: null });
+        sub.markDriven(sub.netName('y', bit), id);
+      }
+    }
+    const result = { sig: sub.sig, cells: sub.cells, log: [], ports,
+                     moduleName: modName, clkSignals: new Set(), rstSignals: new Set(), isReadMuxModule: true };
+    this.adderRegistry.set(modName, result);
+    this.interfaces[modName] = { name: modName, ports, sig: sub.sig };
+    return result;
+  }
+
+  /* The memory itself: a decoder, one register per word, and one read mux per read port.
+
+     THIS IS THE LEVEL THAT MAKES A LARGE MEMORY BROWSABLE. Its own view is a handful of
+     blocks - the decoder, the words, the muxes - and each of those is a module you drill
+     into, so no level is ever a field of thousands of gates. The words are FUNC_reg
+     instances, the same module an ordinary enabled register uses.
+
+     Cached per (depth, width, read ports), because two memories of the same shape are the
+     same hardware and should be one module. */
+  _getOrBuildRamModule(depth, width, nReads) {
+    const abits = Math.max(1, Math.ceil(Math.log2(depth)));
+    const modName = `FUNC_ram${depth}x${width}` + (nReads > 1 ? `p${nReads}` : '');
+    if (this.adderRegistry.has(modName)) return this.adderRegistry.get(modName);
+    if (this.interfaces[modName]) {
+      this.error(`Cannot auto-generate the '${modName}' memory module — a module with that name already exists in this source. Rename it to avoid the clash.`);
+    }
+    const ports = ['clk', 'we', 'waddr', 'wdata'];
+    for (let r = 0; r < nReads; r++) ports.push(`raddr${r}`, `rdata${r}`);
+    const aRange = abits > 1 ? { hi: abits - 1, lo: 0 } : null;
+    const dRange = width > 1 ? { hi: width - 1, lo: 0 } : null;
+    const decls = [
+      { kind: 'input', isReg: false, range: null, names: ['clk', 'we'] },
+      { kind: 'input', isReg: false, range: aRange, names: ['waddr'] },
+      { kind: 'input', isReg: false, range: dRange, names: ['wdata'] },
+    ];
+    for (let r = 0; r < nReads; r++) {
+      decls.push({ kind: 'input', isReg: false, range: aRange, names: [`raddr${r}`] });
+      decls.push({ kind: 'output', isReg: false, range: dRange, names: [`rdata${r}`] });
+    }
+    const fakeAst = { name: modName, ports, assigns: [], always: [], instances: [], decls };
+    const sub = new Synthesizer(fakeAst, this.interfaces, this.adderRegistry, this.skipInfo);
+    const dec = sub._getOrBuildDecoderModule(depth, abits);
+    const reg = sub._getOrBuildRegModule(width);
+
+    const sel = Array.from({ length: depth }, (_, i) => `w_wsel${i}`);
+    sub._emitInstance('u_wdec', dec.moduleName, ['en', 'a', 'y'],
+      { en: 'input', a: 'input', y: 'output' }, { en: 1, a: abits, y: depth },
+      { en: sub.netName('we', 0), a: 'a', y: 'y' },
+      { a: Array.from({ length: abits }, (_, b) => sub.netName('waddr', b)), y: sel },
+      'one-hot write select');
+
+    const q = [];
+    for (let i = 0; i < depth; i++) {
+      const wb = sub._declareBus(`w_word${i}`, width);
+      const qn = Array.from({ length: width }, (_, b) => sub.netName(wb, b));
+      q.push(qn);
+      sub._emitInstance(`word${i}`, reg.moduleName, ['clk', 'rstn', 'en', 'd', 'q'],
+        { clk: 'input', rstn: 'input', en: 'input', d: 'input', q: 'output' },
+        { clk: 1, rstn: 1, en: 1, d: width, q: width },
+        { clk: sub.netName('clk', 0), rstn: sub.constNet(1), en: sel[i], d: 'd', q: 'q' },
+        { d: Array.from({ length: width }, (_, b) => sub.netName('wdata', b)), q: qn },
+        `word ${i}`);
+    }
+    for (let r = 0; r < nReads; r++) {
+      sub._buildReadTree(r, q, depth, width, abits);
+    }
+    const result = { sig: sub.sig, cells: sub.cells, log: [], ports,
+                     moduleName: modName, clkSignals: new Set(['clk']), rstSignals: new Set(), isRamModule: true };
+    this.adderRegistry.set(modName, result);
+    this.interfaces[modName] = { name: modName, ports, sig: sub.sig };
+    return result;
+  }
+
+  /* The read path for one port: a tree of radix-R muxes over the words.
+
+     Each level consumes the log2(R) address bits below the ones the level above uses, so
+     the low bits select within a group and the high bits select the group - which is what
+     makes the tree a plain radix decode of the address rather than anything that has to be
+     reasoned about. The last level is one mux whose output is the port.
+
+     A depth that is not a whole power of R leaves a short final group, which is fine: the
+     mux's odd-tail path passes it through, and the decoder never asserts a word that does
+     not exist, so the unused inputs cannot be selected. */
+  _buildReadTree(r, q, depth, width, abits) {
+    const RADIX = Math.min(16, depth);
+    const sbits = Math.max(1, Math.ceil(Math.log2(RADIX)));
+    const mux = this._getOrBuildReadMuxModule(RADIX, width);
+    let level = q;                 // arrays of `width` nets, one per word
+    let bitBase = 0, stage = 0;
+    while (level.length > 1) {
+      const next = [];
+      for (let g = 0; g < level.length; g += RADIX) {
+        const group = level.slice(g, g + RADIX);
+        const ob = this._declareBus(`w_rd${r}s${stage}g${g / RADIX}`, width);
+        const out = Array.from({ length: width }, (_, b) => this.netName(ob, b));
+        const scalars = {}, buses = { y: out };
+        const portOrder = [], portDirs = {}, portWidths = {};
+        for (let i = 0; i < RADIX; i++) {
+          const nm = `d${i}`;
+          portOrder.push(nm); portDirs[nm] = 'input'; portWidths[nm] = width;
+          // a short final group repeats its last word: an input the decoder can never select
+          buses[nm] = group[i] || group[group.length - 1];
+        }
+        portOrder.push('sel', 'y');
+        portDirs.sel = 'input'; portDirs.y = 'output';
+        portWidths.sel = sbits; portWidths.y = width;
+        buses.sel = Array.from({ length: sbits }, (_, b) =>
+          bitBase + b < abits ? this.netName(`raddr${r}`, bitBase + b) : this.constNet(0));
+        this._emitInstance(`u_rd${r}_s${stage}_${g / RADIX}`, mux.moduleName,
+                           portOrder, portDirs, portWidths, scalars, buses,
+                           stage === 0 && g === 0 ? `read port ${r}` : null);
+        next.push(out);
+      }
+      level = next; bitBase += sbits; stage++;
+    }
+    // the tree's single output IS the port, wired through a buf for the same naming reason
+    for (let b = 0; b < width; b++) {
+      const id = this.newId('buf');
+      this.cells.push({ id, type: 'buf', ports: { a: level[0][b], y: this.netName(`rdata${r}`, b) }, comment: null });
+      this.markDriven(this.netName(`rdata${r}`, b), id);
+    }
+  }
+
+  /* One instance cell, with per-bit port nets flattened the way every other instance here
+     carries them (`d[0]`, `d[1]`, …). `scalars` gives the 1-bit connections directly;
+     `buses` gives an array of nets per multi-bit port. */
+  _emitInstance(id, modType, portOrder, portDirs, portWidths, scalars, buses, comment) {
+    const ports = {};
+    for (const [p, v] of Object.entries(scalars)) {
+      if (buses[p]) continue;
+      ports[p] = v;
+    }
+    for (const [p, nets] of Object.entries(buses)) {
+      if (nets.length === 1 && portWidths[p] === 1) { ports[p] = nets[0]; continue; }
+      nets.forEach((n, i) => { ports[`${p}[${i}]`] = n; });
+    }
+    for (const [p, dir] of Object.entries(portDirs)) {
+      if (dir !== 'output') continue;
+      if (buses[p]) for (const n of buses[p]) this.markDriven(n, id);
+      else if (ports[p]) this.markDriven(ports[p], id);
+    }
+    this.cells.push({ id, type: 'instance', modType, portOrder, portDirs, portWidths, ports,
+                      portExprText: {}, comment });
+  }
+
+  /* Emits one RAM instance per memory, after every read and write port is known.
+
+     Runs at the END of run(), which is what lets a read in an `assign` and a write in an
+     always block belong to the same memory: both have been seen by then. A memory that is
+     declared and never used generates nothing at all - there is no hardware for storage
+     nobody reads. */
+  _emitMemories() {
+    if (!this._mems) return;
+    for (const [name, port] of this._mems) {
+      const mem = port.mem;
+      if (!port.write && !port.reads.length) continue;
+      const abits = Math.max(1, Math.ceil(Math.log2(mem.depth)));
+      const ram = this._getOrBuildRamModule(mem.depth, mem.width, port.reads.length);
+      const w = port.write;
+      const we = w ? (w.cond ? this.synthExpr(w.cond, 1)[0] : this.constNet(1)) : this.constNet(0);
+      const waddr = w ? this._memAddrBits(w.lhs.index, mem)
+                      : Array.from({ length: abits }, () => this.constNet(0));
+      const wdata = w ? this.synthExpr(w.rhs, mem.width)
+                      : Array.from({ length: mem.width }, () => this.constNet(0));
+      if (!w) {
+        this.info(`memory '${name}' is read but never written, so its write port is tied off — every word reads as 0`);
+      }
+      const scalars = { clk: w ? this.netName(w.clk, 0) : this.constNet(0), we };
+      const buses = { waddr, wdata };
+      const portOrder = ['clk', 'we', 'waddr', 'wdata'];
+      const portDirs = { clk: 'input', we: 'input', waddr: 'input', wdata: 'input' };
+      const portWidths = { clk: 1, we: 1, waddr: abits, wdata: mem.width };
+      port.reads.forEach((r, i) => {
+        portOrder.push(`raddr${i}`, `rdata${i}`);
+        portDirs[`raddr${i}`] = 'input'; portDirs[`rdata${i}`] = 'output';
+        portWidths[`raddr${i}`] = abits; portWidths[`rdata${i}`] = mem.width;
+        buses[`raddr${i}`] = r.addr; buses[`rdata${i}`] = r.data;
+      });
+      this._emitInstance(`${name}_ram`, ram.moduleName, portOrder, portDirs, portWidths,
+                         scalars, buses,
+                         `memory '${name}' — ${mem.depth} x ${mem.width}, ${port.reads.length} read port(s)`);
+    }
   }
 
   _synthAdder(lNode, rNode, width, srcNode, isSub, cinNode, coutCaptured) {
@@ -2162,7 +3335,105 @@ class Synthesizer {
     this.clkSignals.add(clk);
     if (rst) this.rstSignals.add(rst.sig);
     const stmts = blk.body.type === 'Block' ? blk.body.stmts : [blk.body];
-    for (const stmt of stmts) this._synthFFStmt(stmt, clk, rst);
+    /* MEMORY WRITES ARE TAKEN OUT FIRST, with the conditions that guard them, and what is
+       left goes to the ordinary flop resolver. Both halves matter: a memory write is not a
+       flop and must not become one, and the statements around it are ordinary and must be
+       untouched - `always @(posedge clk) begin if (wen) data[wa] <= wd; rd <= data[ra]; end`
+       has one of each, and `rd` has to synthesize exactly as it would on its own. */
+    const rest = this._collectMemWrites(stmts, clk, rst);
+    for (const stmt of rest) this._synthFFStmt(stmt, clk, rst);
+  }
+
+  /* Pulls `data[idx] <= value` out of a clocked block, recording the AND of the conditions
+     that guard it, and returns the statements that remain.
+
+     THE ENABLE IS READ OFF THE SOURCE, not recovered from the netlist, and that is the
+     whole reason this exists. The flop resolver expresses `if (wen) x <= v` as a mux that
+     keeps x's own value when wen is false - correct for a flop, and for a memory it
+     dissolves the write-enable into logic that then has to be reverse-engineered to get it
+     back. Here the condition is still a condition: `if (wen) if (sel) data[a] <= d` gives
+     `en = wen && sel` directly, and a memory's enable is exactly what a RAM needs.
+
+     An ASYNC RESET BRANCH IS NOT ENTERED. `if (!rst_n) ... else ... data[a] <= d ...` is a
+     flop reset, and no cell in this library clears a memory - the else side is where the
+     writes are, and a write found under the reset side is refused rather than dropped.
+
+     ONE WRITE PORT. A second write site would need arbitration between two enables the
+     source does not describe, and a real RAM has a fixed number of ports, so it is named
+     rather than merged. Reads are unlimited: each is its own mux inside the module. */
+  _collectMemWrites(stmts, clk, rst, cond, out) {
+    const top = !out;
+    out = out || [];
+    const keep = [];
+    for (const stmt of stmts) {
+      if (stmt.type === 'NBAssign' && stmt.lhs.type === 'MemLvalue') {
+        out.push({ lhs: stmt.lhs, rhs: stmt.rhs, cond: cond || null });
+        continue;
+      }
+      if (stmt.type === 'Block') {
+        const inner = this._collectMemWrites(stmt.stmts, clk, rst, cond, out);
+        if (inner.length) keep.push({ type: 'Block', stmts: inner });
+        continue;
+      }
+      if (stmt.type === 'If' && this._memWritesUnder(stmt)) {
+        if (this._isAsyncResetCheck(stmt.cond, rst)) {
+          // the reset side cannot hold a memory write; the else side is ordinary
+          const thenS = stmt.then ? [stmt.then] : [];
+          if (this._memWritesUnder({ type: 'Block', stmts: thenS })) {
+            this.error(`a memory is written inside an asynchronous reset branch, which no cell in this library can do — a memory has no reset, so move the write to the else side`);
+          }
+          const elseStmts = stmt.else ? (stmt.else.type === 'Block' ? stmt.else.stmts : [stmt.else]) : [];
+          const innerElse = this._collectMemWrites(elseStmts, clk, rst, cond, out);
+          keep.push({ ...stmt, else: innerElse.length ? { type: 'Block', stmts: innerElse } : null });
+          continue;
+        }
+        const andCond = c => (cond ? { type: 'Binary', op: '&&', l: cond, r: c } : c);
+        const thenStmts = stmt.then ? (stmt.then.type === 'Block' ? stmt.then.stmts : [stmt.then]) : [];
+        const elseStmts = stmt.else ? (stmt.else.type === 'Block' ? stmt.else.stmts : [stmt.else]) : [];
+        const keptThen = this._collectMemWrites(thenStmts, clk, rst, andCond(stmt.cond), out);
+        const keptElse = this._collectMemWrites(elseStmts, clk, rst,
+          andCond({ type: 'Unary', op: '~', expr: stmt.cond }), out);
+        if (keptThen.length || keptElse.length) {
+          keep.push({ ...stmt,
+                      then: keptThen.length ? { type: 'Block', stmts: keptThen } : { type: 'Block', stmts: [] },
+                      else: keptElse.length ? { type: 'Block', stmts: keptElse } : null });
+        }
+        continue;
+      }
+      keep.push(stmt);
+    }
+    if (top) {
+      const byMem = new Map();
+      for (const w of out) {
+        if (!byMem.has(w.lhs.name)) byMem.set(w.lhs.name, []);
+        byMem.get(w.lhs.name).push(w);
+      }
+      for (const [name, ws] of byMem) {
+        if (ws.length > 1) {
+          this.error(`memory '${name}' is written in ${ws.length} places (line ${ws[1].lhs.line}) — this synthesizer builds one write port, and two writes would need arbitration between their enables that the source does not describe; combine them into one assignment with a muxed value`);
+        }
+        this._memPort(name).write = { ...ws[0], clk, rst };
+      }
+    }
+    return keep;
+  }
+
+  _memWritesUnder(stmt) {
+    if (!stmt) return false;
+    if (stmt.type === 'NBAssign') return stmt.lhs.type === 'MemLvalue';
+    if (stmt.type === 'Block') return stmt.stmts.some(s => this._memWritesUnder(s));
+    if (stmt.type === 'If') return this._memWritesUnder(stmt.then) || this._memWritesUnder(stmt.else);
+    if (stmt.type === 'Case') {
+      return (stmt.items || []).some(it => this._memWritesUnder(it.body)) || this._memWritesUnder(stmt.defaultBody);
+    }
+    return false;
+  }
+
+  // One record per memory: its write port, and a read port per read site.
+  _memPort(name) {
+    this._mems = this._mems || new Map();
+    if (!this._mems.has(name)) this._mems.set(name, { mem: this.ast.memories[name], write: null, reads: [] });
+    return this._mems.get(name);
   }
 
   _synthFFStmt(stmt, clk, rst) {
@@ -2430,6 +3701,7 @@ class Synthesizer {
     for (const s of this.ast.ignoredStrings || []) this.info(`ignored the assignment of ${s.text} to '${s.name}' (line ${s.line}) — a string is not synthesizable, so no hardware was generated for it`);
     for (const t of this.ast.ignoredSysTasks || []) this.info(`ignored the '${t.name}' call (line ${t.line}) — a system task is simulation output, not hardware, so no hardware was generated for it`);
     for (const h of this.ast.ignoredHier || []) this.info(`ignored ${h.what} (line ${h.line}) — it references '${h.ref}', a net inside another module, which no netlist can reach except through a port, so no hardware was generated for it`);
+    for (const b of this.ast.ignoredInitials || []) this.info(`ignored the 'initial' block (line ${b.line}) — it states power-on contents, and no cell in this library holds a value at power-on; a flop's reset comes from its async reset input instead, so no hardware was generated for it`);
     for (const d of this.ast.droppedSignals || []) this.info(`signal '${d.name}' (${d.width}-bit) was dropped entirely: every assignment to it was ignored (${d.why}) and nothing reads it`);
     for (const a of this.ast.assigns) this.synthAssign(a);
     for (const blk of this.ast.always) {
@@ -2437,7 +3709,279 @@ class Synthesizer {
       else this.synthAlways(blk);
     }
     for (const inst of this.ast.instances) this.synthInstance(inst);
+    // Last, so every read and write port of every memory has been seen: see _emitMemories.
+    this._emitMemories();
+    this._foldConstantCells();
+    this._cancelDoubleInverters();
+    this._shareEqualCells();
     return { sig: this.sig, cells: this.cells, log: this.log, ports: this.ast.ports, moduleName: this.ast.name, clkSignals: this.clkSignals, rstSignals: this.rstSignals };
+  }
+
+  /* ---- A CELL WITH A CONSTANT INPUT IS A SIMPLER CELL ----
+     `count + 1` and `q <= en ? d : q` and every `casex` default arm leave cells one of whose inputs
+     is tied to 0 or 1, and each of those is a smaller gate by its own truth table. Measured before
+     this pass: 425 of 3,890 cells across every design in the repo, 10.9%, and the shape of them is
+     what makes it worth doing rather than an academic tidy - 312 are muxes whose data input is a
+     constant, which is a two-input gate written as a three-input one.
+
+     EVERY REWRITE IS THE TRUTH TABLE, not a case list, which is the only way to be sure the six
+     shapes a reader might sketch are all right and the rest with them. `mux2` is `y = sel ? b : a`
+     (the cell library's own body, so this cannot be inferred backwards):
+
+       a=0  y = sel & b            a=1  y = ~sel | b
+       b=0  y = ~sel & a           b=1  y = sel | a
+       sel const                   y = that side, a buffer
+       a and b both const          sel, ~sel, or a constant
+
+     and for the plain gates, with x the surviving input:
+
+       and  x&0 = 0     x&1 = x        or   x|1 = 1     x|0 = x
+       nand x·0 = 1     x·1 = ~x       nor  x+1 = 0     x+0 = ~x
+       xor  x^0 = x     x^1 = ~x       xnor x~^0 = ~x   x~^1 = x
+       not/buf of a constant = a constant
+
+     Note `xnor` against 1 is a BUFFER and against 0 an INVERTER - the opposite way round from xor,
+     and the pair most easily got backwards by eye. 54 of the foldable cells are exactly that.
+
+     A cell that folds to a CONSTANT becomes a `const` cell driving its own old output net, rather
+     than its consumers being rewired: the net keeps its name, one driver, and every later pass and
+     the netlist writer see an ordinary constant. That is also what lets this iterate - a folded
+     constant can enable the next fold - so it runs to a fixed point, bounded by the cell count
+     since every pass either rewrites a cell into a strictly simpler one or stops. */
+  _foldConstantCells() {
+    const IN = { mux2: ['sel', 'a', 'b'], and: ['a', 'b'], or: ['a', 'b'], nand: ['a', 'b'],
+                 nor: ['a', 'b'], xor: ['a', 'b'], xnor: ['a', 'b'], not: ['a'], buf: ['a'] };
+    for (let pass = 0; pass < this.cells.length + 2; pass++) {
+      // which nets are a constant, and which value - rebuilt each pass, since a fold makes more
+      const constOf = {};
+      for (const c of this.cells) if (c.type === 'const') constOf[c.ports.y] = c.value ? 1 : 0;
+      let changed = false;
+      for (const c of this.cells) {
+        const ins = IN[c.type];
+        if (!ins) continue;
+        const v = {};
+        let any = false;
+        for (const p of ins) {
+          const k = c.ports[p];
+          if (k !== undefined && constOf[k] !== undefined) { v[p] = constOf[k]; any = true; }
+        }
+        if (!any) continue;
+        const y = c.ports.y;
+        // becomes a constant driver on its own output net
+        const toConst = val => { c.type = 'const'; c.value = val; c.ports = { y }; };
+        // becomes a one-input cell on `keep`
+        const toUnary = (kind, keep) => { c.type = kind; c.ports = { a: keep, y }; };
+        // becomes a two-input gate, optionally inverting `inv` through a fresh net
+        const toBinary = (kind, p1, p2, invFirst) => {
+          let first = p1;
+          if (invFirst) {
+            const id = this.newId('not');
+            first = `w_${id}`;
+            this.cells.push({ id, type: 'not', ports: { a: p1, y: first }, comment: null });
+          }
+          c.type = kind;
+          c.ports = { a: first, b: p2, y };
+        };
+        const before = c.type;
+        if (before === 'not') { toConst(v.a ? 0 : 1); changed = true; continue; }
+        if (before === 'buf') { toConst(v.a); changed = true; continue; }
+        if (before === 'mux2') {
+          const sel = c.ports.sel, a = c.ports.a, b = c.ports.b;
+          if (v.sel !== undefined) { toUnary('buf', v.sel ? b : a); changed = true; continue; }
+          if (v.a !== undefined && v.b !== undefined) {
+            if (v.a === 0 && v.b === 1) toUnary('buf', sel);
+            else if (v.a === 1 && v.b === 0) toUnary('not', sel);
+            else toConst(v.a);                       // both the same: the mux cannot matter
+            changed = true; continue;
+          }
+          if (v.a !== undefined) {                   // y = sel ? b : a
+            if (v.a === 0) toBinary('and', sel, b, false);   // sel & b
+            else toBinary('or', sel, b, true);                // ~sel | b
+            changed = true; continue;
+          }
+          if (v.b === 0) toBinary('and', sel, a, true);       // ~sel & a
+          else toBinary('or', sel, a, false);                 // sel | a
+          changed = true; continue;
+        }
+        // the plain two-input gates: `k` is the constant, `x` the survivor
+        const k = v.a !== undefined ? v.a : v.b;
+        const x = v.a !== undefined ? c.ports.b : c.ports.a;
+        if (v.a !== undefined && v.b !== undefined) {
+          const TT = { and: (p, q) => p & q, or: (p, q) => p | q, nand: (p, q) => 1 - (p & q),
+                       nor: (p, q) => 1 - (p | q), xor: (p, q) => p ^ q, xnor: (p, q) => 1 - (p ^ q) };
+          toConst(TT[before](v.a, v.b));
+          changed = true; continue;
+        }
+        if (before === 'and') { if (k === 0) toConst(0); else toUnary('buf', x); }
+        else if (before === 'or') { if (k === 1) toConst(1); else toUnary('buf', x); }
+        else if (before === 'nand') { if (k === 0) toConst(1); else toUnary('not', x); }
+        else if (before === 'nor') { if (k === 1) toConst(0); else toUnary('not', x); }
+        else if (before === 'xor') { toUnary(k ? 'not' : 'buf', x); }
+        else if (before === 'xnor') { toUnary(k ? 'buf' : 'not', x); }
+        else continue;
+        changed = true;
+      }
+      if (!changed) break;
+    }
+    // orphaned constants go, and the sweep cascades - see _dropOrphans
+    this._dropOrphans();
+  }
+
+  /* ---- A CELL NOBODY READS GOES, and the sweep has to ITERATE ----
+     Both passes above orphan cells: folding leaves constants nothing wants, and cancelling an
+     inverter pair leaves the inner inverter feeding only the outer one that just went. So removal
+     cascades, and a single sweep stops one short of the truth - measured on the synchronous-reset
+     flip-flop, `not(rst_n)` survived with nothing reading it, because the `not` that read it was
+     removed in the same pass that would have noticed.
+
+     Restricted to `const` and `not` deliberately: those are the two kinds these passes create or
+     orphan, and a general dead-cell elimination is a different claim - a gate whose output is unread
+     may be there because the design really does compute something it never uses, which is the
+     reader's business and not this pass's to hide. A module OUTPUT counts as a reader, or an output
+     driven by one of these would lose its driver. */
+  _dropOrphans() {
+    /* A MODULE OUTPUT IS A READER, and getting this wrong DELETED LOGIC. `ast.ports` is an array of
+       port NAMES - plain strings - so the first version's `.map(p => p.name)` produced a set of
+       `undefined` and protected nothing at all: `assign z = ~a` had its inverter removed because no
+       cell read `z`, leaving a module output with no driver. Caught by test_learn.py, which asserts
+       that a design mixing an instantiation with logic of its own still gets a netlist listing - with
+       the inverter gone, `dut` held nothing but the instance and was reported as already a netlist.
+
+       A BUS output needs its bits too: the cells driving `output [3:0] z` write `z[0]`..`z[3]`, which
+       are not in `ports`, so the base name is what has to match. */
+    const outs = new Set(this.ast.ports || []);
+    const drivesOutput = net => {
+      if (outs.has(net)) return true;
+      const m = /^(.+)\[\d+\]$/.exec(net);
+      return !!(m && outs.has(m[1]));
+    };
+    for (let pass = 0; pass < this.cells.length + 2; pass++) {
+      const read = new Set();
+      for (const c of this.cells) {
+        for (const [port, net] of Object.entries(c.ports || {})) if (port !== 'y') read.add(net);
+      }
+      const keep = this.cells.filter(c => (c.type !== 'const' && c.type !== 'not')
+        || read.has(c.ports.y) || drivesOutput(c.ports.y));
+      if (keep.length === this.cells.length) break;
+      this.cells = keep;
+    }
+  }
+
+  /* ---- ~~x IS x ----
+     Back-to-back inverters do nothing, and the constant fold above is what produces them: a mux
+     whose `a` input is 0 becomes `sel & b`, and where `sel` was already `~rst_n` - which is what
+     `if (!rst_n)` gives - the rewrite inverts an inverted signal. Measured on the synchronous-reset
+     flip-flop the learn site draws: `not(rst_n) -> not -> and(., d)`, three cells to compute
+     `rst_n & d`.
+
+     THE REWRITE IS ON THE READER, not on the pair: every input net that resolves through two `not`
+     cells is repointed at what fed the first, and the inverters are then removed only if nothing
+     else reads them. Doing it that way handles partial fan-out for free - an inverter whose output a
+     third cell still wants stays, and only the reader that can skip it does - where deleting the
+     pair outright would need that case handled separately.
+
+     Run AFTER the constant fold and not interleaved with it: folding creates inverter pairs and
+     cancelling them cannot create a constant, since `not(const)` is already folded above. To a fixed
+     point, so a chain of four cancels to nothing. */
+  _cancelDoubleInverters() {
+    for (let pass = 0; pass < this.cells.length + 2; pass++) {
+      const notOf = {};   // a `not` cell's output net -> the net it inverts
+      for (const c of this.cells) if (c.type === 'not' && c.ports.y) notOf[c.ports.y] = c.ports.a;
+      let changed = false;
+      for (const c of this.cells) {
+        for (const [port, net] of Object.entries(c.ports || {})) {
+          if (port === 'y') continue;
+          const once = notOf[net];
+          if (once === undefined) continue;
+          const twice = notOf[once];
+          if (twice === undefined || twice === net) continue;   // not a pair, or a self-loop
+          c.ports[port] = twice;
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    this._dropOrphans();
+  }
+
+  /* ---- TWO GATES THAT COMPUTE THE SAME THING ARE ONE GATE ----
+     `synthExpr` emits cells on every call and memoises nothing, so an expression synthesized twice
+     becomes two gates. Measured across the repo before this pass: **272 of 3,985 cells were
+     redundant (6.8%)** in 10 designs - 193 of the 16-bit CPU's 1,251, 42 of the 16-bit ALU's 272,
+     4 of parity-8bit's 15 (27%), 3 of decoder-2to4's 12 (25%).
+
+     Two shapes produce them, and the learn topic `alu-4bit-opt` shows both. Its `y` is 4 bits, so
+     the case resolver builds each output BIT independently and the arm selector `w_or0 | w_and2`,
+     which does not depend on the bit index, is rebuilt once per bit - four identical `or_gate`s.
+     And `~op[0]` is built once for each case label that mentions it - two identical inverters.
+
+     STRUCTURAL HASHING, not a memo on the AST node, and the second shape is why: `~op[0]` written
+     twice in the source is two different node objects, so a node-keyed memo would miss it entirely.
+     The key is what the cell IS - its type and its inputs - so anything that computes an existing
+     value collapses onto it however it came to be written.
+
+     COMMUTATIVITY IS PER TYPE, and getting it wrong is the one failure here that produces a netlist
+     which still elaborates, still has one driver per net, and computes something else: `and or nand
+     nor xor xnor` sort their inputs, `mux2` must NOT (`sel ? b : a` is ordered, so treating it as
+     commutative swaps the two data inputs), and `fa` sorts only `a`/`b` - the full adder is in fact
+     symmetric in all three inputs, but sorting `cin` with them buys little and is a claim this pass
+     does not need to make.
+
+     A DUPLICATE WHOSE OUTPUT IS A MODULE OUTPUT STAYS, the rule `_dropOrphans` records: a port net
+     needs its own driver, so the duplicate is kept and only its readers are repointed - which is
+     nothing, since the port is what reads it. Same base-name matching for a bus output's bits.
+
+     `dff` IS EXCLUDED, deliberately and not because it cannot be done: two flops with identical
+     clk/rstn/d are genuinely redundant, but merging them merges STATE, which is a stronger claim
+     than merging logic and belongs in its own pass with its own evidence.
+
+     Runs AFTER the constant fold and the inverter cancellation, because both create cells that are
+     then duplicates - the two inverters above are `xnor` cells that the fold rewrote - and to a
+     fixed point, since repointing a reader can make its own consumers identical in turn. */
+  _shareEqualCells() {
+    const COMMUTES = { and: 1, or: 1, nand: 1, nor: 1, xor: 1, xnor: 1 };
+    const OUT_OF = { fa: ['sum', 'cout'], dff: ['q'] };
+    const outs = new Set(this.ast.ports || []);
+    const drivesOutput = net => {
+      if (outs.has(net)) return true;
+      const m = /^(.+)\[\d+\]$/.exec(net);
+      return !!(m && outs.has(m[1]));
+    };
+    for (let pass = 0; pass < this.cells.length + 2; pass++) {
+      const seen = new Map();     // structural key -> the cell that got there first
+      const rewrite = {};         // a duplicate's output net -> the original's
+      const drop = new Set();
+      for (const c of this.cells) {
+        if (c.type === 'instance' || c.type === 'const' || c.type === 'dff') continue;
+        const outPorts = OUT_OF[c.type] || ['y'];
+        const ins = Object.entries(c.ports || {}).filter(([p]) => !outPorts.includes(p));
+        if (!ins.length) continue;
+        const parts = COMMUTES[c.type]
+          ? ins.map(([, n]) => n).sort()
+          : ins.sort((x, y) => (x[0] < y[0] ? -1 : 1)).map(([p, n]) => p + '=' + n);
+        const key = c.type + '(' + parts.join(',') + ')';
+        const first = seen.get(key);
+        if (!first) { seen.set(key, c); continue; }
+        /* A CELL DRIVING A MODULE OUTPUT MAY BE THE ORIGINAL BUT NEVER THE DUPLICATE. Skipping such
+           a cell outright was the first version, and it cost the case that made the difference
+           visible: `parity-8bit` computes `xor(w_xor4, w_xor5)` twice, once into the port `odd` and
+           once into an internal net, and skipping the port-driving copy took it out of the table too
+           - so the internal one had nothing to collapse onto and both survived. Registered as the
+           original, its duplicate's readers repoint onto `odd`, which is an ordinary net to read. */
+        if (outPorts.some(p => drivesOutput(c.ports[p]))) continue;
+        for (const p of outPorts) if (c.ports[p] && first.ports[p]) rewrite[c.ports[p]] = first.ports[p];
+        drop.add(c);
+      }
+      if (!drop.size) break;
+      for (const c of this.cells) {
+        for (const [port, net] of Object.entries(c.ports || {})) {
+          const to = rewrite[net];
+          if (to !== undefined && to !== net) c.ports[port] = to;
+        }
+      }
+      this.cells = this.cells.filter(c => !drop.has(c));
+    }
+    this._dropOrphans();
   }
 
   synthInstance(inst) {
@@ -2546,13 +4090,90 @@ function buildGraph(result) {
 // loop (always through a register's D/rstn input in this subset). Excluding just
 // those from rank propagation breaks cycles while leaving every acyclic dff (a
 // plain, non-feedback register) free to rank normally alongside combinational cells.
-function findBackEdges(graph) {
+/* STRONGLY CONNECTED COMPONENTS, so that "this edge lies on a cycle" can be asked directly.
+   Tarjan, ITERATIVE rather than recursive: this runs on the same graphs the netlist builder
+   does, and a 256-word memory is 5,000 nodes - the depth cap beside the hierarchy walk records
+   what recursion costs there (node ran out of HEAP at 3.9 GB, i.e. a browser would hang rather
+   than throw). */
+function stronglyConnected(graph) {
   const adj = {};
   for (const n of graph.nodes) adj[n.id] = [];
-  for (const e of graph.edges) adj[e.from].push(e);
+  for (const e of graph.edges) adj[e.from].push(e.to);
+  const index = {}, low = {}, onStack = {}, comp = {}, stack = [];
+  let counter = 0, nComp = 0;
+  for (const root of graph.nodes) {
+    if (index[root.id] !== undefined) continue;
+    const work = [[root.id, 0]];
+    index[root.id] = low[root.id] = counter++;
+    stack.push(root.id); onStack[root.id] = true;
+    while (work.length) {
+      const top = work[work.length - 1], u = top[0];
+      if (top[1] < adj[u].length) {
+        const w = adj[u][top[1]++];
+        if (index[w] === undefined) {
+          index[w] = low[w] = counter++;
+          stack.push(w); onStack[w] = true;
+          work.push([w, 0]);
+        } else if (onStack[w]) {
+          low[u] = Math.min(low[u], index[w]);
+        }
+      } else {
+        if (low[u] === index[u]) {
+          let w;
+          do { w = stack.pop(); onStack[w] = false; comp[w] = nComp; } while (w !== u);
+          nComp++;
+        }
+        work.pop();
+        if (work.length) {
+          const p = work[work.length - 1][0];
+          low[p] = Math.min(low[p], low[u]);
+        }
+      }
+    }
+  }
+  const size = {};
+  for (const n of graph.nodes) size[comp[n.id]] = (size[comp[n.id]] || 0) + 1;
+  return { comp, size };
+}
+
+/* WHICH EDGE A CYCLE IS CUT AT DECIDES WHICH WAY THE DATA PATH READS, and cutting it by DFS
+   arrival order - which is to say arbitrarily - is what made a register's own datapath run
+   right to left. A CUT EDGE IS THE ONE DRAWN BACKWARDS: rank propagation skips it, so its
+   target ends up left of its source.
+
+   A synchronous design is a DAG once you cut at the FLOPS, because a register's `q` is last
+   cycle's value - and that is where every schematic cuts, which is why a feedback loop over the
+   top of a counter reads as a loop and not as a mistake. So a register output that lies on a
+   cycle is cut in preference to anything else, and only the cycles that survive that fall back
+   to the DFS below.
+
+   ON A CYCLE, not every register output: cutting all of them ranks post-flop logic at 0, so in
+   `in -> dffA -> logic -> dffB` the logic lands LEFT of the flop that drives it. That is what
+   SCCs are for here - an edge inside a component of more than one node is on a cycle.
+
+   THE MEASUREMENT THAT SETTLED IT, because the obvious count says the opposite. Counting all
+   backward wires, this rule looks like a regression: 28 becomes 65. Split by what the wire IS,
+   it is not close - across all 20 solutions and all 21 topics, wires whose DATA PATH runs right
+   to left go 30 -> 7, and the 23 that go away become feedback loops from a flop, which went
+   0 -> 60. Every backward wire in the diagram used to be the confusing kind and none was the
+   expected kind. The cost is width: the ALU goes 17 columns to 20, a ring counter 3 to 5. */
+function findBackEdges(graph) {
+  const kindOf = {};
+  for (const n of graph.nodes) kindOf[n.id] = n.kind;
+  const backEdgeIds = new Set();
+  const { comp, size } = stronglyConnected(graph);
+  for (const e of graph.edges) {
+    if (kindOf[e.from] === 'dff' && comp[e.from] === comp[e.to] && size[comp[e.from]] > 1) {
+      backEdgeIds.add(e.id);
+    }
+  }
+  const adj = {};
+  for (const n of graph.nodes) adj[n.id] = [];
+  // The register cuts are already made, so the DFS below only sees what they left behind -
+  // a genuine combinational loop, which the synthesizer refuses anyway.
+  for (const e of graph.edges) if (!backEdgeIds.has(e.id)) adj[e.from].push(e);
   const color = {};
   for (const n of graph.nodes) color[n.id] = 0; // 0=unvisited, 1=on stack, 2=done
-  const backEdgeIds = new Set();
   function dfs(u) {
     color[u] = 1;
     for (const e of adj[u]) {
@@ -2629,6 +4250,28 @@ function layoutGraph(graph) {
     const col = drivenRanks.length ? Math.max(0, Math.min(...drivenRanks) - 1) : 0;
     positions[clkNode.id] = { x: col * COL, y: maxYUsed + ROW };
   }
+  /* AND A CONSTANT SITS ONE COLUMN LEFT OF WHAT IT TIES, for the same reason and by the same
+     rule: it has no inputs, so computeRanks ranks it 0, and a tie-off stranded in the input
+     column is a wire across the whole diagram to reach the pin it belongs to. splitSharedConstants
+     has already given each one a single consumer, so "what it ties" is one pin and the column is
+     not a compromise between several.
+
+     It is placed rather than re-ranked, because a rank is what a COLUMN is: re-ranking would move
+     the constant into a column whose vertical packing was already decided without it, and two
+     constants tying pins in the same column would then stack on top of whatever is there. So the
+     x comes from the consumer's column and the y from the consumer's own row, which puts the tie
+     beside its pin instead of in a queue with every other constant. Clamped at 0 for a constant
+     whose consumer is somehow in column 0, which nothing produces - a cell a constant drives ranks
+     at least 1 - and left where it was for one driving nothing, which dropInertPins would have
+     removed if it had ever been wired. */
+  for (const n of graph.nodes) {
+    if (n.kind !== 'const') continue;
+    const out = graph.edges.filter(e => e.from === n.id);
+    if (!out.length) continue;
+    const target = out[0].to;
+    if (!positions[target]) continue;
+    positions[n.id] = { x: Math.max(0, positions[target].x - COL), y: positions[target].y };
+  }
   return { rank, positions };
 }
 
@@ -2642,6 +4285,29 @@ const IDENTITY_PORT = { dff: 'q', and: 'y', or: 'y', nand: 'y', nor: 'y', xor: '
 function parseNet(net) {
   const m = /^(.+)\[(\d+)\]$/.exec(net);
   return m ? { base: m[1], idx: parseInt(m[2], 10) } : { base: net, idx: null };
+}
+
+/* A WIDTH LITERAL, WITH NO LEADING ZEROS - `16'b0`, not `16'b0000000000000000`. The width is
+   already stated by the prefix, so the padding restated it sixteen times and said nothing; a
+   sized literal is zero-extended, so the two are the same value to every reader of it, this
+   repo's own simulator included.
+
+   ONE FUNCTION FOR THREE CALLERS, and that is the point rather than tidiness: two of them label
+   a CONSTANT NODE in the diagram (an all-constant module port, and an all-constant instance pin)
+   and the third is `genVerilog`'s connection text. The rule those three follow has to be one
+   rule - the netlist text and the picture must not describe one pin two ways - and it was three
+   copies of one template string, which is how they would come to disagree.
+
+   IT IS ALSO WHAT LETS THE CONSTANT SIT WHERE IT BELONGS. The label is what sizes the box, and
+   the constant mover puts a box in the ~200px gutter in front of the pin it feeds only if it
+   fits: `16'b0000000000000000` measured 160px and was refused, leaving the literal back in its
+   own column with a wire across the gap. At 5 characters it fits, so the picture gains the
+   placement as well as the shorter word.
+
+   `bits` is a binary string with the LOW bit last, which is the order both callers already build
+   and the order Verilog writes. `(?=.)` keeps the last digit, so zero is `0` and not empty. */
+function widthLit(width, bits) {
+  return width + "'b" + String(bits).replace(/^0+(?=.)/, '');
 }
 
 function collapseBuses(graph, sig, skipCellKinds, bundleCells = true) {
@@ -2670,6 +4336,32 @@ function collapseBuses(graph, sig, skipCellKinds, bundleCells = true) {
 
   const nodeToBus = {};
   const busNodes = [];
+  /* A BANK IS BIT-PARALLEL; A CHAIN IS NOT, AND ONLY THE FIRST MAY BE BUNDLED.
+     Members are grouped by their output nets covering one signal, which is true of four
+     flip-flops holding `q[3:0]` whether they are four independent bits of a register or
+     four stages of a shift register. In the second case bit i's D comes from bit i-1's Q,
+     so there is no single 4-bit D to draw: the bundle would have to claim `sin` drives all
+     four, which is a REGISTER - a different circuit from the one on the page.
+
+     That is not hypothetical and it is not a near miss. `q <= {q[2:0], sin}` produced one
+     `DFF x4` fed by `sin`, and the three chain wires were DELETED on the way there by the
+     `mappedFrom === mappedTo` line below - 16 wires became 4, and the shifting, which is
+     the whole subject of the topic page that draws it, was simply absent.
+
+     So a group with an edge between two of its own members is refused, which leaves those
+     cells drawn individually with the chain between them - the picture the design is. The
+     alternative, absorbing the chain into the bundle, is only honest when the chained pins
+     are the bundle's own BOUNDARY (an N-bit adder's carry in and out), and no group here is
+     ever in that shape: `fa` is excluded from bundling inside a generated adder module (see
+     skipCellKinds), so a carry chain is never grouped in the first place. Measured over all
+     20 solutions, all 21 topics and this app's own examples, that absorb fired in exactly
+     ONE place - the shift register - which is what makes this a refusal rather than a
+     trade-off. */
+  function membersAreChained(members) {
+    const ids = new Set(members.map(m => m.node.id));
+    return graph.edges.some(e => ids.has(e.from) && ids.has(e.to));
+  }
+
   function tryMakeBus(groupsMap, isPort) {
     for (const key of Object.keys(groupsMap)) {
       const g = groupsMap[key];
@@ -2677,6 +4369,10 @@ function collapseBuses(graph, sig, skipCellKinds, bundleCells = true) {
       if (!s || g.members.length !== s.width) continue;
       const seen = new Set(g.members.map(m => m.idx));
       if (seen.size !== s.width) continue;
+      /* Cells only. A port group cannot be chained - a port never drives a port here, since
+         `assign y = a` synthesizes a `buf` cell between them - so testing one would be a
+         branch no input can reach. */
+      if (!isPort && membersAreChained(g.members)) continue;
       g.members.sort((a, b) => a.idx - b.idx);
       const range = `[${s.lo + s.width - 1}:${s.lo}]`;
       const netLabel = `${g.base}${range}`;
@@ -2720,10 +4416,67 @@ function collapseBuses(graph, sig, skipCellKinds, bundleCells = true) {
     if (!g.width || g.members.length !== g.width) continue;
     const seen = new Set(g.members.map(m => m.idx));
     if (seen.size !== g.width) continue;
+    /* The same refusal as the named path above, through the same helper, because it is the
+       same question: a chained group is not a bank. It is not known to fire here today - the
+       members of an anon group are the N bits of ONE level of a ladder, and a chain between
+       them would be unusual - so this is written for consistency rather than on evidence.
+       One rule in one place is what stops the two grouping paths from disagreeing about what
+       a bundle means, which is how the named path came to delete three wires. */
+    if (membersAreChained(g.members)) continue;
     g.members.sort((a, b) => a.idx - b.idx);
-    const namedSig = g.base && sig[g.base];
+    /* `busBase` IS CHECKED AGAINST THE BUNDLE'S OWN NETS, and without that a folded mux claimed
+       the flop's output name. A ladder cell carries the assignment TARGET as its base (`count`),
+       which is the right name only for the level whose outputs alias onto it - and
+       `_foldConstantCells` keeps a cell's fields when it rewrites the type, so on the
+       synchronous-reset counter the `and` that took the mux's place still said `count`. The
+       diagram then had `count[3:0]` on the flop's D bundle AND on its Q bundle, and selecting the
+       net lit both: a claim that a register's input and its output are the same wire, which is
+       not a label being ugly but a diagram being wrong. The test is the one thing that settles
+       it - are these cells' own output nets that signal's bits? */
+    const ownNets = g.members.map(m => ((m.node.cell || {}).ports || {}).y);
+    const baseSig = g.base && sig[g.base];
+    const namedSig = baseSig && g.members.every((m, k) =>
+      ownNets[k] === (baseSig.width === 1 ? g.base : `${g.base}[${baseSig.lo + m.idx}]`))
+      ? baseSig : null;
     const range = namedSig ? `[${namedSig.lo + namedSig.width - 1}:${namedSig.lo}]` : `[${g.width - 1}:0]`;
-    const netLabel = namedSig ? `${g.base}${range}` : `w_${key}${range}`;
+    /* ---- AN UNNAMED BUNDLE IS LABELLED WITH THE EXPRESSION IT COMPUTES ----
+       `w_${key}` was the fallback, and `key` is this pass's own group id - a counter
+       (`newId('busg')`) - so the label read `w_busg0[3:0]`, a name that appears NOWHERE: not in
+       the source, not in the netlist text, which calls those four nets `w_not0 … w_not3`. Two
+       names for one bundle and one of them invented, which is the same defect as printing an
+       expression where a connection belongs, in the other direction.
+
+       There is no name to find, and that is the point rather than a gap: `~b` in
+       `a + (op[0] ? ~b : b) + op[0]` is an intermediate, so no signal in the design IS those
+       four bits. What the reader can be told is what the bundle COMPUTES, and the synthesizer
+       already recorded it - every site that tags a bus group also puts `exprToStr(node)` on bit
+       0 as the cell's comment, which is what the netlist prints beside that gate (`// ~b`). So
+       the label is `~b[3:0]`, and it reads as the netlist's own comment plus the width the group
+       id used to be carrying. `busBase` still wins where it exists (a ladder level really is N
+       bits of one declared signal, and `y[3:0]` is its name).
+
+       A LABEL IS NOT A CONNECTION, which is why an expression is right here and wrong there:
+       this says what the value is, where a port connection claims what is wired. And it needs no
+       range rule of its own - `netRangeLabel` already leaves a label ending in `]` alone, so
+       nothing appends a second one.
+
+       The last resort is the member nets themselves, which is what the netlist would print for the
+       same bundle - `{w_mux23, w_mux22, w_mux21, w_mux20}`. It is reached by a FOLDED LADDER: a
+       mux ladder cell carries no expression comment (its `busBase` was the name), so once
+       `_foldConstantCells` rewrites it and the base test below refuses that name, there is nothing
+       left but the nets. Which is the right answer for a flop's D bundle: the netlist calls those
+       four nets exactly that. Measured: 18 bundles take the expression, 4 take the nets. */
+    const bit0 = g.members[0].node.cell || {};
+    const nets = g.members.slice().reverse().map(m => (m.node.cell && m.node.cell.ports || {}).y);
+    /* AND THE NET LIST IS BOUNDED, because a wide ladder level is not four names but thirty-two:
+       `cpu-16bit`'s write decoder measured a 330-CHARACTER label, which is not a label. Three
+       names and a count of the rest - the reader gets the form (an invented per-bit family, not a
+       bus) and the width, and the netlist beside it has all of them. */
+    const list = nets.length <= 4 ? nets.join(', ')
+               : nets.slice(0, 3).join(', ') + `, +${nets.length - 3} more`;
+    const netLabel = namedSig ? `${g.base}${range}`
+                   : bit0.comment ? `${bit0.comment}${range}`
+                   : nets.every(Boolean) ? `{${list}}` : `${g.kind}${range}`;
     const busId = `busnode_anon::${key}`;
     busNodes.push({
       id: busId, kind: g.kind, isBus: true, width: g.width,
@@ -2750,7 +4503,18 @@ function collapseBuses(graph, sig, skipCellKinds, bundleCells = true) {
     const mappedFrom = nodeToBus[e.from] || e.from;
     const mappedTo = nodeToBus[e.to] || e.to;
     if (mappedFrom === e.from && mappedTo === e.to) { finalEdges.push(e); continue; }
-    if (mappedFrom === mappedTo) continue; // internal chaining absorbed into the bus node (e.g. adder carry chain)
+    /* UNREACHABLE BY CONSTRUCTION NOW, and kept as a guard rather than as reassurance: both
+       grouping passes refuse a group whose members are wired to each other, so no edge can
+       have both ends in one bundle. It stays because what it would otherwise let through is a
+       SELF-LOOP into the router, which has no route to draw between a pin and itself.
+
+       It used to be the bug: the comment said "internal chaining absorbed into the bus node
+       (e.g. adder carry chain)", and the absorb was neither. No carry chain reaches it (`fa`
+       is not grouped inside an adder module), and the one place it did fire - a shift
+       register - is exactly where the chain IS the circuit, so absorbing it silently deleted
+       three wires and drew four parallel flops. Counted after the refusal: it fires in no
+       module of any solution, topic or built-in example. */
+    if (mappedFrom === mappedTo) continue;
     const key = `${mappedFrom}|${e.fromPort}|${mappedTo}|${e.toPort}`;
     if (!collapsedEdgeMap.has(key)) collapsedEdgeMap.set(key, { mappedFrom, mappedTo, fromPort: e.fromPort, toPort: e.toPort, pairs: [] });
     collapsedEdgeMap.get(key).pairs.push({ fromIdx: idxOf[e.from], toIdx: idxOf[e.to], net: e.net, id: e.id });
@@ -2777,6 +4541,57 @@ function collapseBuses(graph, sig, skipCellKinds, bundleCells = true) {
   }
 
   return { nodes: finalNodes, edges: finalEdges };
+}
+
+/* ---- A PORT WHOSE EVERY BIT IS A CONSTANT IS ONE WIDTH LITERAL ----
+   `assign daddr = 16'b0;` drew SIXTEEN `1'b0` boxes in a column, each with its own wire into the
+   same `daddr[15:0]` pin. The rule that should have caught it already exists - it is the branch in
+   `mergeInstancePins` that turns a constant-driven port into `9'b000000001` - but that one is keyed
+   on an INSTANCE port, and a module output is a different kind of node, so nothing aggregated it.
+   Measured on `cpu-16bit`: 16 constants into `daddr[15:0]` and 8 more into `wdata[7:0]`, 35 const
+   nodes in the view where 13 is the honest number.
+
+   THE BIT INDEX COMES OFF THE EDGE, which is what makes the literal exact rather than a guess:
+   after `collapseBuses` the port is one bus node but each edge still carries the bit's own net name
+   (`daddr[0]`, `daddr[3]`), so the value is assembled by index and a partially-constant port is
+   left alone rather than being aggregated in whatever order the edges happened to arrive.
+
+   A CONSTANT WITH OTHER READERS IS NOT REMOVED, only its edge to this port: `splitSharedConstants`
+   has not run yet at this point, so one `const` node may still feed several places, and dropping it
+   because this port no longer needs it would take the wire out from under the others. */
+function aggregateConstPorts(graph) {
+  const nodeIndex = new Map(graph.nodes.map(n => [n.id, n]));
+  const outCount = {};
+  for (const e of graph.edges) outCount[e.from] = (outCount[e.from] || 0) + 1;
+  const groups = {};
+  for (const e of graph.edges) {
+    const to = nodeIndex.get(e.to), from = nodeIndex.get(e.from);
+    if (!to || !from || to.kind !== 'port-out' || !to.isBus || from.kind !== 'const') continue;
+    const m = /\[(\d+)\]$/.exec(e.net || '');
+    if (!m) continue;
+    (groups[e.to] || (groups[e.to] = [])).push({ e, idx: +m[1], on: !!from.cell.value });
+  }
+  const dropEdges = new Set(), dropNodes = new Set(), newNodes = [], newEdges = [];
+  let n = 0;
+  for (const portId of Object.keys(groups)) {
+    const items = groups[portId], port = nodeIndex.get(portId);
+    const width = (port.members && port.members.length) || port.width;
+    if (!width || items.length !== width) continue;                       // not every bit is constant
+    if (new Set(items.map(i => i.idx)).size !== width) continue;          // a bit twice, a bit missing
+    let value = 0n;
+    for (const it of items) if (it.on) value |= (1n << BigInt(it.idx));
+    const label = widthLit(width, value.toString(2));
+    const id = `portconst_${n}`;
+    newNodes.push({ id, kind: 'const', cell: { aggregateLabel: label } });
+    newEdges.push({ id: `portconst_e${n++}`, from: id, fromPort: 'y', to: portId, toPort: 'y', net: label });
+    for (const it of items) {
+      dropEdges.add(it.e.id);
+      if (outCount[it.e.from] === 1) dropNodes.add(it.e.from);
+    }
+  }
+  if (!newNodes.length) return graph;
+  return { nodes: graph.nodes.filter(x => !dropNodes.has(x.id)).concat(newNodes),
+           edges: graph.edges.filter(x => !dropEdges.has(x.id)).concat(newEdges) };
 }
 
 // A single instance cell can have several multi-bit ports (unlike a bare dff/gate,
@@ -2808,13 +4623,80 @@ function mergeInstancePins(graph) {
   for (const { node, side, base, width, items } of Object.values(groups)) {
     if (new Set(items.map(it => it.idx)).size !== width) continue; // not every bit present at the graph level — leave unmerged (fanout means item count may exceed width)
     if (mergedPinsByNode[node.id] && mergedPinsByNode[node.id].has(base)) continue; // already merged from the other end (instance↔instance pass below)
+    /* AN 'in' PORT WHOSE EVERY BIT IS A CONSTANT BECOMES ONE WIDTH LITERAL - `9'b000000001`
+       rather than a `1'b1` and a `1'b0` wired to different bits of the same pin. The value is
+       assembled from the individual cells, so `.b(4'b0001)` bit-blasting into distinct 1'b1/1'b0
+       cells still reads as the number the source wrote.
+
+       IT HAS TO COME FIRST, and it did not - it sat below the two branches under it and was
+       therefore DEAD on every design in the repo. The adder branch claims any port of a
+       FUNC_addN/FUNC_subN and `continue`s, and the single-counterpart branch above claims a port
+       whose bits all come from one node, so a constant-driven port always matched one of them
+       before reaching this. Measured: `aggregateLabel` was produced 0 times across all 20
+       solutions and all 21 topics, and the FIFO drew `count + 1` as a `1'b1` on bit 0 and a
+       `1'b0` on bits 1-8, i.e. two boxes and two wires for one literal. It is the FIFO that made
+       that visible, because splitSharedConstants replicates a constant per consumer, so what used
+       to be two shared boxes became a column of them. */
+    if (side === 'in' && items.every(it => nodeIndex.get(it.edge.from)?.kind === 'const')) {
+      const sorted = [...items].sort((a, b) => a.idx - b.idx);
+      let value = 0n;
+      for (const it of sorted) if (nodeIndex.get(it.edge.from).cell.value) value |= (1n << BigInt(it.idx));
+      for (const it of sorted) dropEdgeIds.add(it.edge.id);
+      const constId = `instconst_${node.id}_${base}_${aggConstCounter++}`;
+      const label = widthLit(width, value.toString(2));
+      newNodes.push({ id: constId, kind: 'const', cell: { aggregateLabel: label } });
+      newEdges.push({ id: `inst_e_${node.id}_${base}`, from: constId, fromPort: 'y', to: node.id, toPort: base, net: label });
+      (mergedPinsByNode[node.id] ||= new Set()).add(base);
+      continue;
+    }
     const otherIds = new Set(items.map(it => (side === 'out' ? it.edge.to : it.edge.from)));
     const otherPorts = new Set(items.map(it => (side === 'out' ? it.edge.toPort : it.edge.fromPort)));
     if (otherIds.size === 1 && otherPorts.size === 1) {
       for (const it of items) dropEdgeIds.add(it.edge.id);
       const otherId = [...otherIds][0];
       const otherPort = [...otherPorts][0];
-      const net = node.cell.portExprText[base] || items[0].edge.net;
+      /* COMPOSED FROM THE BITS, not taken from one of them. This fallback used to be
+         `items[0].edge.net` - the first item's net, which is bit 0 because `_emitInstance` emits a
+         port's bits in order - so an 8-bit memory read was labelled `w_data_rd0[0]` and the readout
+         above the diagram called an 8-bit signal one bit wide. Every sibling branch here already
+         composes `base[hi:lo]` from the indices (the adder's, and the second pass's); this one was
+         the only place that named a bundle after a representative.
+
+         `portExprText` still wins where it exists, because for a hand-written instance it is what
+         the READER wrote (`.raddr0(raddr)` gives `raddr`). It is empty for a GENERATED instance -
+         `_emitInstance` sets `portExprText: {}` - which is exactly the RAM whose read port this is,
+         and why the fallback is what shows.
+
+         THE BASE AND THE INDICES COME FROM THE NETS, not from the port, when every bit is a bit of
+         one signal: that names the SIGNAL a reader is tracing (`w_data_rd0[7:0]`) rather than the
+         pin it happens to arrive at (`rdata0[7:0]`), and it is only possible because those nets are
+         declared signals now. Where the bits do not share one base - a concatenation reaching a
+         port - the port's own name and its bit indices are used instead. */
+      const sorted = items.slice().sort((x, y) => x.idx - y.idx);
+      const parsed = sorted.map(it => /^(.+)\[(\d+)\]$/.exec(it.edge.net || ''));
+      const bases = new Set(parsed.map(m => (m ? m[1] : null)));
+      const fromNets = bases.size === 1 && !bases.has(null);
+      const nBase = fromNets ? [...bases][0] : base;
+      const idxs = fromNets ? parsed.map(m => +m[2]) : sorted.map(it => it.idx);
+      const runs = idxs.every((v, k) => k === 0 || v === idxs[k - 1] + 1);
+      /* THE NETS WIN, AND `portExprText` IS THE FALLBACK - it used to be the other way round, and
+         that made ONE net read as two. A counter's `count` leaves the flop bundle twice: to the
+         output port, named `count[3:0]` from the bus node, and back into the adder's `a`, named
+         `count` from the text at the instantiation. `byNet` is keyed by the exact string, so the
+         two spellings are two nets: clicking either lit one wire and the readout said
+         `(1 segment)` where the answer is 2, with the feedback drawn grey as though it carried
+         something else. Same bundle, same bits, same pin - so the name has to come from the one
+         place that cannot disagree with itself.
+         It loses nothing where it used to win: for `.raddr0(raddr)` the nets ARE `raddr[0..7]`, so
+         this says `raddr[7:0]` - the reader's own name plus the width `netRangeLabel` would have
+         appended anyway. `portExprText` still answers where the bits do NOT share one base, which
+         is a concatenation or an expression reaching a port, and there it is the only name there
+         is. */
+      const fromBits = sorted.length === 1 ? (sorted[0].edge.net || `${nBase}[${idxs[0]}]`)
+                     : runs ? `${nBase}[${idxs[idxs.length - 1]}:${idxs[0]}]`
+                     : null;
+      const net = (fromNets && fromBits) || node.cell.portExprText[base] || fromBits
+        || sorted.map(it => it.edge.net).join(',');
       newEdges.push(side === 'out'
         ? { id: `inst_e_${node.id}_${base}`, from: node.id, fromPort: base, to: otherId, toPort: otherPort, net }
         : { id: `inst_e_${node.id}_${base}`, from: otherId, fromPort: otherPort, to: node.id, toPort: base, net });
@@ -2893,20 +4775,6 @@ function mergeInstancePins(graph) {
         }
         continue;
       }
-    }
-    // an 'in' port whose every bit is driven by SOME constant (not necessarily the
-    // same one, e.g. `.b(4'b0001)` bit-blasts into distinct 1'b1/1'b0 cells) — synthesize
-    // one aggregate constant node/value instead of leaving N scattered 1-bit constants.
-    if (side === 'in' && items.every(it => nodeIndex.get(it.edge.from)?.kind === 'const')) {
-      const sorted = [...items].sort((a, b) => a.idx - b.idx);
-      let value = 0n;
-      for (const it of sorted) if (nodeIndex.get(it.edge.from).cell.value) value |= (1n << BigInt(it.idx));
-      for (const it of sorted) dropEdgeIds.add(it.edge.id);
-      const constId = `instconst_${node.id}_${base}_${aggConstCounter++}`;
-      const label = `${width}'b${value.toString(2).padStart(width, '0')}`;
-      newNodes.push({ id: constId, kind: 'const', cell: { aggregateLabel: label } });
-      newEdges.push({ id: `inst_e_${node.id}_${base}`, from: constId, fromPort: 'y', to: node.id, toPort: base, net: label });
-      (mergedPinsByNode[node.id] ||= new Set()).add(base);
     }
   }
 
@@ -3083,10 +4951,28 @@ function genModuleVerilog(result) {
   for (const c of cells) for (const p of Object.values(c.ports)) { if (p && !knownNets.has(p) && !CONST_LIT[p]) anonNets.add(p); }
   if (anonNets.size) lines.push(`  wire ${[...anonNets].join(', ')};`);
   lines.push('');
-  // reconstructs the Verilog text for an instance's OUTPUT port connection from its actual
-  // per-bit driven nets — plain signal name if they exactly match one, else a concatenation
+  /* Reconstructs the Verilog text for ONE port connection from the nets actually wired to
+     it - plain signal name if the per-bit nets exactly match one, else a concatenation.
+     Both directions, which is the whole rule: a netlist says which NETS meet at a pin, so
+     the text is derived from `ports` and from nothing else.
+
+     It used to prefer `portExprText[p]` for an INPUT, i.e. the source expression written at
+     the instantiation site, and that is a net only when the designer wrote a plain signal.
+     Where an operand is an expression it is synthesized into gates like any other - by
+     `_synthAdder`'s own `synthExpr` for a generated FUNC_addN/FUNC_subN, and by
+     `synthInstance`'s for a hand-written instance - so printing the expression published a
+     BEHAVIOURAL netlist and left the gates it had just built driving nets nothing read:
+     `.b((op[0] ? ~b : b))` on the shared-adder ALU with four muxes and four inverters dead
+     beside it, and `.a((rd - rr))` on cpu-16bit, where the inner subtractor is a whole
+     FUNC_sub8 instance the outer one then ignored. It parses and it simulates - the ternary
+     computes the same value - which is exactly why it survived: the netlist was wrong about
+     its own structure while being right about its answer.
+
+     `portExprText` stays on the cell for the VIEWER, which uses it as a pin LABEL: naming
+     a bus in the source's own terms is a fact about the value, not a claim about wiring,
+     and the viewer's edges come from `ports` like this does. */
   const netExpr = net => CONST_LIT[net] || net;
-  function outputConnExpr(c, portName) {
+  function connExpr(c, portName) {
     const width = c.portWidths[portName];
     if (width <= 1) return netExpr(c.ports[portName]);
     const nets = Array.from({ length: width }, (_, i) => c.ports[`${portName}[${i}]`]);
@@ -3094,18 +4980,23 @@ function genModuleVerilog(result) {
       if (s.width !== width) continue;
       if (nets.every((net, i) => net === (s.width === 1 ? name : `${name}[${s.lo + i}]`))) return name;
     }
+    /* A BUS WHOSE EVERY NET IS A CONSTANT IS ONE WIDTH LITERAL - `4'b0001` rather than
+       `{1'b0, 1'b0, 1'b0, 1'b1}`. Assembled from the nets like everything else here, so it
+       states no more than they do; the same rule and the same spelling the viewer's
+       `aggregateLabel` uses for an all-constant pin, so the netlist text and the diagram
+       cannot describe one pin two ways. It is also what keeps `count + 1` reading as a
+       number now that the source text is no longer consulted. */
+    if (nets.every(net => CONST_LIT[net])) {
+      const bits = nets.map(net => (CONST_LIT[net] === "1'b1" ? '1' : '0')).reverse().join('');
+      return widthLit(width, bits);
+    }
     return `{${nets.slice().reverse().map(netExpr).join(', ')}}`;
   }
   const usedTypes = new Set();
   for (const c of cells) {
     if (c.type === 'const') continue; // inlined as a literal at each use site, not a real cell
     if (c.type === 'instance') {
-      // an input port with no source-level expression to show (e.g. a bare cin tied to a
-      // constant, not a real chained operand) falls back to its actual wired net — never
-      // print portExprText[p] verbatim when it's null, or the connection reads as literally
-      // the text "null" instead of e.g. "1'b0"
-      const inputConnExpr = p => c.portExprText[p] ?? netExpr(c.ports[p]);
-      const portList = c.portOrder.map(p => `.${p}(${c.portDirs[p] === 'output' ? outputConnExpr(c, p) : inputConnExpr(p)})`).join(', ');
+      const portList = c.portOrder.map(p => `.${p}(${connExpr(c, p)})`).join(', ');
       lines.push(`  ${c.modType} ${c.id} (${portList});`);
       continue;
     }
@@ -3295,13 +5186,60 @@ function dropInertPins(graph) {
   return { ...graph, nodes, edges };
 }
 
+/* A CONSTANT IS NOT A SIGNAL YOU TRACE, SO IT IS DRAWN WHERE IT IS USED.
+   Every consumer of a tie-off gets its own copy of it. Sharing one node buys nothing - "where
+   does this net go" is a real question about `q[3]` and a meaningless one about `1'b0`, whose
+   answer is "everywhere, and it does not matter" - and it costs a wire per consumer, run from
+   column 0 to wherever the consumer happens to be.
+
+   Measured before this pass, over all 20 solutions, all 21 topics and this app's examples:
+   26 constant nodes drove 555 wires, 11.7% of every wire drawn, of which 426 spanned more
+   than one column and crossed 887 occupied columns on the way - which is where the long grey
+   detours in a small diagram come from, and the wires that pass behind a symbol. One `1'b0`
+   in FUNC_ram256x8 fed 256 pins, i.e. 256 such wires. Replicated, each one is a stub beside
+   the pin it ties, which is how a schematic draws a tie-off in the first place.
+
+   THE COPY IS ONLY HALF OF IT: a constant has no inputs, so computeRanks leaves it at column
+   0 whether it is shared or not. layoutGraph is what puts each copy one column left of what
+   it drives - the rule it already applies to `clk`, and see there for why one column left
+   rather than the same one. Splitting first is what makes that well defined, since after this
+   pass every constant has exactly one consumer. */
+function splitSharedConstants(graph) {
+  const byId = {};
+  for (const n of graph.nodes) byId[n.id] = n;
+  const fan = {};
+  for (const e of graph.edges) {
+    if (byId[e.from] && byId[e.from].kind === 'const') fan[e.from] = (fan[e.from] || 0) + 1;
+  }
+  if (!Object.keys(fan).some(id => fan[id] > 1)) return graph;
+  const nodes = graph.nodes.slice();
+  const edges = [];
+  const nth = {};
+  for (const e of graph.edges) {
+    if (!(fan[e.from] > 1)) { edges.push(e); continue; }
+    const k = (nth[e.from] = (nth[e.from] || 0) + 1);
+    if (k === 1) { edges.push(e); continue; }   // the first consumer keeps the original node
+    /* A shallow copy, so the clone carries the same `cell` - which is read-only from here on
+       (the label and the value are only ever read) and must stay the same object as far as
+       anything comparing constants is concerned. */
+    const clone = Object.assign({}, byId[e.from], { id: `${e.from}__use${k}` });
+    nodes.push(clone);
+    edges.push(Object.assign({}, e, { id: `${e.id}__use${k}`, from: clone.id }));
+  }
+  return Object.assign({}, graph, { nodes, edges });
+}
+
 function synthesizeModuleView(all, moduleName) {
   const result = moduleName === 'FA_PRIMITIVE' ? getFaPrimitiveResult() : all.results[moduleName];
   // when drilling into an auto-generated FUNC_addN/FUNC_subN, show the real per-bit fa
   // chain (not re-collapsed into one composite node) — that's the whole point of drilling in
   const skipCellKinds = result.isAdderModule ? new Set(['fa']) : null;
-  const graph = dropInertPins(
-    mergeInstancePins(collapseBuses(buildGraph(result), result.sig, skipCellKinds, bundleMultibitLogic)));
+  /* splitSharedConstants runs LAST, after dropInertPins: that pass removes an adder's carry in
+     tied to 0 and a flop's de-asserted reset, and drops the constant with them where it was
+     driving nothing else. Copying first would hand it constants that are about to be deleted,
+     and a copy is exactly what stops one from "driving nothing else". */
+  const graph = splitSharedConstants(dropInertPins(mergeInstancePins(aggregateConstPorts(
+    collapseBuses(buildGraph(result), result.sig, skipCellKinds, bundleMultibitLogic)))));
   const layout = layoutGraph(graph);
   return { result, graph, layout };
 }
@@ -3314,23 +5252,39 @@ function synthesizeModuleView(all, moduleName) {
    answers for one design, which is the drift this repo keeps designing against.
    It is pure - a function of a synthesizeAll result and nothing else - which is what
    qualifies it to be here at all; `pushGraph` below the banner is not, and stays. */
-// Approximate relative cell area, in units of a 2-input NAND (the smallest
-// static-CMOS gate at 4 transistors, so it's the natural baseline). Simple
-// gates are estimated from their usual static-CMOS transistor count relative
-// to that baseline (NOT/BUF need half or one inverter stage, AND/OR are a
-// NAND/NOR plus an inverter, XOR/XNOR need roughly 2.5x the transistors of a
-// NAND for a compact implementation, DFF and MUX2 are standard textbook
-// figures for a reset-capable flip-flop and a transmission-gate 2:1 mux).
-// FA is deliberately NOT an independent guess - this app's own `fa` PRIMITIVE_SRC
-// is itself built from 2 XOR2 + 2 AND2 + 1 OR2 (see PRIMITIVE_SRC.fa), so its
-// area is derived by composing those same weights, keeping the two
-// consistent with each other instead of picking a second unrelated number.
+// Relative cell area, in units of a 2-input NAND, MEASURED off the standard-cell
+// layouts in `layout/` rather than estimated from transistor counts. Every cell in
+// that library is one 72-lambda row tall - `A 0,0,W,72000` is its abutment box - so a
+// width ratio IS an area ratio, and the baseline is a real drawn cell (`nand_gate`,
+// 32 lambda) instead of a notional 4-transistor gate. The widths are written here in
+// lambda and divided, so the source carries the measurement rather than a
+// pre-computed quarter; every one is a multiple of the library's 8-lambda pitch, which
+// is why the ratios land on exact quarters.
+//
+// This replaced a transistor-count estimate, and it corrected it in BOTH directions,
+// which is the reason to prefer the measurement over the reasoning: NOT and NOR were
+// too cheap (0.5 and 1 against 0.75 and 1.5 - layout pays a whole pitch quantum
+// however few transistors sit in it), while AND/OR/XOR/XNOR/DFF were too dear (a
+// hand-drawn cell shares diffusion and routing that composing a NAND plus an inverter
+// charges for twice; the DFF was 6 against a measured 4.5). Only NAND, BUF and MUX2
+// were already right. Note AND/OR/XNOR are now measured rather than composed - the
+// library has its own cells for them, so composing would be a second answer.
+//
+// FA stays DERIVED, and now for two reasons rather than one. This app's own `fa`
+// PRIMITIVE_SRC is 2 XOR2 + 2 AND2 + 1 OR2 (see PRIMITIVE_SRC.fa), so composing those
+// same weights keeps the area consistent with the cell it describes instead of being a
+// second unrelated guess - and `layout/` has no full adder to measure: the file named
+// for one is a half adder wearing the name, its connectors `a b sum cout` with no
+// carry-in, the same pin set as `ha_gate` at the same 96 lambda. Worth knowing the
+// composition reads HIGH, because the half adder is the one case where both numbers
+// exist: measured 96 lambda = 3.00 against 3.25 for XOR + AND. So the FA's 7.75 is
+// likely dear too, and closing that needs a cell drawn, not a better guess.
 const GATE_AREA = (() => {
-  const a = { nand: 1, nor: 1, not: 0.5, buf: 1, mux2: 2, dff: 6, const: 0, instance: 0 };
-  a.and = a.nand + a.not;
-  a.or = a.nor + a.not;
-  a.xor = 2.5;
-  a.xnor = a.xor;
+  const NAND2_LAMBDA = 32;   // nand_gate / nd2v0x1 - the baseline, and a real cell
+  const w = { not: 24, nand: 32, buf: 32, and: 40, or: 40, nor: 48,
+              mux2: 64, xor: 64, xnor: 72, dff: 144 };
+  const a = { const: 0, instance: 0 };
+  for (const g in w) a[g] = w[g] / NAND2_LAMBDA;
   a.fa = 2 * a.xor + 2 * a.and + 1 * a.or;
   return a;
 })();
@@ -3357,9 +5311,31 @@ const GATE_REPORT_ORDER = ['and', 'or', 'nand', 'nor', 'xor', 'xnor', 'not', 'bu
 function collectWholeDesignCellCounts(all) {
   const counts = {};
   let totalCells = 0;
+  /* PER MODULE, collected by the SAME walk as the totals so the two cannot disagree - which is
+     the whole point of the table: its `total` column sums to `Number of cells` exactly, and a
+     reader can see where the gates went rather than being handed one number.
+
+     `uses` is how many times the module appears in the FLATTENED hierarchy, so a memory word
+     register instantiated 256 times says 256 - and its contribution is `own x uses`, which is
+     the number that belongs in a sum. Insertion order is top-first, then the order the
+     hierarchy is discovered in, matching how genVerilog emits the modules. */
+  const perModule = new Map();
   function walk(moduleName) {
     const result = all.results[moduleName];
     if (!result) return;
+    let rec = perModule.get(moduleName);
+    if (!rec) {
+      let comb = 0, seq = 0;
+      for (const c of result.cells) {
+        // a sub-module 'instance' cell is a hierarchy pointer, not a gate: its own gates are
+        // counted when THAT module is walked, so counting it here would double it
+        if (c.type === 'instance') continue;
+        if (c.type === 'dff') seq++; else comb++;
+      }
+      rec = { comb, seq, own: comb + seq, uses: 0 };
+      perModule.set(moduleName, rec);
+    }
+    rec.uses++;
     for (const c of result.cells) {
       counts[c.type] = (counts[c.type] || 0) + 1;
       totalCells++;
@@ -3367,11 +5343,11 @@ function collectWholeDesignCellCounts(all) {
     }
   }
   walk(all.top.name);
-  return { counts, totalCells };
+  return { counts, totalCells, perModule };
 }
 
 function buildAreaReport(all) {
-  const { counts, totalCells } = collectWholeDesignCellCounts(all);
+  const { counts, totalCells, perModule } = collectWholeDesignCellCounts(all);
   const dffCount = counts.dff || 0;
   const instanceCount = counts.instance || 0;
   const physicalCells = totalCells - instanceCount; // a sub-module 'instance' cell is a hierarchy pointer, not a gate - its own gates are counted when THAT module's results are processed
@@ -3384,6 +5360,34 @@ function buildAreaReport(all) {
   lines.push(pad('Number of sequential cells:', dffCount));
   if (instanceCount) lines.push(pad('Number of sub-module instances:', instanceCount));
   lines.push('');
+
+  /* PER-MODULE, and the column that matters is the last one: `total` is `own x uses`, so the
+     column SUMS to `Number of cells` above. That is what makes the table answer "where did the
+     gates go" rather than just repeating the total in pieces - and it is asserted, because a
+     breakdown that does not add up is worse than none.
+
+     `own` is what one copy of the module costs and `uses` how many copies the design really
+     builds, which are different questions and both worth having: a memory word register is 16
+     gates written once and 4,096 gates built. */
+  const nameW = Math.max(6, ...[...perModule.keys()].map(n => n.length));
+  const col = (s, w) => String(s).padStart(w);
+  lines.push('Per-module gate count:');
+  lines.push('  ' + 'module'.padEnd(nameW) + col('uses', 7) + col('comb', 8) + col('seq', 7) + col('own', 8) + col('total', 9));
+  let summed = 0;
+  for (const [name, r] of perModule) {
+    const tot = r.own * r.uses;
+    summed += tot;
+    lines.push('  ' + name.padEnd(nameW) + col(r.uses, 7) + col(r.comb, 8) + col(r.seq, 7) + col(r.own, 8) + col(tot, 9));
+  }
+  lines.push('  ' + ''.padEnd(nameW) + col('', 7) + col('', 8) + col('', 7) + col('total', 8) + col(summed, 9));
+  /* `summed` MUST equal `Number of cells`, and it does so BY CONSTRUCTION rather than by a
+     check: both come out of the one walk above, which counts a module's own gates once per
+     visit and its instance pointers never. A runtime comparison here was written and removed -
+     it could not fire for any input, which is the unreachable-defensive-code shape this file
+     removes rather than keeps as reassurance. What proves the construction is a test that adds
+     the column up on every synthesizable design, where a real inconsistency would show. */
+  lines.push('');
+
   lines.push('Gate counts:');
   const areaLines = [];
   let totalArea = 0;
