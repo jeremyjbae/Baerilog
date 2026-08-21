@@ -73,10 +73,10 @@
       'font-weight:700;letter-spacing:.02em;background:var(--canvas-default);',
       'color:var(--fg-default);border:1px solid var(--header-muted);cursor:pointer}',
     '.cloud-avatar:hover{border-color:var(--header-fg)}',
-    '.cloud-dback{position:fixed;inset:0;z-index:2050;background:rgba(31,35,40,.5);',
+    '.cloud-dback{position:fixed;inset:0;z-index:var(--z-drawer);background:rgba(31,35,40,.5);',
       'opacity:0;visibility:hidden;transition:opacity 220ms ease,visibility 220ms}',
     '.cloud-dback.open{opacity:1;visibility:visible}',
-    '.cloud-drawer{position:fixed;top:0;right:0;bottom:0;z-index:2100;',
+    '.cloud-drawer{position:fixed;top:0;right:0;bottom:0;z-index:var(--z-drawer-panel);',
       'width:min(340px,88vw);display:flex;flex-direction:column;overflow-y:auto;',
       'background:var(--canvas-default);color:var(--fg-default);',
       'border-left:1px solid var(--border-default);box-shadow:var(--shadow-overlay);',
@@ -125,7 +125,7 @@
     '.cloud-doc .v.fail{color:var(--danger-fg);border-color:var(--danger-fg)}',
     /* The dialog. --shadow-overlay and --radius-lg are the tokens every other
        raised surface in this repo uses, so it reads as part of the set. */
-    '.cloud-back{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;',
+    '.cloud-back{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:var(--z-dialog);',
       'display:flex;align-items:center;justify-content:center;padding:20px}',
     '.cloud-modal{background:var(--canvas-default);color:var(--fg-default);',
       'border:1px solid var(--border-default);border-radius:var(--radius-lg);',
@@ -499,15 +499,29 @@
     }
   }
 
-  /* practice/<slug> is a page; the three menu apps are one document each, so their
+  /* practice/<slug> is a page; the four menu apps are one document each, so their
      row points at the app itself. An unknown app gets no link rather than a guess. */
   function docHref(d) {
     if (d.app === 'practice') return d.item + '.html';
-    if (d.app === 'simulator') return 'simulator.html';
-    if (d.app === 'synthesis') return 'synthesis.html';
-    if (d.app === 'compiler') return 'compiler.html';
-    if (d.app === 'pnr') return 'pnr.html';
-    return '';
+    var app = d.app === 'simulator' ? 'simulator.html'
+            : d.app === 'synthesis' ? 'synthesis.html'
+            : d.app === 'compiler' ? 'compiler.html'
+            : d.app === 'pnr' ? 'pnr.html'
+            : d.app === 'code2silicon' ? 'code2silicon.html'
+            : '';
+    /* A NAMED row is a PROJECT, not the app's scratch document, so it links to that project
+       rather than to whatever the app happens to open on - which for a reader with several
+       would be the same link on every row. `?project=` is read by the owning page's own early
+       inline script; `default` carries no name and so falls through to the bare app, which is
+       the correct destination for it. Keyed on the name rather than on the app, so a second
+       app growing projects needs nothing here. */
+    if (app && projectName(d)) return app + '?project=' + encodeURIComponent(d.item);
+    return app;
+  }
+  /* The one reader of the name in this file, so the row's title and its link cannot disagree
+     about whether a document is a project. Same test projects.html uses. */
+  function projectName(d) {
+    return (d && d.verdict && typeof d.verdict.name === 'string') ? d.verdict.name : '';
   }
   function ago(t) {
     if (!t) return '';
@@ -521,7 +535,10 @@
     var href = docHref(d);
     var row = el(href ? 'a' : 'div', 'cloud-doc');
     if (href) row.setAttribute('href', href);
-    var title = d.app === 'practice' ? d.item : d.app;
+    /* A project is titled by its NAME - the only thing about it the reader chose, and the only
+       way to tell two of one app's projects apart, where the item id is a mint nobody reads.
+       An exercise is its slug and an app's scratch document is the app; both unchanged. */
+    var title = projectName(d) || (d.app === 'practice' ? d.item : d.app);
     row.appendChild(el('span', 't', null, title));
     if (d.verdict && d.verdict.state) {
       var v = d.verdict;
@@ -760,6 +777,129 @@
     input.focus();
   }
 
+  /* ---- naming a project ------------------------------------------------ */
+
+  /* ONE DIALOG, TWO CALLERS: Code2Silicon's first Save mints a project and needs a name for
+     it, and projects.html renames one. It lives here rather than in either of them for the
+     reason every other dialog does - this file owns every pixel, and two hand-maintained
+     copies of one prompt is the drift the shared stylesheet's four variants already paid for.
+
+     It is deliberately NOT window.prompt, which is what a first draft used. That is a
+     browser-chrome box with no styling, no dark mode and no tokens, blocking the main thread,
+     and on a file:// page some browsers suppress it outright - so the one control that turns
+     work into a saved project would silently do nothing. This is .cloud-back/.cloud-modal
+     like askConflict and askSignOut beside it.
+
+     THE SAFE OUTCOME IS WHAT DOING NOTHING GIVES YOU, the rule both of those hold to: Escape,
+     Cancel and a click on the backdrop all leave the name alone, and only the primary button
+     calls back. An EMPTY name is refused rather than accepted, because a nameless project is
+     exactly the row this feature filters out of the listing - it would save and then vanish.
+     Trimmed and capped at 80, which is `setName`'s own idiom one file over; the listing
+     ellipsises anyway, so the cap is about what gets stored rather than about the layout.
+
+     `onOk` is called with the name and nothing else. What a name MEANS - mint a row, or
+     rewrite one - is the caller's, which is what keeps this file from knowing about projects
+     at all. */
+  function askName(opts, onOk) {
+    opts = opts || {};
+    closeDialog();
+    back = document.createElement('div');
+    back.className = 'cloud-back';
+    back.id = 'cloudBackdrop';
+    back.addEventListener('click', function (ev) { if (ev.target === back) closeDialog(); });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(back);
+
+    var m = modal();
+    var h = document.createElement('h3');
+    h.textContent = opts.title || 'Name this project';
+    var p = document.createElement('p');
+    p.textContent = opts.note || 'Give it a name you will recognise. '
+                  + 'It appears under My Projects, on every machine you sign in from.';
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.id = 'cloudNameField';
+    input.placeholder = 'e.g. 4-bit Counter';
+    input.value = opts.value || '';
+    input.maxLength = 80;
+
+    var row = document.createElement('div');
+    row.className = 'cloud-row';
+    var go = document.createElement('button');
+    go.className = 'btn';
+    go.id = 'cloudNameOk';
+    go.textContent = opts.ok || 'Save';
+    var no = document.createElement('button');
+    no.className = 'btn secondary';
+    no.id = 'cloudNameCancel';
+    no.textContent = 'Cancel';
+    no.addEventListener('click', closeDialog);
+    row.appendChild(go);
+    row.appendChild(no);
+
+    m.appendChild(h); m.appendChild(p); m.appendChild(input); m.appendChild(row);
+    var msg = msgLine(m);
+
+    function submit() {
+      var name = String(input.value || '').trim().slice(0, 80);
+      if (!name) { say(msg, 'Give it a name first.', 'bad'); return; }
+      /* Closed BEFORE the callback, so a caller that opens something of its own - a confirm,
+         or this same dialog again - is not doing it behind a backdrop this one still owns.
+         `back` is nulled by closeDialog, so a throwing caller cannot leave a dangling one. */
+      closeDialog();
+      if (typeof onOk === 'function') onOk(name);
+    }
+    go.addEventListener('click', submit);
+    input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') submit(); });
+    input.focus();
+  }
+
+  /* ---- confirming something destructive -------------------------------- */
+
+  /* THE SHAPE askSignOut ALREADY HAS, generalised because a second caller wanted it: removing a
+     project from My Projects. One dialog rather than a second hand-rolled one, for the reason this
+     file owns every dialog here - and it is the same rule both of its siblings hold to: THE SAFE
+     OUTCOME IS WHAT DOING NOTHING GIVES YOU, so Escape, Cancel and a click on the backdrop all
+     leave things alone and only the one button that has to be aimed at goes ahead.
+
+     The destructive button is `.cloud-danger` - style.css's --btn-danger-bg, the same red the Run
+     button's error state uses rather than a second one, with the label left at --fg-on-emphasis
+     from `.btn`. `note` is the caller's, because what is about to be lost is the caller's to
+     describe: a sign-out reassures that the work stays, and a delete has to say the opposite. */
+  function askConfirm(opts, onOk) {
+    opts = opts || {};
+    closeDialog();
+    back = document.createElement('div');
+    back.className = 'cloud-back';
+    back.id = 'cloudBackdrop';
+    back.addEventListener('click', function (ev) { if (ev.target === back) closeDialog(); });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(back);
+    var m = modal();
+    var h = document.createElement('h3');
+    h.textContent = opts.title || 'Are you sure?';
+    var p = document.createElement('p');
+    p.textContent = opts.note || '';
+    var row = document.createElement('div');
+    row.className = 'cloud-row';
+    var go = document.createElement('button');
+    go.className = 'btn cloud-danger';
+    go.id = 'cloudConfirmOk';
+    go.textContent = opts.ok || 'Delete';
+    go.addEventListener('click', function () {
+      closeDialog();
+      if (typeof onOk === 'function') onOk();
+    });
+    var no = document.createElement('button');
+    no.className = 'btn secondary';
+    no.id = 'cloudConfirmCancel';
+    no.textContent = 'Cancel';
+    no.addEventListener('click', closeDialog);
+    row.appendChild(go);
+    row.appendChild(no);
+    m.appendChild(h); m.appendChild(p); m.appendChild(row);
+  }
+
   /* ---- conflicts ------------------------------------------------------- */
 
   /* Sign out is one click on a row in a drawer, next to two navigation rows that also
@@ -853,7 +993,9 @@
   /* The two things a host page needs from this file, and nothing more. */
   /* `ago` is exported for Baerilog/home.js's dashboard, which lists the same documents
      the drawer's My Progress view does - one relative-time format, so the two cannot
-     describe the same instant differently. */
+     describe the same instant differently. `askName` for the two pages that name a project;
+     both are published BELOW the configured() guard above, which is what keeps the Save
+     control off an unconfigured checkout without either page testing for one. */
   window.CLOUD_UI = { open: openDialog, close: closeDialog, askConflict: askConflict,
-                      ago: ago };
+                      askName: askName, askConfirm: askConfirm, ago: ago };
 })();

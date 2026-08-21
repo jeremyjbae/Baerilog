@@ -104,8 +104,15 @@
      .value directly throughout, so there this is no worse than what they
      already do to themselves. */
   function setText(text) {
-    if (keepsItsOwnTestbench()) {
-      var mine = getText();                    // the document as this page has it, checks included
+    /* THE GRAFT READS THIS PAGE'S OWN DOCUMENT, so it is behind `storesSource` like every other
+       reach for the editor's text here. On a page that stores none there is no document of the
+       reader's to graft a testbench off, and `restore` already refuses to run at all - this is
+       the same claim stated where the read happens, so no single line has to be trusted to
+       protect the other. It is one statement rather than a nested `if` because the rule is
+       checkable that way: test_cloud.py requires every use of `getText()` to name the flag in
+       its own statement, which is what caught this line reaching for the editor unconditionally. */
+    var mine = (storesSource && keepsItsOwnTestbench()) ? getText() : null;
+    if (mine !== null) {
       var m = TB_MARKER.exec(mine || '');
       if (m) text = designHalfOf(text) + mine.slice(m.index);
     }
@@ -179,6 +186,14 @@
   var restoring = false;
   function restore(text) {
     if (typeof text !== 'string') return;
+    /* A PAGE THAT STORES NO SOURCE RESTORES NONE, and this is the one place that has to say so
+       rather than each of the three callers. Two of them were NOT gated - the seed at load and
+       CLOUD_ON_ADOPT - so a learn topic holding an old record with a `source` in it (one written
+       before CLOUD_NO_SOURCE existed) would put that stale design over the one learn.js had just
+       seeded, on every load. That is not a hypothetical failure: it is the exact bug the
+       CLOUD_NO_SOURCE note above records, reachable again through a path that never got the
+       guard. One writer, at the entry, so no new call site can miss it. */
+    if (!storesSource) return;
     text = repairSplit(text);
     restoring = true;
     try {
@@ -429,5 +444,30 @@
      already written the record - this puts it in the editor. */
   window.CLOUD_ON_ADOPT = function (r) {
     if (r && typeof r.source === 'string') restore(r.source);
+  };
+
+  /* WHICH DOCUMENT IS OPEN CAN MOVE, and this is the one thing that moves it. Code2Silicon's
+     first Save mints a project and the page is then editing THAT row rather than the scratch
+     one it loaded with - so every autosave after it, and every pull, has to follow. `item` is
+     a closure variable read by six functions here, so the alternative to this hook is a
+     reload, which would throw away the editor state the reader just saved.
+   *
+   * A HOOK, NOT AN EXPORTED SETTER, and the same idiom CLOUD_ON_RESET and LEARN_ON_QUIZ
+   * already use: the page calls it if it exists, so a checkout with no project has the Save
+   * button absent and this never defined, with no branch on either side.
+   *
+   * IT SAVES TO THE NEW ROW BEFORE RETURNING, and that ordering is the whole of it. The mint
+   * is `save(app, id, {source, verdict})` in the caller, then this - so what the reader typed
+   * is already under the new item and this only has to redirect what comes next. Doing it the
+   * other way round leaves a window in which an `input` event lands on the old row.
+   *
+   * The SCRATCH row is deliberately left alone rather than deleted. It is what an unnamed
+   * Code2Silicon autosaves to, so forgetting it here would empty the document a reader
+   * returning to a bare code2silicon.html expects to find - saving a project is not a
+   * statement about the scratch. */
+  window.CLOUD_SET_ITEM = function (next) {
+    next = String(next || '');
+    if (!next || next === item) return;
+    item = next;
   };
 })();

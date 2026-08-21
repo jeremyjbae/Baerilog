@@ -1,0 +1,857 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 70 70'%3E%3Crect x='0' y='0' width='70' height='70' fill='black'/%3E%3Cpath d='M 43.018863 43.75 C 43.03401 41.100017 43.00372 36.399983 43.018863 33.75 C 43.00372 31.399983 40.518863 28.75 38.018863 28.75 C 35.425023 28.75 37.831183 28.75 35.237344 28.75 C 28.987302 28.75 27.737302 33.75 27.782737 36.25 C 27.737302 38.75 28.987302 43.75 35.237344 43.75 C 36.097863 43.75 36.958383 43.75 37.8189 43.75' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M 7.5 25 C 7.5 30 7.5 38.75 7.5 43.75 C 10 43.75 12.421347 43.73971 15.28152 43.75 C 21.53152 43.75 22.789938 38.59011 22.78152 36.25 C 22.789938 33.59011 21.53152 28.75 15.28152 28.75 C 13.309234 28.75 14.376628 28.75 12.709961 28.75' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M 63.31308 28.75 C 60.81308 28.75 58.391734 28.76029 55.53156 28.75 C 49.28156 28.75 48.02314 33.90989 48.03156 36.25 C 48.02314 38.90989 49.28156 43.75 55.53156 43.75 C 57.50385 43.75 61.865164 43.75 63.53183 43.75' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='53.23156' y='36.125' width='9.8' height='.125' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Projects · Baerilog</title>
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="practice.css">
+</head>
+<body>
+
+<header class="gh-header">
+  <div class="gh-header-inner">
+    <a class="gh-mark" href="index.html">
+      <svg viewBox="0 0 58 26" fill="none" stroke="black" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M 37.7373 21.25 C 37.752447 18.600017 37.722157 13.899983 37.7373 11.25 C 37.722157 8.899983 35.2373 6.25 32.7373 6.25 C 30.143462 6.25 32.549622 6.25 29.955782 6.25 C 23.70574 6.25 22.45574 11.25 22.501176 13.75 C 22.45574 16.25 23.70574 21.25 29.955782 21.25 C 30.8163 21.25 31.67682 21.25 32.53734 21.25"/><path d="M 2.2184386 2.5 C 2.2184386 7.5 2.2184386 16.25 2.2184386 21.25 C 4.7184386 21.25 7.139786 21.23971 9.999958 21.25 C 16.249958 21.25 17.508377 16.090111 17.499958 13.75 C 17.508377 11.090111 16.249958 6.25 9.999958 6.25 C 8.027672 6.25 9.095067 6.25 7.4284 6.25"/><path d="M 56.0315 6.25 C 53.5315 6.25 53.11017 6.26029 50.25 6.25 C 44 6.25 42.74158 11.409889 42.75 13.75 C 42.74158 16.409889 44 21.25 50.25 21.25 C 52.222286 21.25 54.583635 21.25 56.2503 21.25"/><rect x="47.95" y="13.625" width="8" height=".125"/></svg>
+      <span>Baerilog</span>
+    </a>
+    <nav class="gh-nav"><a href="simulator.html">Simulator</a><a href="synthesis.html">Synthesizer</a><a href="compiler.html">Compiler</a><a href="practice.html" class="here">Practice</a></nav>
+  </div>
+</header>
+<script>
+/* >>> NAV MENU (canonical copy in tools/navmenu.js - do not edit in place) */
+(function () {
+  var inner = document.querySelector('.gh-header-inner');
+  if (!inner || document.getElementById('navMenuBtn')) return;   // no bar, or already built
+
+  /* The rows, in order, and EVERY one is a bare filename because every one is a sibling -
+     Home included, now that index.html is a landing page in this directory. It used to be
+     the GitHub Pages site, which was a stand-in for a home that did not exist; with a real
+     one the drawer needs no network at all, which is the property every other page here is
+     built for. The three apps outside this directory (emulator,
+     verify, workbench) are deliberately absent: they live one level ABOVE the deployed
+     root, so a `../` row would resolve in the repo and 404 on the site.
+
+     FOUR DESTINATIONS, NOT SEVEN: the single-stage apps - Simulator, Synthesizer, Place &
+     Route, Compiler - are off the menu and reached by URL. They are still pages, still
+     built, still checked; what went is their rows. So this list is what a reader is offered,
+     which is a different question from what exists, and `currentHref`'s `known` list above is
+     what keeps those four marking nothing rather than marking Practice. Their glyphs are left
+     in `G` below, unused, so restoring a row is one line rather than redrawing an icon. */
+  var ITEMS = [
+    ['Home', 'index.html', 'home'],
+    ['Learn', 'learn.html', 'cap'],
+    ['Practice', 'practice.html', 'codeslash'],
+    /* DIRECTLY BELOW PRACTICE, because it is the same thing one step further on: practice is
+       one stage of the flow per page, and this is every stage of it on one. It is also the
+       only tool row left, and the one the three retired rows fed into: the simulator, the
+       synthesizer and the placer are all stages of it. */
+    ['Code2Silicon', 'code2silicon.html', 'flow'],
+    /* LAST, and that is a statement about what the row IS rather than a place left over. The
+       four above are DESTINATIONS - things to read, things to solve, a tool to work in - and
+       this one is the reader's own work in those tools. It belongs after the thing that
+       produces it, the way a file listing sits below the editor rather than above it. */
+    ['My Projects', 'projects.html', 'folder']
+  ];
+  var G = {
+    menu: '<svg viewBox="0 0 16 16"><path d="M1.5 3.25h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Zm0 4h13v1.5h-13v-1.5Z"/></svg>',
+    home: '<svg viewBox="0 0 16 16"><path d="M8 1.2 15 7l-.94 1.15-1.06-.88V14a1 1 0 0 1-1 1H9.5v-4.5h-3V15H4a1 1 0 0 1-1-1V7.27l-1.06.88L1 7 8 1.2Zm4 4.83L8 2.7 4 6.03V13.5h1V9h6v4.5h1V6.03Z"/></svg>',
+    /* LEARN: a mortarboard. Fill-only, like every glyph here except `mind` below - the cap is
+       a solid silhouette in the artwork it comes from, so it needs no stroke exception.
+
+       Four subpaths, and the three that could go wrong at 16px were each settled by rasterising
+       at that size and magnifying with nearest-neighbour rather than by looking at it large.
+       The BOARD is narrower than the artwork's (right tip at 14.6, not 15.2) so the tassel has a
+       pixel column clear of it; a wider board swallows the cord into its own right edge. The GAP
+       between board and body is 1.5 units, because at 0.7 it antialiases into a gray smear and
+       the cap reads as one blob. And the CORD is exactly 1 unit wide on integer x, so it lands
+       on one whole pixel - at 0.75 it spread across two at half strength and vanished.
+
+       Winding matters here: the cord overlaps the board and the tip overlaps the cord, so all
+       four subpaths are drawn CLOCKWISE. Under the nonzero rule an opposed subpath would punch a
+       hole through the overlap instead of merging, which reads as a nick in the tassel. The tip
+       also has to reach the cord - a 0.7 break between them is invisible large and reads as a
+       detached speck at 16px. */
+    cap: '<svg viewBox="0 0 16 16"><path d="M8 1.9 14.6 5.4 8 8.9 1.4 5.4Z M4.5 8.6v2.8C4.5 12.6 6 13.4 8 13.4s3.5-.8 3.5-2V8.6L8 10.4Z M13 5.4h1v5.9h-1Z M12.5 11.2h2l-1 2.1Z"/></svg>',
+    /* PRACTICE: a head in profile with a chip in it. Two things about it are deliberate, and
+       the first is the only STROKED glyph in this set.
+
+       The head is `fill="none" stroke="currentColor"` where every other glyph here is a
+       filled silhouette. A head outline as a filled ring means hand-offsetting the profile
+       curve inward, and the reason it is safe to stroke instead is that `.nav-row-icon` sets
+       `color` rather than `fill` - so one token drives both halves, which is exactly the fix
+       CLAUDE.md records for the hub's stroked combinational-gate glyph. The `fill="none"` is
+       a presentation attribute on the PATH, and it beats the stylesheet's `fill: currentColor`
+       on the parent `svg` because that value only reaches the path by inheritance, and any
+       declaration on an element - a presentation attribute included - wins over an inherited
+       one. Verified in a browser rather than reasoned about, since getting it wrong fills the
+       head in solid and the glyph becomes a blob.
+
+       The chip is two pins a side and no inner die, where the artwork it comes from has three
+       and a die. This box is a fixed 16x16 and never renders larger, and at 16px both of those
+       details antialias into a gray smear across the body - measured the same way as `cap`
+       above. Two pins on whole-pixel coordinates stay crisp, and a square body with a hole is
+       already this set's shorthand for a chip (see `chip` below). So the simplification is what
+       makes it legible at the one size it is used. */
+    mind: '<svg viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M5.3 15.3V12.9C5.3 12 1.4 11.2 1.4 7.3 1.4 3.8 4.3 1 7.9 1 10.9 1 12.9 3 13 5.3L14.8 7.8 13.1 8.6C13.1 10.2 12.2 11.2 10.9 11.4V15.3"/><path d="M3.7 3.9h6.2v6.2H3.7V3.9Zm1.2 1.2v3.8h3.8V5.1H4.9ZM2.5 5h1.2v1H2.5V5ZM2.5 8h1.2v1H2.5V8ZM9.9 5h1.2v1H9.9V5ZM9.9 8h1.2v1H9.9V8Z"/></svg>',
+    pulse: '<svg viewBox="0 0 16 16"><path d="M6 2.5a.75.75 0 0 1 .7.48L9.3 10l1-2.5a.75.75 0 0 1 .7-.5h4v1.5h-3.5l-1.8 4.5a.75.75 0 0 1-1.4 0L5.7 5.5 4.7 8a.75.75 0 0 1-.7.5H0V7h3.5l1.8-4.02A.75.75 0 0 1 6 2.5Z"/></svg>',
+    chip: '<svg viewBox="0 0 16 16"><path d="M5 1.5h1.5v1.5h3V1.5H11v1.5h1.5A1.5 1.5 0 0 1 14 4.5V6h1.5v1.5H14v1H15.5V10H14v1.5a1.5 1.5 0 0 1-1.5 1.5H11v1.5H9.5V13h-3v1.5H5V13H3.5A1.5 1.5 0 0 1 2 11.5V10H.5V8.5H2v-1H.5V6H2V4.5A1.5 1.5 0 0 1 3.5 3H5V1.5Zm-1.5 3v7h9v-7h-9Zm2 2h5v3h-5v-3Z"/></svg>',
+    code: '<svg viewBox="0 0 16 16"><path d="M5.7 4.3a.75.75 0 0 1 0 1.06L3.06 8l2.64 2.64a.75.75 0 1 1-1.06 1.06L1.47 8.53a.75.75 0 0 1 0-1.06L4.64 4.3a.75.75 0 0 1 1.06 0Zm4.6 0a.75.75 0 0 1 1.06 0l3.17 3.17a.75.75 0 0 1 0 1.06L11.36 11.7a.75.75 0 1 1-1.06-1.06L12.94 8l-2.64-2.64a.75.75 0 0 1 0-1.06Z"/></svg>',
+    /* PLACE & ROUTE: two placed blocks and one orthogonal wire between them - the two halves
+       of the app's own name, and the only thing it could be a picture of. Fill-only, like
+       every glyph here but `mind`.
+
+       EVERY coordinate is a whole unit, and that is the whole of what makes it legible at
+       16px rather than a matter of taste: the wire is one unit wide, so it lands on one
+       whole pixel at full strength, where the 0.75 the `cap` glyph's cord was first drawn at
+       spread across two at half strength and vanished. The blocks are 5x5 - ODD, so their
+       centres fall on a .5 and the wire's own centreline (x 3.5, y 11.5) meets them exactly;
+       an even block would put the arm half a unit off its block's middle, which reads as a
+       wire that misses its pin. Rasterised at 16px and magnified to check, the same way the
+       three details of `cap` above were settled: two solid blocks and one unbroken 1px wire,
+       and the whole drawing centred on (8, 8) rather than merely fitted inside the box.
+
+       All three subpaths are wound CLOCKWISE. The wire touches the upper block's bottom edge
+       and the lower block's left edge, so under the nonzero rule an opposed subpath would
+       punch a hole through the join and the wire would read as detached at both ends - the
+       same trap `cap`'s tassel records. */
+    route: '<svg viewBox="0 0 16 16"><path d="M1 2h5v5H1V2Zm9 7h5v5h-5V9ZM3 7h1v4h6v1H3V7Z"/></svg>',
+    /* CODE2SILICON: a packaged die with code brackets inside it and eight pin leads - the
+       page's own two halves, source going into silicon, which is a THING where the funnel this
+       replaced was a shape. Kept on the artwork's own 24-unit viewBox rather than redrawn onto
+       this set's 16-unit grid, so it is the drawing as supplied; the box is square and the CSS
+       box is square, so the scale is uniform and nothing is letterboxed.
+
+       THE PAINT ATTRIBUTES ARE ON A `<g>`, NOT ON THE `<svg>`, and that is not tidiness: the
+       stylesheet says `.nav-row-icon svg { fill: currentColor }`, so a `fill="none"` on the svg
+       element is a presentation attribute LOSING to a declaration on the same element - the die
+       and both chevrons would fill solid and the glyph would be a blob. On a `<g>` the attribute
+       is the only declaration that element has, and the children inherit `none` from it. This is
+       the rule `mind` above records from the other direction (it puts them on the path), and the
+       hoist-onto-a-g idiom `tools/logo.py`'s cleaned output already uses.
+
+       It is the SECOND stroked glyph in this set, and the lighter of the two: 2 units on a 24 box
+       is 1.33px at 16, against `mind`'s 1.6 on a 16 box. It also carries more detail than any
+       other glyph here - a 2-unit bracket excursion is 1.33px and a 3-unit pin lead 2px - which
+       is the smear `cap`'s tassel and `mind`'s chip were both simplified to avoid, so this one is
+       measured in a browser rather than reasoned about. */
+    /* PRACTICE: a pair of chevrons with a slash between them - what writing code looks like,
+       which is what an exercise page asks you to do, where `mind` (still in `G`, unused, so it is
+       one line to restore) drew the reader instead. On the artwork's own 24-unit viewBox and
+       stroked, like `flow` below it, so the two 24-box glyphs are consistent with each other; the
+       paint attributes are on a `<g>` for the reason that one records at length - on the `<svg>`
+       they lose to `.nav-row-icon svg { fill: currentColor }` and the strokes fill solid.
+
+       WORTH KNOWING: this is chevrons and `flow` is chevrons inside a die, and the two rows are
+       adjacent. They are told apart by the die outline and its eight pins rather than by the
+       brackets, which is the weaker of the two readings - if they ever need more separation it is
+       this one to change, since `flow`'s brackets are what say "source" inside the package. */
+    codeslash: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" '
+          + 'stroke-linecap="round" stroke-linejoin="round">'
+          + '<polyline points="16 18 22 12 16 6"/>'
+          + '<polyline points="8 6 2 12 8 18"/>'
+          + '<line x1="14" y1="4" x2="10" y2="20"/>'
+          + '</g></svg>',
+    flow: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" '
+          + 'stroke-linecap="round" stroke-linejoin="round">'
+          + '<rect x="5" y="5" width="14" height="14" rx="2.5"/>'
+          + '<path d="M9 10l-2 2 2 2"/><path d="M15 10l2 2-2 2"/>'
+          + '<path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>'
+          + '</g></svg>',
+    /* MY PROJECTS: a folder, outlined. Back on this set's 16-unit grid and fill-only, like
+       every glyph here but the two 24-box strokes above - it is drawn here rather than
+       supplied, so there is no artwork to stay faithful to and the set's own rules decide it.
+
+       EVERY coordinate is a whole unit and every wall is exactly ONE, which is the whole of
+       what makes it legible at 16px: a 1-unit wall lands on one whole pixel at full strength,
+       where `cap`'s cord at 0.75 spread across two at half and vanished. Left 1-2, right 14-15,
+       bottom 12-13, body top 5-6, tab top 3-4, tab right 5-6 - measure any of them and they
+       are the same.
+
+       OUTLINED, NOT SOLID, and that is what tells it from `chip`: a filled folder at this size
+       is a rounded blob with a nick in one corner, and the nick is the only thing carrying the
+       meaning. With the hole, the tab reads as a tab. The hole is the SECOND subpath and is
+       wound AGAINST the outline - the outline anticlockwise, the hole clockwise - and under the
+       nonzero rule it is that opposition, in either direction, that punches it out rather than
+       filling it in. Same winding rule `cap` and `route` record from the other side: there the
+       subpaths AGREE, so they merge instead of nicking each other. Verified by rasterising at
+       16px rather than by reading: 44 pixels of wall, 78 punched out, every wall one pixel at
+       full strength, and the tab step 5px against the body's 11. Centred on the box too - three
+       empty rows above and below, one column each side - rather than merely fitted inside it. */
+    folder: '<svg viewBox="0 0 16 16"><path d="M1 3h5v2h9v8H1Z M2 4v8h12V6H5V4Z"/></svg>',
+  };
+
+  function mk(tag, cls, id, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (id) e.id = id;
+    if (text !== undefined && text !== null) e.textContent = text;
+    return e;
+  }
+
+  /* THREE OF THE SIX APPS LIVE OUTSIDE Baerilog/ - emulator, verify and workbench - so
+     a bare filename does not resolve from them and this has to prefix. They are also
+     the three that are NOT in the menu, and each carried a single `&larr; Baerilog` link
+     back to the hub; the shared block hides `.gh-nav a`, so that link is gone and the
+     drawer's Practice row is what replaces it. Getting this wrong is not cosmetic: it
+     would leave those three with no way back at all. */
+  var OUTSIDE = ['emulator', 'verify', 'workbench'];
+  function base() {
+    var parts = (window.location && window.location.pathname || '').split('/');
+    var dir = parts[parts.length - 2] || '';
+    return OUTSIDE.indexOf(dir) >= 0 ? '../Baerilog/' : '';
+  }
+
+  /* Which row is current, from the page's own URL rather than a per-app variable: one
+     fewer thing for a copy to set wrong. A practice EXERCISE page is not index.html but
+     is still Practice, which is why the marker falls back to practice.html inside this
+     directory - and why it marks NOTHING from the three outside it, none of which is a row.
+     index.html is the LANDING page and its own row, so it is named rather than fallen into.
+
+     The LEARN pages need naming before that fallback, and this is not a special case so
+     much as the fallback's own limit: `learn.html` and every `learn-<slug>.html` topic page
+     are as much Learn as an exercise page is Practice, and without this they took the
+     Practice row - the drawer said Practice on a page of the learn site. The prefix is what
+     makes one test cover the hub and its topics together, exactly as the fallback covers
+     index.html and its twenty. */
+  function currentHref() {
+    if (base()) return '';
+    var file = (window.location && window.location.pathname || '').split('/').pop() || '';
+    if (file === 'learn.html' || file.indexOf('learn-') === 0) return 'learn.html';
+    /* THE FOUR APPS ARE NAMED HERE WITHOUT HAVING A ROW, and that is the whole point of the
+       list rather than an oversight in it. The fallback below catches every filename it has
+       not been told about and answers `practice.html`, so an app left out marks Practice -
+       which is what pnr.html did while it had no row. The apps are off the menu now, so what
+       being in this list buys is that they mark NOTHING: naming a page is how you say "not
+       Practice", and marking a row is a separate question the row list answers. Drop a name
+       and that page's drawer lights Practice, which is worse than lighting nothing. */
+    var known = ['index.html', 'simulator.html', 'synthesis.html', 'compiler.html', 'pnr.html',
+                 'code2silicon.html', 'projects.html'];
+    return known.indexOf(file) >= 0 ? file : 'practice.html';
+  }
+
+  var btn = mk('button', 'gh-menu-btn', 'navMenuBtn');
+  btn.setAttribute('type', 'button');
+  btn.setAttribute('aria-label', 'Open menu');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-controls', 'navDrawer');
+  btn.setAttribute('title', 'Menu');
+  btn.innerHTML = G.menu;
+  inner.insertBefore(btn, inner.firstChild);
+
+  var back = mk('div', 'nav-backdrop', 'navBackdrop');
+  var panel = mk('aside', 'nav-drawer', 'navDrawer');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  panel.setAttribute('aria-label', 'Site menu');
+
+  var head = mk('div', 'nav-drawer-head');
+  /* The wordmark is CLONED out of the header rather than pasted in as another copy of
+     those three paths: tools/logo.py rewrites every copy in the repo after a re-export,
+     and one it does not know about goes stale silently. Two simple selectors, not the
+     compound `.gh-mark svg`, because the stub DOM the harnesses use resolves one at a
+     time and the compound form returns null - the drawer would ship with no logo while
+     every test passed. On this light surface it drops the header's unconditional
+     invert (style.css does that) or it renders white on white. */
+  var wrap = document.querySelector('.gh-mark');
+  var src = wrap && wrap.querySelector('svg');
+  var mark = mk('span', 'nav-drawer-mark');
+  if (src && src.cloneNode) mark.appendChild(src.cloneNode(true));
+  head.appendChild(mark);
+  var close = mk('button', 'ex-close nav-drawer-close', 'navCloseBtn', '✕');
+  close.setAttribute('type', 'button');
+  close.setAttribute('title', 'Close');
+  close.setAttribute('aria-label', 'Close menu');
+  head.appendChild(close);
+  panel.appendChild(head);
+
+  var list = mk('nav', 'nav-drawer-list', 'navDrawerList');
+  var here = currentHref();
+  var pre = base();
+  for (var i = 0; i < ITEMS.length; i++) {
+    var row = mk('a', 'nav-row' + (ITEMS[i][1] === here ? ' current' : ''));
+    /* No row is absolute today, but the guard stays: it is what would keep an off-site
+       row from being turned into `../Baerilog/https://...`, and it costs one regex. */
+    row.setAttribute('href', /^https?:/.test(ITEMS[i][1]) ? ITEMS[i][1] : pre + ITEMS[i][1]);
+    var ic = mk('span', null, 'nav-row-icon');
+    ic.className = 'nav-row-icon';
+    ic.innerHTML = G[ITEMS[i][2]] || '';
+    row.appendChild(ic);
+    row.appendChild(mk('span', 'nav-row-label', null, ITEMS[i][0]));
+    list.appendChild(row);
+  }
+  panel.appendChild(list);
+  /* The panel is a CHILD of the backdrop, as every dialog here is: that is what makes
+     the ev.target guard below load-bearing rather than unfalsifiable - as siblings, a
+     click inside the panel could never reach the backdrop's handler. The pair is put
+     into the document at the very END of this function, not here, so that the pinned
+     state can be applied to an element the browser has never styled - see there. */
+  back.appendChild(panel);
+
+  function isOpen() { return panel.classList.contains('open'); }
+
+  /* PINNED, on a wide window: the same panel, staying put, with the page fully usable
+     beside it - so it is not a dialog while it is there, and four things follow. The
+     backdrop stops taking clicks and the scroll lock stops applying (both style.css,
+     keyed on `body.nav-pinned`), focus is NOT moved into the panel, and `aria-modal`
+     comes off it. That last one is the important one rather than the tidy one:
+     `aria-modal="true"` tells a screen reader the rest of the page is absent, which is
+     a lie the moment the reader can use it.
+
+     The breakpoint lives in style.css and this asks it through matchMedia with the same
+     number - two copies, which tools/check_theme.py compares, the arrangement this whole
+     builder already lives under. The query decides only whether pinning is AVAILABLE:
+     whether it is USED is remembered per reader, and CSS cannot read localStorage. */
+  var PIN_MQ = '(min-width: 1200px)';
+  function canPin() {
+    return !!(window.matchMedia && window.matchMedia(PIN_MQ).matches);
+  }
+  /* ONE key for the whole site, deliberately - the opposite of the netlist viewer's
+     per-app keys, and for the opposite reason: "keep the navigation open" is a single
+     preference about the site, not per-page state, so a reader who pins it on the
+     simulator wants it pinned on the next page too. Honoured in BOTH directions, so a
+     deliberate close is not undone by the next load, and defaulting to open is what
+     "keep it visible on a desktop" means. */
+  var PIN_KEY = 'navPinned';
+  function pinWanted() {
+    try { return localStorage.getItem(PIN_KEY) !== '0'; } catch (e) { return true; }
+  }
+  function rememberPin(on) {
+    try { localStorage.setItem(PIN_KEY, on ? '1' : '0'); } catch (e) { /* private mode */ }
+  }
+
+  /* The panel sits BELOW the bar while pinned, and the offset is measured rather than
+     written down: `.gh-header-inner` is `flex-wrap: wrap`, so the bar's height is not one
+     number. Measured here and on resize, which is the same hook the redraw below needs. */
+  function measureTop() {
+    var bar = document.querySelector('.gh-header');
+    var h = bar && bar.getBoundingClientRect ? bar.getBoundingClientRect().height : 0;
+    if (document.body.style) document.body.style.setProperty('--nav-top', (h || 0) + 'px');
+  }
+
+  /* Pinning and unpinning change the width of every card on the page, and this repo's
+     standing rule is that anything which does must let the renderers know - a stale
+     canvas is STRETCHED over an unchanged backing store rather than clipped, so every
+     click then lands at the wrong place. Rather than call into six apps, this dispatches
+     the event they all already listen to. Twice: once now, and once when the 220ms slide
+     has finished, because the first fires while the panel is still moving. */
+  function notifyResize() {
+    function fire() {
+      try {
+        window.dispatchEvent(new Event('resize'));
+      } catch (e) {
+        var ev = document.createEvent && document.createEvent('Event');
+        if (ev) { ev.initEvent('resize', true, true); window.dispatchEvent(ev); }
+      }
+    }
+    fire();
+    if (window.setTimeout) window.setTimeout(fire, 260);
+  }
+
+  /* TWO classes, and they are not two names for one thing. `nav-pinned` says the panel is
+     there; `nav-unpinned` says the reader has closed it, and its only job is to give back a
+     column the STYLESHEET reserved before this script ever ran - see style.css's flicker
+     note. So the common case (pinned) needs nothing from here to be laid out correctly, and
+     what this function does is keep the pair from ever both being true. */
+  function applyMode() {
+    var pinned = isOpen() && canPin();
+    document.body.classList[pinned ? 'add' : 'remove']('nav-pinned');
+    document.body.classList[!pinned && canPin() ? 'add' : 'remove']('nav-unpinned');
+    if (pinned) {
+      measureTop();
+      panel.setAttribute('role', 'navigation');
+      panel.removeAttribute('aria-modal');
+    } else {
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-modal', 'true');
+    }
+    return pinned;
+  }
+
+  function open(remember) {
+    /* One drawer at a time: cloud-ui.js's account drawer comes in from the right and is
+       looked up at click time, so neither depends on loading before the other. A PINNED
+       drawer is not one of the two, though - it is page furniture, and closing it because
+       the reader opened their account would fold it away and leave it folded. */
+    var ab = document.getElementById('cloudDrawerBack');
+    var ap = document.getElementById('cloudDrawer');
+    if (ab) ab.classList.remove('open');
+    if (ap) ap.classList.remove('open');
+    panel.classList.add('open');
+    back.classList.add('open');
+    document.body.classList.add('nav-open');
+    btn.setAttribute('aria-expanded', 'true');
+    var pinned = applyMode();
+    if (remember !== false) rememberPin(true);
+    /* Focus belongs to the reader while pinned. The panel is open at load there, so
+       moving focus into it would take it out of whatever they were typing in - and there
+       is nothing to trap it in front of, since the page behind is not covered. */
+    if (!pinned) {
+      var first = list.children[0];
+      if (first && first.focus) first.focus();
+    }
+  }
+  function shut(remember) {
+    panel.classList.remove('open');
+    back.classList.remove('open');
+    document.body.classList.remove('nav-open');
+    /* applyMode is the ONE writer of the two body classes, here as at load: it reads
+       `isOpen()`, which is already false by this point, so it removes `nav-pinned` and
+       gives the reserved column back with `nav-unpinned`. Writing either of them here as
+       well is how a second copy of that rule would start disagreeing with this one - and
+       measured as a mutant, the duplicate was simply redundant. */
+    applyMode();
+    btn.setAttribute('aria-expanded', 'false');
+    if (remember !== false) rememberPin(false);
+    if (btn.focus) btn.focus();
+  }
+  btn.addEventListener('click', function () {
+    var was = document.body.classList.contains('nav-pinned');
+    if (isOpen()) shut(); else open();
+    /* Only a change of PIN state moves the page; opening a modal drawer over it does
+       not, so the modal case must not pay for a redraw of every canvas. */
+    if (was !== document.body.classList.contains('nav-pinned')) notifyResize();
+  });
+  close.addEventListener('click', function () {
+    var was = document.body.classList.contains('nav-pinned');
+    shut();
+    if (was) notifyResize();
+  });
+  back.addEventListener('click', function (ev) {
+    /* A pinned drawer's backdrop takes no clicks at all (style.css), so this cannot fire
+       there - but the guard is written anyway, because `pointer-events` is one stylesheet
+       away and dismissing the furniture by clicking the page would be the worst of it. */
+    if (ev.target === back && !document.body.classList.contains('nav-pinned')) shut();
+  });
+  document.addEventListener('keydown', function (ev) {
+    /* Escape closes a dialog. A pinned drawer is not one, and Escape on these pages
+       already belongs to the exercise sheet and to the editors - so folding the
+       navigation away on a stray Escape while typing Verilog would be a surprise. */
+    if (ev.key === 'Escape' && isOpen() && !document.body.classList.contains('nav-pinned')) shut();
+  });
+
+  /* Crossing the breakpoint - a rotated tablet, a dragged window - changes which of the
+     two shapes this is. Widening back into pinnable territory re-opens it if that is
+     what the reader last asked for; narrowing turns the same panel into the modal it
+     would have been, without remembering that as a decision (`false`), or a phone visit
+     would clear a desktop preference. */
+  function onViewport() {
+    if (!canPin()) {
+      /* Both paths end in applyMode - shut() calls it - which is what drops `nav-unpinned`
+         below the breakpoint, where the stylesheet reserves nothing for it to describe. */
+      if (document.body.classList.contains('nav-pinned')) shut(false);
+      else applyMode();
+      return;
+    }
+    measureTop();
+    if (!isOpen() && pinWanted()) open(false);
+    else applyMode();
+  }
+  window.addEventListener('resize', onViewport);
+  /* And once more at `load`, because the bar is not finished when this runs: cloud-ui.js
+     appends the account control into it afterwards, which made it 2px taller than the
+     panel had been told - so the pinned panel overlapped the bottom of the bar by exactly
+     that. Measured in a browser rather than reasoned about; the resize hook above would
+     have corrected it at the reader's first window drag, which is not a fix. */
+  window.addEventListener('load', measureTop);
+
+  /* Open at load where it is wanted, and BEFORE the panel is in the document: an element
+     that has never been styled has nothing to transition from, so the drawer is simply
+     there on the first paint instead of sliding in on every page load. Nothing is
+     notified, because everything on the page measures itself after this runs. */
+  if (canPin() && pinWanted()) open(false);
+  else if (canPin()) document.body.classList.add('nav-unpinned');
+  document.body.appendChild(back);
+})();
+/* <<< NAV MENU */
+</script>
+
+<div class="gh-page">
+  <h1 class="gh-crumb">
+    <a href="index.html">Baerilog</a><span class="sep">/</span><span class="here">My Projects</span>
+  </h1>
+  <div class="gh-sub">Your saved work — every project you have named, on this device and on every machine you sign in from</div>
+
+  <div class="gh-box" id="projBox"></div>
+
+</div>
+
+<!-- The same footer every other page carries, byte-for-byte with the one in shell.js's
+     practice-markup slice, so this listing ends the way the two hubs it sits beside do.
+
+     OUTSIDE .gh-page deliberately: `.gh-page a` sets --accent-fg and has the same
+     specificity as `.footer a`, with practice.css loading after app.css - so inside the
+     wrapper the link would come out blue here and muted on every other page. -->
+<div class="footer">© Jeremy Bae 2026 · <a href="https://github.com/jeremyjbae" target="_blank" rel="noopener">github.com/jeremyjbae</a></div>
+
+<!-- All four, in load order, and BEFORE this page's own script for the reason both hubs
+     record: the listing reads CLOUD at parse time, so cloud.js has to already exist.
+     cloud-sync.js finds no #codeInput here and returns early - a listing has no editor -
+     but it is loaded anyway so the four are one block wherever they appear, which is what
+     build.py's all-or-none check asserts. Every one is inert until cloud-config.js names a
+     project; unconfigured, this page renders its own empty state and nothing else. -->
+<script src="cloud-config.js"></script>
+<script src="cloud.js"></script>
+<script src="cloud-ui.js"></script>
+<script src="cloud-sync.js"></script>
+<script>
+'use strict';
+/* THE PROJECT LISTING. Every named document the reader has, newest first, each linking
+   into the app that owns it with that project loaded.
+ *
+ * A PROJECT IS A ROW WHOSE VERDICT CARRIES A NAME, and that is the whole data model. The
+ * `item` column was always the seam for this - docs/cloud.md names it as such - so a
+ * project is `(app, item = <minted id>)` with `{name: "..."}` in the verdict jsonb, and
+ * there is NO schema change, no new table and no new RLS policy behind any of it. Two
+ * consequences worth knowing before editing:
+ *
+ *   - `item = 'default'` is the SCRATCH document each app already autosaves to, and it is
+ *     deliberately not a project. It has no name, so it does not appear here; that is the
+ *     same test, not a special case.
+ *   - a verdict with a `name` and no `state` is INERT in every other reader of that column
+ *     (cloud-ui.js's docRow, home.js's verdictText, both hubs' progressBadge all branch on
+ *     `state`), which is what let this feature reuse the column rather than add one.
+ *
+ * APP-AGNOSTIC BY CONSTRUCTION. Nothing below tests for code2silicon: a row is a project
+ * because it has a name, and the app is a column in the listing. Code2Silicon happens to be
+ * the only app that mints one today, so a second app growing a Save As needs an APPS entry
+ * here and nothing else.
+ *
+ * LOCAL FIRST, like every other surface here: CLOUD.list() is synchronous and local, so the
+ * table paints at once from what this browser holds, and CLOUD.listAll() then merges the
+ * rows other machines have and repaints. A signed-out reader sees their own projects; that
+ * is not a degraded mode, it is the design.
+ *
+ * BUILT WITH createElement, never one innerHTML string, and this page has two reasons where
+ * the hubs have one. The stub DOM the harness runs against parses no markup, so a row
+ * assembled from a string has no Rename button to press and the feature would be untestable
+ * headlessly - and a project NAME is arbitrary text the reader typed, which is the one
+ * genuine injection surface in this repo. textContent cannot be escaped wrongly. */
+var PROJ_APPS = {
+  code2silicon: { title: 'Code2Silicon', href: 'code2silicon.html' }
+};
+
+(function () {
+  var box = document.getElementById('projBox');
+  if (!box) return;
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined && text !== null) e.textContent = text;
+    return e;
+  }
+
+  /* The header: a title, the import control and a count, and no chips at all. The practice hub
+     filters because it has twenty rows in five categories that a reader is choosing BETWEEN;
+     these are the reader's own and there is no facet to filter on until there are two apps
+     writing them. */
+  /* ---- HOW A PROJECT COMES INTO BEING, said ABOVE the table ----
+     Both routes named in one sentence, where the table can only show what already exists. It sits
+     outside the Box rather than in its header because it is about the page rather than about the
+     listing - and it is the first thing a reader with no projects needs, which is most readers the
+     first time.
+
+     IT IS ALSO THE ONLY IMPORT CONTROL NOW. `Import File` was a button in the Box header, and
+     keeping both would be two controls for one action - the duplication this page's own
+     Code2Silicon change just removed. The link IS the button: a real <button> styled as one, so it
+     keeps a button's focus ring and keyboard behaviour rather than being an <a> that goes nowhere.
+
+     THE IMPORT HALF IS OMITTED WHERE IT CANNOT WORK. CLOUD_UI publishes below its own configured()
+     guard, so with no Supabase project there is no name dialog to ask with - and a link that does
+     nothing is worse than a sentence that does not offer it. The Code2Silicon half is always there,
+     since that page works with no account at all. */
+  var create = el('div', 'proj-create');
+  create.id = 'projCreate';
+  create.appendChild(document.createTextNode('Create a new project from '));
+  var c2s = el('a', null, 'Code2Silicon');
+  c2s.setAttribute('href', 'code2silicon.html');
+  create.appendChild(c2s);
+  if (window.CLOUD_UI && window.CLOUD_UI.askName) {
+    create.appendChild(document.createTextNode(', or '));
+    importBtn = el('button', 'gh-row-act', 'import a file');
+    importBtn.type = 'button';
+    importBtn.id = 'projImportBtn';
+    importBtn.addEventListener('click', function () { fileInput.click(); });
+    create.appendChild(importBtn);
+  }
+  create.appendChild(document.createTextNode('.'));
+  box.parentElement.insertBefore(create, box);
+
+  var head = el('div', 'gh-box-header');
+  head.appendChild(el('span', 'gh-strand-title', 'Projects'));
+  /* ---- IMPORT: A FILE BECOMES A PROJECT ----
+     This is the only way a project is created other than pressing Save in Code2Silicon, and both
+     go through the same mint, so there is one shape of thing in this table however it got here.
+     It is also why `Import File` came OFF that page: it dropped a file into the editor where only
+     the scratch document remembered it, and a project is a thing you can come back to.
+
+     ONLY WHERE CLOUD_UI EXISTS. That file publishes below its own configured() guard, so on a
+     checkout with no Supabase project there is no name dialog - and an import that cannot ask for
+     a name would have to invent one silently. Same test the Save button on Code2Silicon makes.
+
+     ONE FILE, not `multiple`: a name is asked for per import, and several files would either mean
+     several dialogs in a row or filenames used silently for all but the first. Adding `multiple`
+     later is one attribute plus a loop, and the naming question is the reason it is not here now. */
+  var importBtn = null, fileInput = null;
+  if (window.CLOUD_UI && window.CLOUD_UI.askName) {
+    fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    /* The same list the editors accept, so what can be imported is what can be opened. */
+    fileInput.accept = '.v,.sv,.vh,.txt';
+    fileInput.id = 'projImportInput';
+    fileInput.style.display = 'none';
+    fileInput.addEventListener('change', function () { importPicked(fileInput.files); });
+    head.appendChild(fileInput);
+  }
+  var countEl = el('span', 'gh-count');
+  countEl.id = 'projCount';
+  head.appendChild(countEl);
+  box.appendChild(head);
+
+  /* Said where the reader is looking - beside the control, in the box header - rather than in a
+     dialog they have already dismissed. It is the only thing on this page that reports a failure,
+     so it is one element reused rather than one per attempt. */
+  var noteEl = el('div', 'gh-row gh-empty');
+  noteEl.id = 'projNote';
+  noteEl.style.display = 'none';
+  box.appendChild(noteEl);
+  function say(msg) {
+    noteEl.textContent = msg || '';
+    noteEl.style.display = msg ? '' : 'none';
+  }
+
+  /* THE SIZE IS REFUSED HERE, not left to the push. cloud.js caps a source at SOURCE_LIMIT and
+     reports `too-big` when it tries to send one - which is after the row exists, so the reader
+     would get a project in the table that can never leave the machine. The limit is READ from
+     cloud.js rather than restated, so the two cannot disagree about what fits. */
+  function sourceLimit() {
+    var l = window.CLOUD && window.CLOUD._limits;
+    return (l && l.source) || 262144;
+  }
+
+  function importPicked(files) {
+    var f = files && files[0];
+    /* The input is cleared either way, so picking the SAME file twice in a row still fires
+       `change` the second time - without it a failed import could not be retried by re-picking. */
+    fileInput.value = '';
+    if (!f) return;
+    say('');
+    var reader = new FileReader();
+    reader.onerror = function () { say('That file could not be read.'); };
+    reader.onload = function () {
+      var text = String(reader.result == null ? '' : reader.result);
+      if (!text.trim()) { say('That file is empty, so there is nothing to import.'); return; }
+      if (text.length > sourceLimit()) {
+        say('That file is ' + Math.round(text.length / 1024) + ' KB, over the '
+            + Math.round(sourceLimit() / 1024) + ' KB a project can hold.');
+        return;
+      }
+      /* THE NAME DEFAULTS TO THE FILENAME WITHOUT ITS EXTENSION, which is what the reader already
+         called this work - and it is offered rather than taken, because a filename is often
+         `top.v` and a project list of those is no list at all. */
+      var base = String(f.name || '').replace(/\.[^.]+$/, '') || 'Imported project';
+      window.CLOUD_UI.askName({
+        title: 'Import as a project',
+        value: base,
+        note: 'This becomes a project you can open in Code2Silicon. '
+            + 'The file itself is not changed.',
+        ok: 'Import'
+      }, function (name) {
+        /* THE SAME MINT CODE2SILICON'S SAVE USES, deliberately: id, then the document and the name
+           in one save. Nothing here redirects a sync layer - there is no editor on this page - so
+           this is the whole of it. */
+        window.CLOUD.save('code2silicon', window.CLOUD.newItem(),
+                          { source: text, verdict: { name: name } });
+        say('');
+        /* Repainted from what was STORED rather than from what was sent, and the reader is left on
+           the list: the row appears with its name, and opening it is one click. Jumping into the
+           app would take them away from the page they came to in order to organise. */
+        paint();
+      });
+    };
+    reader.readAsText(f);
+  }
+
+
+  var rowsEl = document.createElement('div');
+  rowsEl.id = 'projRows';
+  box.appendChild(rowsEl);
+
+  /* THE EMPTY STATE IS REAL AND IS THE FIRST THING MOST READERS SEE, so it says what to do
+     rather than that there is nothing. It is a permanent element rather than one render()
+     creates, for the reason the hub's own empty row is: the harness has to be able to find it
+     whether or not it is showing. */
+  var emptyEl = el('div', 'gh-row gh-empty');
+  emptyEl.id = 'projEmpty';
+  box.appendChild(emptyEl);
+
+  /* Relative time from CLOUD_UI, so this page, the account drawer's My Progress list and the
+     dashboard cannot describe the same instant three ways. The fallback is not defensive
+     noise: cloud-ui.js returns before publishing CLOUD_UI on an unconfigured checkout. */
+  function ago(t) {
+    if (window.CLOUD_UI && window.CLOUD_UI.ago) return window.CLOUD_UI.ago(t);
+    return t ? new Date(t).toLocaleDateString() : '';
+  }
+
+  /* A NAME IS WHAT MAKES A ROW A PROJECT. Read through one function so the listing, the
+     count and the empty state cannot disagree about what they are counting. */
+  function nameOf(d) {
+    return (d && d.verdict && typeof d.verdict.name === 'string') ? d.verdict.name : '';
+  }
+  function isProject(d) { return !!nameOf(d) && !!PROJ_APPS[d.app]; }
+
+  function hrefFor(d) {
+    var app = PROJ_APPS[d.app];
+    /* `?project=` is read by the owning page's own early inline script, which sets CLOUD_ITEM
+       before cloud-sync.js seeds the editor - so following this link opens that document
+       rather than the app's scratch. encodeURIComponent because an id is minted here today
+       and could be anything tomorrow. */
+    return app ? app.href + '?project=' + encodeURIComponent(d.item) : '';
+  }
+
+  var docs = [];
+
+  function render() {
+    rowsEl.textContent = '';
+    var shown = docs.filter(isProject);
+    shown.forEach(function (d) { rowsEl.appendChild(row(d)); });
+    countEl.textContent = shown.length + (shown.length === 1 ? ' project' : ' projects');
+    emptyEl.textContent = '';
+    if (shown.length) {
+      emptyEl.style.display = 'none';
+      return;
+    }
+    emptyEl.style.display = '';
+    /* SHORT, because the line above the table already says how to make one. It used to carry both
+       routes itself, which was right while it was the only place they were named and is a sentence
+       said twice now. */
+    emptyEl.appendChild(el('span', null, 'No projects yet.'));
+  }
+
+  function row(d) {
+    var r = el('div', 'gh-row');
+    var href = hrefFor(d);
+    /* The NAME is the link, because the name is what the reader is looking for. An anchor
+       even for a row known only from the server: following it opens that app, which then
+       pulls the document - which is what makes a project usable on a second machine before
+       anything has synced. */
+    var a = el(href ? 'a' : 'span', 'gh-proj-name', nameOf(d));
+    if (href) a.setAttribute('href', href);
+    r.appendChild(a);
+    r.appendChild(el('span', 'gh-label', PROJ_APPS[d.app].title));
+    /* `cloud · ` on a row this browser does not hold, the same prefix and the same reason as
+       cloud-ui.js's own document list: it is honest about where the row came from, and it is
+       what tells "saved elsewhere" from "saved here and not yet pushed". */
+    r.appendChild(el('span', 'gh-slug', (d.here ? '' : 'cloud · ') + ago(d.updatedAt)));
+
+    var acts = el('span', 'gh-row-actions');
+    /* RENAME IS OFFERED ONLY ON A ROW THIS BROWSER HOLDS, and that is a data-loss guard
+       rather than a limitation anyone chose. CLOUD.save fills an absent `source` from the
+       PREVIOUS record - and for a row known only from the server there is no previous record,
+       so `prev.source` is undefined, pushNow sends `source: null`, and renaming a project
+       saved on another machine would DESTROY its code from a page that never had it. That is
+       the whole reason listRemote marks rows `here: false`: a remote row is listed, never
+       adopted, and it carries no source to preserve.
+
+       So the row offers to open it instead. Following that link runs the owning page, which
+       pulls the document under the conflict rule - after which this browser holds it and the
+       ordinary Rename is there. One extra step on a second machine, against silently emptying
+       a project; and it is the same trade cloud-ui.js's own listing already makes by showing
+       remote rows without acting on them. */
+    if (d.here) {
+      var ren = el('button', 'gh-row-act', 'Rename');
+      ren.type = 'button';
+      ren.setAttribute('data-item', d.item);
+      ren.addEventListener('click', function () { rename(d); });
+      acts.appendChild(ren);
+    } else if (href) {
+      var open = el('a', 'gh-row-act', 'Open to rename');
+      open.setAttribute('href', href);
+      open.setAttribute('title', 'This project is saved in the cloud but not on this device. '
+                               + 'Open it once and it can be renamed from here.');
+      acts.appendChild(open);
+    }
+    /* REMOVE, ON EVERY ROW - unlike Rename, which a cloud-only row cannot have. The asymmetry is
+       not an oversight: renaming needs the PREVIOUS record to fill in the source it does not touch,
+       and a remote-only row has none, so the push would carry `source: null` and empty the project.
+       Deleting needs no previous anything. `CLOUD.forget` removes the local record if there is one
+       and DELETEs the server row either way, so it is the same operation whichever kind of row this
+       is, and `progress_delete_own` in tools/schema.sql is what confines it to the reader's own.
+
+       BEHIND A CONFIRMATION, because it is the one control on this page that destroys work and it
+       sits one click from Rename. cloud-ui.js's askConfirm holds the rule its two siblings do: the
+       SAFE outcome is what doing nothing gives you, so Escape, Cancel and the backdrop all keep the
+       project and only the red button removes it.
+
+       THE NOTE SAYS WHAT IS ACTUALLY LOST, which for a signed-in reader is every machine - the
+       server row goes too, so this is not "remove it from this device". Saying otherwise would be
+       the reassuring-but-false half of a delete. */
+    var rm = el('button', 'gh-row-act proj-remove', 'Remove');
+    rm.type = 'button';
+    rm.setAttribute('data-item', d.item);
+    rm.addEventListener('click', function () {
+      if (!window.CLOUD_UI || !window.CLOUD_UI.askConfirm) return;
+      window.CLOUD_UI.askConfirm({
+        title: 'Remove ' + nameOf(d) + '?',
+        note: 'This deletes the project and the design in it. If you are signed in it goes from '
+            + 'every machine, not just this one, and it cannot be undone.',
+        ok: 'Remove project'
+      }, function () {
+        window.CLOUD.forget(d.app, d.item);
+        paint();
+      });
+    });
+    acts.appendChild(rm);
+    r.appendChild(acts);
+    return r;
+  }
+
+  /* RENAME WRITES THE VERDICT AND NOTHING ELSE, and that is the one line in this file that
+     could destroy work. CLOUD.save tests `'verdict' in fields` rather than truthiness, and
+     leaves `source` at its previous value when the field is absent - so omitting it is what
+     keeps the reader's code intact. Passing `source: ''` here, or reading it off a listing
+     row (which carries a `bytes` count and never the text), would overwrite the project with
+     nothing. See the `d.here` guard above for the other half of the same hazard. */
+  function rename(d) {
+    if (!window.CLOUD_UI || !window.CLOUD_UI.askName) return;
+    window.CLOUD_UI.askName({
+      title: 'Rename project',
+      value: nameOf(d),
+      ok: 'Rename'
+    }, function (name) {
+      window.CLOUD.save(d.app, d.item, { verdict: { name: name } });
+      /* Repaint from what was STORED rather than from the name we just sent: save() is what
+         decides what the record holds, and reading it back is what makes this row agree with
+         the listing after a reload. Configured, the subscribe below has already repainted by
+         the time this runs - this is what makes rename correct on its own terms rather than
+         dependent on that. */
+      paint();
+    });
+  }
+
+  /* ---- the data, local first ---------------------------------------------- */
+
+  function paint() {
+    docs = (window.CLOUD && window.CLOUD.configured()) ? window.CLOUD.list() : [];
+    render();
+    if (!window.CLOUD || !window.CLOUD.configured() || !window.CLOUD.signedIn()) return;
+    /* Then the remote half, which may add projects saved on another machine. listAll only
+       ever ADDS - it merges local with remote and never adopts, so this cannot overwrite a
+       local record. A failure leaves the local paint exactly as it was. */
+    window.CLOUD.listAll().then(function (r) {
+      if (r && r.docs) { docs = r.docs; render(); }
+    }, function () { /* offline: the local paint stands */ });
+  }
+
+  paint();
+
+  /* Signing in, signing out, or a push landing all change what this table should show, so it
+     repaints on every state change - the same subscription both hubs use for their badges.
+     render() emits nothing itself, so this cannot loop. */
+  if (window.CLOUD && window.CLOUD.configured()) window.CLOUD.subscribe(paint);
+})();
+</script>
+</body>
+</html>

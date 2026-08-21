@@ -60,7 +60,8 @@ window.CLOUD = (function () {
      `learn` is here because a topic's quiz reports a verdict now; it was NOT, so cloud-sync's
      own learn branch stored nothing at all and the hub's badge could never appear. Kept in step
      with the CHECK constraint in tools/schema.sql, which test_cloud.py compares them for. */
-  var APPS = ['practice', 'learn', 'simulator', 'synthesis', 'compiler', 'pnr'];
+  var APPS = ['practice', 'learn', 'simulator', 'synthesis', 'compiler', 'pnr',
+  'code2silicon'];
 
   /* ---- storage -------------------------------------------------------- */
 
@@ -351,10 +352,22 @@ window.CLOUD = (function () {
           /* Record what the server now holds, so a later pull can tell a local
              edit from a local copy. Re-read rather than reusing `rec`: the
              learner may well have typed more while this was in flight, and
-             marking THAT text as synced would strand it. */
-          var cur = localGet(app, item) || rec;
-          cur.synced = rec.source;
-          localPut(app, item, cur);
+             marking THAT text as synced would strand it.
+
+             AND IF IT IS GONE, IT STAYS GONE - no `|| rec` fallback. `forget` may
+             have run while this push was in the air, and writing the captured
+             record back RESURRECTED it in the reader's own browser: the row
+             reappeared in My Projects moments after they removed it, with the
+             server row already deleted. The note on `forget` accepts that a POST
+             may land after the DELETE - that is the server's ordering, and
+             local-first accepts it - but it never meant the local record could
+             come back. Found by the Remove button's own test, which deleted a
+             project while its seeding push was still pending. */
+          var cur = localGet(app, item);
+          if (cur) {
+            cur.synced = rec.source;
+            localPut(app, item, cur);
+          }
           lastError = null;
         } else if (!r.offline) {
           lastError = r.error;
@@ -448,6 +461,30 @@ window.CLOUD = (function () {
         settle(r);
       });
     });
+  }
+
+  /* ---- minting a document name ---------------------------------------- */
+
+  /* A NEW `item`, for an app that has more than one document. Code2Silicon's Save mints one when
+     it turns the scratch document into a named project, and projects.html mints one when it
+     imports a file - two callers, so the rule lives here rather than in whichever of them was
+     written first. It is a fact about how a row is keyed, which is this file's business.
+
+     OPAQUE AND PERMANENT, AND DELIBERATELY NOT DERIVED FROM THE NAME. A name is the reader's: it
+     can be changed and it can be repeated - two projects may both be called `Counter` - and a
+     name-derived key would silently merge them, then un-merge them on a rename. This is a primary
+     key column (see tools/schema.sql), so it has to outlive whatever the row is called.
+
+     Time in base 36 so a listing sorts and reads sensibly, plus four random characters so two
+     mints in the same millisecond - two tabs, a double press - cannot collide. Not a UUID:
+     there is no crypto dependency in this file and the collision domain is one person's own
+     documents. */
+  function newItem() {
+    var t = Date.now().toString(36), r = '';
+    for (var i = 0; i < 4; i++) {
+      r += 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)];
+    }
+    return 'p-' + t + '-' + r;
   }
 
   /* ---- the document list, for "My Design" ------------------------------ */
@@ -725,7 +762,7 @@ window.CLOUD = (function () {
     configured: configured, signedIn: signedIn, info: info, subscribe: subscribe,
     requestCode: requestCode, verifyCode: verifyCode, signOut: signOut,
     save: save, load: load, forget: forget, pull: pull, flush: flush, resolve: resolve,
-    setName: setName, list: list, listAll: listAll,
+    setName: setName, list: list, listAll: listAll, newItem: newItem,
     /* Exposed for the harnesses only - they assert the limit and the app list
        agree with schema.sql rather than restating either. */
     _limits: { source: SOURCE_LIMIT, apps: APPS },

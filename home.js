@@ -45,12 +45,13 @@
   var PRAC = window.PRACTICE_MANIFEST || [];
   var CATS = window.PRACTICE_CATEGORIES || [];
 
-  var APP_TITLES = { simulator: 'Simulator', synthesis: 'Synthesizer',
+  var APP_TITLES = { code2silicon: 'Code2Silicon',
+                     simulator: 'Simulator', synthesis: 'Synthesizer',
                      pnr: 'Place & Route', compiler: 'Compiler' };
-  /* The order the drawer lists them in, which is the order the flow runs in - so
-     Place & Route sits after the synthesizer here too, and My Projects reads the same
-     way as the navigation beside it. */
-  var APP_ORDER = ['simulator', 'synthesis', 'pnr', 'compiler'];
+  /* `APP_ORDER` IS GONE with the fixed row-per-app My Projects section it ordered. That section
+     listed the five apps' scratch documents; it lists the reader's NAMED projects now, newest
+     first, so there is no fixed order left to state. `APP_TITLES` stays - it is what names the
+     app a project belongs to, which is the column that replaced the row. */
   var NEXT_MAX = 3;
 
   /* Relative time comes from CLOUD_UI so the dashboard and the account drawer's My
@@ -240,14 +241,43 @@
     }
     dash.appendChild(s2);
 
-    // ---- My Projects: the three app documents, a FIXED set in a fixed order, so the
-    // section never reorders under the reader and an app with nothing saved says so.
-    var s3 = section('My Projects', '');
-    APP_ORDER.forEach(function (app) {
-      var d = (by[app] || {})['default'];
-      s3.appendChild(row(app + '.html', APP_TITLES[app], 'Your document',
-                         d && d.updatedAt ? 'edited ' + ago(d.updatedAt) : 'nothing saved yet'));
+    // ---- My Projects: the reader's own NAMED documents, which is what the My Projects page
+    // lists and what the drawer row of that name goes to. It used to be the three app
+    // documents - a fixed row per app, each showing its `item: 'default'` scratch document -
+    // and that is a different thing wearing the same title: a scratch document is what an app
+    // autosaves to, has no name, and `projects.html` deliberately does not list it. So the
+    // section and the page it is named after disagreed about what a project is.
+    //
+    // A ROW IS A PROJECT BECAUSE IT HAS A NAME, which is `projects.html`'s own test and is
+    // app-agnostic on purpose: Code2Silicon is the only app that mints one today, so this
+    // reads as a list of its documents, and a second app growing a Save As needs nothing here.
+    // The APP column is what says which app owns it, exactly as on that page.
+    var projects = [];
+    Object.keys(by).forEach(function (app) {
+      Object.keys(by[app]).forEach(function (item) {
+        var d = by[app][item];
+        if (d && d.verdict && typeof d.verdict.name === 'string' && d.verdict.name) projects.push(d);
+      });
     });
+    // NEWEST FIRST, which is the order `projects.html` shows and the order a dashboard wants:
+    // the thing you were last working on is the thing you are most likely to want.
+    projects.sort(function (a, b) { return (b.updatedAt || 0) < (a.updatedAt || 0) ? -1 : 1; });
+    // UNCAPPED, for the reason In Progress above is: showing some of a reader's own work and
+    // not saying so is the silent truncation this repo keeps designing against.
+    var s3 = section('My Projects', projects.length ? String(projects.length) : '');
+    if (!projects.length) {
+      s3.appendChild(empty('No projects yet — press Save in Code2Silicon to name one.'));
+    } else {
+      projects.forEach(function (d) {
+        /* `?project=` is read by the owning page's own early inline script, the same link
+           `projects.html` builds - so a row here opens the app with that project loaded rather
+           than over the reader's scratch document. An app with no page falls back to no href,
+           which `row` renders as a dead link rather than a wrong one. */
+        var href = APP_TITLES[d.app] ? d.app + '.html?project=' + encodeURIComponent(d.item) : '';
+        s3.appendChild(row(href, d.verdict.name, APP_TITLES[d.app] || d.app,
+                           d.updatedAt ? 'edited ' + ago(d.updatedAt) : ''));
+      });
+    }
     dash.appendChild(s3);
   }
 
