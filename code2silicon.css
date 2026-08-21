@@ -1,0 +1,106 @@
+/* Baerilog/code2silicon.css - the four cards code2silicon.js appends, and nothing else.
+ *
+ * WHAT IS NOT HERE is deliberate. The page's tokens, the Box, the bar, the cards, the
+ * editors, the console panel, the tab strip and the `(?)` popovers all come from app.css;
+ * the netlist and its viewer from synth.css; the placement drawing's own classes
+ * (.pnr-inst-box, .pnr-name, .pnr-cut-line, the section's tags) and .pnr-table from
+ * pnr.css, which is generated out of pnr.html. So this file is one figure box, one palette
+ * and one caption - the geometry that is genuinely this page's.
+ *
+ * The names deliberately ECHO pnr.html's `fab-*` set rather than inventing a third idiom:
+ * the same box, the same pill, the same tokens, because a reader who has seen the Place &
+ * Route app should recognise the figure here. They are `c2s-*` rather than shared because
+ * that app's rules live in its own additions and reach this page through no file.
+ */
+
+/* THE FIGURE: a palette above a drawing, inside one bordered surface. A row rather than
+   pnr.html's column, because that app has a narrow card beside a wide one and this page's
+   cards are full width - so the masks wrap along the top and the drawing gets the height. */
+.c2s-figure {
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* THE DRAWING TARGET, and `min-width: 0` is the load-bearing line: this is a flex item
+   holding an SVG that can be thousands of pixels wide, and a flex item's automatic minimum
+   is its content's, so without it the card grows instead of this box scrolling - the
+   `.card { min-width: 0 }` trap CLAUDE.md records, one level down. */
+/* THE LAYOUT'S BOX IS A WINDOW, not a box as tall as its drawing - which is what makes a zoom
+   mean anything: `.pnr-wrap` on the Place & Route page is exactly this, 460px with the drawing
+   scrolled inside it, and the pan moves the scroll offsets rather than a transform (see
+   `attachView` in practice-pnr.js). `display: flex` with the drawing's own `margin: 0 auto`
+   centres a fitted layout instead of leaving it in the top-left corner with all the slack on one
+   side, and `cursor: grab` is the only part of the pan a stylesheet carries - it says the drawing
+   can be moved before anyone tries. */
+.c2s-draw {
+  min-width: 0;
+  overflow: auto;
+  position: relative;
+}
+#c2sLayoutDraw {
+  height: 460px;
+  display: flex;
+  cursor: grab;
+}
+/* The pills sit between the section's head and the section, on the card whose drawing they act
+   on. `align-self` was for the figure's flex column they used to live in; here they are a card
+   child, so the gap is theirs. */
+#c2sFabLayers { margin-bottom: 8px; }
+/* A CUT IS CHOSEN BY CLICKING THE LAYOUT, so the layout says so with the pointer. Only once
+   there is a section to move: the class is on the card, set by the stage. */
+.c2s-card-fab-live #c2sLayoutDraw { cursor: ew-resize; }
+
+/* NO MASK PALETTE AND NO CUT CAPTION HERE. Both were this page's own restatement of pnr.html's,
+   and both are now drawn by `attachFabrication` inside the figure - so they are pnr.css's
+   `.fab-layer-btn` and `.fab-sec-head`, which this page already loads, and there is one of each
+   rather than two that could come to look different. A rule left behind would be dead, which is
+   what test_code2silicon.py now refuses. */
+
+/* THE STAGE BUTTONS sit in the run toolbar beside Run and Synthesize, and are the SAME
+   primary green: these are the page's five actions and they are peers, which is the
+   departure from Primer's one-primary-per-card that the Synthesize button already makes on a
+   practice page for exactly this reason. `.btn` gives them everything but the gap. */
+.c2s-figure canvas { max-width: 100%; }
+
+/* THE CRUMB'S SAVE CONTROL. It sits in `.gh-crumb`, which is a wrapping flex row - so the
+   group needs no placement of its own and gets one property: it is pushed to the far end,
+   where every other action row on this site puts its controls.
+
+   `margin-left: auto` PUSHES IT RIGHT AND DOES NOT MAKE IT LAST, which is the distinction
+   practice.css's `.ex-strip-actions` records after being caught by it: an auto margin absorbs
+   the slack before its own item and holds nothing back that is appended afterwards. Nothing
+   appends to this crumb today - the parse-time block that builds it is the only writer - and
+   the note is here so that stays a fact rather than an accident.
+
+   A GROUP for one button, deliberately, and for the reason that same rule gives: the placement
+   belongs to the SET of controls, so a second one (a Delete, an Export) joins the row rather
+   than needing an offset measured off the width of the word "Save".
+
+   The button is `.btn.secondary` - grey, not green. This page's one primary action is the flow
+   strip's current stage, and two greens in view would each say "this is the thing to press".
+   Saving is what you do WITH the work, not a stage of making it. */
+.c2s-crumb-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+/* THE BUTTON MUST NOT SET THE ROW'S HEIGHT, and that is measured rather than asserted. The
+   crumb is 20px text whose line box is ~30px, and `.btn` is 18px of line-height plus its own
+   7px of padding each side = 32 - so a default-padded button made this crumb 48px against
+   every sibling page's 46. Two pixels, which is exactly the discrepancy CLAUDE.md records for
+   pnr.html's bar meeting the pinned drawer at the wrong height: invisible on the page and
+   plain in a side-by-side.
+
+   So the padding is trimmed to bring the box under the text's own line box (18 + 2x5 = 28
+   against ~30), and the crumb measures 46 on both pages. `line-height` is deliberately NOT
+   touched - `.btn` pins it at 18px so the ⏲ busy glyph cannot resize the button, and
+   overriding it here would give this one button back the hazard that rule exists to remove. */
+.c2s-crumb-actions .btn { padding-top: 5px; padding-bottom: 5px; }

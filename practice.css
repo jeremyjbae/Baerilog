@@ -101,7 +101,13 @@ body .btn.ex-reset:hover { background: var(--danger-subtle); }
 .ex-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 2000;
+  /* THE DIALOG LAYER, above BOTH drawers - see the ladder in style.css. At 2000 this sheet
+     sat UNDER the navigation drawer, so on a wide window the pinned panel covered its left
+     edge and the brief read as `XERCISE`; the panel also stood above the sheet's own dim,
+     which is what made it look lit while the page behind was not. A drawer is furniture and
+     a dialog is modal, so the dialog wins - and its backdrop then dims the panel too. The
+     Reset confirmation rides along, since it reuses these two classes. */
+  z-index: var(--z-dialog);
   display: none;
   align-items: center;
   justify-content: center;
@@ -383,6 +389,70 @@ body.ex-sheet-open { overflow: hidden; }
 }
 .gh-prog.pass { color: var(--success-fg); border-color: var(--success-fg); background: var(--success-subtle); }
 .gh-prog.fail { color: var(--danger-fg); border-color: var(--danger-fg); background: var(--danger-subtle); }
+
+/* The line above the table that says how a project comes into being. Muted and small, because it
+   is instruction rather than content - the same weight `.gh-readme` gives its prose - and it sits
+   between the sub-line and the Box, so its margins have to hold it off both. */
+.proj-create {
+  max-width: 1328px;
+  margin: 0 auto 12px;
+  padding: 0 24px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.proj-create a, .proj-create .gh-row-act { font-size: 13px; }
+/* The one control on this page that destroys something, so it is the one that is not accent. It
+   keeps `.gh-row-act`'s borderless shape - a row of real buttons would out-shout the names beside
+   them - and takes --danger-fg, the same red the Run button's error state and the sign-out confirm
+   use rather than a second one.
+
+   `body ` IS LOAD-BEARING, NOT DECORATION, and this shipped blue without it. `.gh-row-act` sets
+   `color: var(--accent-fg)` and is also one class, so the two are EQUAL specificity and source
+   order decides - and that rule sits below this one in this file, so it won: the one destructive
+   control on the page rendered in the same blue as a link, which is the exact bug CLAUDE.md already
+   records for `.ex-reset` against `.btn.outline`. Measured in a browser as rgb(68,147,248) before
+   and rgb(248,81,73) after. The prefix rather than a reorder, so the rule is order-independent and
+   cannot be broken again by moving either block. */
+body .proj-remove { color: var(--danger-fg); }
+
+/* --- the My Projects listing (projects.html) ---
+   IT REUSES .gh-box / .gh-row / .gh-label ABOVE rather than restating them, so the three
+   listings on this site - practice, learn, projects - are one listing in three places. What
+   is genuinely this page's is below: a row here carries a NAME the reader typed and two
+   controls, where a hub row carries a title from a manifest and none.
+
+   A NAME IS NOT A TITLE, and that is the whole of why it gets a rule. A manifest title is
+   short by authorship ("D Flip-Flop"); a project name is arbitrary text a reader typed into a
+   prompt, so it is the one string in any of these rows that can be 200 characters. It takes
+   the row's slack and ellipsises, which is what keeps the controls on the right reachable
+   instead of pushed off the end - the trade .gh-blurb already makes one rule up. */
+.gh-proj-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The row's controls, held together so the pair is placed once rather than each being given
+   an offset measured off the width of the other - the rule .ex-strip-actions records at
+   length. `flex: none` because the name above is what absorbs the slack. */
+.gh-row-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+/* A row action is quieter than a .btn: there is one per row and twenty rows, so a column of
+   real buttons would out-shout the names they belong to. Same shape as .gh-clear (borderless,
+   accent, underline on hover), which is the site's existing idiom for a control inside a
+   listing - and it is a real <button>, so it keeps a button's focus ring and keyboard
+   behaviour rather than being a link that goes nowhere. */
+.gh-row-act {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--accent-fg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.gh-row-act:hover { text-decoration: underline; }
 .gh-readme {
   margin: 16px 0 0;
   font-size: 14px;
@@ -395,75 +465,23 @@ body.ex-sheet-open { overflow: hidden; }
 }
 
 /* ---------------------------------------------------------------------------
-   The Netlist Viewer, on a page whose manifest entry says "synthesis": true.
+   The Netlist Viewer, on a page whose manifest entry says "synthesis": true,
+   has NO rules here at all, and that is the point.
 
-   synth.css already carries every .rf-node* rule, because the nodes here are the
-   same absolutely-positioned divs React Flow renders in synthesis.html - that is
-   why this file needs so little. What is missing there is only the plumbing React
-   Flow itself supplied: the two transformed layers, and the edges, which it drew
-   from its own stylesheet (loaded from a CDN, so not available here).
+   synth.css carries every one of them - the .rf-node* shapes it always did, and now
+   the viewer plumbing too (the two transformed layers, the wires, the selected-net
+   label and its readout). That plumbing lived here while this was the only
+   dependency-free viewer and synthesis.html drew its netlist with React Flow from a
+   CDN; that app draws it with the same divs and the same SVG layer now, so one copy
+   in Baerilog/synthesis.html serves both. A second copy here would be worse than
+   redundant: synth.css loads AFTER this file on a practice page, so it would silently
+   override the file that appeared to own the rules - which is exactly how this repo
+   ended up with four variants of style.css.
+
+   #flowRoot's touch-action (none for a pointer, pan-y on a phone) went with them, so
+   the desktop rule and its narrow-screen relaxation stay in one file and in the right
+   order.
    --------------------------------------------------------------------------- */
-/* touch-action: none, where the waveform uses pan-y - and the difference is the
-   product, not a preference. A waveform pans along ONE axis, so a page that keeps
-   scrolling vertically over it loses nothing; a netlist is two-dimensional, so one
-   finger has to be able to move it in both. React Flow's own pane does the same, which
-   is also what synthesis.html gets today. The cost is real and bounded: a touch that
-   lands inside this 520px box scrolls the graph rather than the page - which is fine
-   beside a desktop pointer and a trap on a phone, where it is the only way past the
-   card, so the mobile block at the foot of this file relaxes it to pan-y. */
-#flowRoot { touch-action: none; cursor: grab; }
-.pn-nodes, .pn-edges {
-  position: absolute;
-  inset: 0;
-  transform-origin: 0 0;
-}
-/* Edges under nodes, as in React Flow, so a wire never crosses a gate symbol. */
-.pn-edges { width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-/* Beats .rf-node's own `position: relative` (two classes to one), which is what
-   lets a node be placed by the layout the engine already computed. */
-.pn-nodes > .rf-node { position: absolute; }
-.pn-edge {
-  fill: none;
-  stroke: var(--border-default);
-  stroke-width: 1.5;
-}
-.pn-edge.bus { stroke-width: 3; }
-/* The selected net, in two encodings of the one bit - accent colour AND a heavier line -
-   so it survives a greyscale screenshot and a reader who cannot separate the two colours,
-   the same rule the Scoreboard's flag casing is held to. */
-.pn-edge.sel { stroke: var(--accent-fg); stroke-width: 2.5; }
-.pn-edge.bus.sel { stroke-width: 4.5; }
-/* Every wire's clickable companion: transparent, 12px wide, and the only thing inside the
-   edge layer that takes pointer events - which is what leaves a drag on the background to
-   the pan handler. */
-.pn-edge-hit {
-  fill: none;
-  stroke: transparent;
-  stroke-width: 12;
-  pointer-events: stroke;
-  cursor: pointer;
-}
-/* paint-order draws the halo behind the glyphs, which is how a net name stays
-   readable over a wire without a background rectangle to keep in step with it. */
-/* Drawn only for the selected net now, so it is sized to be read rather than to stay out
-   of the way, and it takes no pointer events - clicking the name must not count as
-   clicking the background and clear the very thing it names. */
-.pn-edge-label {
-  font: 10px "SF Mono", Menlo, Consolas, monospace;
-  pointer-events: none;
-  fill: var(--fg-muted);
-  text-anchor: middle;
-  paint-order: stroke;
-  stroke: var(--canvas-subtle);
-  stroke-width: 3px;
-  stroke-linejoin: round;
-}
-.pn-edge-label.sel { fill: var(--accent-fg); font-weight: 600; }
-.pn-net-readout {
-  font: 11px "SF Mono", Menlo, Consolas, monospace;
-  color: var(--accent-fg);
-  flex-shrink: 0;
-}
 
 /* ---------------------------------------------------------------------------
    A phone, and what is left here now that the shared layer exists.
@@ -477,8 +495,10 @@ body.ex-sheet-open { overflow: hidden; }
    readings of one breakpoint is how the four different `style.css` variants happened.
 
    So what stays is only what belongs to the practice site: the tab strip, the
-   exercise sheet, this site's own run-length field, and the netlist viewer's touch
-   behaviour. 760px is app.css's own breakpoint, reused rather than reinvented.
+   exercise sheet, and this site's own run-length field. The netlist viewer's touch
+   behaviour used to be here too and is now synth.css's, with the desktop rule it
+   relaxes - see the note above. 760px is app.css's own breakpoint, reused rather
+   than reinvented.
 
    Specificity note, still true for the rules below that touch a shared class: 18 of
    the twenty pages load synth.css AFTER this file, and it carries its own copies of
@@ -522,11 +542,4 @@ body.ex-sheet-open { overflow: hidden; }
   .ex-backdrop { padding: 8px; }
   .ex-sheet-head, .ex-sheet-body { padding: 12px; }
   .ex-sheet-body table { display: block; overflow-x: auto; }
-
-  /* 4. #flowRoot's `touch-action: none` above is deliberate on a desktop pointer and
-     a trap on a phone - a 520px box that eats every vertical drag is a page you
-     cannot scroll past. pan-y hands vertical drags back to the browser and keeps
-     horizontal ones for the pan; the graph is also shorter here, since 520px is most
-     of a phone screen. */
-  #flowRoot { touch-action: pan-y; height: 360px; }
 }

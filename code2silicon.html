@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 70 70'%3E%3Crect x='0' y='0' width='70' height='70' fill='black'/%3E%3Cpath d='M 43.018863 43.75 C 43.03401 41.100017 43.00372 36.399983 43.018863 33.75 C 43.00372 31.399983 40.518863 28.75 38.018863 28.75 C 35.425023 28.75 37.831183 28.75 35.237344 28.75 C 28.987302 28.75 27.737302 33.75 27.782737 36.25 C 27.737302 38.75 28.987302 43.75 35.237344 43.75 C 36.097863 43.75 36.958383 43.75 37.8189 43.75' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M 7.5 25 C 7.5 30 7.5 38.75 7.5 43.75 C 10 43.75 12.421347 43.73971 15.28152 43.75 C 21.53152 43.75 22.789938 38.59011 22.78152 36.25 C 22.789938 33.59011 21.53152 28.75 15.28152 28.75 C 13.309234 28.75 14.376628 28.75 12.709961 28.75' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M 63.31308 28.75 C 60.81308 28.75 58.391734 28.76029 55.53156 28.75 C 49.28156 28.75 48.02314 33.90989 48.03156 36.25 C 48.02314 38.90989 49.28156 43.75 55.53156 43.75 C 57.50385 43.75 61.865164 43.75 63.53183 43.75' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='53.23156' y='36.125' width='9.8' height='.125' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<title>Code2Silicon</title>
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="practice.css">
+<link rel="stylesheet" href="synth.css">
+<!-- pnr.css is NOT optional and it is not this page's own: it carries the classes the
+     PLACEMENT DRAWING is made of - .pnr-inst-box, .pnr-name, .pnr-row-rule, .pnr-cut-line,
+     the cross-section's tags - and .pnr-table, which the Cell Library is. The cell artwork
+     needs nothing (placementSvg inlines its own stylesheet into the SVG), but the drawer's
+     own annotations are styled from here, so without it a placement renders as unmarked
+     boxes. It is generated from pnr.html's additions by build.py, which is exactly why a
+     third consumer costs nothing. -->
+<link rel="stylesheet" href="pnr.css">
+<link rel="stylesheet" href="code2silicon.css">
+</head>
+<body>
+<!-- ONE PAGE, FIVE STAGES: write a design and a testbench, simulate it, synthesize it to
+     gates, place and route those gates, and cut a cross-section through the result. Every
+     stage hands the next its output IN MEMORY - nothing is saved and nothing is pasted,
+     which is the workbench's rule and the whole point of the page.
+
+     HAND-MAINTAINED, and deliberately not generated: the twenty practice pages differ from
+     one another in one string and so are worth generating, where this is one page. It is a
+     PRACTICE-STYLE page rather than an eighth single-file app because it needs three
+     engines that already exist as generated slices - app.js, synth.js and pnr.js are 838 KB
+     between them - and inlining them would be that much duplicate with nothing keeping it in
+     step.
+
+     NO PRACTICE_SLUG, and that one absence decides most of what this page is. shell.js
+     builds the exercise sheet only for a page that declares one, so there is no brief and no
+     verdict pill here; and practice.js - the file that makes the testbench READ-ONLY, hides
+     the example picker and hides Open - is not loaded at all. The testbench is the reader's
+     to write, which is the difference between this page and an exercise. -->
+<script>
+/* Which document the cloud layer saves. */
+var CLOUD_APP = 'code2silicon';
+/* WHICH document within it, and this is what makes a project openable by URL.
+   `?project=<id>` names a row minted by this page's own Save; with no parameter the item is
+   left undeclared and cloud-sync.js falls back to `default`, the scratch document this page
+   has always autosaved to. So a bare code2silicon.html is unchanged, and nothing about the
+   feature is conditional on a project existing.
+
+   IT HAS TO BE HERE, before cloud-sync.js reads it - and this inline script is the only place
+   on the page that runs before app.js, which is a quarter of a megabyte of blocking script.
+
+   PARSED BY HAND rather than with URLSearchParams, which is the one deliberate-looking choice
+   in these six lines: this page is opened over file:// as much as over http, and the whole
+   repo is written for a browser old enough not to be assumed to have it - `location.search`
+   is a string everywhere. It is also why the value is decoded explicitly.
+
+   A MALFORMED ESCAPE MUST NOT TAKE THE PAGE DOWN. decodeURIComponent throws on a lone `%`,
+   which is one hand-edited URL away, and a throw here happens before app.js has run - so the
+   page would be blank rather than merely on the wrong document. */
+var CLOUD_ITEM;
+(function () {
+  var m = /[?&]project=([^&]*)/.exec(window.location.search || '');
+  if (!m) return;
+  try { CLOUD_ITEM = decodeURIComponent(m[1]); } catch (e) { CLOUD_ITEM = m[1]; }
+  if (!CLOUD_ITEM) CLOUD_ITEM = undefined;      // `?project=` with nothing after it
+})();
+/* practice-synth.js builds the netlist and its viewer only for a page that asks. It can see an
+   exercise (a manifest entry saying so) and a learn topic (a netlist slot), and this page is
+   neither - so it says so outright rather than being sniffed for. */
+var WANTS_SYNTH = true;
+</script>
+<!-- These two ahead of shell.js for the reason a practice page records: shell.js reads
+     CLOUD.load while it builds, and neither file touches the DOM. -->
+<script src="cloud-config.js"></script>
+<script src="cloud.js"></script>
+<script src="shell.js"></script>
+<!-- ================================ THE PAGE HEAD ================================
+     INLINE, AND IMMEDIATELY AFTER shell.js, which is the whole point of it being here rather
+     than in code2silicon.js: that file loads after app.js, which is a quarter of a megabyte of
+     blocking script, and a browser paints during that fetch. So a crumb corrected there would
+     be a visible FLASH of `Baerilog / Practice` - the hazard shell.js's own notes record for
+     the exercise sheet. This runs synchronously between the two, where no paint can intervene.
+
+     WHY NOT IN shell.js: it builds the crumb, and it builds the band and the empty tab strip
+     BELOW its `if (!window.PRACTICE_SLUG) return;`. Moving those two above the guard was tried
+     and is wrong - the twenty-one LEARN TOPIC pages also load shell.js and also have no slug,
+     so it would give every one of them an empty ruled strip under the crumb. Baerilog/test.py
+     asserts exactly that (`the tab strip was built with no PRACTICE_SLUG`), and it caught this.
+     So the three lines that differ for this page are done here, and shell.js is untouched. -->
+<script>
+(function () {
+  var h1 = document.querySelector('h1');
+  var sub = document.querySelector('.gh-sub');
+  if (!h1 || !sub) return;
+  /* THREE SEGMENTS NOW, not two, and the third is the reader's own. It used to end at
+     `Baerilog / Code2Silicon` on the grounds that this page IS the section and so has no leaf;
+     with projects it has one - WHICH document is open is the thing a reader most needs the
+     crumb to say, and it is the same shape every exercise and topic page already uses.
+
+     THE MIDDLE SEGMENT STAYS UNLINKED. It names the section, and the section is this page -
+     pointing it at projects.html would make the crumb's own middle go somewhere the crumb does
+     not say. `.here` is on the LEAF, which is what .gh-crumb's rule marks as current.
+
+     THE NAME IS READ HERE, AT PARSE TIME, and that is the whole reason this is inline rather
+     than in code2silicon.js: that file loads after app.js, a browser paints during that fetch,
+     and a leaf corrected there would be a visible flash of `New Project` on a page opened to a
+     named one - the same hazard this block's own note records for the crumb itself.
+     CLOUD.load is synchronous and local, which is what makes reading it here possible at all.
+
+     `New Project` FOR ANYTHING WITHOUT A NAME, which covers three states that are one state to
+     a reader: no project asked for, a project this browser has not got yet, and the scratch
+     document. All three are "you have not saved this under a name", and offering to Save is
+     the same answer to all of them. */
+  var leaf = 'New Project';
+  if (window.CLOUD && window.CLOUD.configured() && window.CLOUD_ITEM) {
+    var rec = window.CLOUD.load('code2silicon', window.CLOUD_ITEM);
+    if (rec && rec.verdict && rec.verdict.name) leaf = String(rec.verdict.name);
+  }
+  h1.className = 'gh-crumb';
+  h1.innerHTML = '<a href="index.html">Baerilog</a>'
+               + '<span class="sep">/</span>'
+               + '<span>Code2Silicon</span>'
+               + '<span class="sep">/</span>';
+  /* THE LEAF IS createElement, WHERE THE THREE FIXED SEGMENTS ARE A STRING, and the split is
+     not arbitrary. Two reasons, and either alone would decide it:
+
+       - a project name is arbitrary text the reader typed into a prompt, and it is the only
+         part of this crumb that comes from outside the page. textContent cannot be escaped
+         wrongly, where building it into the string above needs an esc() that is one edit away
+         from being forgotten; and
+       - the stub DOM the harness runs against PARSES NO MARKUP, so an id that only exists
+         inside an innerHTML string is an element getElementById never finds - the feature
+         would be untestable headlessly, which is the rule practice-synth.js's cards and the
+         exercise sheet already follow. */
+  var leafEl = document.createElement('span');
+  leafEl.className = 'here';
+  leafEl.id = 'c2sProjName';
+  leafEl.textContent = leaf;
+  h1.appendChild(leafEl);
+  /* SAVE IS BUILT HERE, in the crumb, and built EMPTY of behaviour - code2silicon.js wires it
+     when it loads. Two reasons it is not simply created there, and the second is the one that
+     would show:
+
+       - that file loads after app.js, so a button appended there arrives after the first paint
+         and the crumb row would visibly reflow as it turned up - the reserved-slot problem the
+         navigation drawer's menu button records at length, in its own words; and
+       - it belongs to the crumb, which this block owns. Two files writing one row is how the
+         two of them come to disagree about its order.
+
+     ONLY WHERE THERE IS A PROJECT TO SAVE TO. cloud-ui.js publishes CLOUD_UI below its own
+     configured() guard, so on a checkout with no Supabase project the dialog does not exist -
+     and a Save button that cannot open one is worse than no button. Testing configured() here
+     is the same question asked one file earlier, and it is what keeps code2silicon.js from
+     needing a branch of its own. */
+  if (window.CLOUD && window.CLOUD.configured()) {
+    var acts = document.createElement('span');
+    acts.className = 'c2s-crumb-actions';
+    var save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn secondary';
+    save.id = 'c2sSaveBtn';
+    save.textContent = 'Save';
+    acts.appendChild(save);
+    h1.appendChild(acts);
+  }
+  sub.className = 'gh-sub';
+  sub.textContent = 'Write it, simulate it, synthesize it, place and route it, '
+                  + 'and cut a section through the wafer.';
+  /* THE BAND: crumb, sub-line and strip in one sticky wrapper, which is shell.js's own
+     arrangement and for its reason - three sticky elements would each need a `top` equal to the
+     sum of the heights above it, and not one of those is a constant. A MOVE, not a copy:
+     appendChild on an attached node detaches it, so all three keep their ids and listeners.
+     The strip is created EMPTY; code2silicon.js fills it once it knows which cards exist. */
+  var tabs = document.createElement('nav');
+  tabs.id = 'exTabs';
+  tabs.className = 'gh-tabs';
+  var head = document.createElement('div');
+  /* A CLASS, not an id, and that is not a style preference: `.gh-page-head` in practice.css is
+     what docks this band under the bar. shell.js writes it with `mk('div', null, 'gh-page-head')`
+     whose signature is (tag, id, cls) - so the third argument is the CLASS - and reading that as
+     an id gave the band `position: static` with the crumb and the strip scrolling away.
+     Browser-measured: `static top=auto` before, `sticky` after. */
+  head.className = 'gh-page-head';
+  h1.parentElement.insertBefore(head, h1);
+  head.appendChild(h1);
+  head.appendChild(sub);
+  head.appendChild(tabs);
+})();
+</script>
+<script src="app.js"></script>
+<script src="synth.js"></script>
+<script src="practice-synth.js"></script>
+<!-- The placement engine and the renderer that draws a layout and a cross-section from it -
+     the same two files a learn topic's figures use, so this page draws silicon through the
+     shared drawer rather than a second copy of it. pnr.js first: practice-pnr.js reads
+     `window.PNR`, which pnr.js publishes. -->
+<script src="pnr.js"></script>
+<script src="practice-pnr.js"></script>
+<!-- LAST of the page's own scripts, after practice-synth.js, so the four cards it appends
+     land BELOW the netlist pair and its tab strip is built with every card already on the
+     page. -->
+<!-- The shared flow-strip builder, before the file that drives it. It is the twenty
+     exercise pages' row too, which is why it is a file rather than a copy in each. -->
+<script src="flowstrip.js"></script>
+<script src="code2silicon.js"></script>
+<script src="cloud-ui.js"></script>
+<script src="cloud-sync.js"></script>
+</body>
+</html>

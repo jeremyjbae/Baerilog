@@ -125,34 +125,11 @@
      exercise's testbench, and the undo stack it wiped belongs to a box nobody can type in. */
   var tbTextarea = document.getElementById('tbInput');
   if (tbTextarea) tbTextarea.readOnly = true;
-  (function () {
-    /* And the heading SAYS so, in the same words practice-synth.js's netlist card uses. A
-       textarea that swallows a keystroke with no explanation reads as a broken page, and this
-       one looks exactly like the editor above it.
-
-       Inserted before the help icon rather than appended to the h2: `.header-controls` is
-       pushed to the far end of the header, so an appended span lands to the right of the
-       height and layout buttons instead of after the words it qualifies. And the card is
-       found by id and THEN searched, never as one `#card-testbench h2` - the stub DOM
-       resolves a single simple selector at a time and returns null for a compound one, which
-       is how a feature ships absent with every check passing.
-
-       The class carries NO rule and is a handle for the harness: the wording is part of the
-       heading, exactly as it is in the netlist card's own `(Read-only)` title, so styling it
-       differently would make one of the two look like the deliberate one. */
-    var card = document.getElementById('card-testbench');
-    var h2 = card && card.querySelector('h2');
-    var help = h2 && h2.querySelector('.help-wrap');
-    if (!h2 || !help) return;
-    var note = document.createElement('span');
-    note.className = 'tb-readonly';
-    /* A NON-BREAKING space, because `.card h2` is a flex row: text nodes become anonymous
-       flex items with their surrounding whitespace stripped, so an ordinary leading space
-       disappears and the heading reads `Testbench Editor(Read-only)`. Measured in Chrome,
-       not reasoned about - it looks correct in the markup either way. */
-    note.textContent = '\u00A0(Read-only)';
-    h2.insertBefore(note, help);
-  })();
+  /* THE HEADING NOTE IS GONE, because the RADIO LABEL says it now. `shell.js` merges this
+     card and the Testbench Editor into one card with a `Design` / `Testbench (read-only)`
+     pair, and that label is derived from `PRACTICE_SLUG` there - so the words appear once,
+     on the control that selects the view, rather than twice on two headings. What stays here
+     is the `readOnly` above: the label is the explanation, the property is the rule. */
 
   /* The two cards that have nothing to show until something has run are FOLDED rather
      than hidden: the Waveform Viewer and the Module Hierarchy beside it. Folded keeps
@@ -173,16 +150,16 @@
      exercise, hiding them outright would make the sheet the only statement of what is being
      asked. There is no Testbench tab in the strip below, so the header is the one control
      that opens it and a fold cannot leave a dead one behind. */
-  var FOLD_ALWAYS = ['card-testbench'];
-  function foldCard(id, folded) {
-    var card = document.getElementById(id);
-    if (!card) return;
-    card.classList.toggle('collapsed', folded);
-    // app.js's own [data-collapse] handler owns this glyph, so it is written the same
-    // way here rather than left pointing the wrong direction.
-    var btn = card.querySelector('.card-collapse-btn');
-    if (btn) btn.textContent = folded ? '▸' : '▾';
-  }
+  /* EMPTY NOW: card-testbench is no longer a card. shell.js merges it into the editor as a
+     second view, so there is nothing to fold - the reader switches to it instead, and the
+     radio pair is what says it is there. Kept as a list rather than deleted, because the
+     rule it encodes (a card the page must not open on the reader's behalf) is one this page
+     may want again. */
+  var FOLD_ALWAYS = [];
+  /* `foldCard` is app.js's now, not a copy here: code2silicon wanted the same thing and the
+     ▸/▾ glyph is the [data-collapse] handler's own convention, so a second writer of it is how
+     the arrow comes to point the wrong way. A classic script sees the bindings of the ones
+     before it, which is how this file already uses `setEditorText` and `logLine`. */
 
   /* The state of a page nobody has run yet, in ONE place, because Reset has to put it
      back and "the same as first launching" is only a checkable claim while the two
@@ -384,7 +361,7 @@
     var first = !hasRun;
     hasRun = true;
     refreshVerdict();
-    refreshTabs();
+    flow.sync();
     if (first) {
       FOLD_UNTIL_RUN.forEach(function (id) { foldCard(id, false); });
       /* The waveform was drawn while its card was folded, i.e. against a canvas of no
@@ -496,7 +473,7 @@
     b.addEventListener('click', function () {
       showPreRunState();
       refreshVerdict();
-      refreshTabs();
+      flow.sync();
     });
   })();
   refreshVerdict();
@@ -519,85 +496,97 @@
      to sit at the front of this list and did not: it opened a dialog, and clicking it took
      the lit marker off the card you were reading and put it on a control that navigates
      nowhere. It is a button beside Reset now - see section 6. ---- */
-  var TABS = [
-    { id: 'tabDesign', label: 'Design', icon: 'code', card: 'card-editor' },
-    { id: 'tabConsole', label: 'Console', icon: 'term', card: 'card-console' },
-    { id: 'tabWave', label: 'Waveform', icon: 'pulse', card: 'card-wave' },
-    { id: 'tabMemory', label: 'Memory', icon: 'db', card: 'card-memory' },
-    { id: 'tabModel', label: 'Model', icon: 'chip', card: 'card-model' }
+  /* FOUR STAGES WHERE FIVE TABS WERE, and the difference is what the row is FOR: the tabs
+     named the page's panels, which is a table of contents; these name the FLOW - write it,
+     run it, synthesize it, run the gates - which is what an exercise asks you to do. A stage
+     is GREEN when it can be run and grey when it cannot, so the row answers "what is next"
+     without a reader working it out from which cards have appeared.
+
+     IT IS code2silicon.html's ROW, from the same builder. That page had it first and this is
+     the same flow with three fewer stages (it has no placement), so Baerilog/flowstrip.js is
+     one file both pages drive rather than two copies of one builder - the drift this repo
+     keeps paying for. Everything about how the row behaves is there; what is here is the list.
+
+     THE CARDS LOSE THEIR JUMP - Testbench, Waveform, Scoreboard, Memory Viewer and the
+     netlist pair are reached by scrolling now. That is the cost of the trade and it is taken
+     deliberately, the same way that page took it: a row that says where you are in the work
+     is worth more on an exercise page than a list of its panels.
+
+     A STAGE IS DROPPED WHERE ITS BUTTON DOES NOT EXIST, which is what makes one list serve all
+     twenty. `ram-8bit` loads no practice-synth.js, so it has no Synthesize and no gate-level
+     Run and gets a two-stage row; the other nineteen get four. That is flowstrip's rule, not a
+     test written here - a button that exists but is not usable YET is greyed instead, which is
+     what the gate-level Run looks like before anything has been synthesized. */
+  var STAGES = [
+    { id: 'flowStageCode',  label: '</> Code',                    card: 'card-editor' },
+    /* Both runs land on Simulation Results rather than the waveform: that card is where a run
+       says what it did - the $display output and the verdict pill's own count - and the plot is
+       one panel further down for a reader who wants the shape of it. */
+    { id: 'flowStageRun',   label: '▶ Run Simulation',            card: 'card-console',
+      drives: 'runBtn' },
+    { id: 'flowStageSynth', label: '⚙ Synthesize',                card: 'card-netlist',
+      drives: 'synthBtn' },
+    { id: 'flowStageGate',  label: '▶ Run Gate-level Simulation', card: 'card-console',
+      drives: 'gateRunBtn',
+      /* The netlist card is BUILT at load and hidden until a synthesis succeeds, so the button
+         exists from the start and its stage must not read as available before there is a
+         netlist to run. Read off the card the gates live in - practice-synth.js owns whether it
+         is shown, so this cannot come to disagree with it. */
+      when: function () {
+        /* BOTH, because they say different things. The CARD carries the gates, and it is hidden
+           until a synthesis succeeds. The ROW is what practice-synth.js takes away for a design
+           that was ALREADY a netlist - where running the gates would re-run the very modules the
+           simulator just ran - and that row lives inside the card, so its own display says
+           nothing while its card is hidden. Reading only the card offered the step on a
+           structural design; reading only the row offered it before there was anything to run. */
+        var c = document.getElementById('card-netlist');
+        var row = document.getElementById('gateRunRow');
+        if (!c || c.style.display === 'none') return false;
+        if (!row || row.style.display === 'none') return false;
+        /* AND THERE MUST BE GATES TO RUN. A FAILED synthesis KEEPS the card - deliberately, so
+           there is somewhere to read the error and press Synthesize again - and keeps the row
+           with it, so neither of those says whether anything was actually built. The netlist
+           text is the only thing that does. */
+        var s = window.PRACTICE_SYNTH_API;
+        return !!(s && s.netlistText && s.netlistText().length);
+      } }
   ];
   var tabStrip = document.getElementById('exTabs');
-  var tabButtons = [];
+  var flow = window.FLOWSTRIP.create({ strip: tabStrip, stages: STAGES });
+  /* DECLARED, so practice-synth.js knows this row is a flow and adds no card tab to it. It
+     cannot be a call the other way round: that file loads AFTER this one, so its API does not
+     exist yet here - see the rebuild hook at the end of it. */
+  window.FLOW_STRIP = true;
 
-  function cardIsOnThePage(id) {
-    var el = document.getElementById(id);
-    return !!el && el.style.display !== 'none';
-  }
+  /* ---- THE DUPLICATES GO, so there is ONE control per action ----
+     Run and Synthesize are still the owners of their handler chains - the verdict pill, the
+     folded cards, the stale marks, the three-state label - and are still what the strip CLICKS.
+     They are HIDDEN, not removed, exactly as this file already hides the toolbar's own Reset
+     and then clicks it: removing them would take those handlers with them.
 
-  /* `scrollIntoView({block:'start'})` puts a card's top at the top of the VIEWPORT, which
-     is behind the bar and the sticky page head - so a tab press left the card it selected
-     with its own title hidden under the strip that selected it, i.e. looking headless and
-     cut off. This scrolls back by whatever is still covering the top afterwards.
+     ONE CONSEQUENCE WORTH KNOWING: the verdict pill is appended beside Run in that toolbar,
+     so with Run hidden it sits next to the run-length field instead. It is still in the row
+     that runs things, which is what that placement is for; what it is no longer adjacent to is
+     the button, because the button a reader presses is in the strip now. */
+  /* BOTH OF THESE AND THE BUILD RUN TWICE, and the load order is why. `synthBtn` is
+     practice-synth.js's and that file loads AFTER this one - it must, since its Run listener has
+     to fire after this file's verdict-pill refresh - so at this point it does not exist: the
+     hide silently missed it and the page shipped with a visible Synthesize in the toolbar AND a
+     Synthesize stage in the row, which is the duplication this is here to remove. Caught in a
+     browser, not by the harness, which had no reason to ask.
 
-     MEASURED AFTER THE SCROLL, and that is what makes it one rule for both layouts: the
-     band's bottom edge IS the height of everything docked above the content (the bar sits
-     above it, so one rect covers both), and where the narrow layer has released the band
-     it has scrolled away with the page and its bottom is at or above 0, so there is
-     nothing to correct. No copy of the 760px breakpoint, and nothing to keep in step with
-     the two heights - both of which vary, since the bar and the crumb wrap. */
-  function clearStickyOverlap() {
-    var head = document.querySelector('.gh-page-head');
-    if (!head || !head.getBoundingClientRect || !window.scrollBy) return;
-    var over = head.getBoundingClientRect().bottom;
-    if (over > 0) window.scrollBy(0, -over);
-  }
-
-  function refreshTabs() {
-    if (!tabStrip) return;
-    /* Only this file's own tabs are rebuilt. practice-synth.js appends two more of
-       its own, whose cards exist for as long as the page does, so they are left
-       exactly where they are - the alternative is a strip that reorders itself on
-       every Run. */
-    var lit = tabButtons.filter(function (b) { return b.classList.contains('selected'); })
-                        .map(function (b) { return b.id; })[0];
-    tabButtons.forEach(function (b) { b.remove(); });
-    tabButtons = [];
-    var mine = [];
-    TABS.forEach(function (t) {
-      if (t.card && !cardIsOnThePage(t.card)) return;
-      var b = document.createElement('button');
-      b.id = t.id;
-      b.className = 'gh-tab';
-      b.innerHTML = (ICON[t.icon] || '') + '<span>' + t.label + '</span>';
-      b.setAttribute('type', 'button');
-      b.addEventListener('click', function () {
-        // Every .gh-tab in the strip, not the closure list: practice-synth.js appends
-        // two more once its cards exist, and a closure would leave two tabs lit at once.
-        tabStrip.querySelectorAll('.gh-tab').forEach(function (o) { o.classList.remove('selected'); });
-        b.classList.add('selected');
-        var card = document.getElementById(t.card);
-        if (card && card.scrollIntoView) card.scrollIntoView({ block: 'start' });
-        clearStickyOverlap();
-      });
-      mine.push(b);
-      tabButtons.push(b);
+     So it is one function called at both moments: now, for `runBtn`, which app.js has already
+     made; and again from the end of practice-synth.js, which is the first instant its own
+     buttons exist. Idempotent in both halves - hiding a hidden button is a no-op and
+     `flow.build` takes back its own nodes before re-inserting them. */
+  function adoptStrip() {
+    ['runBtn', 'synthBtn'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = 'none';
     });
-    // Ahead of anything another file appended, so the strip reads in page order.
-    var first = tabStrip.children[0] || null;
-    mine.forEach(function (b) { tabStrip.insertBefore(b, first); });
-    /* Restore the lit tab, and note neither list may be filtered with Array.filter:
-       querySelectorAll returns a NodeList in a real browser, which has forEach but no
-       filter - the stub DOM's array would have hidden that. */
-    var keep = null;
-    tabButtons.forEach(function (b) { if (b.id === lit) keep = b; });
-    if (keep) { keep.classList.add('selected'); return; }
-    var anyLit = false;
-    tabStrip.querySelectorAll('.gh-tab').forEach(function (b) {
-      if (b.classList.contains('selected')) anyLit = true;
-    });
-    if (!anyLit && tabButtons.length) tabButtons[0].classList.add('selected');
+    flow.build();
   }
-  refreshTabs();
+  adoptStrip();
 
   /* ---- 6. the strip's ACTIONS: Exercise, then Reset.
 
@@ -753,7 +742,7 @@
       window.PRACTICE_SYNTH_API.reset();
     }
     // 3. the strip, since the cards it points at have just moved.
-    refreshTabs();
+    flow.sync();
     /* 4. the RECORD, so the exercise is not merely un-run but un-BEGUN: the hub stops
        badging it and the next load shows the brief again, both of which are read off
        whether that row exists. cloud-sync.js owns the row and installs this hook, the way
@@ -831,7 +820,17 @@
     /* The correction a sticky page head needs after a scrollIntoView - see the function.
        practice-synth.js's two tabs scroll to their cards exactly as this file's do, so they
        take the same correction from here rather than measuring the band a second time. */
-    clearStickyOverlap: clearStickyOverlap,
+    clearStickyOverlap: flow.clearStickyOverlap,
+    /* THE FLOW, as a reader sees it: the stages in order with their label and whether each is
+       available. It answered `.gh-tab` ids while this row was a table of contents; the row's
+       claim is a different one now, so the shape is too. */
+    stages: function () { return flow.list(); },
+    rebuildStrip: adoptStrip,
+    syncStrip: flow.sync,
+    /* STILL A REAL QUESTION, and the answer is now always empty: are there any card TABS in this
+       row? The row is a flow, and practice-synth.js is told to add none, so a `.gh-tab` appearing
+       here would mean something had put a table-of-contents control back among the stages. Kept
+       rather than deleted precisely so that stays checkable. */
     tabs: function () {
       var ids = [];
       if (tabStrip) {
@@ -839,6 +838,8 @@
       }
       return ids;
     },
+    stageButton: function (id) { return flow.button(id); },
+    stageCard: function (id) { return flow.cardOf(id); },
     /* The whole strip in the order a reader tabs through it, with the actions group
        FLATTENED - so "every tab, then Exercise, then Reset" is one assertion rather than
        three separate readings of the DOM's shape. `children` is an HTMLCollection in a real
