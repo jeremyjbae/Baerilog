@@ -45,8 +45,7 @@ var PRACTICE_MANIFEST = [
   {"slug": "ram-8bit", "title": "8-bit RAM", "category": "Memory & Datapath", "level": 2, "kind": "mega", "memory": true, "blurb": "Synchronous write, combinational read"},
   {"slug": "calculator-8bit", "title": "8-bit Calculator", "category": "Memory & Datapath", "level": 2, "kind": "mega", "memory": true, "blurb": "Execute an opcode stream out of a ROM image", "synthesis": true},
 
-  {"slug": "cpu-8bit", "title": "8-bit CPU (8-bit instruction)", "category": "CPU", "level": 3, "kind": "mega", "memory": true, "blurb": "Accumulator ISA: fetch, decode, execute, store", "synthesis": true},
-  {"slug": "cpu-16bit", "title": "8-bit CPU (16-bit instruction)", "category": "CPU", "level": 3, "kind": "mega", "memory": true, "blurb": "Reduced-AVR2 core checked against the ISA model", "synthesis": true}
+  {"slug": "cpu-8bit", "title": "8-bit CPU (8-bit instruction)", "category": "CPU", "level": 3, "kind": "mega", "memory": true, "blurb": "Accumulator ISA: fetch, decode, execute, store", "synthesis": true}
 ];
 
 /* The hub's card order. A category absent from here would still render (appended

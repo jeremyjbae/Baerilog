@@ -122,21 +122,24 @@ module cpu (
         rf_wdata <= {inst[11:8], inst[3:0]};
       end
 
+      /* TODO: all three of these just step to the next instruction, so no branch or
+         jump in the program ever happens. RJMP takes its 12-bit displacement from
+         inst[11:0]; BREQ and BRNE take 7 bits from inst[9:3] and are conditional on
+         Z, which is sreg[1] - BREQ when it is set, BRNE when it is clear. Sign-extend
+         the displacement to 16 bits and remember the + 1. */
       6'b1100xx: begin // rjmp (offset)
         debug_inst <= "RJMP";
-        pc_add <= {inst[11], inst[11], inst[11], inst[11], inst[11:0]};
+        pc_nxt <= pc + 1;
       end
 
       6'b111100: begin // breq
         debug_inst <= "BREQ";
-        if(sreg[1])
-          pc_add <= {inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9:3]};
+        pc_nxt <= pc + 1;
       end
 
       6'b111101: begin // brne
         debug_inst <= "BRNE";
-        if(~sreg[1])
-          pc_add <= {inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9], inst[9:3]};
+        pc_nxt <= pc + 1;
       end
       
       default: begin
